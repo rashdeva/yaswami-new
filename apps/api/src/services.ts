@@ -10,7 +10,7 @@ import { isSameEvent, mergeEvents } from '@yaswami/extract';
 import { ADDRESS_MAX, collectedPath, collectedSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError } from '@yaswami/core';
 import type { Db, Tx } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, events, guests, hosts, ticketTypes, users } from './db/schema.ts';
-import { notify } from './notifications.ts';
+import { guestRegistered } from './rsvp-notices.ts';
 import { settings } from './settings.ts';
 
 export type ErrorStatus = 400 | 401 | 403 | 404 | 409;
@@ -303,11 +303,7 @@ export async function rsvpEvent(db: Db, actor: User, id: string, input: RsvpInpu
     return getEvent(tx, actor, id);
   });
   // После фиксации записи и без ожидания: недоступный Telegram не задерживает и не ломает ответ гостю.
-  if (registered) {
-    const { event } = view;
-    void notify(actor.id, 'rsvp_confirmed', { event });
-    if (event.user_id !== actor.id) void notify(event.user_id, 'guest_registered', { event, guest: actor, going: view.guest_counts.approved });
-  }
+  if (registered) guestRegistered(db, view.event, actor);
   return view;
 }
 

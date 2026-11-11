@@ -4,7 +4,16 @@ import type { TelegramUser } from './auth.ts';
 export interface BotResult {
   ok: boolean;
   description?: string;
+  error_code?: number;
+  parameters?: { retry_after?: number };
 }
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const QUEUE_MAX = 1000;
+let tail: Promise<unknown> = Promise.resolve();
+let queued = 0;
+let lastSent = 0;
+const lastSentTo = new Map<number, number>();
 
 /** Настройки бота. Заполняет main.ts; тесты подменяют `call`. Без токена ничего не отправляется. */
 export const bot = {
@@ -23,6 +32,33 @@ export const bot = {
     } catch (e) {
       return { ok: false, description: String(e) };
     }
+  },
+  /** Лимиты Telegram на исходящие: ~30 сообщений в секунду на бота и одно в секунду в один чат. Тесты обнуляют. */
+  pace: { globalMs: 40, chatMs: 1000, retryAfterMaxS: 60 },
+  /**
+   * Отправка сообщения в чат через очередь: выдерживает лимиты, а на 429 ждёт столько, сколько велел Telegram,
+   * и повторяет один раз. Всё, что бот пишет людям, идёт отсюда, а не через `call`.
+   * ponytail: очередь одна и в памяти — сообщение в «занятый» чат задерживает остальных на секунду, перезапуск
+   * теряет неотправленное. Очереди по чатам или pgmq — когда уведомлений станет много.
+   */
+  send(method: string, body: { chat_id: number; [field: string]: unknown }): Promise<BotResult> {
+    if (queued >= QUEUE_MAX) return Promise.resolve({ ok: false, description: 'send queue is full' });
+    queued++;
+    const run = tail.then(async () => {
+      const wait = Math.max(lastSent + bot.pace.globalMs, (lastSentTo.get(body.chat_id) ?? 0) + bot.pace.chatMs) - Date.now();
+      if (wait > 0) await sleep(wait);
+      let result = await bot.call(method, body);
+      if (result.error_code === 429) {
+        await sleep(Math.min(result.parameters?.retry_after ?? 1, bot.pace.retryAfterMaxS) * 1000);
+        result = await bot.call(method, body);
+      }
+      lastSent = Date.now();
+      if (lastSentTo.size > 10_000) lastSentTo.clear();
+      lastSentTo.set(body.chat_id, lastSent);
+      return result;
+    }).finally(() => queued--);
+    tail = run.catch(() => {});
+    return run;
   },
 };
 

@@ -9,6 +9,7 @@ import { notify, templates, toWidget, widgetHtml } from './notifications.ts';
 import { bot, parseIncoming } from './telegram.ts';
 
 const realCall = bot.call;
+Object.assign(bot.pace, { globalMs: 0, chatMs: 0 }); // паузы очереди проверяет отдельный тест
 afterEach(() => Object.assign(bot, { call: realCall, username: null }));
 
 const event: Event = {
@@ -53,13 +54,20 @@ test('шаблоны: у каждого момента своя карточка
   assert.deepEqual(created.rows, [['🗓', 'сб, 14 ноября, 19:00'], ['📍', 'Пляж Микхе']]);
   assert.deepEqual(created.buttons, [link]);
 
-  const guest = templates.guest_registered({ event, guest: { first_name: 'Дато', username: 'dato' }, going: 3 });
+  const guest = templates.guest_registered({ event, guests: [{ first_name: 'Дато', username: 'dato' }], going: 3 });
   assert.equal(guest.title, 'Дато придёт');
   assert.deepEqual(guest.rows.at(-1), ['👥', 'Записано: 3 из 10']);
   assert.deepEqual(guest.buttons, [{ text: 'Написать: Дато', url: 'https://t.me/dato' }, link]);
   // Без username написать по ссылке нельзя; без лимита мест — только число.
-  const anon = templates.guest_registered({ event: { ...event, max_capacity: null }, guest: { first_name: 'Нино', username: null }, going: 1 });
+  const anon = templates.guest_registered({ event: { ...event, max_capacity: null }, guests: [{ first_name: 'Нино', username: null }], going: 1 });
   assert.deepEqual([anon.buttons, anon.rows.at(-1)], [[link], ['👥', 'Записано: 1']]);
+  // Сводка: несколько записавшихся — одно уведомление.
+  const people = ['Аня', 'Дато', 'Нино', 'Гия', 'Лена'].map((first_name, i) => ({ first_name, username: i === 1 ? null : `u${i}` }));
+  const two = templates.guest_registered({ event, guests: people.slice(0, 2), going: 2 });
+  assert.deepEqual([two.label, two.title], ['Новые записи', 'Аня и Дато придут']);
+  const many = templates.guest_registered({ event, guests: people, going: 9 });
+  assert.equal(many.title, 'Аня, Дато и ещё 3 придут');
+  assert.deepEqual(many.buttons.map((b) => b.text), ['Написать: Аня', 'Написать: Нино', 'Написать: Гия', 'Открыть событие']);
 
   const collected = templates.event_collected({ item: { ...item, place: 'Пляж Микхе', address: 'ул. Во Нгуен Зяп' } });
   assert.equal(collected.label, 'Добавлено на витрину');
@@ -84,7 +92,7 @@ test('размер: код виджета ≤ 4096 байт после сжат�
   const cards: Record<keyof typeof templates, Card> = {
     event_created: templates.event_created({ event: big }),
     event_collected: templates.event_collected({ item: { ...item, id: 'x'.repeat(32) + '-1234567890-12', title: 'Щ'.repeat(500), place: 'Щ'.repeat(500) } }),
-    guest_registered: templates.guest_registered({ event: big, guest: { first_name: '👩‍👩‍👧'.repeat(64), username: 'b'.repeat(32) }, going: 100000 }),
+    guest_registered: templates.guest_registered({ event: big, guests: Array.from({ length: 500 }, () => ({ first_name: 'Щ'.repeat(64), username: 'b'.repeat(32) })), going: 100000 }),
     rsvp_confirmed: templates.rsvp_confirmed({ event: big }),
   };
   for (const [moment, card] of Object.entries(cards)) {
@@ -116,11 +124,40 @@ test('отправка: виджет, при отказе — обычное с�
   const error = console.error;
   console.error = () => {};
   try {
+    // Бота заблокировали или сработал лимит — второе сообщение не шлём.
+    calls.length = 0;
+    bot.call = async (method, body) => (calls.push([method, body]), { ok: false, error_code: 403, description: 'Forbidden: bot was blocked by the user' });
+    await notify(5, 'event_created', { event });
+    assert.deepEqual(calls.map(([m]) => m), ['sendWidget']);
     bot.call = async () => { throw new Error('network down'); };
     await notify(5, 'event_created', { event });
     bot.call = realCall; // без токена: ничего не уходит в сеть, отказ без исключения
     await notify(5, 'event_created', { event });
   } finally {
     console.error = error;
+  }
+});
+
+test('очередь отправки: пауза между сообщениями в один чат, на 429 — ожидание и один повтор', async () => {
+  const pace = { ...bot.pace };
+  try {
+    Object.assign(bot.pace, { globalMs: 0, chatMs: 60 });
+    const at: [chat: number, ms: number][] = [];
+    const start = Date.now();
+    bot.call = async (_method, body) => (at.push([(body as { chat_id: number }).chat_id, Date.now() - start]), { ok: true });
+    await Promise.all([bot.send('sendMessage', { chat_id: 901 }), bot.send('sendMessage', { chat_id: 901 }), bot.send('sendMessage', { chat_id: 902 })]);
+    assert.deepEqual(at.map(([chat]) => chat), [901, 901, 902], 'порядок сохраняется');
+    assert.ok(at[1]![1] - at[0]![1] >= 55, `второе сообщение в тот же чат через ${at[1]![1] - at[0]![1]} мс`);
+
+    Object.assign(bot.pace, { chatMs: 0, retryAfterMaxS: 0.05 });
+    let attempts = 0;
+    bot.call = async () => (++attempts === 1 ? { ok: false, error_code: 429, parameters: { retry_after: 30 } } : { ok: true });
+    assert.deepEqual(await bot.send('sendMessage', { chat_id: 903 }), { ok: true });
+    assert.equal(attempts, 2);
+    bot.call = async () => (attempts++, { ok: false, error_code: 429, parameters: { retry_after: 30 } });
+    assert.equal((await bot.send('sendMessage', { chat_id: 903 })).ok, false, 'после повтора сдаёмся');
+    assert.equal(attempts, 4);
+  } finally {
+    Object.assign(bot.pace, pace);
   }
 });
