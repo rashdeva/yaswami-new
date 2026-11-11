@@ -5,8 +5,8 @@ import * as z from 'zod';
 import type { User } from '@yaswami/core';
 import { collectedPath, EventCreateInput, EventUpdateInput, RsvpInput, TEMPLATES, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
 import type { Db } from './db/client.ts';
-import { eq } from 'drizzle-orm';
-import { users } from './db/schema.ts';
+import { asc, eq, gt } from 'drizzle-orm';
+import { events, users } from './db/schema.ts';
 import { conversationById, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin, rejectDraft, sendDraft } from './inbox.ts';
 import { eventUrl } from './notifications.ts';
 import { verifyTicket } from './support.ts';
@@ -141,6 +141,32 @@ function buildServer(db: Db, actor: User) {
       title: 'Update event of the person', shape: { ticket, event_id, ...EventUpdateInput.shape },
       description: 'Change an event the person hosts; only passed fields change. status "cancelled" cancels it. Error forbidden: the person is not the host.',
     }, async ({ ticket: t, event_id: id, ...input }) => s.updateEvent(db, await person(t), id, input));
+
+    // Любое событие сервиса — для оператора в командном чате. Действуем от имени организатора события:
+    // правила те же, что у него в приложении, но без проверки «это моё событие».
+    const hostOf = async (id: string): Promise<User> => {
+      const [row] = await db.select({ host: users }).from(events).innerJoin(users, eq(users.id, events.user_id)).where(eq(events.id, id));
+      if (!row) throw new s.AppError('not_found', 404);
+      return row.host;
+    };
+    tool('admin_events_list', {
+      title: 'All upcoming events', readOnly: true, shape: {},
+      description: 'Every upcoming event created in the service (any host), by start time, with the host\'s name. For the public catalogue collected from announcements use catalog_events.',
+    }, async () => (await db
+      .select({ event: events, host_name: users.first_name, host_username: users.username })
+      .from(events).innerJoin(users, eq(users.id, events.user_id))
+      .where(gt(events.start_at, new Date())).orderBy(asc(events.start_at)).limit(200))
+      .map((r) => ({ ...r, url: eventUrl(r.event.id) })));
+
+    tool('admin_event_get', {
+      title: 'Any event with guests', readOnly: true, shape: { event_id },
+      description: 'Any event as its host sees it: ticket types, the full guest list including who declined, counts.',
+    }, async (a) => ({ ...(await s.getEvent(db, await hostOf(a.event_id), a.event_id)), url: eventUrl(a.event_id) }));
+
+    tool('admin_event_update', {
+      title: 'Update any event', shape: { event_id, ...EventUpdateInput.shape },
+      description: 'Change any event on behalf of the team; only passed fields change. status "cancelled" cancels it and guests see that. Only on an explicit instruction from the team.',
+    }, async ({ event_id: id, ...input }) => s.updateEvent(db, await hostOf(id), id, input));
 
     const message_id = z.uuid().describe('Id of a message with status "draft" from conversation_get');
     tool('draft_send', {

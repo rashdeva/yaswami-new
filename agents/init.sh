@@ -15,11 +15,11 @@ install_role() {
   mkdir -p "$2/skills"
   cp "$SRC/$1/SOUL.md" "$2/SOUL.md"
   rm -rf "$2/skills/yaswami"
-  cp -R "$SRC/$1/skills" "$2/skills/yaswami"
+  [ -d "$SRC/$1/skills" ] && cp -R "$SRC/$1/skills" "$2/skills/yaswami"
   # В конфиге токен: файл читает только hermes.
   sed -e "s|__MCP_URL__|$YASWAMI_MCP_URL|" -e "s|__MCP_TOKEN__|$YASWAMI_MCP_TOKEN|" "$SRC/$1/config.yaml" > "$2/config.yaml"
   chmod 600 "$2/config.yaml"
-  chown -R hermes:hermes "$2/SOUL.md" "$2/skills/yaswami" "$2/config.yaml"
+  chown -R hermes:hermes "$2/SOUL.md" "$2/skills" "$2/config.yaml"
   echo "[yaswami] роль $1 обновлена из образа"
 }
 
@@ -28,7 +28,8 @@ install_role operator "$DATA"
 
 # Остальные роли — отдельные профили: с ними говорит только наш API. Один gateway обслуживает все профили
 # на общем порту; роль доступна по адресу /p/<роль>/v1 со своим ключом.
-#   support — отвечает людям, которые пишут боту; hunter — пишет черновики ответов на вопросы в чатах.
+#   support — отвечает людям, которые пишут боту; hunter — пишет черновики ответов на вопросы в чатах;
+#   host — пишет черновики сообщений организаторам.
 install_profile() {
   home="$DATA/profiles/$1"
   [ -d "$home" ] || s6-setuidgid hermes hermes profile create "$1"
@@ -38,6 +39,8 @@ install_profile() {
 }
 install_profile support "$SUPPORT_API_KEY"
 install_profile hunter "$HUNTER_API_KEY"
+# host — пишет организаторам. Как и illustrator, без ключа не ставится.
+if [ -n "${HOST_API_KEY:-}" ]; then install_profile host "$HOST_API_KEY"; fi
 # illustrator — рисует ролики о событиях. Ключ не задан — профиль не ставим: роль необязательная,
 # из-за неё контейнер падать не должен.
 if [ -n "${ILLUSTRATOR_API_KEY:-}" ]; then install_profile illustrator "$ILLUSTRATOR_API_KEY"; fi
