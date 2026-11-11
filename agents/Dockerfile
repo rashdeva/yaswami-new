@@ -5,5 +5,6 @@ FROM nousresearch/hermes-agent:stable
 COPY operator /opt/yaswami-agents/operator
 COPY support /opt/yaswami-agents/support
 COPY hunter /opt/yaswami-agents/hunter
+COPY illustrator /opt/yaswami-agents/illustrator
 COPY --chmod=0755 init.sh /etc/cont-init.d/01-yaswami-agents
 CMD ["gateway", "run"]

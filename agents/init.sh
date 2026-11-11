@@ -38,3 +38,6 @@ install_profile() {
 }
 install_profile support "$SUPPORT_API_KEY"
 install_profile hunter "$HUNTER_API_KEY"
+# illustrator — рисует ролики о событиях. Ключ не задан — профиль не ставим: роль необязательная,
+# из-за неё контейнер падать не должен.
+if [ -n "${ILLUSTRATOR_API_KEY:-}" ]; then install_profile illustrator "$ILLUSTRATOR_API_KEY"; fi

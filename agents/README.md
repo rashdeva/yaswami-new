@@ -12,6 +12,7 @@ agents/
     skills/         скиллы роли (SKILL.md)
   support/          роль: отвечает людям, которые пишут боту «Я с вами» (профиль support)
   hunter/           роль: пишет черновики ответов на вопросы «куда сходить» в чатах (профиль hunter)
+  illustrator/      роль: рисует короткий ролик-историю о событии через Grok Imagine (профиль illustrator)
 ```
 
 ## Выкладка
@@ -37,6 +38,7 @@ railway up agents --path-as-root --service hermes
 | `API_SERVER_ENABLED`, `API_SERVER_HOST`, `API_SERVER_KEY` | HTTP-вход Hermes: `true`, `::` и ключ роли `operator`; ключ не короче 16 символов, иначе вход молча не включается |
 | `SUPPORT_API_KEY` | ключ роли `support`; тот же ключ — в `SUPPORT_KEY` сервиса `api` |
 | `HUNTER_API_KEY` | ключ роли `hunter`; тот же ключ — в `HUNTER_KEY` сервиса `api` |
+| `ILLUSTRATOR_API_KEY` | ключ роли `illustrator`; тот же ключ — в `ILLUSTRATOR_KEY` сервиса `api`. Не задан — роль не ставится |
 
 ## Вход в модель
 
@@ -51,3 +53,15 @@ railway ssh --service hermes -- hermes -p support auth add xai-oauth --no-browse
 ```
 
 Команда печатает адрес и код; код подтверждается в браузере под аккаунтом с подпиской.
+
+## Ролики (illustrator)
+
+Ролик о событии заказывает оператор инструментом `event_video_request` — когда кто-то из команды попросил об этом в командном чате. Наш API передаёт роли данные события и фото анонса (`apps/api/src/services.ts`, `requestCollectedVideo`), роль придумывает историю из пяти планов и одним вызовом `video_generate` снимает вертикальный ролик на 10 секунд, в ответ отдаёт ссылку. Ролик лежит в хранилище xAI; в событии хранится только ссылка, страница события играет его в шапке и сама пишет поверх название и время.
+
+Каждая генерация стоит 1–2 доллара, поэтому: один ролик на событие и не больше `ILLUSTRATOR_DAILY_LIMIT` (по умолчанию 3) заказов в сутки на стороне API.
+
+Чтобы включить: задать `ILLUSTRATOR_API_KEY` сервису `hermes`, `ILLUSTRATOR_URL` (`http://hermes.railway.internal:8642/p/illustrator`) и `ILLUSTRATOR_KEY` сервису `api`, войти в модель:
+
+```bash
+railway ssh --service hermes -- hermes -p illustrator auth add xai-oauth --no-browser
+```

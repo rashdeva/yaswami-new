@@ -19,7 +19,7 @@ import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
 
-import { hunter, parseSupportReply, support, verifyTicket } from './support.ts';
+import { hunter, illustrator, parseSupportReply, support, verifyTicket } from './support.ts';
 import { recordLead } from './inbox.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
@@ -715,6 +715,26 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual(await tool('covers_pending', {}), []);
   assert.equal(((await (await app.request('/collected-events')).json()) as CollectedEventItem[])[0]!.cover_url, cover);
   assert.ok(!(await toolNames(tma(71, 'Аня'))).includes('cover_set'));
+
+  // Ролик: заказ уходит роли illustrator вместе с фото анонса, ссылка сохраняется; второй раз и сверх лимита — отказ.
+  assert.deepEqual(await tool('event_video_request', { id: 'danangevent-5-0' }), { error: 'illustrator_off' });
+  settings.illustratorUrl = 'http://illustrator.test';
+  const draw = illustrator.ask;
+  let task = '';
+  illustrator.ask = async (t) => ((task = t), 'https://files-cdn.x.ai/abc/file_1.mp4');
+  assert.deepEqual(await tool('event_video_request', { id: 'danangevent-5-0' }), { started: true });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(task.includes('"title":"Баня"') && task.includes(cover), 'роль получает данные события и фото анонса');
+  assert.equal(((await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem).video_url, 'https://files-cdn.x.ai/abc/file_1.mp4');
+  assert.deepEqual(await tool('event_video_request', { id: 'danangevent-5-0' }), { error: 'video_exists' });
+  settings.illustratorDailyLimit = 1;
+  await db.insert(collectedEvents).values({
+    external_id: 'telegram:danangevent/6#0', channel: 'danangevent', starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/6' },
+    event: { title: 'Йога', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'anna', whatsapp_phone: null, url: null },
+  });
+  assert.deepEqual(await tool('event_video_request', { id: 'danangevent-6-0' }), { error: 'video_limit' });
+  illustrator.ask = draw;
+  settings.illustratorUrl = '';
 
   const read = await tool('conversation_get', { conversation_id: id });
   assert.deepEqual([read.conversation.mode, read.messages.at(-1).author], ['human', 'agent']);
