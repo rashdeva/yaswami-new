@@ -44,10 +44,30 @@ export interface MessageMeta {
 /** Лента админки: последние диалоги и последние сообщения во всех диалогах, свежие первыми. */
 export interface InboxFeed {
   me: number;
-  conversations: Conversation[];
+  conversations: InboxConversation[];
   messages: Message[];
   accounts: TgAccount[];
 }
+
+/**
+ * Диалог в админке: кто это и на каком он шаге. Шаг не хранится, а выводится из переписки и из того,
+ * вошёл ли человек в сервис, — поэтому не устаревает и не требует ручной отметки.
+ */
+export interface InboxConversation extends Conversation {
+  /** `organizer` — у человека есть профиль организатора (собран сборщиком по его анонсам). */
+  kind: 'organizer' | 'guest';
+  stage: InboxStage;
+}
+
+export const INBOX_STAGES = {
+  bot: 'Пишет боту',
+  wrote_us: 'Написал сам',
+  draft: 'Черновик ждёт',
+  contacted: 'Написали, ждём ответа',
+  replied: 'Ответил',
+  joined: 'В сервисе',
+} as const;
+export type InboxStage = keyof typeof INBOX_STAGES;
 
 /**
  * Аккаунт Telegram, с которого мы пишем людям. Вход идёт по шагам: админка записывает номер, код и пароль,
