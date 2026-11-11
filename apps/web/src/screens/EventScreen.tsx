@@ -125,14 +125,6 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
               </div>
             </>
           )}
-          <h2>Ваш ответ</h2>
-          <div className="rsvp" role="group" aria-label="Ваш ответ">
-            {ANSWERS.map(([status, label]) => (
-              <button key={status} className={status === 'approved' ? 'go' : undefined} aria-pressed={me?.approval_status === status} disabled={pending} onClick={() => void respond(status)}>
-                {label}
-              </button>
-            ))}
-          </div>
           {me?.approval_status === 'waitlist' && <p className="note">Вы в листе ожидания: напишем, когда освободится место.</p>}
         </>
       )}
@@ -157,7 +149,16 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
       </div>
 
       <div className="main"><div>
-        <button className="cta" onClick={() => shareEvent(view.event, userId, toast)}>{is_host ? 'Отправить в чат' : 'Позвать друзей'}</button>
+        {!is_host && open && (
+          <div className="rsvp bar" role="group" aria-label="Ваш ответ">
+            {ANSWERS.map(([status, label]) => (
+              <button key={status} className={status === 'approved' ? 'go' : undefined} aria-pressed={me?.approval_status === status} disabled={pending} onClick={() => void respond(status)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        <button className={is_host || !open ? 'cta' : 'cta alt'} style={{ marginTop: 0 }} onClick={() => shareEvent(view.event, userId, toast)}>Поделиться</button>
       </div></div>
     </>
   );
