@@ -2,6 +2,7 @@
 // Аккаунт — расходник: только чтение истории, никаких вступлений и отправок.
 import telegram from 'telegram';
 import sessions from 'telegram/sessions/index.js';
+import { pickThumb } from './host.mjs';
 
 export function connect({ apiId, apiHash, session = '' }) {
   return new telegram.TelegramClient(new sessions.StringSession(session), Number(apiId), apiHash, {
@@ -35,13 +36,25 @@ export const toStats = (msg) => ({
   reactions: (msg.reactions?.results ?? []).reduce((n, r) => n + r.count, 0),
 });
 
-/** Отклик на публикации `numbers` одного источника: Map номер → { views, reactions }. Удалённые публикации пропущены. */
-export async function fetchStats(client, chat, numbers) {
+const COVER_SIDE = 800; // обложку показываем на всю шапку события: превью 320 для неё мало
+const COVER_MAX_BYTES = 400_000;
+
+/** Фото публикации как обложка события: готовое превью Telegram (JPEG) или null — фото нет либо не скачалось. */
+export async function downloadCover(client, msg) {
+  const thumb = msg.media?.className === 'MessageMediaPhoto' && pickThumb(msg.media.photo?.sizes, COVER_SIDE);
+  if (!thumb) return null;
+  const data = await client.downloadMedia(msg, { thumb }).catch(() => null);
+  const isJpeg = Buffer.isBuffer(data) && data[0] === 0xff && data[1] === 0xd8;
+  return isJpeg && data.length <= COVER_MAX_BYTES ? data : null;
+}
+
+/** Публикации `numbers` одного источника: Map номер → сообщение. Удалённые публикации пропущены. */
+export async function fetchPosts(client, chat, numbers) {
   if (!client.connected) await client.connect();
   if (isPrivate(chat)) client.dialogsLoaded ??= client.getDialogs({});
   await client.dialogsLoaded;
   const messages = await client.getMessages(isPrivate(chat) ? Number(chat) : chat, { ids: numbers });
-  return new Map(messages.filter(Boolean).map((m) => [m.id, toStats(m)]));
+  return new Map(messages.filter(Boolean).map((m) => [m.id, m]));
 }
 
 // ponytail: username → (id, access_hash) кэшируется только в памяти процесса. При POLL_MINUTES=0 (cron)

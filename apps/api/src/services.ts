@@ -1,6 +1,6 @@
 // Операции над событиями. REST и MCP вызывают только эти функции — правила доступа и записи живут здесь.
 import { randomBytes } from 'node:crypto';
-import { and, asc, count, desc, eq, exists, gte, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type {
   CollectedEventItem, Contact, MyCollectedItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
@@ -106,21 +106,25 @@ export function collectedExternalId(slug: string): string {
   return `telegram:${m[1]}/${m[2]}#${m[3]}`;
 }
 
-const toCollectedItem = ({ external_id, event, announcement, claimed_event_id, views, reactions }: typeof collectedEvents.$inferSelect): CollectedEventItem => {
+type CollectedRow = typeof collectedEvents.$inferSelect & { cover_id?: string | null };
+const toCollectedItem = ({ external_id, event, announcement, claimed_event_id, views, reactions, cover_id }: CollectedRow): CollectedEventItem => {
   const { telegram_username, whatsapp_phone, url, ...shown } = event;
   const id = collectedSlug(external_id);
   return {
-    id, ...shown, claimed_event_id, views, reactions, source_url: announcement.url,
+    id, ...shown, claimed_event_id, views, reactions, cover_url: cover_id ? photoUrl(cover_id) : null, source_url: announcement.url,
     signup_url: collectedSignupUrl(event, announcement.url, settings.publicUrl + collectedPath(id)),
   };
 };
 const upcomingCollected = gte(sql`coalesce(${collectedEvents.ends_at}, ${collectedEvents.starts_at})`, sql`now()`);
+/** Собранные события вместе с id обложки. */
+const collectedWithCover = (db: Db) => db
+  .select({ ...getTableColumns(collectedEvents), cover_id: photos.id })
+  .from(collectedEvents)
+  .leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id));
 
 /** Предстоящие собранные события для витрины. Открыты всем: это пересказ публичных анонсов. */
 export async function listCollectedEvents(db: Db): Promise<CollectedEventItem[]> {
-  const rows = await db
-    .select()
-    .from(collectedEvents)
+  const rows = await collectedWithCover(db)
     .where(upcomingCollected)
     .orderBy(asc(collectedEvents.starts_at))
     .limit(500); // ponytail: без постраничной выдачи, пока событий одного города меньше лимита
@@ -128,9 +132,49 @@ export async function listCollectedEvents(db: Db): Promise<CollectedEventItem[]>
   return rows.map((r) => ({ ...toCollectedItem(r), popular: popular.has(r.external_id) }));
 }
 
+/** Предстоящие события, обложку которых иллюстратор ещё не смотрел. `photo_url` — фото анонса, если сборщик его сохранил. */
+export async function listPendingCovers(db: Db) {
+  const rows = await collectedWithCover(db).where(and(upcomingCollected, isNull(collectedEvents.cover_checked_at))).orderBy(asc(collectedEvents.starts_at)).limit(20);
+  return rows.map(({ external_id, event: { title, description, topic, tags, place }, cover_id }) => ({
+    id: collectedSlug(external_id), title, description, topic: topic ?? null, tags, place, photo_url: cover_id ? photoUrl(cover_id) : null,
+  }));
+}
+
+// Откуда иллюстратор может принести картинку: хранилище xAI, куда Grok кладёт нарисованное. Свободный адрес
+// не берём — иначе через инструмент можно заставить сервер сходить куда угодно.
+const COVER_HOSTS = new Set(['files-cdn.x.ai', 'imgen.x.ai']);
+const COVER_MAX_BYTES = 2_000_000; // нарисованная обложка 720×1280 весит 100–400 КБ
+
+/**
+ * Иллюстратор посмотрел обложку события. С `image_url` — заменить её нарисованной (скачиваем и храним у себя,
+ * ADR-0003); без него — оставить как есть (фото анонса годится).
+ */
+export async function setCollectedCover(db: Db, slug: string, imageUrl?: string): Promise<{ cover_url: string | null }> {
+  const external_id = collectedExternalId(slug);
+  let data: Buffer | null = null;
+  if (imageUrl) {
+    const url = URL.parse(imageUrl);
+    if (url?.protocol !== 'https:' || !COVER_HOSTS.has(url.hostname)) throw new AppError('bad_image_url', 400);
+    const res = await fetch(url, { signal: AbortSignal.timeout(20_000), redirect: 'error' }).catch(() => null);
+    data = res?.ok ? Buffer.from(await res.arrayBuffer()) : null;
+    const isImage = data && (data.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])) || (data[0] === 0xff && data[1] === 0xd8));
+    if (!data || !isImage || data.length > COVER_MAX_BYTES) throw new AppError('bad_image', 400);
+  }
+  return db.transaction(async (tx) => {
+    const [row] = await tx.update(collectedEvents).set({ cover_checked_at: new Date() }).where(eq(collectedEvents.external_id, external_id)).returning({ id: collectedEvents.external_id });
+    if (!row) throw new AppError('not_found', 404);
+    if (data) {
+      await tx.delete(photos).where(eq(photos.collected_external_id, external_id));
+      await tx.insert(photos).values({ collected_external_id: external_id, source: imageUrl!, data });
+    }
+    const [cover] = await tx.select({ id: photos.id }).from(photos).where(eq(photos.collected_external_id, external_id));
+    return { cover_url: cover ? photoUrl(cover.id) : null };
+  });
+}
+
 /** Одно собранное событие. Прошедшее тоже отдаём: ссылка на него могла разойтись. */
 export async function getCollectedEvent(db: Db, slug: string): Promise<CollectedEventItem> {
-  const [row] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, collectedExternalId(slug)));
+  const [row] = await collectedWithCover(db).where(eq(collectedEvents.external_id, collectedExternalId(slug)));
   if (!row) throw new AppError('not_found', 404);
   const [h] = row.telegram_username ? await db.select().from(hosts).where(eq(hosts.username, row.telegram_username)) : [];
   const shots = h

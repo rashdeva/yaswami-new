@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createExtractor, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
-import { connect, fetchChatAnnouncements, fetchStats } from './mtproto.mjs';
+import { connect, downloadCover, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { createStore } from './store.mjs';
 import { fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
@@ -59,15 +59,31 @@ async function refreshPhotos() {
   }
 }
 
-// Отклик на публикации предстоящих событий: в момент сбора публикации минуты от роду, просмотры и реакции
-// набегают потом. Один запрос на источник за проход.
-async function refreshStats() {
-  const posts = (await store.upcoming()).flatMap((r) => /^telegram:(.+)\/(\d+)#/.exec(r.external_id)?.slice(1, 3) ?? [])
-    .reduce((byChat, [chat, number]) => byChat.set(chat, (byChat.get(chat) ?? new Set()).add(Number(number))), new Map());
-  for (const [chat, numbers] of posts) {
+// Публикации предстоящих событий смотрим каждый проход, один запрос на источник. Отклик: в момент сбора публикации
+// минуты от роду, просмотры и реакции набегают потом. Обложка: фото анонса, если его ещё не сохранили.
+// ponytail: события без фото помним в памяти процесса — после перезапуска посмотрим ещё раз.
+const noCover = new Set();
+
+async function refreshPosts() {
+  const byChat = new Map();
+  for (const { external_id, has_cover } of await store.upcoming()) {
+    const [, chat, number] = /^telegram:(.+)\/(\d+)#/.exec(external_id) ?? [];
+    if (!chat) continue;
+    const posts = byChat.get(chat) ?? byChat.set(chat, new Map()).get(chat);
+    (posts.get(Number(number)) ?? posts.set(Number(number), []).get(Number(number))).push({ external_id, has_cover });
+  }
+  for (const [chat, posts] of byChat) {
     // Источник недоступен (событие прислали боту из чужого канала) — пропускаем, остальные обновляем.
-    const stats = await fetchStats(userbot, chat, [...numbers]).catch((e) => console.error(`отклик ${chat}: ${e.message}`));
-    for (const [number, s] of stats ?? []) await store.setStats(`telegram:${chat}/${number}#`, s);
+    const messages = await fetchPosts(userbot, chat, [...posts.keys()]).catch((e) => console.error(`публикации ${chat}: ${e.message}`));
+    for (const [number, msg] of messages ?? []) {
+      await store.setStats(`telegram:${chat}/${number}#`, toStats(msg));
+      const bare = posts.get(number).filter((e) => !e.has_cover && !noCover.has(e.external_id));
+      const cover = bare.length ? await downloadCover(userbot, msg) : null;
+      for (const { external_id } of bare) {
+        if (cover) await store.saveCover(external_id, `telegram:${chat}/${number}`, cover);
+        else noCover.add(external_id);
+      }
+    }
     await sleep(2000);
   }
 }
@@ -136,7 +152,7 @@ do {
     await pollChannel(channel, known).catch((e) => console.error(`${channel}: ${e.message}`));
     await sleep(2000); // не частим с запросами к Telegram
   }
-  await refreshStats().catch((e) => console.error(`отклик: ${e.message}`));
+  await refreshPosts().catch((e) => console.error(`публикации: ${e.message}`));
   await profileHosts().catch((e) => console.error(`профили: ${e.message}`));
   await refreshPhotos().catch((e) => console.error(`фото: ${e.message}`));
   if (pollMinutes) await sleep(pollMinutes * 60_000);
