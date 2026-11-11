@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import { createHmac, generateKeyPairSync, sign } from 'node:crypto';
 import { after, before, test } from 'node:test';
-import { sql } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { CollectedEventItem, EventView, Me } from '@yaswami/core';
+import type { CollectedEventItem, Contact, EventView, Me } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
 import { bot } from './telegram.ts';
@@ -13,7 +13,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { collectedEvents, hosts } from './db/schema.ts';
+import { collectedEvents, hosts, visits } from './db/schema.ts';
 import { settings } from './settings.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
@@ -513,4 +513,29 @@ test('сообщение боту: пересланный чужой анонс 
   await handleUpdate(db, async () => [extracted({ title: 'Баня по-чёрному', telegram_username: '@U66' })], forward(66, { type: 'channel', chat: { id: -1005, username: 'banya' }, message_id: 3 }));
   assert.equal(JSON.parse(sent[0]![1].public_data).l, 'Событие создано и подтверждено');
   assert.equal(((await (await call(tma(66, 'Аня'), 'GET', '/events')).json()) as unknown[]).length, 1);
+});
+
+test('заходы: пишутся с тем, кто позвал; организатор, свой и подделанный ref не считаются', async () => {
+  const host = tma(901, 'Хост');
+  const { event, ticket_types } = await newEvent(host);
+  await call(tma(902, 'Друг'), 'GET', '/events'); // тот, кто зовёт, уже есть в базе
+  const visit = (auth: string, body: object) => call(auth, 'POST', `/events/${event.id}/visit`, body);
+
+  assert.equal((await visit(tma(903, 'Гость'), { ref: 902 })).status, 204);
+  assert.equal((await visit(tma(903, 'Гость'), { ref: 903 })).status, 204); // сам себя
+  assert.equal((await visit(tma(903, 'Гость'), { ref: 999_999 })).status, 204); // такого пользователя нет
+  assert.equal((await visit(host, {})).status, 204); // организатор — не свой клиент
+  assert.equal((await visit(tma(903, 'Гость'), { ref: 'x' })).status, 400);
+  assert.equal((await call(tma(903, 'Гость'), 'POST', '/events/e_none/visit', {})).status, 404);
+
+  // контакты организатора: гость попал по заходу, счётчик растёт с ответом «пойду»; у гостя контактов нет
+  const contactsOf = async (auth: string) => ((await (await call(auth, 'GET', '/contacts')).json()) as { entries: Contact[] }).entries;
+  assert.deepEqual((await contactsOf(host)).map((c) => [c.user_id, c.first_name, c.username, c.event_approved_count]), [[903, 'Гость', 'u903', 0]]);
+  await call(tma(903, 'Гость'), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved', event_ticket_type_id: ticket_types[0]!.id });
+  await call(tma(904, 'Без захода'), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'maybe' });
+  assert.deepEqual((await contactsOf(host)).map((c) => [c.user_id, c.event_approved_count]).sort(), [[903, 1], [904, 0]]);
+  assert.deepEqual(await contactsOf(tma(903, 'Гость')), []);
+
+  const rows = await db.select().from(visits).where(eq(visits.event_id, event.id)).orderBy(asc(visits.created_at));
+  assert.deepEqual(rows.map((r) => [r.user_id, r.referrer_id]), [[903, 902], [903, null], [903, null]]);
 });

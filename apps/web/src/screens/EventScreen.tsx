@@ -4,7 +4,7 @@ import { TEMPLATES } from '@yaswami/core';
 import type { EventData } from '../api.ts';
 import { api } from '../api.ts';
 import { hue, when } from '../format.ts';
-import { haptic } from '../tg.ts';
+import { haptic, startParam, startRef } from '../tg.ts';
 import { shareEvent } from '../share.ts';
 
 const ANSWERS: [RsvpStatus, string][] = [['approved', 'Пойду'], ['maybe', 'Думаю'], ['declined', 'Не пойду']];
@@ -13,13 +13,15 @@ const GUEST_LABEL = { approved: 'пойдёт', maybe: 'думает', declined:
 interface Props {
   id: string;
   initial?: EventData;
+  /** Кто смотрит: его id уходит в ссылку «Позвать друзей». */
+  userId?: number;
   onBack: (() => void) | null;
   onKind: (kind: Event['kind']) => void;
   toast: (text: string) => void;
   onChanged: () => void;
 }
 
-export function EventScreen({ id, initial, onBack, onKind, toast, onChanged }: Props) {
+export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChanged }: Props) {
   const [view, setView] = useState<EventData | null>(initial ?? null);
   const [failed, setFailed] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -36,6 +38,9 @@ export function EventScreen({ id, initial, onBack, onKind, toast, onChanged }: P
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [load]);
+
+  // Заход фиксируем один раз на открытие; кто позвал — из ссылки, если открыли именно это событие.
+  useEffect(() => { void api.visit(id, id === startParam ? startRef : undefined).catch(() => {}); }, [id]);
 
   const kind = view?.event.kind;
   useEffect(() => { if (kind) onKind(kind); }, [kind, onKind]);
@@ -152,7 +157,7 @@ export function EventScreen({ id, initial, onBack, onKind, toast, onChanged }: P
       </div>
 
       <div className="main"><div>
-        <button className="cta" onClick={() => shareEvent(view.event, toast)}>{is_host ? 'Отправить в чат' : 'Позвать друзей'}</button>
+        <button className="cta" onClick={() => shareEvent(view.event, userId, toast)}>{is_host ? 'Отправить в чат' : 'Позвать друзей'}</button>
       </div></div>
     </>
   );

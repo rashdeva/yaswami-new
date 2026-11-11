@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, CollectedEventItem, EventCreateInput, EventListItem, EventView, Me, RsvpInput, Wire } from '@yaswami/core';
+import type { AppConfig, CollectedEventItem, EventCreateInput, EventListItem, EventView, Me, RsvpInput, VisitInput, Wire } from '@yaswami/core';
 import { inTelegram, tg } from './tg.ts';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -60,6 +60,8 @@ export const api = {
   collectedEvent: (id: string) => request<CollectedEventItem>('GET', `/collected-events/${encodeURIComponent(id)}`),
   claim: (id: string) => request<EventData>('POST', `/collected-events/${encodeURIComponent(id)}/claim`),
   signUp: (id: string) => request<CollectedEventItem>('POST', `/collected-events/${encodeURIComponent(id)}/signup`, undefined, true),
+  visitCollected: (id: string) => request<void>('POST', `/collected-events/${encodeURIComponent(id)}/visit`, {} satisfies VisitInput),
+  visit: (id: string, ref?: number) => request<void>('POST', `/events/${encodeURIComponent(id)}/visit`, { ref } satisfies VisitInput),
   events: () => request<EventListData[]>('GET', '/events'),
   event: (id: string) => request<EventData>('GET', `/events/${encodeURIComponent(id)}`),
   createEvent: (input: EventCreateInput) => request<EventData>('POST', '/events', input),

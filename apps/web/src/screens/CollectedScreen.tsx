@@ -33,6 +33,9 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
     api.collectedEvent(id).then(setEvent, (e: Error) => setFailed(e.message));
   }, [id]);
 
+  // Заход вошедшего человека: по ним организатор потом увидит свою аудиторию. Анонимных не считаем.
+  useEffect(() => { if (authed) void api.visitCollected(id).catch(() => {}); }, [id, authed]);
+
   useEffect(() => {
     if (event) document.title = `${event.title} — ${collectedWhen(event.starts_at)}, ${city}`;
   }, [event, city]);
