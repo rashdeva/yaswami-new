@@ -3,10 +3,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import * as z from 'zod';
 import type { User } from '@yaswami/core';
-import { EventCreateInput, EventUpdateInput, RsvpInput, TEMPLATES, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
+import { collectedPath, EventCreateInput, EventUpdateInput, RsvpInput, TEMPLATES, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import { conversationById, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin } from './inbox.ts';
 import * as s from './services.ts';
+import { settings } from './settings.ts';
 
 const event_id = z.string().describe('Event id, e.g. e_2a9c41b7d0');
 const event_ticket_type_id = z.string().describe('Ticket type id (uuid)');
@@ -39,6 +40,14 @@ function buildServer(db: Db, actor: User) {
         }
       }) as never,
     );
+
+  tool('catalog_events', {
+    title: 'Upcoming events in the city', readOnly: true, shape: {},
+    description: 'Public catalogue: upcoming events of the city collected from organizers\' announcements, ordered by start time. `url` is the event page where a person reads details and signs up. Use it to answer "where to go" and "what is on".',
+  }, async () => (await s.listCollectedEvents(db)).map((e) => ({
+    title: e.title, starts_at: e.starts_at, place: e.place, price: e.price, tags: e.tags, for_whom: e.for_whom ?? null,
+    url: settings.publicUrl + collectedPath(e.id),
+  })));
 
   tool('events_list', {
     title: 'List my events', readOnly: true, shape: {},

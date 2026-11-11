@@ -1,0 +1,29 @@
+# Роль support: отвечает людям, которые пишут боту «Я с вами» (docs/agents-inbox.md).
+# С ней говорят посторонние: один инструмент на чтение, памяти нет, писать она никому не может —
+# её ответ отправляет наш API (apps/api/src/support.ts).
+model:
+  default: grok-4.6
+  provider: xai-oauth # свой вход: hermes -p support auth add xai-oauth --no-browser
+  base_url: https://api.x.ai/v1
+
+platform_toolsets:
+  api_server: [mcp-yaswami, skills]
+  cli: [mcp-yaswami, skills]
+
+mcp_servers:
+  yaswami:
+    url: "__MCP_URL__"
+    headers:
+      Authorization: "Bearer __MCP_TOKEN__"
+    tools:
+      include: [catalog_events] # только публичный каталог; переписка и события команды роли не видны
+      resources: false
+      prompts: false
+
+# Встроенная память Hermes общая на профиль: сказанное одним человеком всплыло бы у другого.
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+
+skills:
+  write_approval: true
