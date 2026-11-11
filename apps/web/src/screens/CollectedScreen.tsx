@@ -3,6 +3,7 @@ import type { CollectedEventItem } from '@yaswami/core';
 import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
 import { api, loginUrl } from '../api.ts';
 import { openExternal } from '../tg.ts';
+import { collectedLink } from '../format.ts';
 import { shareLink } from '../share.ts';
 import { About } from './About.tsx';
 import { GuestRow } from './GuestRow.tsx';
@@ -117,8 +118,8 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
         takeaway={event.takeaway} guide={guide} guideNote="Гид написала редакция Ясвами — это не обещание организатора." />
       {event.hosts?.map((host) => (
         <Fragment key={host.name}>
-          <h2>Организатор</h2>
           <div className="group"><div className="pad">
+            <small className="lead">Канал организатора</small>
             <p className="who">
               {/* фото нет или скрыто настройками приватности — Telegram отвечает 404, тогда просто имя */}
               <img className="ava" src={host.photo_url} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
@@ -134,6 +135,7 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
                 ))}
               </div>
             )}
+            {host.channel_url && <button className="cta alt" onClick={() => openExternal(host.channel_url!)}>Перейти в канал</button>}
           </div></div>
         </Fragment>
       ))}
@@ -169,8 +171,7 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
             <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>
           )}
           <div className="cta-row">
-            {host?.channel_url && <button className="cta alt" onClick={() => openExternal(host.channel_url!)}>Перейти в канал</button>}
-            <button className="cta alt" onClick={() => shareLink(location.origin + collectedPath(id), `${event.title}\n${collectedWhen(event.starts_at)}, ${city}`, toast)}>Поделиться</button>
+            <button className="cta alt" onClick={() => shareLink(collectedLink(id), `${event.title}\n${collectedWhen(event.starts_at)}, ${city}`, toast)}>Поделиться</button>
           </div>
         </div></div>
       )}
