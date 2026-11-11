@@ -31,9 +31,10 @@ export function setLinkConfig(config: AppConfig) {
   link.app = config.app_name;
 }
 
-/** Ссылка, по которой событие открывается у гостя. */
-export function eventLink(id: string): string {
+/** Ссылка, по которой событие открывается у гостя. `ref` — id того, кто делится: так видно, кто кого позвал. */
+export function eventLink(id: string, ref?: number): string {
+  const start = id + (ref ? `-r${ref}` : '');
   return link.bot
-    ? `https://t.me/${link.bot}/${link.app}?startapp=${id}`
-    : `${location.origin}${location.pathname}?startapp=${id}`;
+    ? `https://t.me/${link.bot}/${link.app}?startapp=${start}`
+    : `${location.origin}${location.pathname}?startapp=${start}`;
 }

@@ -4,7 +4,7 @@ import { getCookie } from 'hono/cookie';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
-import { EventCreateInput, EventUpdateInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
+import { EventCreateInput, EventUpdateInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, VisitInput } from '@yaswami/core';
 import type { AuthMethod } from './auth.ts';
 import { authenticate, issueToken, revokeTokens } from './auth.ts';
 import type { Extract } from './bot.ts';
@@ -64,7 +64,12 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/me', async (c) => c.json(await s.me(db, c.var.actor)))
     .post('/collected-events/:id/claim', async (c) => c.json(await s.claimCollectedEvent(db, c.var.actor, c.req.param('id')), 201))
     .post('/collected-events/:id/signup', async (c) => c.json(await s.signUpForCollectedEvent(db, c.var.actor, c.req.param('id'))))
+    .post('/collected-events/:id/visit', json(VisitInput), async (c) => {
+      await s.visitCollectedEvent(db, c.var.actor, c.req.param('id'), c.req.valid('json'));
+      return c.body(null, 204);
+    })
 
+    .get('/contacts', async (c) => c.json(await s.listContacts(db, c.var.actor)))
     .get('/events', async (c) => c.json(await s.listEvents(db, c.var.actor)))
     .post('/events', json(EventCreateInput), async (c) => c.json(await s.createEvent(db, c.var.actor, c.req.valid('json')), 201))
     .get('/events/:id', async (c) => c.json(await s.getEvent(db, c.var.actor, c.req.param('id'))))
@@ -72,6 +77,10 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       c.json(await s.updateEvent(db, c.var.actor, c.req.param('id'), c.req.valid('json'))))
     .post('/events/:id/rsvp', json(RsvpInput), async (c) =>
       c.json(await s.rsvpEvent(db, c.var.actor, c.req.param('id'), c.req.valid('json'))))
+    .post('/events/:id/visit', json(VisitInput), async (c) => {
+      await s.visitEvent(db, c.var.actor, c.req.param('id'), c.req.valid('json'));
+      return c.body(null, 204);
+    })
 
     .post('/events/:id/ticket-types', json(TicketTypeCreateInput), async (c) =>
       c.json(await s.createTicketType(db, c.var.actor, c.req.param('id'), c.req.valid('json')), 201))

@@ -1,15 +1,15 @@
 // Операции над событиями. REST и MCP вызывают только эти функции — правила доступа и записи живут здесь.
 import { randomBytes } from 'node:crypto';
-import { and, asc, count, eq, exists, gte, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, gte, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type {
-  CollectedEventItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
-  TicketTypeCreateInput, TicketTypeUpdateInput, User,
+  CollectedEventItem, Contact, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
+  TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
 import { isSameEvent, mergeEvents } from '@yaswami/extract';
 import { ADDRESS_MAX, collectedPath, collectedSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError } from '@yaswami/core';
 import type { Db, Tx } from './db/client.ts';
-import { collectedEvents, collectedEventSignups, events, guests, hosts, ticketTypes, users } from './db/schema.ts';
+import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts, ticketTypes, users, visits } from './db/schema.ts';
 import { notify } from './notifications.ts';
 import { settings } from './settings.ts';
 
@@ -225,6 +225,58 @@ export async function claimCollectedEvent(db: Db, actor: User, slug: string): Pr
   });
 }
 
+/** Кто позвал: существующий пользователь, не сам зритель. Подделанный или свой `ref` молча отбрасываем. */
+async function referrerOf(db: Db, actor: User, ref: number | undefined): Promise<number | null> {
+  if (!ref || ref === actor.id) return null;
+  const [found] = await db.select({ id: users.id }).from(users).where(eq(users.id, ref));
+  return found?.id ?? null;
+}
+
+/** Человек попадает в контакты организатора. Повтор ничего не меняет; сам себе организатор не контакт. */
+const addContact = (tx: Db | Tx, hostUserId: number, userId: number) =>
+  hostUserId === userId ? null : tx.insert(contacts).values({ host_user_id: hostUserId, user_id: userId }).onConflictDoNothing();
+
+/** Контакты организатора, новые сверху — форма как у `GET /v1/calendars/contacts/list` в Luma API. */
+export async function listContacts(db: Db, actor: User): Promise<{ entries: Contact[] }> {
+  const entries = await db
+    .select({
+      id: contacts.id, user_id: contacts.user_id, created_at: contacts.created_at,
+      first_name: users.first_name, username: users.username,
+      event_approved_count: sql<number>`(select count(*)::int from ${guests} join ${events} on ${events.id} = ${guests.event_id}
+        where ${guests.user_id} = ${contacts.user_id} and ${events.user_id} = ${contacts.host_user_id} and ${guests.approval_status} = 'approved')`,
+    })
+    .from(contacts)
+    .innerJoin(users, eq(users.id, contacts.user_id))
+    .where(eq(contacts.host_user_id, actor.id))
+    .orderBy(desc(contacts.created_at))
+    .limit(1000); // ponytail: без постраничной выдачи (у Luma — pagination_cursor), пока контактов меньше лимита
+  return { entries };
+}
+
+/** Фиксирует заход на событие Ясвами. Собственные заходы организатора не считаются. */
+export async function visitEvent(db: Db, actor: User, id: string, { ref }: VisitInput): Promise<void> {
+  const event = await findEvent(db, actor, id);
+  if (event.user_id === actor.id) return;
+  await db.insert(visits).values({ user_id: actor.id, event_id: id, referrer_id: await referrerOf(db, actor, ref) });
+  await addContact(db, event.user_id, actor.id);
+}
+
+/** Фиксирует заход на собранное событие. */
+export async function visitCollectedEvent(db: Db, actor: User, slug: string, { ref }: VisitInput): Promise<void> {
+  const [row] = await db
+    .select({ external_id: collectedEvents.external_id, username: collectedEvents.telegram_username })
+    .from(collectedEvents)
+    .where(eq(collectedEvents.external_id, collectedExternalId(slug)));
+  if (!row) throw new AppError('not_found', 404);
+  // Организатор уже вошёл в Ясвами — человек сразу его контакт. Иначе остаётся только заход.
+  // ponytail: заходы до входа организатора в контакты не переносятся; при входе их можно собрать из visits.
+  const [host] = row.username
+    ? await db.select({ user_id: hosts.user_id }).from(hosts).where(and(eq(hosts.username, row.username), isNotNull(hosts.user_id)))
+    : [];
+  if (host?.user_id) await addContact(db, host.user_id, actor.id);
+  await db.insert(visits).values({ user_id: actor.id, collected_external_id: row.external_id, referrer_id: await referrerOf(db, actor, ref) });
+}
+
 export async function me(db: Db, actor: User): Promise<Me> {
   const signups = await db
     .select({ external_id: collectedEventSignups.external_id })
@@ -298,6 +350,7 @@ export async function rsvpEvent(db: Db, actor: User, id: string, input: RsvpInpu
         .values(result.guest)
         .onConflictDoUpdate({ target: [guests.event_id, guests.user_id], set: { approval_status, event_ticket_type_id, plus_ones, registered_at } });
       await bumpRev(tx, id);
+      await addContact(tx, event.user_id, actor.id);
       registered = approval_status === 'approved' && before.find((g) => g.user_id === actor.id)?.approval_status !== 'approved';
     }
     return getEvent(tx, actor, id);
