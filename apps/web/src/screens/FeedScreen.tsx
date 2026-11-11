@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
 import { collectedDay, collectedDayKey, collectedPath, collectedTime, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
 import { api } from '../api.ts';
+import { Cover } from './Cover.tsx';
 
 interface Props {
   city: string;
@@ -70,25 +71,17 @@ export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
           <h2>{collectedDay(list[0]!.starts_at)}</h2>
           <div className="covers">
             {list.map((e) => (
-              <a
+              <Cover
                 key={e.id}
-                className="cover"
                 href={collectedPath(e.id)}
-                onClick={(click) => {
-                  if (click.metaKey || click.ctrlKey || click.shiftKey) return; // новая вкладка — как обычная ссылка
-                  click.preventDefault();
-                  onOpen(e);
-                }}
-              >
-                {/* Обложки нет (в анонсе не было фото, свою ещё не нарисовали) — иконка темы на цветной плитке. */}
-                {e.cover_url ? <img className="bg" src={e.cover_url} alt="" loading="lazy" /> : <img className="ico" src={topicIcon(e.topic)} alt="" loading="lazy" />}
-                {e.popular && <span className="badge sm hot">Популярное</span>}
-                <div className="cap">
-                  <small>{[collectedTime(e.starts_at), e.price].filter(Boolean).join(' · ') || 'подробности у организатора'}</small>
-                  <b>{e.title}</b>
-                  {e.beginner_friendly && <small>можно без опыта</small>}
-                </div>
-              </a>
+                cover_url={e.cover_url}
+                icon={topicIcon(e.topic)}
+                popular={e.popular}
+                meta={[collectedTime(e.starts_at), e.price].filter(Boolean).join(' · ') || 'подробности у организатора'}
+                title={e.title}
+                extra={e.beginner_friendly ? 'можно без опыта' : undefined}
+                onOpen={() => onOpen(e)}
+              />
             ))}
           </div>
         </section>
