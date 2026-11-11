@@ -6,7 +6,7 @@ import type {
   TicketTypeCreateInput, TicketTypeUpdateInput, User,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
-import { isSameEvent } from '@yaswami/extract';
+import { isSameEvent, mergeEvents } from '@yaswami/extract';
 import { ADDRESS_MAX, collectedPath, collectedSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError } from '@yaswami/core';
 import type { Db, Tx } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, events, guests, ticketTypes, users } from './db/schema.ts';
@@ -151,6 +151,33 @@ async function insertExtractedEvent(tx: Tx, actor: User, extracted: CollectedEve
 async function assertUnderLimit(tx: Tx, actor: User) {
   const [mine] = await tx.select({ n: count() }).from(events).where(eq(events.user_id, actor.id));
   if (mine!.n >= settings.freeEventsLimit) throw new AppError('events_limit', 403);
+}
+
+/**
+ * Чужой анонс, пересланный боту, попадает на витрину как собранное событие — так же, как из каналов сборщика.
+ * Повтор уже известного события (isSameEvent) дополняет его запись, а не создаёт вторую.
+ */
+export async function addCollectedEvent(
+  db: Db, source: { channel: string; number: number; url: string }, index: number, extracted: CollectedEvent,
+): Promise<CollectedEventItem> {
+  return db.transaction(async (tx) => {
+    const known = await tx.select().from(collectedEvents).where(upcomingCollected).for('update');
+    const same = known.find((r) => isSameEvent(r.event, extracted));
+    const event = same ? mergeEvents(same.event, extracted) : extracted;
+    const values = {
+      event, starts_at: new Date(event.starts_at), ends_at: event.ends_at ? new Date(event.ends_at) : null,
+      telegram_username: event.telegram_username?.replace(/^@/, '').toLowerCase() ?? null, updated_at: new Date(),
+    };
+    const [row] = await tx
+      .insert(collectedEvents)
+      .values({
+        ...values, channel: source.channel, announcement: { url: source.url }, signup_url: source.url,
+        external_id: same?.external_id ?? `telegram:${source.channel}/${source.number}#${index}`,
+      })
+      .onConflictDoUpdate({ target: collectedEvents.external_id, set: values })
+      .returning();
+    return toCollectedItem(row!);
+  });
 }
 
 /**

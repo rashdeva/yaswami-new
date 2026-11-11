@@ -1,7 +1,8 @@
 // Уведомления бота: момент → шаблон → виджет. Новый момент — это новая запись в `templates`; отправка (`notify`)
 // про моменты ничего не знает.
 import { readFileSync } from 'node:fs';
-import type { Event, User } from '@yaswami/core';
+import type { CollectedEventItem, Event, User } from '@yaswami/core';
+import { ADDRESS_MAX, collectedPath, collectedWhen, NAME_MAX } from '@yaswami/core';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 
@@ -41,6 +42,15 @@ export const templates = {
     emoji: '✨', colors: ['#16a34a', '#0d9488'], label: 'Событие создано и подтверждено', title: event.name,
     rows: eventRows(event), buttons: [open(event)],
   }),
+  /** Приславшему чужой анонс: событие добавлено на витрину как собранное, организатора у него пока нет. */
+  event_collected: ({ item }: { item: CollectedEventItem }): Card => {
+    const where = [item.place, item.address].filter(Boolean).join(', ');
+    return {
+      emoji: '📌', colors: ['#2563eb', '#0891b2'], label: 'Добавлено на витрину', title: cut(item.title, NAME_MAX),
+      rows: [['🗓', collectedWhen(item.starts_at)], ...(where ? [['📍', cut(where, ADDRESS_MAX)] as [string, string]] : [])],
+      buttons: [{ text: 'Открыть на сайте', url: settings.publicUrl + collectedPath(item.id) }],
+    };
+  },
   /** Организатору: на событие записался гость. `going` — сколько мест уже занято. */
   guest_registered: ({ event, guest, going }: { event: Event; guest: Pick<User, 'first_name' | 'username'>; going: number }): Card => {
     const name = cut(guest.first_name, GUEST_NAME_MAX);

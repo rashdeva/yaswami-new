@@ -348,8 +348,10 @@ test('вебхук бота: без секрета закрыт, с чужим �
 test('сообщение боту: анонс становится событием отправителя, ответ — виджет', async () => {
   sent.length = 0;
   const seen: unknown[] = [];
-  await handleUpdate(db, async (a) => (seen.push(a), [extracted()]), botMessage(60, ANNOUNCEMENT, { forward_origin: { type: 'channel', date: 1794000000 } }));
-  assert.deepEqual(seen, [{ id: 'bot/60/1', text: ANNOUNCEMENT, published_at: new Date(1794000000 * 1000).toISOString(), author_username: null }]);
+  // Переслал своё же сообщение — это по-прежнему его анонс; дата публикации берётся от исходного.
+  const self = { type: 'user', date: 1794000000, sender_user: { id: 60, username: 'u60' } };
+  await handleUpdate(db, async (a) => (seen.push(a), [extracted()]), botMessage(60, ANNOUNCEMENT, { forward_origin: self }));
+  assert.deepEqual(seen, [{ id: 'bot/60/1', text: ANNOUNCEMENT, published_at: new Date(1794000000 * 1000).toISOString(), author_username: 'u60' }]);
 
   const mine = (await (await call(tma(60, 'Аня'), 'GET', '/events')).json()) as { event: EventView['event']; is_host: boolean }[];
   assert.deepEqual(mine.map((e) => [e.event.name, e.event.status, e.is_host, e.event.geo_address_json]), [['Йога на пляже', 'published', true, { address: 'Пляж Микхе' }]]);
@@ -442,4 +444,36 @@ test('RSVP: уведомления гостю и организатору; сб�
     bot.call = stub;
     console.error = error;
   }
+});
+
+test('сообщение боту: пересланный чужой анонс — собранное событие на витрине, не событие отправителя', async () => {
+  const forward = (id: number, origin: object) => botMessage(id, ANNOUNCEMENT, { forward_origin: { date: 1794000000, ...origin } });
+  const channel = { type: 'channel', chat: { id: -1001234567890, username: 'DanangEvent' }, message_id: 777 };
+  const e = extracted({ title: 'Экстатик дэнс у моря', telegram_username: 'dj_kolya', price: null });
+  const item = async (slug: string) => (await (await app.request(`/collected-events/${slug}`)).json()) as CollectedEventItem;
+
+  sent.length = 0;
+  await handleUpdate(db, async () => [e], forward(64, channel));
+  // Ключ и адрес — как у сборщика: когда он дойдёт до этой публикации, второй записи не появится.
+  const added = await item('danangevent-777-0');
+  assert.deepEqual([added.title, added.source_url, added.claimed_event_id], ['Экстатик дэнс у моря', 'https://t.me/DanangEvent/777', null]);
+  assert.deepEqual(await (await call(tma(64, 'Аня'), 'GET', '/events')).json(), [], 'событие Ясвами не создано, лимит не тронут');
+  assert.deepEqual(sent.map(([m, b]) => [m, b.chat_id, JSON.parse(b.public_data).l]), [['sendWidget', 64, 'Добавлено на витрину']]);
+  assert.ok(sent[0]![1].reply_markup.inline_keyboard[0][0].url.endsWith('/e/danangevent-777-0'));
+
+  // Тот же анонс от другого человека и из лички: запись дополняется, а не дублируется.
+  const before = ((await (await app.request('/collected-events')).json()) as unknown[]).length;
+  await handleUpdate(db, async () => [{ ...e, price: '200k' }], forward(65, { type: 'user', sender_user: { id: 99, username: 'dj_kolya' } }));
+  assert.equal(((await (await app.request('/collected-events')).json()) as unknown[]).length, before);
+  assert.equal((await item('danangevent-777-0')).price, '200k');
+
+  // Переслано от человека, события ещё нет: источник — его профиль.
+  await handleUpdate(db, async () => [extracted({ title: 'Нетворкинг фаундеров' })], forward(65, { type: 'user', sender_user: { id: 99, username: 'dj_kolya' } }));
+  assert.equal((await item('bot65-1-0')).source_url, 'https://t.me/dj_kolya');
+
+  // Контактом в пересланном анонсе указан сам отправитель — это его событие.
+  sent.length = 0;
+  await handleUpdate(db, async () => [extracted({ title: 'Баня по-чёрному', telegram_username: '@U66' })], forward(66, { type: 'channel', chat: { id: -1005, username: 'banya' }, message_id: 3 }));
+  assert.equal(JSON.parse(sent[0]![1].public_data).l, 'Событие создано и подтверждено');
+  assert.equal(((await (await call(tma(66, 'Аня'), 'GET', '/events')).json()) as unknown[]).length, 1);
 });

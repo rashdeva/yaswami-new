@@ -1,13 +1,15 @@
 // Сообщение боту → событие. Человек пишет анонс или пересылает публикацию; бот разбирает её тем же механизмом,
-// что и сборщик каналов (@yaswami/extract), создаёт событие на отправителя и отвечает виджетом.
+// что и сборщик каналов (@yaswami/extract), и отвечает виджетом. Свой анонс становится событием отправителя,
+// пересланный чужой — собранным событием на витрине, без хозяина.
 import type { CollectedEvent } from '@yaswami/core';
 import type { Announcement } from '@yaswami/extract';
 import { looksLikeEvent } from '@yaswami/extract';
 import { upsertUser } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { notify } from './notifications.ts';
-import { AppError, createEventFromAnnouncement } from './services.ts';
+import { addCollectedEvent, AppError, createEventFromAnnouncement } from './services.ts';
 import { settings } from './settings.ts';
+import type { Incoming } from './telegram.ts';
 import { bot, parseIncoming } from './telegram.ts';
 
 export type Extract = (announcement: Announcement) => Promise<CollectedEvent[]>;
@@ -21,6 +23,15 @@ export const REPLIES = {
   limit: (left: number) =>
     `Бесплатно можно создать ${settings.freeEventsLimit} событий, лимит исчерпан.${left > 1 ? ` Не добавлено событий: ${left}.` : ''}`,
 };
+
+/** Источник пересланного анонса. У публикации канала ключ и адрес те же, что даёт ей сборщик: дубля не будет. */
+function sourceOf(m: Incoming) {
+  const c = m.origin?.channel;
+  if (c?.username) return { channel: c.username.toLowerCase(), number: c.number, url: `https://t.me/${c.username}/${c.number}` };
+  if (c) return { channel: String(c.id), number: c.number, url: `https://t.me/c/${String(c.id).replace(/^-100/, '')}/${c.number}` };
+  // Переслано от человека или из группы: адреса у публикации нет, источником указываем автора.
+  return { channel: `bot${m.chatId}`, number: m.messageId, url: m.origin?.username ? `https://t.me/${m.origin.username}` : settings.publicUrl };
+}
 
 /** Обрабатывает одно обновление вебхука. `extract` нет — на сервере не задан GEMINI_API_KEY. */
 export async function handleUpdate(db: Db, extract: Extract | undefined, update: unknown): Promise<void> {
@@ -44,10 +55,18 @@ export async function handleUpdate(db: Db, extract: Extract | undefined, update:
   const upcoming = dated.filter((e) => Date.parse(e.ends_at ?? e.starts_at) >= Date.now());
   if (!upcoming.length) return say(REPLIES.past);
 
-  // Отправитель — организатор. В публикации с расписанием каждое событие создаётся отдельно, пока хватает лимита.
+  // Своё — то, что человек написал сам, переслал от себя же, или где контактом для записи указан он
+  // (то же правило, что при подтверждении собранного события). Остальное пересланное — чужое.
   const actor = await upsertUser(db, m.from);
+  const own = !m.origin || m.origin.userId === actor.id;
+  const isContact = (e: CollectedEvent) => !!actor.username && e.telegram_username?.replace(/^@/, '').toLowerCase() === actor.username.toLowerCase();
+  // В публикации с расписанием каждое событие создаётся отдельно; свои — пока хватает лимита.
   for (const [i, extracted] of upcoming.entries()) {
     try {
+      if (!own && !isContact(extracted)) {
+        await notify(m.chatId, 'event_collected', { item: await addCollectedEvent(db, sourceOf(m), i, extracted) });
+        continue;
+      }
       const { event } = await createEventFromAnnouncement(db, actor, extracted);
       await notify(m.chatId, 'event_created', { event });
     } catch (e) {

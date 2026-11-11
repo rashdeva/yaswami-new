@@ -34,7 +34,8 @@ export interface Incoming {
   text: string; // текст сообщения или подпись к фото; пусто, если текста нет
   publishedAt: string; // у пересланного — дата исходной публикации: от неё считаются «завтра» и «в субботу»
   authorUsername: string | null; // у пересланного из канала — null: канал не контакт для записи
-  forwarded: boolean;
+  /** Откуда переслано; null — человек написал сам. `channel` — публикация канала, у неё есть адрес. */
+  origin: { userId?: number; username?: string; channel?: { id: number; username?: string; number: number } } | null;
 }
 
 interface TgMessage {
@@ -44,7 +45,10 @@ interface TgMessage {
   from?: TelegramUser & { is_bot?: boolean };
   text?: string;
   caption?: string;
-  forward_origin?: { type: string; date: number; sender_user?: { username?: string } };
+  forward_origin?: {
+    type: string; date: number; sender_user?: { id: number; username?: string };
+    chat?: { id: number; username?: string }; message_id?: number;
+  };
 }
 
 /** null — обновление не про сообщение человека в личном чате с ботом. */
@@ -59,6 +63,14 @@ export function parseIncoming(update: unknown): Incoming | null {
     text: (m.text ?? m.caption ?? '').trim(),
     publishedAt: new Date((origin?.date ?? m.date) * 1000).toISOString(),
     authorUsername: (origin ? origin.sender_user?.username : m.from.username) ?? null,
-    forwarded: !!origin,
+    origin: origin
+      ? {
+          userId: origin.sender_user?.id,
+          username: origin.sender_user?.username,
+          channel: origin.type === 'channel' && origin.chat && origin.message_id
+            ? { id: origin.chat.id, username: origin.chat.username, number: origin.message_id }
+            : undefined,
+        }
+      : null,
   };
 }

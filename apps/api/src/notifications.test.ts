@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { deflateSync } from 'node:zlib';
-import type { Event } from '@yaswami/core';
+import type { CollectedEventItem, Event } from '@yaswami/core';
 import { ADDRESS_MAX, NAME_MAX } from '@yaswami/core';
 import type { Card } from './notifications.ts';
 import { notify, templates, toWidget, widgetHtml } from './notifications.ts';
@@ -17,21 +17,26 @@ const event: Event = {
   geo_address_json: { address: 'Пляж Микхе' }, meeting_url: null, max_capacity: 10, allow_plus_one: false,
   status: 'published', widget_id: null, rev: 0, created_at: new Date(),
 };
+const item: CollectedEventItem = {
+  id: 'danangevent-7-0', title: 'Йога на пляже', description: '', starts_at: '2026-11-14T19:00:00+07:00', ends_at: null, place: null,
+  address: null, price: null, tags: [], claimed_event_id: null, source_url: 'https://t.me/danangevent/7', signup_url: 'https://t.me/danangevent/7',
+};
 const from = { id: 5, first_name: 'Аня', username: 'anna_yoga', language_code: 'ru' };
 const message = (extra: object) => ({ update_id: 1, message: { message_id: 9, date: 1794366000, chat: { id: 5, type: 'private' }, from, ...extra } });
 
 test('входящее сообщение: текст, подпись к фото, пересланная публикация', () => {
   assert.deepEqual(parseIncoming(message({ text: ' Йога завтра ' })), {
-    chatId: 5, messageId: 9, from, text: 'Йога завтра', publishedAt: new Date(1794366000 * 1000).toISOString(), authorUsername: 'anna_yoga', forwarded: false,
+    chatId: 5, messageId: 9, from, text: 'Йога завтра', publishedAt: new Date(1794366000 * 1000).toISOString(), authorUsername: 'anna_yoga', origin: null,
   });
   assert.equal(parseIncoming(message({ photo: [{}], caption: 'Афиша' }))?.text, 'Афиша');
   assert.equal(parseIncoming(message({ photo: [{}] }))?.text, '', 'фото без подписи');
 
   // Пересланное: дата и автор — от исходной публикации; канал автором не считается.
   const channel = parseIncoming(message({ text: 'x', forward_origin: { type: 'channel', date: 1794000000, chat: { username: 'danangevent' }, message_id: 7 } }))!;
-  assert.deepEqual([channel.forwarded, channel.publishedAt, channel.authorUsername], [true, new Date(1794000000 * 1000).toISOString(), null]);
+  assert.deepEqual([channel.publishedAt, channel.authorUsername], [new Date(1794000000 * 1000).toISOString(), null]);
+  assert.deepEqual(channel.origin?.channel, { id: undefined, username: 'danangevent', number: 7 });
   const user = parseIncoming(message({ text: 'x', forward_origin: { type: 'user', date: 1794000000, sender_user: { id: 8, username: 'igor' } } }))!;
-  assert.equal(user.authorUsername, 'igor');
+  assert.deepEqual([user.authorUsername, user.origin], ['igor', { userId: 8, username: 'igor', channel: undefined }]);
 
   assert.equal(parseIncoming(message({ text: 'x', chat: { id: -100, type: 'supergroup' } })), null, 'группа');
   assert.equal(parseIncoming(message({ text: 'x', from: { ...from, is_bot: true } })), null, 'бот');
@@ -56,6 +61,11 @@ test('шаблоны: у каждого момента своя карточка
   const anon = templates.guest_registered({ event: { ...event, max_capacity: null }, guest: { first_name: 'Нино', username: null }, going: 1 });
   assert.deepEqual([anon.buttons, anon.rows.at(-1)], [[link], ['👥', 'Записано: 1']]);
 
+  const collected = templates.event_collected({ item: { ...item, place: 'Пляж Микхе', address: 'ул. Во Нгуен Зяп' } });
+  assert.equal(collected.label, 'Добавлено на витрину');
+  assert.deepEqual(collected.rows, [['🗓', 'сб, 14 ноября, 19:00'], ['📍', 'Пляж Микхе, ул. Во Нгуен Зяп']]);
+  assert.ok(collected.buttons[0]!.url.endsWith('/e/danangevent-7-0'));
+
   const confirmed = templates.rsvp_confirmed({ event: { ...event, start_at: new Date('2026-11-14T00:00:00+07:00'), geo_address_json: null } });
   assert.equal(confirmed.label, 'Вы записаны');
   assert.deepEqual(confirmed.rows, [['🗓', 'сб, 14 ноября']], 'время не указано — только день');
@@ -73,6 +83,7 @@ test('размер: код виджета ≤ 4096 байт после сжат�
   const big: Event = { ...event, name: 'Щ'.repeat(NAME_MAX), geo_address_json: { address: 'Щ'.repeat(ADDRESS_MAX) }, max_capacity: 100000 };
   const cards: Record<keyof typeof templates, Card> = {
     event_created: templates.event_created({ event: big }),
+    event_collected: templates.event_collected({ item: { ...item, id: 'x'.repeat(32) + '-1234567890-12', title: 'Щ'.repeat(500), place: 'Щ'.repeat(500) } }),
     guest_registered: templates.guest_registered({ event: big, guest: { first_name: '👩‍👩‍👧'.repeat(64), username: 'b'.repeat(32) }, going: 100000 }),
     rsvp_confirmed: templates.rsvp_confirmed({ event: big }),
   };
