@@ -19,6 +19,7 @@ export const REPLIES = {
   no_date: 'Не вижу здесь события: нет даты или сообщение слишком короткое. Пришлите анонс целиком — что будет, когда и где.',
   not_event: 'Это не похоже на анонс события с датой. Пришлите анонс целиком — что будет, когда и где.',
   past: 'Похоже, это событие уже прошло. Пришлите анонс предстоящего события.',
+  too_often: 'Слишком много сообщений подряд. Подождите минуту и пришлите анонс ещё раз.',
   unavailable: 'Сейчас не получилось разобрать сообщение. Попробуйте ещё раз через минуту.',
   limit: (left: number) =>
     `Бесплатно можно создать ${settings.freeEventsLimit} событий, лимит исчерпан.${left > 1 ? ` Не добавлено событий: ${left}.` : ''}`,
@@ -33,15 +34,27 @@ function sourceOf(m: Incoming) {
   return { channel: `bot${m.chatId}`, number: m.messageId, url: m.origin?.username ? `https://t.me/${m.origin.username}` : settings.publicUrl };
 }
 
+// Разбор стоит запроса к ИИ, а их немного и они общие со сборщиком: один человек не должен выбрать все.
+// ponytail: счётчик в памяти процесса; второй экземпляр API — считать в базе.
+const recent = new Map<number, number[]>();
+function tooOften(userId: number): boolean {
+  const times = (recent.get(userId) ?? []).filter((t) => Date.now() - t < 60_000);
+  if (times.length >= settings.botMessagesPerMinute) return true;
+  if (recent.size > 10_000) recent.clear();
+  recent.set(userId, [...times, Date.now()]);
+  return false;
+}
+
 /** Обрабатывает одно обновление вебхука. `extract` нет — на сервере не задан GEMINI_API_KEY. */
 export async function handleUpdate(db: Db, extract: Extract | undefined, update: unknown): Promise<void> {
   const m = parseIncoming(update);
   if (!m) return;
-  const say = async (text: string) => void (await bot.call('sendMessage', { chat_id: m.chatId, text }));
+  const say = async (text: string) => void (await bot.send('sendMessage', { chat_id: m.chatId, text }));
   if (!m.text || m.text.startsWith('/')) return say(REPLIES.help);
   // Тот же дешёвый отсев, что у сборщика: без признака даты события нет, ИИ не тратим.
   if (!looksLikeEvent(m.text)) return say(REPLIES.no_date);
   if (!extract) return say(REPLIES.unavailable);
+  if (tooOften(m.from.id)) return say(REPLIES.too_often);
 
   let found: CollectedEvent[];
   try {
