@@ -1,0 +1,9 @@
+**/node_modules
+.git
+.claude
+.env
+docs
+prototypes
+scripts
+*.png
+**/*.test.ts

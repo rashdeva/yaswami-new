@@ -16,3 +16,7 @@ Icon
 .Trashes
 .VolumeIcon.icns
 .com.apple.timemachine.donotpresent
+
+### Project
+.env
+node_modules/
