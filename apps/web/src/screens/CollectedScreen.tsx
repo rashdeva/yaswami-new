@@ -1,3 +1,4 @@
+import { Drawer } from 'vaul';
 import { useEffect, useRef, useState } from 'react';
 import type { CollectedEventItem, CollectedHost } from '@yaswami/core';
 import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
@@ -157,29 +158,35 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
           </div>
         </div></div>
       )}
-      {hostOpen && (
-        <div className="sheet" onClick={() => setHostOpen(null)}>
-          <div role="dialog" aria-label="Организатор" onClick={(e) => e.stopPropagation()}>
-            <small className="lead">Канал организатора</small>
-            <p className="who">
-              {/* фото нет или скрыто настройками приватности — Telegram отвечает 404, тогда просто имя */}
-              <img className="ava" src={hostOpen.photo_url} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-              {hostOpen.name}
-            </p>
-            {hostOpen.summary && <p>{hostOpen.summary}</p>}
-            {hostOpen.photos.length > 0 && (
-              <div className="shots">
-                {hostOpen.photos.map((p) => (
-                  <a key={p.url} href={p.source_url} target="_blank" rel="noreferrer" aria-label="Публикация в канале организатора">
-                    <img src={p.url} alt="" loading="lazy" onError={(e) => { e.currentTarget.parentElement!.hidden = true; }} />
-                  </a>
-                ))}
-              </div>
+      <Drawer.Root open={!!hostOpen} onOpenChange={(o) => { if (!o) setHostOpen(null); }}>
+        <Drawer.Portal>
+          <Drawer.Overlay className="drawer-overlay" />
+          <Drawer.Content className="drawer" aria-describedby={undefined}>
+            <Drawer.Handle className="drawer-handle" />
+            <Drawer.Title className="lead">Канал организатора</Drawer.Title>
+            {hostOpen && (
+              <>
+                <p className="who">
+                  {/* фото нет или скрыто настройками приватности — Telegram отвечает 404, тогда просто имя */}
+                  <img className="ava" src={hostOpen.photo_url} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  {hostOpen.name}
+                </p>
+                {hostOpen.summary && <p>{hostOpen.summary}</p>}
+                {hostOpen.photos.length > 0 && (
+                  <div className="shots" data-vaul-no-drag>
+                    {hostOpen.photos.map((p) => (
+                      <a key={p.url} href={p.source_url} target="_blank" rel="noreferrer" aria-label="Публикация в канале организатора">
+                        <img src={p.url} alt="" loading="lazy" onError={(e) => { e.currentTarget.parentElement!.hidden = true; }} />
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {hostOpen.channel_url && <button className="cta alt" onClick={() => openExternal(hostOpen.channel_url!)}>Перейти в канал</button>}
+              </>
             )}
-            {hostOpen.channel_url && <button className="cta alt" onClick={() => openExternal(hostOpen.channel_url!)}>Перейти в канал</button>}
-          </div>
-        </div>
-      )}
+          </Drawer.Content>
+        </Drawer.Portal>
+      </Drawer.Root>
     </>
   );
 }
