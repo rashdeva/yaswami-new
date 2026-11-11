@@ -17,12 +17,16 @@ const timeZone = z.string().refine(isTimeZone, 'unknown time zone').describe('IA
 
 const eventFields = EventSchema.pick({
   kind: true, name: true, description: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true,
+  topic: true, what_happens: true, for_whom: true, beginner_friendly: true, takeaway: true, guide: true,
 }).extend({ start_at: dateTime, end_at: dateTime.nullable(), timezone: timeZone });
 
 const ticketTypeFields = TicketTypeSchema.omit({ id: true, event_id: true });
 
 export const EventCreateInput = eventFields
-  .partial({ description: true, end_at: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true })
+  .partial({
+    description: true, end_at: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true,
+    topic: true, what_happens: true, for_whom: true, beginner_friendly: true, takeaway: true, guide: true,
+  })
   .extend({
     status: z.enum(['draft', 'published']).optional(),
     // Типы билетов сразу при создании (порядок = position). Без них — один «Стандартный» без цены.

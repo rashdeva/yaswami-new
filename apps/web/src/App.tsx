@@ -9,6 +9,8 @@ import { CollectedScreen } from './screens/CollectedScreen.tsx';
 import { CreateScreen } from './screens/CreateScreen.tsx';
 import { EventScreen } from './screens/EventScreen.tsx';
 import { FeedScreen } from './screens/FeedScreen.tsx';
+import type { EditSection } from './screens/EditScreen.tsx';
+import { EditScreen } from './screens/EditScreen.tsx';
 import { ListScreen } from './screens/ListScreen.tsx';
 import { Tabs } from './screens/Tabs.tsx';
 import { haptic, nativeBack, startParam, tg } from './tg.ts';
@@ -19,8 +21,9 @@ type Screen =
   | { name: 'collected'; id: string; initial?: CollectedEventItem }
   | { name: 'list' }
   | { name: 'create' }
-  | { name: 'event'; id: string; initial?: EventData };
-const isPrivate = (s: Screen | null) => s?.name === 'list' || s?.name === 'create' || s?.name === 'event';
+  | { name: 'event'; id: string; initial?: EventData }
+  | { name: 'edit'; id: string; section?: EditSection; initial?: EventData };
+const isPrivate = (s: Screen | null) => s?.name === 'list' || s?.name === 'create' || s?.name === 'event' || s?.name === 'edit';
 
 // Данные, с которыми сервер отдал страницу (apps/api/src/pages.ts): первый показ обходится без запроса.
 const served = (() => {
@@ -116,6 +119,8 @@ export function App() {
   const fromCreate = useCallback(() => go({ name: hasEvents ? 'list' : 'feed' }), [go, hasEvents]);
   const back = screen?.name === 'collected'
       ? () => go({ name: 'feed' })
+      : screen?.name === 'edit'
+        ? () => go(screen.section ? { name: 'edit', id: screen.id, initial: screen.initial } : { name: 'event', id: screen.id, initial: screen.initial })
       : screen?.name === 'event'
         ? () => go({ name: 'list' })
         : screen?.name === 'create'
@@ -235,6 +240,23 @@ export function App() {
         }}
       />
     );
+  } else if (screen.name === 'edit') {
+    content = (
+      <EditScreen
+        key={screen.id}
+        id={screen.id}
+        initial={screen.initial}
+        section={screen.section}
+        onSection={(section) => go({ name: 'edit', id: screen.id, section, initial: screen.initial })}
+        onBack={nativeBack ? null : () => go(screen.section ? { name: 'edit', id: screen.id, initial: screen.initial } : { name: 'event', id: screen.id, initial: screen.initial })}
+        onKind={setKind}
+        toast={showToast}
+        onSaved={(view) => {
+          go({ name: 'edit', id: screen.id, initial: view });
+          void loadEvents().catch(() => {});
+        }}
+      />
+    );
   } else {
     content = (
       <EventScreen
@@ -246,6 +268,7 @@ export function App() {
         onKind={setKind}
         toast={showToast}
         onChanged={() => void loadEvents().catch(() => {})}
+        onEdit={(view) => go({ name: 'edit', id: screen.id, initial: view })}
       />
     );
   }

@@ -38,3 +38,17 @@ export function eventLink(id: string, ref?: number): string {
     ? `https://t.me/${link.bot}/${link.app}?startapp=${start}`
     : `${location.origin}${location.pathname}?startapp=${start}`;
 }
+
+/** Дата и время начала так, как они на стене в часовом поясе события: ['2026-11-20', '19:30']. */
+export function wallParts(iso: string, timeZone: string): [string, string] {
+  const [date, time] = new Date(iso).toLocaleString('sv-SE', { timeZone, hour12: false }).split(' ');
+  return [date!, time!.slice(0, 5)];
+}
+
+/** Обратное: дата и время на стене часового пояса → момент (ISO). */
+export function fromWall(date: string, time: string, timeZone: string): string {
+  const guess = Date.parse(`${date}T${time}:00Z`);
+  const [d, t] = wallParts(new Date(guess).toISOString(), timeZone);
+  // ponytail: поправка по смещению в момент guess; в сам час перевода часов может промахнуться на час
+  return new Date(guess - (Date.parse(`${d}T${t}:00Z`) - guess)).toISOString();
+}

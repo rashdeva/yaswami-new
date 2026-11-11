@@ -6,6 +6,7 @@ import { api } from '../api.ts';
 import { hue, when } from '../format.ts';
 import { haptic, startParam, startRef } from '../tg.ts';
 import { shareEvent } from '../share.ts';
+import { About } from './About.tsx';
 import { GuestRow } from './GuestRow.tsx';
 
 const ANSWERS: [RsvpStatus, string][] = [['approved', 'Пойду'], ['maybe', 'Думаю'], ['declined', 'Не пойду']];
@@ -20,9 +21,11 @@ interface Props {
   onKind: (kind: Event['kind']) => void;
   toast: (text: string) => void;
   onChanged: () => void;
+  /** Организатору: открыть экран «Редактировать». */
+  onEdit: (view: EventData) => void;
 }
 
-export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChanged }: Props) {
+export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChanged, onEdit }: Props) {
   const [view, setView] = useState<EventData | null>(initial ?? null);
   const [failed, setFailed] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -106,6 +109,9 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
       </div></div>
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
 
+      <About topic={event.topic} what_happens={event.what_happens} for_whom={event.for_whom} beginner_friendly={event.beginner_friendly}
+        takeaway={event.takeaway} guide={event.guide} />
+
       {!is_host && open && (
         <>
           {types.length > 1 && (
@@ -158,7 +164,14 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
             ))}
           </div>
         )}
-        <button className={is_host || !open ? 'cta' : 'cta alt'} onClick={() => shareEvent(view.event, userId, toast)}>Поделиться</button>
+        {is_host ? (
+          <div className="cta-row">
+            <button className="cta alt" onClick={() => onEdit(view)}>Редактировать</button>
+            <button className="cta" onClick={() => shareEvent(view.event, userId, toast)}>Поделиться</button>
+          </div>
+        ) : (
+          <button className={open ? 'cta alt' : 'cta'} onClick={() => shareEvent(view.event, userId, toast)}>Поделиться</button>
+        )}
       </div></div>
     </>
   );
