@@ -9,7 +9,8 @@ import type { CollectedEvent } from '@yaswami/core';
 import { isSameEvent, mergeEvents } from '@yaswami/extract';
 import { ADDRESS_MAX, collectedPath, collectedSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError } from '@yaswami/core';
 import type { Db, Tx } from './db/client.ts';
-import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts, ticketTypes, users, visits } from './db/schema.ts';
+import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, ticketTypes, users, visits } from './db/schema.ts';
+import { photoUrl } from './photos.ts';
 import { guestRegistered } from './rsvp-notices.ts';
 import { settings } from './settings.ts';
 
@@ -25,6 +26,7 @@ export class AppError extends Error {
 }
 
 const DEFAULT_TICKET_NAME = 'Стандартный';
+const HOST_PHOTOS = 6; // сколько фото сообщества показываем у организатора; столько же хранит сборщик
 const newEventId = () => 'e_' + randomBytes(5).toString('hex');
 const bumpRev = (tx: Tx, id: string) => tx.update(events).set({ rev: sql`${events.rev} + 1` }).where(eq(events.id, id));
 
@@ -49,9 +51,10 @@ export async function getEvent(db: Db | Tx, actor: User, id: string): Promise<Ev
   const event = await findEvent(db, actor, id);
   const types = await typesOf(db, id);
   const rows = await db
-    .select({ guest: guests, user_first_name: users.first_name })
+    .select({ guest: guests, user_first_name: users.first_name, photo_id: photos.id })
     .from(guests)
     .innerJoin(users, eq(users.id, guests.user_id))
+    .leftJoin(photos, eq(photos.user_id, guests.user_id))
     .where(eq(guests.event_id, id))
     .orderBy(asc(guests.registered_at));
 
@@ -63,8 +66,8 @@ export async function getEvent(db: Db | Tx, actor: User, id: string): Promise<Ev
     ticket_types: types.filter((t) => is_host || !t.is_hidden || t.id === me?.event_ticket_type_id),
     guests: rows
       .filter((r) => is_host || r.guest.approval_status !== 'declined')
-      .map(({ guest: g, user_first_name }) => ({
-        user_first_name, approval_status: g.approval_status, event_ticket_type_id: g.event_ticket_type_id,
+      .map(({ guest: g, user_first_name, photo_id }) => ({
+        user_first_name, user_photo_url: photo_id && photoUrl(photo_id), approval_status: g.approval_status, event_ticket_type_id: g.event_ticket_type_id,
         plus_ones: g.plus_ones, is_me: g.user_id === actor.id,
       })),
     guest_counts: {
@@ -123,10 +126,14 @@ export async function getCollectedEvent(db: Db, slug: string): Promise<Collected
   const [row] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, collectedExternalId(slug)));
   if (!row) throw new AppError('not_found', 404);
   const [h] = row.telegram_username ? await db.select().from(hosts).where(eq(hosts.username, row.telegram_username)) : [];
+  const shots = h
+    ? await db.select({ id: photos.id }).from(photos).where(eq(photos.host_id, h.id)).orderBy(desc(photos.created_at)).limit(HOST_PHOTOS)
+    : [];
   return {
     ...toCollectedItem(row),
     hosts: h
-      ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`, confirmed: h.user_id !== null }]
+      ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`, confirmed: h.user_id !== null,
+          photos: shots.map((p) => photoUrl(p.id)) }]
       : [],
   };
 }

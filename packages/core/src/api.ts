@@ -40,9 +40,10 @@ export { RsvpInput };
 export const VisitInput = z.object({ ref: z.number().int().positive().optional() });
 export type VisitInput = z.infer<typeof VisitInput>;
 
-/** Гость, как его видят другие: только имя, без username и id. */
+/** Гость, как его видят другие: только имя и фото, без username и id. */
 export interface GuestView {
   user_first_name: string;
+  user_photo_url: string | null; // аватар из Telegram, сохранённый у нас; null — фото нет
   approval_status: Guest['approval_status'];
   event_ticket_type_id: string | null;
   plus_ones: number;
@@ -95,6 +96,7 @@ export interface CollectedHost {
   summary: string | null; // сводка ИИ по каналу и «о себе»
   channel_url: string | null;
   confirmed: boolean; // человек вошёл в Ясвами; иначе профиль собран без его участия
+  photos: string[]; // фото сообщества: последние картинки из канала, сохранённые у нас; новые сверху
 }
 
 /** Карточка собранного события для витрины. */

@@ -1,7 +1,7 @@
 // Таблицы Postgres. Источник правды — схемы в @yaswami/core; блок в конце файла роняет typecheck,
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, CollectedEvent, Event, Guest, Share, TicketType, User } from '@yaswami/core';
 import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
@@ -148,9 +148,32 @@ export const hosts = pgTable(
     bio: text(),
     channel: text(), // username канала: личный канал из профиля или ссылка из «о себе»
     summary: text(),
+    // Когда сборщик последний раз смотрел фото в канале; null — ещё не смотрел. Фото может и не оказаться.
+    photos_checked_at: at('photos_checked_at'),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [index('hosts_username_idx').on(t.username)],
+);
+
+const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
+
+// Фото, которые храним у себя, — прямо в базе (ADR-0003). Только превью: JPEG ~320px, десятки килобайт, без оригиналов.
+// У пользователя фото одно (его аватар в Telegram), у организатора — несколько последних картинок из его канала.
+// Строка не меняется: новое фото — новая строка с новым id, поэтому адрес /photos/<id> кэшируется навсегда.
+export const photos = pgTable(
+  'photos',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    user_id: telegramId('user_id').unique().references(() => users.id, { onDelete: 'cascade' }),
+    host_id: uuid().references(() => hosts.id, { onDelete: 'cascade' }),
+    source: text().notNull(), // откуда взято: адрес аватара или telegram:<канал>/<публикация>; по нему не качаем повторно
+    data: bytea().notNull(),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('photos_host_source_idx').on(t.host_id, t.source),
+    check('photos_owner_check', sql`num_nonnulls(${t.user_id}, ${t.host_id}) = 1`),
+  ],
 );
 
 // «Записаться» на собранное событие: фиксируем намерение и отправляем человека к организатору.

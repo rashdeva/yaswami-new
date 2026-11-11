@@ -28,6 +28,42 @@ async function fetchChannel(client, username) {
   };
 }
 
+export const HOST_PHOTOS = 6; // сколько последних фото канала храним у организатора; столько же показывает API
+const PHOTO_SIDE = 320; // длинная сторона превью. У Telegram готовые размеры — 320 (m), 800 (x), 1280 (y)
+const PHOTO_MAX_BYTES = 200_000;
+
+/**
+ * Какое готовое превью Telegram скачать: самое маленькое с длинной стороной от PHOTO_SIDE, иначе самое большое.
+ * Сами картинки не сжимаем — Telegram уже хранит уменьшенные JPEG, поэтому библиотека для сжатия не нужна (ADR-0003).
+ */
+export function pickThumb(sizes) {
+  const sized = (sizes ?? []).filter((s) => s.w && s.h).sort((a, b) => Math.max(a.w, a.h) - Math.max(b.w, b.h));
+  return (sized.find((s) => Math.max(s.w, s.h) >= PHOTO_SIDE) ?? sized.at(-1))?.type ?? null;
+}
+
+/**
+ * Фото сообщества: картинки из последних 30 публикаций канала, не больше HOST_PHOTOS.
+ * `known` — источники уже сохранённых фото: их не качаем заново.
+ * { sources — что сейчас в канале, новые сверху; added — скачанные превью, старые сверху } или null, если канал недоступен.
+ */
+export async function fetchChannelPhotos(client, channel, known = []) {
+  if (!client.connected) await client.connect();
+  const posts = await client.getMessages(channel, { limit: 30 }).catch(orNull);
+  if (!posts) return null;
+  // Только фото самой публикации: картинка из предпросмотра ссылки — не фото сообщества.
+  const shots = posts
+    .filter((m) => m.media?.className === 'MessageMediaPhoto' && pickThumb(m.media.photo?.sizes))
+    .slice(0, HOST_PHOTOS)
+    .map((m) => ({ source: `telegram:${channel}/${m.id}`, m }));
+  const added = [];
+  for (const { source, m } of shots.filter((s) => !known.includes(s.source)).reverse()) {
+    const data = await client.downloadMedia(m, { thumb: pickThumb(m.media.photo.sizes) }).catch(orNull);
+    const isJpeg = Buffer.isBuffer(data) && data[0] === 0xff && data[1] === 0xd8;
+    if (isJpeg && data.length <= PHOTO_MAX_BYTES) added.push({ source, data });
+  }
+  return { sources: shots.map((s) => s.source), added };
+}
+
 /** { telegram_id, name, bio, channel: { username, title, about, posts } | null } или null, если под username не человек и не канал. */
 export async function fetchProfile(client, username) {
   if (!client.connected) await client.connect();
