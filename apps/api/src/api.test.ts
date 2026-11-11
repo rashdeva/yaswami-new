@@ -82,6 +82,7 @@ test('событие создаётся с типом билета по умол
   const host = tma(1, 'Миша');
   const created = await newEvent(host);
   assert.equal(created.ticket_types.length, 1);
+  assert.equal(created.host.first_name, 'Миша');
   assert.equal(created.event.start_at, '2026-11-20T15:00:00.000Z');
 
   const res = await call(tma(2, 'Дато'), 'POST', `/events/${created.event.id}/rsvp`, { approval_status: 'approved' });
@@ -96,6 +97,14 @@ test('событие создаётся с типом билета по умол
 
   const list = (await (await call(tma(2, 'Дато'), 'GET', '/events')).json()) as { my_approval_status: string; is_host: boolean }[];
   assert.deepEqual(list.map((e) => [e.my_approval_status, e.is_host]), [['approved', false]]);
+});
+
+test('билеты задаются при создании: цена — свободный текст, имя по умолчанию, порядок сохраняется', async () => {
+  const host = tma(1, 'Миша');
+  const one = await newEvent(host, { ticket_types: [{ price_text: 'по донату' }] });
+  assert.deepEqual(one.ticket_types.map((t) => [t.name, t.price_text]), [['Стандартный', 'по донату']]);
+  const many = await newEvent(host, { ticket_types: [{ name: 'Early bird', price_text: '1000 ₽' }, { name: 'Обычный', price_text: '1500 ₽' }] });
+  assert.deepEqual(many.ticket_types.map((t) => [t.name, t.price_text, t.position]), [['Early bird', '1000 ₽', 0], ['Обычный', '1500 ₽', 1]]);
 });
 
 test('последнее место достаётся одному из восьми одновременных гостей', async () => {
@@ -253,7 +262,7 @@ test('подтверждение владельцем: предлагается 
 
   // витрина теперь ведёт на событие Ясвами, повторно подтвердить нельзя, предложение исчезло
   const item = (await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem;
-  assert.deepEqual(item.hosts, [{ name: 'Ксения', summary: 'Преподаёт бачату.', channel_url: 'https://t.me/ksenia_dance', confirmed: true, photos: [] }]);
+  assert.deepEqual(item.hosts, [{ name: 'Ксения', summary: 'Преподаёт бачату.', channel_url: 'https://t.me/ksenia_dance', photo_url: 'https://t.me/i/userpic/320/u30.jpg', confirmed: true, photos: [] }]);
   assert.equal(item.claimed_event_id, view.event.id);
   assert.equal((await call(owner, 'POST', '/collected-events/danangevent-5-0/claim')).status, 409);
   assert.deepEqual(((await (await call(owner, 'GET', '/me')).json()) as Me).claimable, []);
@@ -544,22 +553,29 @@ test('заходы: пишутся с тем, кто позвал; органи�
 test('фото: аватар гостя и фото сообщества организатора хранятся в базе и отдаются с долгим кэшем', async () => {
   const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
   const realFetch = globalThis.fetch;
+  const realCall = bot.call;
   const asked: string[] = [];
-  let type = 'image/jpeg';
-  globalThis.fetch = async (input) => (asked.push(String(input)), new Response(jpeg, { headers: { 'content-type': type } }));
+  globalThis.fetch = async (input) => (asked.push(String(input)), new Response(jpeg));
+  // Аватар берётся через бота по id пользователя: у 9102 фото есть, у остальных нет.
+  const sizes = [160, 320, 640].map((w) => ({ file_id: `f${w}`, file_unique_id: `u${w}`, width: w, height: w }));
+  bot.token = 'T';
+  bot.call = async (method, body) => {
+    asked.push(method);
+    if (method === 'getFile') return { ok: true, result: { file_path: `photos/${(body as { file_id: string }).file_id}.jpg` } };
+    return { ok: true, result: { photos: (body as { user_id: number }).user_id === 9102 ? [sizes] : [] } };
+  };
   try {
     const host = tma(9101, 'Вера');
     const { event } = await newEvent(host);
     const ticket = ((await (await call(host, 'GET', `/events/${event.id}`)).json()) as EventView).ticket_types[0]!.id;
-    for (const id of [9102, 9103]) await call(tma(id, `Гость${id}`), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved', event_ticket_type_id: ticket });
-
-    const pic = 'https://t.me/i/userpic/320/abc_DEF-1.svg';
-    await saveUserPhoto(db, 9102, 'https://evil.example/i/userpic/320/x.jpg'); // чужой адрес не скачиваем
-    await saveUserPhoto(db, 9102, pic);
-    await saveUserPhoto(db, 9102, pic); // повтор не качает заново
-    type = 'image/svg+xml';
-    await saveUserPhoto(db, 9103, 'https://t.me/i/userpic/320/noavatar.svg'); // заглушку Telegram с буквой не храним
-    assert.deepEqual(asked, [pic, 'https://t.me/i/userpic/320/noavatar.svg']);
+    // Гость из мини-приложения и гость, написавший боту /start: путь один — upsertUser.
+    await call(tma(9102, 'Гость9102'), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved', event_ticket_type_id: ticket });
+    await handleUpdate(db, undefined, { message: { message_id: 1, date: 1, chat: { id: 9103, type: 'private' }, from: { id: 9103, first_name: 'Гость9103' }, text: '/start' } });
+    await call(tma(9103, 'Гость9103'), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved', event_ticket_type_id: ticket });
+    for (const id of [9101, 9102, 9103, 9102]) await saveUserPhoto(db, id); // дождаться фона; повтор не качает заново
+    assert.deepEqual(asked.filter((a) => a !== 'sendMessage'), [
+      'getUserProfilePhotos', 'getUserProfilePhotos', 'getFile', 'https://api.telegram.org/file/botT/photos/f320.jpg', 'getUserProfilePhotos',
+    ], 'по запросу на человека; качаем размер 320 и только у кого фото есть');
 
     const view = (await (await call(host, 'GET', `/events/${event.id}`)).json()) as EventView;
     const [withPhoto, without] = view.guests;
@@ -576,6 +592,8 @@ test('фото: аватар гостя и фото сообщества орг�
     assert.equal((await app.request('/photos/00000000-0000-4000-8000-000000000000')).status, 404);
   } finally {
     globalThis.fetch = realFetch;
+    bot.call = realCall;
+    bot.token = '';
   }
 
   // Фото сообщества кладёт сборщик; API отдаёт не больше шести, новые сверху.
@@ -591,7 +609,8 @@ test('фото: аватар гостя и фото сообщества орг�
   }
   const shown = (await item()).hosts![0]!.photos;
   assert.equal(shown.length, 6);
-  assert.deepEqual(Buffer.from(await (await app.request(shown[0]!.replace(/^.*\/api/, ''))).arrayBuffer()), Buffer.from([0xff, 0xd8, 7]));
+  assert.deepEqual(shown.map((p) => p.source_url).slice(0, 2), ['https://t.me/photochan/7', 'https://t.me/photochan/6'], 'клик по фото ведёт на публикацию');
+  assert.deepEqual(Buffer.from(await (await app.request(shown[0]!.url.replace(/^.*\/api/, ''))).arrayBuffer()), Buffer.from([0xff, 0xd8, 7]));
 });
 
 test('переписка: бот пишет всё в базу, админ отвечает и берёт диалог на себя', async () => {

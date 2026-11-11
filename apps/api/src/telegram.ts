@@ -3,6 +3,7 @@ import type { TelegramUser } from './auth.ts';
 
 export interface BotResult {
   ok: boolean;
+  result?: unknown; // ответ метода; у отправки сообщений он нам не нужен
   description?: string;
   error_code?: number;
   parameters?: { retry_after?: number };
@@ -47,7 +48,7 @@ export const bot = {
   send(method: string, body: { chat_id: number; [field: string]: unknown }, author = 'bot'): Promise<BotResult> {
     if (queued >= QUEUE_MAX) return Promise.resolve({ ok: false, description: 'send queue is full' });
     queued++;
-    const run = tail.then(async () => {
+    const delivered = tail.then(async () => {
       const wait = Math.max(lastSent + bot.pace.globalMs, (lastSentTo.get(body.chat_id) ?? 0) + bot.pace.chatMs) - Date.now();
       if (wait > 0) await sleep(wait);
       let result = await bot.call(method, body);
@@ -58,11 +59,17 @@ export const bot = {
       lastSent = Date.now();
       if (lastSentTo.size > 10_000) lastSentTo.clear();
       lastSentTo.set(body.chat_id, lastSent);
-      // Сбой записи в переписку не должен ронять отправку.
-      await bot.log?.(method, body, result, author).catch(console.error);
       return result;
-    }).finally(() => queued--);
-    tail = run.catch(() => {});
+    });
+    tail = delivered.catch(() => {});
+    // Запись в переписку очередь не задерживает: следующее сообщение уходит, не дожидаясь базы.
+    // Сбой записи не должен ронять отправку.
+    const run = delivered
+      .then(async (result) => {
+        await bot.log?.(method, body, result, author).catch(console.error);
+        return result;
+      })
+      .finally(() => queued--);
     return run;
   },
 };

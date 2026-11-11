@@ -6,6 +6,7 @@ import { api } from '../api.ts';
 import { hue, when } from '../format.ts';
 import { haptic, startParam, startRef } from '../tg.ts';
 import { shareEvent } from '../share.ts';
+import { GuestRow } from './GuestRow.tsx';
 
 const ANSWERS: [RsvpStatus, string][] = [['approved', 'Пойду'], ['maybe', 'Думаю'], ['declined', 'Не пойду']];
 const GUEST_LABEL = { approved: 'пойдёт', maybe: 'думает', declined: 'не пойдёт', waitlist: 'в листе ожидания' } as const;
@@ -137,16 +138,11 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
 
       <h2>Гости</h2>
       <div className="group">
+        <GuestRow name={view.host.first_name} photo={view.host.user_photo_url} label="организатор">{is_host && ' (вы)'}</GuestRow>
         {guests.length > 0 ? guests.map((g, i) => (
-          <div key={i} className="guest">
-            <div className="ava" style={{ background: `hsl(${hue(g.user_first_name)},55%,48%)` }}>
-              {[...g.user_first_name][0]}
-              {/* Фото поверх буквы: не загрузилось — остаётся кружок с буквой. */}
-              {g.user_photo_url && <img src={g.user_photo_url} alt="" loading="lazy" onError={(e) => { e.currentTarget.hidden = true; }} />}
-            </div>
-            {g.user_first_name}{g.is_me && ' (вы)'}{g.plus_ones > 0 && ` +${g.plus_ones}`}
-            <span>{GUEST_LABEL[g.approval_status]}</span>
-          </div>
+          <GuestRow key={i} name={g.user_first_name} photo={g.user_photo_url} label={GUEST_LABEL[g.approval_status]}>
+            {g.is_me && ' (вы)'}{g.plus_ones > 0 && ` +${g.plus_ones}`}
+          </GuestRow>
         )) : (
           <div className="guest empty">{is_host ? 'Пока никто не ответил. Отправьте событие в чат — ответы появятся здесь.' : 'Пока никто не ответил. Будьте первым.'}</div>
         )}

@@ -4,6 +4,7 @@ import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES } from '@ya
 import { api, loginUrl } from '../api.ts';
 import { openExternal } from '../tg.ts';
 import { shareLink } from '../share.ts';
+import { GuestRow } from './GuestRow.tsx';
 
 interface Props {
   id: string;
@@ -67,6 +68,7 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
   }
 
   const past = collectedIsPast(event);
+  const host = event.hosts?.[0];
   const where = [event.place, event.address].filter(Boolean).join(', ');
   // Гид по Topic пишет редакция; у «другого» и у событий, собранных до появления поля, его нет.
   const guide = event.topic ? TOPIC_GUIDES[event.topic] : undefined;
@@ -134,18 +136,29 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
         <Fragment key={host.name}>
           <h2>Организатор</h2>
           <div className="group"><div className="pad">
-            <p>{host.name}</p>
+            <p className="who">
+              {/* фото нет или скрыто настройками приватности — Telegram отвечает 404, тогда просто имя */}
+              <img className="ava" src={host.photo_url} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+              {host.name}
+            </p>
             {host.summary && <p>{host.summary}</p>}
-            {host.channel_url && <p><a href={host.channel_url} target="_blank" rel="noreferrer">Канал организатора</a></p>}
             {host.photos.length > 0 && (
               <div className="shots">
-                {host.photos.map((src) => <img key={src} src={src} alt="" loading="lazy" onError={(e) => { e.currentTarget.hidden = true; }} />)}
+                {host.photos.map((p) => (
+                  <a key={p.url} href={p.source_url} target="_blank" rel="noreferrer" aria-label="Публикация в канале организатора">
+                    <img src={p.url} alt="" loading="lazy" onError={(e) => { e.currentTarget.parentElement!.hidden = true; }} />
+                  </a>
+                ))}
               </div>
             )}
           </div></div>
-          {!host.confirmed && <p className="note">Профиль собран автоматически по открытому каналу организатора.</p>}
         </Fragment>
       ))}
+      <h2>Участники</h2>
+      <div className="group">
+        {host && <GuestRow name={host.name} photo={host.photo_url} label="организатор" />}
+        {!!event.signups_count && <div className="guest empty">Интересуются: {event.signups_count}. Записывает организатор.</div>}
+      </div>
       {event.tags.length > 0 && <div className="tags">{event.tags.map((t) => <span key={t}>{t}</span>)}</div>}
 
       <p className="note">
@@ -173,7 +186,10 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
           ) : (
             <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>
           )}
-          <button className="cta alt" onClick={() => shareLink(location.origin + collectedPath(id), `${event.title}\n${collectedWhen(event.starts_at)}, ${city}`, toast)}>Поделиться</button>
+          <div className="cta-row">
+            {host?.channel_url && <button className="cta alt" onClick={() => openExternal(host.channel_url!)}>Перейти в канал</button>}
+            <button className="cta alt" onClick={() => shareLink(location.origin + collectedPath(id), `${event.title}\n${collectedWhen(event.starts_at)}, ${city}`, toast)}>Поделиться</button>
+          </div>
         </div></div>
       )}
     </>

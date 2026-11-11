@@ -19,15 +19,20 @@ const eventFields = EventSchema.pick({
   kind: true, name: true, description: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true,
 }).extend({ start_at: dateTime, end_at: dateTime.nullable(), timezone: timeZone });
 
+const ticketTypeFields = TicketTypeSchema.omit({ id: true, event_id: true });
+
 export const EventCreateInput = eventFields
   .partial({ description: true, end_at: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true })
-  .extend({ status: z.enum(['draft', 'published']).optional() });
+  .extend({
+    status: z.enum(['draft', 'published']).optional(),
+    // Типы билетов сразу при создании (порядок = position). Без них — один «Стандартный» без цены.
+    ticket_types: z.array(ticketTypeFields.partial()).max(10).optional(),
+  });
 export type EventCreateInput = z.infer<typeof EventCreateInput>;
 
 export const EventUpdateInput = eventFields.extend({ status: EventSchema.shape.status }).partial();
 export type EventUpdateInput = z.infer<typeof EventUpdateInput>;
 
-const ticketTypeFields = TicketTypeSchema.omit({ id: true, event_id: true });
 export const TicketTypeCreateInput = ticketTypeFields.partial().required({ name: true });
 export type TicketTypeCreateInput = z.infer<typeof TicketTypeCreateInput>;
 
@@ -54,6 +59,7 @@ export interface GuestView {
 export interface EventView {
   event: Event;
   ticket_types: TicketType[];
+  host: { first_name: string; user_photo_url: string | null };
   guests: GuestView[]; // отказавшихся видит только организатор
   guest_counts: { approved: number; maybe: number; declined: number }; // approved — занятые места, с учётом «+1»
   me: Guest | null;
@@ -95,8 +101,10 @@ export interface CollectedHost {
   name: string;
   summary: string | null; // сводка ИИ по каналу и «о себе»
   channel_url: string | null;
+  photo_url: string; // аватарка прямо с серверов Telegram, у себя не храним; если фото нет или оно скрыто — по адресу 404
   confirmed: boolean; // человек вошёл в Ясвами; иначе профиль собран без его участия
-  photos: string[]; // фото сообщества: последние картинки из канала, сохранённые у нас; новые сверху
+  /** Фото сообщества: последние картинки из канала, сохранённые у нас; новые сверху. `source_url` — публикация, из которой взято фото. */
+  photos: { url: string; source_url: string }[];
 }
 
 /** Карточка собранного события для витрины. */
@@ -106,6 +114,7 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   source_url: string; // публикация, из которой взято событие
   claimed_event_id: Event['id'] | null; // организатор подтвердил событие: запись идёт через событие Ясвами
   hosts?: CollectedHost[]; // как hosts у события в Luma; только в ответе на одно событие, в списках его нет
+  signups_count?: number; // сколько человек нажали «Записаться» в Ясвами (это интерес, не подтверждённое место); только в ответе на одно событие
 }
 
 /**

@@ -58,12 +58,18 @@ export async function getEvent(db: Db | Tx, actor: User, id: string): Promise<Ev
     .where(eq(guests.event_id, id))
     .orderBy(asc(guests.registered_at));
 
+  const [hostRow] = await db
+    .select({ first_name: users.first_name, photo_id: photos.id })
+    .from(users)
+    .leftJoin(photos, eq(photos.user_id, users.id))
+    .where(eq(users.id, event.user_id));
   const is_host = event.user_id === actor.id;
   const me = rows.find((r) => r.guest.user_id === actor.id)?.guest ?? null;
   const approved = rows.filter((r) => r.guest.approval_status === 'approved');
   return {
     event,
     ticket_types: types.filter((t) => is_host || !t.is_hidden || t.id === me?.event_ticket_type_id),
+    host: { first_name: hostRow!.first_name, user_photo_url: hostRow!.photo_id && photoUrl(hostRow!.photo_id) },
     guests: rows
       .filter((r) => is_host || r.guest.approval_status !== 'declined')
       .map(({ guest: g, user_first_name, photo_id }) => ({
@@ -127,13 +133,17 @@ export async function getCollectedEvent(db: Db, slug: string): Promise<Collected
   if (!row) throw new AppError('not_found', 404);
   const [h] = row.telegram_username ? await db.select().from(hosts).where(eq(hosts.username, row.telegram_username)) : [];
   const shots = h
-    ? await db.select({ id: photos.id }).from(photos).where(eq(photos.host_id, h.id)).orderBy(desc(photos.created_at)).limit(HOST_PHOTOS)
+    ? await db.select({ id: photos.id, source: photos.source }).from(photos).where(eq(photos.host_id, h.id)).orderBy(desc(photos.created_at)).limit(HOST_PHOTOS)
     : [];
+  const [{ n: signups_count }] = await db.select({ n: count() }).from(collectedEventSignups).where(eq(collectedEventSignups.external_id, row.external_id)) as [{ n: number }];
   return {
     ...toCollectedItem(row),
+    signups_count,
     hosts: h
-      ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`, confirmed: h.user_id !== null,
-          photos: shots.map((p) => photoUrl(p.id)) }]
+      ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`,
+          photo_url: `https://t.me/i/userpic/320/${h.username}.jpg`, confirmed: h.user_id !== null,
+          // Источник фото сообщества — telegram:<канал>/<публикация>: из него же ссылка на публикацию.
+          photos: shots.map((p) => ({ url: photoUrl(p.id), source_url: p.source.replace(/^telegram:/, 'https://t.me/') })) }]
       : [],
   };
 }
@@ -307,12 +317,14 @@ export async function createEvent(db: Db, actor: User, input: EventCreateInput):
   return db.transaction(async (tx) => {
     await assertUnderLimit(tx, actor);
     const id = newEventId();
+    const { ticket_types, ...fields } = input;
     await tx.insert(events).values({
-      ...input, id, user_id: actor.id, start_at: new Date(input.start_at),
+      ...fields, id, user_id: actor.id, start_at: new Date(input.start_at),
       end_at: input.end_at ? new Date(input.end_at) : null, status: input.status ?? 'published',
     });
     // У события всегда есть хотя бы один тип билета.
-    await tx.insert(ticketTypes).values({ event_id: id, name: DEFAULT_TICKET_NAME });
+    const types = ticket_types?.length ? ticket_types : [{}];
+    await tx.insert(ticketTypes).values(types.map((t, position) => ({ ...t, name: t.name ?? DEFAULT_TICKET_NAME, event_id: id, position })));
     return getEvent(tx, actor, id);
   });
 }
