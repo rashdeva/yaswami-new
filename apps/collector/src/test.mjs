@@ -96,6 +96,16 @@ assert.deepEqual(toStats({ views: 1200, reactions: { results: [{ count: 7 }, { c
 assert.deepEqual(toStats({}), { views: null, reactions: 0 }, 'публикация в группе без реакций');
 console.log('stats ok');
 
+const { downloadCover } = await import('./mtproto.mjs');
+const coverJpeg = Buffer.from([0xff, 0xd8, 1, 2]);
+const photoMsg = { media: { className: 'MessageMediaPhoto', photo: { sizes: [{ type: 'm', w: 320, h: 180 }, { type: 'x', w: 800, h: 450 }, { type: 'y', w: 1280, h: 720 }] } } };
+const asked = [];
+const dl = { downloadMedia: async (_m, o) => { asked.push(o.thumb); return coverJpeg; } };
+assert.equal(await downloadCover(dl, photoMsg), coverJpeg);
+assert.deepEqual(asked, ['x'], 'берём превью 800, а не 320 и не оригинал');
+assert.equal(await downloadCover(dl, { media: { className: 'MessageMediaWebPage' } }), null, 'картинка из предпросмотра ссылки — не обложка');
+assert.equal(await downloadCover({ downloadMedia: async () => Buffer.from('png?') }, photoMsg), null, 'не JPEG');
+console.log('cover ok');
 // Аккаунты для переписки: вход по шагам, приём и отправка — на поддельном клиенте Telegram и хранилище в памяти.
 {
   const { createSender, seal, unseal } = await import('./sender.mjs');

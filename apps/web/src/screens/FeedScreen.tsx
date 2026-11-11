@@ -68,11 +68,11 @@ export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
       {days.map((list) => (
         <section key={collectedDayKey(list[0]!.starts_at)}>
           <h2>{collectedDay(list[0]!.starts_at)}</h2>
-          <div className="group">
+          <div className="covers">
             {list.map((e) => (
               <a
                 key={e.id}
-                className="item"
+                className="cover"
                 href={collectedPath(e.id)}
                 onClick={(click) => {
                   if (click.metaKey || click.ctrlKey || click.shiftKey) return; // новая вкладка — как обычная ссылка
@@ -80,12 +80,13 @@ export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
                   onOpen(e);
                 }}
               >
-                <img className="ico" src={topicIcon(e.topic)} alt="" loading="lazy" />
-                <div>
+                {/* Обложки нет (в анонсе не было фото, свою ещё не нарисовали) — иконка темы на цветной плитке. */}
+                {e.cover_url ? <img className="bg" src={e.cover_url} alt="" loading="lazy" /> : <img className="ico" src={topicIcon(e.topic)} alt="" loading="lazy" />}
+                {e.popular && <span className="badge sm hot">Популярное</span>}
+                <div className="cap">
+                  <small>{[collectedTime(e.starts_at), e.price].filter(Boolean).join(' · ') || 'подробности у организатора'}</small>
                   <b>{e.title}</b>
-                  <small>{[collectedTime(e.starts_at), e.place, e.price].filter(Boolean).join(' · ') || 'подробности у организатора'}</small>
-                  {e.popular && <span className="badge sm hot">Популярное</span>}
-                  {e.beginner_friendly && <span className="badge sm">Можно без опыта</span>}
+                  {e.beginner_friendly && <small>можно без опыта</small>}
                 </div>
               </a>
             ))}

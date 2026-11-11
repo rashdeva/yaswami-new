@@ -87,9 +87,10 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
 
   return (
     <>
-      <div className={`hero${onBack ? '' : ' nb'}`}>
+      <div className={`hero${onBack ? '' : ' nb'}${event.cover_url ? ' cov' : ''}`}>
+        {event.cover_url && <img className="bg" src={event.cover_url} alt="" />}
         {onBack && <button className="back" onClick={onBack}>← Все события</button>}
-        <img className="emo" src={topicIcon(event.topic)} alt="" />
+        {!event.cover_url && <img className="emo" src={topicIcon(event.topic)} alt="" />}
         <small>{past ? 'Событие прошло' : [city, guide && event.topic].filter(Boolean).join(' · ')}</small>
         <h1>{event.title}</h1>
         {(event.popular || event.tags.length > 0) && (

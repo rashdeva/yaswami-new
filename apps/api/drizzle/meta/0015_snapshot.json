@@ -1,5 +1,5 @@
 {
-  "id": "389d4fc0-f6bb-4eeb-97b9-82be9398f19c",
+  "id": "9033e8fa-26e0-4b97-ac2e-f57e1fc4295c",
   "prevId": "77db9c02-ca21-4613-9f53-6de87742c52b",
   "version": "7",
   "dialect": "postgresql",
@@ -216,6 +216,12 @@
         "reactions": {
           "name": "reactions",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cover_checked_at": {
+          "name": "cover_checked_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -519,109 +525,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.event_feedback": {
-      "name": "event_feedback",
-      "schema": "",
-      "columns": {
-        "event_id": {
-          "name": "event_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rating": {
-          "name": "rating",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "comment": {
-          "name": "comment",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prompt_message_id": {
-          "name": "prompt_message_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "host_notified_at": {
-          "name": "host_notified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requested_at": {
-          "name": "requested_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "event_feedback_event_id_events_id_fk": {
-          "name": "event_feedback_event_id_events_id_fk",
-          "tableFrom": "event_feedback",
-          "tableTo": "events",
-          "columnsFrom": [
-            "event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "event_feedback_user_id_users_id_fk": {
-          "name": "event_feedback_user_id_users_id_fk",
-          "tableFrom": "event_feedback",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "event_feedback_event_id_user_id_pk": {
-          "name": "event_feedback_event_id_user_id_pk",
-          "columns": [
-            "event_id",
-            "user_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "event_feedback_rating_check": {
-          "name": "event_feedback_rating_check",
-          "value": "\"event_feedback\".\"rating\" between 1 and 5"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.events": {
@@ -1188,6 +1091,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "collected_external_id": {
+          "name": "collected_external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "source": {
           "name": "source",
           "type": "text",
@@ -1257,6 +1166,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "photos_collected_external_id_collected_events_external_id_fk": {
+          "name": "photos_collected_external_id_collected_events_external_id_fk",
+          "tableFrom": "photos",
+          "tableTo": "collected_events",
+          "columnsFrom": [
+            "collected_external_id"
+          ],
+          "columnsTo": [
+            "external_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1267,13 +1189,20 @@
           "columns": [
             "user_id"
           ]
+        },
+        "photos_collected_external_id_unique": {
+          "name": "photos_collected_external_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "collected_external_id"
+          ]
         }
       },
       "policies": {},
       "checkConstraints": {
         "photos_owner_check": {
           "name": "photos_owner_check",
-          "value": "num_nonnulls(\"photos\".\"user_id\", \"photos\".\"host_id\") = 1"
+          "value": "num_nonnulls(\"photos\".\"user_id\", \"photos\".\"host_id\", \"photos\".\"collected_external_id\") = 1"
         }
       },
       "isRLSEnabled": false

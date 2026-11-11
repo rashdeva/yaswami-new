@@ -97,6 +97,24 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 .hero.nb { padding-top: 22px; }
 .hero.nb .emo { margin-top: 0; }
 .hero + .group { margin-top: 12px; }
+/* шапка с обложкой события: картинка во всю шапку, текст внизу поверх затемнения */
+.hero.cov { min-height: 460px; display: flex; flex-direction: column; align-items: flex-start; }
+.hero .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.hero.cov::before { z-index: 1; background: linear-gradient(rgba(0, 0, 0, .3), transparent 30%, transparent 45%, rgba(0, 0, 0, .78)); }
+.hero.cov > :not(.bg) { z-index: 2; }
+.hero.cov small { margin-top: auto; }
+
+/* лента: обложки 9:16 в две колонки, подпись поверх нижней части — как сторис */
+.covers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 16px; }
+.cover { position: relative; display: block; aspect-ratio: 9 / 16; border-radius: 22px; overflow: hidden; color: #fff; text-decoration: none; background: linear-gradient(160deg, var(--a), var(--b)); box-shadow: 0 6px 18px rgba(0, 0, 0, .12); transition: transform .2s var(--spring); }
+.cover:active { transform: scale(.97); }
+.cover .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cover .ico { position: absolute; left: 50%; top: 36%; width: 58%; transform: translate(-50%, -50%); }
+.cover .cap { position: absolute; inset: auto 0 0; padding: 48px 12px 12px; background: linear-gradient(transparent, rgba(0, 0, 0, .78)); }
+.cover b { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 16px; line-height: 1.2; overflow-wrap: anywhere; }
+.cover small { display: block; font-size: 12px; opacity: .88; margin-bottom: 3px; }
+.cover b + small { margin: 4px 0 0; }
+.cover .badge { position: absolute; top: 10px; left: 10px; margin: 0; color: #fff; background: rgba(0, 0, 0, .42); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
 
 .meta { padding: 12px 18px; }
 .meta div { display: flex; gap: 12px; padding: 5px 0; overflow-wrap: anywhere; }
