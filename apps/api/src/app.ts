@@ -11,7 +11,7 @@ import type { Extract } from './bot.ts';
 import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
 import {
-  createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, logSent, recordAccountMessage, recordHostLead, recordLead, rejectDraft,
+  adminOverview, createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, logSent, recordAccountMessage, recordHostLead, recordLead, rejectDraft,
   requireAdmin, sendDraft, submitAccountLogin,
 } from './inbox.ts';
 import { handleMcp } from './mcp.ts';
@@ -133,6 +133,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await next();
     })
     .get('/admin/inbox', async (c) => c.json(await inboxFeed(db, c.var.actor)))
+    .get('/admin/overview', async (c) => c.json(await adminOverview(db)))
     .get('/admin/conversations/:id/messages', async (c) => c.json(await inboxThread(db, c.req.param('id'))))
     .post('/admin/conversations/:id/messages', json(InboxSendInput), async (c) => {
       await inboxSend(db, `admin:${c.var.actor.id}`, c.req.param('id'), c.req.valid('json').text);
