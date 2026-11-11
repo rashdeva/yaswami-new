@@ -11,6 +11,7 @@ import { ADDRESS_MAX, collectedPath, collectedSignupUrl, popularIds, DESCRIPTION
 import type { Db, Tx } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, ticketTypes, users, visits } from './db/schema.ts';
 import { photoUrl } from './photos.ts';
+import { eventFeedbackView } from './feedback.ts';
 import { guestRegistered } from './rsvp-notices.ts';
 import { settings } from './settings.ts';
 
@@ -81,6 +82,7 @@ export async function getEvent(db: Db | Tx, actor: User, id: string): Promise<Ev
       maybe: rows.filter((r) => r.guest.approval_status === 'maybe').length,
       declined: rows.filter((r) => r.guest.approval_status === 'declined').length,
     },
+    feedback: await eventFeedbackView(db as Db, id, is_host),
     me,
     is_host,
   };

@@ -11,6 +11,8 @@ export const settings = {
   freeEventsLimit: Number(process.env.FREE_EVENTS_LIMIT ?? 10),
   /** Сколько ждать перед уведомлением о записи: за это время гость может передумать, а записи — собраться в сводку. */
   notifyDelayMs: Number(process.env.NOTIFY_DELAY_MS ?? 20_000),
+  /** Сколько по событию не должно быть новых отзывов, чтобы организатору ушла сводка. */
+  feedbackSettleMs: Number(process.env.FEEDBACK_SETTLE_MS ?? 10 * 60_000),
   /** Сколько анонсов в минуту один человек может прислать боту на разбор: ИИ ограничен по запросам. */
   /** Роль поддержки в Hermes (support.ts): адрес её HTTP-входа без косой черты в конце и ключ. Пусто — бот отвечает сам. */
   supportUrl: (process.env.SUPPORT_URL ?? '').replace(/\/$/, ''),

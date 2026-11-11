@@ -283,6 +283,24 @@ export const messages = pgTable(
   (t) => [index('messages_conversation_idx').on(t.conversation_id, t.created_at), index('messages_created_idx').on(t.created_at)],
 );
 
+// Отзыв гостя о прошедшем событии (feedback.ts). Строка появляется, когда бот попросил отзыв; оценки ещё нет — rating null.
+export const eventFeedback = pgTable(
+  'event_feedback',
+  {
+    event_id: text().notNull().references(() => events.id, { onDelete: 'cascade' }),
+    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    rating: integer(), // 1–5
+    comment: text(),
+    // Сообщение бота «что понравилось…»: ответ на него становится текстом отзыва.
+    prompt_message_id: integer(),
+    // Отзыв уже ушёл организатору в сводке; новая оценка или текст сбрасывают отметку.
+    host_notified_at: at('host_notified_at'),
+    requested_at: at('requested_at').notNull().defaultNow(),
+    updated_at: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.event_id, t.user_id] }), check('event_feedback_rating_check', sql`${t.rating} between 1 and 5`)],
+);
+
 // Сверка с ядром: типы должны совпадать в обе стороны.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 export const tablesMatchCore: [

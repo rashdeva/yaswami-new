@@ -10,6 +10,7 @@ import type { Page } from './pages.ts';
 import { AppError, getCollectedEvent, listCollectedEvents } from './services.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
+import { startFeedbackLoop } from './feedback.ts';
 
 const { DATABASE_URL, BOT_TOKEN, APP_NAME = 'app', PORT = '3000', TG_CLIENT_SECRET = '', TELEGRAM_WEBHOOK_SECRET = '', GEMINI_API_KEY } = process.env;
 const { publicUrl: PUBLIC_URL, city: CITY } = settings;
@@ -46,6 +47,9 @@ const api = createApp({
       : undefined,
   },
 });
+
+// После событий бот просит у гостей отзыв и шлёт организаторам сводки. Без токена отправлять нечем.
+if (BOT_TOKEN) startFeedbackLoop(db);
 
 // Один сервер на всё: REST под /api, MCP на /mcp, остальное — собранное мини-приложение.
 const server = new Hono()
