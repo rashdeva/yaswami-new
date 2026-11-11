@@ -1,6 +1,7 @@
-# Роль illustrator: по данным события рисует короткий ролик-историю через Grok Imagine (docs/agents-inbox.md).
+# Роль illustrator: по данным события рисует обложку в фирменном стиле и ролик-историю с неё через Grok Imagine
+# (docs/agents-inbox.md).
 # Ей показывают текст посторонних людей (название и описание события), поэтому у неё нет ни нашего MCP, ни памяти,
-# ни терминала: всё, что она может, — нарисовать ролик и ответить ссылкой. Ссылку сохраняет наш API (support.ts).
+# ни терминала: всё, что она может, — нарисовать картинку и ролик и ответить ссылками. Их сохраняет наш API (support.ts).
 _config_version: 53 # формат конфига Hermes 0.23; без метки Hermes считает файл древним и ругается при старте
 model:
   default: grok-4.6
@@ -8,10 +9,12 @@ model:
   base_url: https://api.x.ai/v1
 
 platform_toolsets:
-  api_server: [skills, video_gen]
-  cli: [skills, video_gen]
+  api_server: [skills, image_gen, video_gen]
+  cli: [skills, image_gen, video_gen]
 
-# Тот же вход по подписке, что и у модели. Ролик остаётся в хранилище xAI, роль получает публичную ссылку.
+# Тот же вход по подписке, что и у модели. Картинка и ролик остаются в хранилище xAI, роль получает публичные ссылки.
+image_gen:
+  provider: xai
 video_gen:
   provider: xai
 
