@@ -1,8 +1,8 @@
 // Операции над событиями. REST и MCP вызывают только эти функции — правила доступа и записи живут здесь.
 import { randomBytes } from 'node:crypto';
-import { and, asc, count, desc, eq, exists, gte, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, gte, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type {
-  CollectedEventItem, Contact, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
+  CollectedEventItem, Contact, MyCollectedItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
@@ -292,6 +292,19 @@ export async function visitCollectedEvent(db: Db, actor: User, slug: string, { r
     : [];
   if (host?.user_id) await addContact(db, host.user_id, actor.id);
   await db.insert(visits).values({ user_id: actor.id, collected_external_id: row.external_id, referrer_id: await referrerOf(db, actor, ref) });
+}
+
+/** Собранные события, куда человек заходил или записывался, — для «Моих событий». */
+export async function myCollectedEvents(db: Db, actor: User): Promise<MyCollectedItem[]> {
+  const signed = db.select({ id: collectedEventSignups.external_id }).from(collectedEventSignups).where(eq(collectedEventSignups.user_id, actor.id));
+  const seen = db.select({ id: visits.collected_external_id }).from(visits).where(and(eq(visits.user_id, actor.id), isNotNull(visits.collected_external_id)));
+  const signedIds = new Set((await signed).map((r) => r.id));
+  const rows = await db
+    .select()
+    .from(collectedEvents)
+    .where(or(inArray(collectedEvents.external_id, signed), inArray(collectedEvents.external_id, seen)))
+    .orderBy(asc(collectedEvents.starts_at));
+  return rows.map((r) => ({ event: toCollectedItem(r), signed_up: signedIds.has(r.external_id) }));
 }
 
 export async function me(db: Db, actor: User): Promise<Me> {
