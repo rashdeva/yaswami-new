@@ -6,7 +6,7 @@ import type { EventUpdateInput } from '@yaswami/core';
 import { ADDRESS_MAX, DESCRIPTION_MAX, Event, NAME_MAX, TEMPLATES, TICKET_NAME_MAX } from '@yaswami/core';
 import type { EventData } from '../api.ts';
 import { api } from '../api.ts';
-import { fromWall, localDate, wallParts } from '../format.ts';
+import { fromWall, kindIcon, localDate, wallParts } from '../format.ts';
 import { haptic } from '../tg.ts';
 
 const isUrl = (s: string) => /^https?:\/\//i.test(s);
@@ -135,7 +135,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast, editing }: Prop
       <div className="kinds" role="group" aria-label="Формат события">
         {(Object.keys(TEMPLATES) as Event['kind'][]).map((id) => (
           <button key={id} type="button" className="kind" aria-pressed={id === kind} onClick={() => pickKind(id)}>
-            <b>{TEMPLATES[id].emoji}</b>{TEMPLATES[id].name}
+            <img src={kindIcon(id)} alt="" />{TEMPLATES[id].name}
           </button>
         ))}
       </div>

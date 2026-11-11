@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import type { CollectedEventItem, Event } from '@yaswami/core';
-import { collectedIsPast, collectedWhen, TEMPLATES, TOPIC_GUIDES } from '@yaswami/core';
+import { collectedIsPast, collectedWhen, topicIcon } from '@yaswami/core';
 import type { MyCollectedItem } from '@yaswami/core';
 import type { EventListData } from '../api.ts';
-import { tint, when } from '../format.ts';
+import { kindIcon, when } from '../format.ts';
 
 const MY_STATUS = { approved: 'вы идёте', maybe: 'вы думаете', declined: 'вы не идёте', waitlist: 'вы в листе ожидания' } as const;
 
@@ -28,7 +28,7 @@ interface Props {
 }
 
 /** Строка списка: свои события и собранные выглядят одинаково. */
-interface Row { key: string; kind: Event['kind']; emoji: string; title: string; when: string; note: string; start: string; past: boolean; open: () => void }
+interface Row { key: string; kind: Event['kind']; icon: string; title: string; when: string; note: string; start: string; past: boolean; open: () => void }
 
 export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollected, onNew, onKind }: Props) {
   // Событие считается прошедшим через три часа после начала (или после конца, если он задан).
@@ -37,12 +37,12 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
     ...events.map((item): Row => {
       const { event } = item;
       return {
-        key: event.id, kind: event.kind, emoji: TEMPLATES[event.kind].emoji, title: event.name, when: when(event.start_at, event.timezone), note: note(item),
+        key: event.id, kind: event.kind, icon: kindIcon(event.kind), title: event.name, when: when(event.start_at, event.timezone), note: note(item),
         start: event.start_at, past: new Date(event.end_at ?? event.start_at).getTime() + (event.end_at ? 0 : 3 * 3600e3) < now, open: () => { onOpen(event.id); },
       };
     }),
     ...collected.map(({ event, signed_up }): Row => ({
-      key: `c:${event.id}`, kind: 'o', emoji: (event.topic && TOPIC_GUIDES[event.topic]?.emoji) || '📅', title: event.title, when: collectedWhen(event.starts_at),
+      key: `c:${event.id}`, kind: 'o', icon: topicIcon(event.topic), title: event.title, when: collectedWhen(event.starts_at),
       note: signed_up ? 'вы хотели записаться' : 'вы смотрели', start: event.starts_at, past: collectedIsPast(event, now), open: () => { onOpenCollected(event); },
     })),
   ].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
@@ -58,8 +58,8 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
         <h2>{title}</h2>
         <div className="group">
           {items.map((r) => (
-            <button key={r.key} className="item" style={tint(r.kind)} onClick={r.open}>
-              <i>{r.emoji}</i>
+            <button key={r.key} className="item" onClick={r.open}>
+              <img className="ico" src={r.icon} alt="" loading="lazy" />
               <div>
                 <b>{r.title}</b>
                 <small>{r.when}{r.note && ` · ${r.note}`}</small>

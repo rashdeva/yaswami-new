@@ -14,6 +14,9 @@ export function when(startAt: string, timezone: string): string {
 export const tint = (kind: Event['kind']) =>
   ({ '--a': TEMPLATES[kind].colors[0], '--b': TEMPLATES[kind].colors[1] }) as CSSProperties;
 
+/** Иконка шаблона: файлы лежат в public/topics рядом с иконками Topic; у «другого» — общая с ними. */
+export const kindIcon = (kind: Event['kind']) => `/topics/${kind === 'o' ? 'other' : `kind-${kind}`}.png`;
+
 /** Постоянный цвет аватара по имени. */
 export const hue = (name: string) => [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 0);
 
