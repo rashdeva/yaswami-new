@@ -71,7 +71,7 @@ export function App() {
     // Собранные события — «куда заходил»: их сбой не должен ронять список своих.
     const [list, seen] = await Promise.all([api.events(), api.myCollected().catch(() => [])]);
     setEvents(list);
-    setCollected(seen);
+    setCollected(seen.filter((c) => c.signed_up)); // просто заходили — не показываем
     return { length: list.length + seen.length };
   }, []);
 
