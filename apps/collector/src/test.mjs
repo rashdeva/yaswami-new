@@ -12,7 +12,7 @@ assert.equal(signupUrl({ ...e, url: 'https://x.co/f' }, a, t), 'https://x.co/f')
 assert.equal(signupUrl({ ...e, telegram_username: 'a b', url: 'javascript:1' }, a, t), a.url);
 console.log('ok');
 
-const { looksLikeEvent } = await import('./prefilter.mjs');
+const { looksLikeEvent, isSameEvent, mergeEvents } = await import('@yaswami/extract');
 const pad = ' — приходите все, будет очень интересно и душевно';
 assert.ok(looksLikeEvent('Йога на пляже в субботу в 7 утра' + pad));
 assert.ok(looksLikeEvent('Networking night, Friday 8pm at the rooftop bar' + pad));
@@ -33,7 +33,6 @@ assert.deepEqual(toAnnouncement('x', { ...msg, sender: { bot: true } }), [], 'с
 console.log('mtproto ok');
 assert.equal(toAnnouncement('-1001234567890', msg)[0].url, 'https://t.me/c/1234567890/7', 'ссылка закрытого канала');
 
-const { isSameEvent, mergeEvents } = await import('./dedupe.mjs');
 const ev = (title, starts_at, telegram_username = null, extra = {}) =>
   ({ title, description: '', starts_at, ends_at: null, place: null, price: null, telegram_username, whatsapp_phone: null, ...extra });
 const D = '2026-11-13T12:00:00+07:00';

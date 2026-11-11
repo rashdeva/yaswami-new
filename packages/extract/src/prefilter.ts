@@ -13,4 +13,4 @@ const DATE_SIGNAL = new RegExp([
   String.raw`\b(january|february|march|april|may|june|july|august|september|october|november|december)\b`,
 ].join('|'), 'i');
 
-export const looksLikeEvent = (text) => text.length >= 40 && DATE_SIGNAL.test(text);
+export const looksLikeEvent = (text: string) => text.length >= 40 && DATE_SIGNAL.test(text);

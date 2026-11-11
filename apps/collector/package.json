@@ -9,7 +9,7 @@
     "test": "node src/test.mjs"
   },
   "dependencies": {
-    "@google/genai": "^3.0.0",
+    "@yaswami/extract": "workspace:*",
     "postgres": "^3.4",
     "telegram": "^2.26.22"
   }
