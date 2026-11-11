@@ -1,6 +1,6 @@
 // Тесты на настоящем Postgres (нужен `pnpm db:up`). Работают в отдельной базе yaswami_test, рабочую не трогают.
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
+import { createHmac, generateKeyPairSync, sign } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
@@ -11,6 +11,8 @@ import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
 import { collectedEvents } from './db/schema.ts';
+import { eventPage, feedPage, inject, sitemap } from './pages.ts';
+import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
 
 const BOT_TOKEN = '123456:test-token';
 const url = new URL(process.env.DATABASE_URL ?? 'postgres://yaswami:yaswami@localhost:5432/yaswami');
@@ -162,7 +164,7 @@ test('MCP: список инструментов, создание событи�
   assert.equal(invalid.isError, true);
 });
 
-test('собранные события: без входа видны только предстоящие, контакты — только в ссылке записи', async () => {
+test('собранные события: витрина без входа, запись — после входа, вход по cookie сайта', async () => {
   await db.delete(collectedEvents);
   const row = (external_id: string, starts_at: Date) => ({
     external_id, channel: 'danangevent', starts_at, signup_url: 'https://t.me/anna_yoga?text=hi',
@@ -177,13 +179,81 @@ test('собранные события: без входа видны тольк
     row('telegram:danangevent/2#0', new Date(Date.now() - 86_400_000)),
   ]);
 
-  const res = await app.request('/collected-events');
-  assert.equal(res.status, 200);
-  const items = (await res.json()) as CollectedEventItem[];
-  assert.deepEqual(items.map((i) => i.id), ['telegram:danangevent/1#0']);
-  assert.deepEqual(
-    { title: items[0]!.title, signup_url: items[0]!.signup_url, source_url: items[0]!.source_url },
-    { title: 'Йога', signup_url: 'https://t.me/anna_yoga?text=hi', source_url: 'https://t.me/danangevent/1' },
-  );
+  // витрина: только предстоящие, контакт организатора — только внутри ссылки записи
+  const items = (await (await app.request('/collected-events')).json()) as CollectedEventItem[];
+  assert.deepEqual(items.map((i) => i.id), ['danangevent-1-0']);
+  assert.equal(items[0]!.signup_url, 'https://t.me/anna_yoga?text=hi');
   assert.equal('telegram_username' in items[0]!, false);
+
+  // страница события открывается по id из адреса; прошедшее тоже, несуществующее — 404
+  assert.equal(((await (await app.request('/collected-events/danangevent-2-0')).json()) as CollectedEventItem).source_url, 'https://t.me/danangevent/1');
+  assert.equal((await app.request('/collected-events/danangevent-9-0')).status, 404);
+  assert.equal((await app.request('/collected-events/garbage')).status, 404);
+
+  // запись требует входа и не задваивается
+  assert.equal((await app.request('/collected-events/danangevent-1-0/signup', { method: 'POST' })).status, 401);
+  const guest = tma(20, 'Оля');
+  assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
+  assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
+  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: 20, first_name: 'Оля' }, collected_signups: ['danangevent-1-0'] });
+
+  // токен в cookie сайта входит так же, как в заголовке; после выхода он больше не действует
+  const session = `ysw_session=${await issueToken(db, 20)}`;
+  assert.equal((await app.request('/me', { headers: { cookie: session } })).status, 200);
+  assert.equal((await app.request('/auth/logout', { method: 'POST', headers: { cookie: session } })).status, 204);
+  assert.equal((await app.request('/me', { headers: { cookie: session } })).status, 401);
+});
+
+test('вход с сайта: выключен без Client Secret, возврат — только на свой сайт, id_token проверяется', async () => {
+  assert.equal(((await (await app.request('/config')).json()) as { web_login: boolean }).web_login, false);
+  assert.equal((await app.request('/auth/telegram/login')).status, 503);
+
+  const web = createApp({ db, botToken: BOT_TOKEN, webLogin: { clientSecret: 'secret', publicUrl: 'https://yaswami.test' } });
+  const res = await web.request('/auth/telegram/login?return=/e/danangevent-1-0');
+  assert.equal(res.status, 302);
+  const to = new URL(res.headers.get('location')!);
+  assert.equal(to.origin, ISSUER);
+  assert.equal(to.searchParams.get('client_id'), '123456');
+  assert.equal(to.searchParams.get('redirect_uri'), 'https://yaswami.test/api/auth/telegram/callback');
+  assert.match(res.headers.get('set-cookie')!, /ysw_login=.*HttpOnly.*Secure/s);
+  // чужой или просроченный возврат не проходит
+  assert.equal((await web.request('/auth/telegram/callback?code=x&state=y')).status, 400);
+
+  assert.equal(safeReturn('/e/x?signup=1'), '/e/x?signup=1');
+  for (const bad of ['//evil.test', '/\\evil.test', 'https://evil.test', undefined]) assert.equal(safeReturn(bad), '/');
+
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const jwks = [{ ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256' }];
+  const b64 = (v: object) => Buffer.from(JSON.stringify(v)).toString('base64url');
+  const make = (claims: object, key = privateKey, head: object = { alg: 'RS256', kid: 'k1' }) => {
+    const body = `${b64(head)}.${b64(claims)}`;
+    return `${body}.${sign('sha256', Buffer.from(body), key).toString('base64url')}`;
+  };
+  const ok = { iss: ISSUER, aud: '42', id: 7, name: 'Аня', exp: 2000 };
+  assert.equal(verifyIdToken(make(ok), jwks, '42', 1000).id, 7);
+  assert.throws(() => verifyIdToken(make(ok), jwks, '43', 1000), /audience/);
+  assert.throws(() => verifyIdToken(make(ok), jwks, '42', 3000), /expired/);
+  assert.throws(() => verifyIdToken(make({ ...ok, iss: 'https://evil.test' }), jwks, '42', 1000), /issuer/);
+  assert.throws(() => verifyIdToken(make(ok, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey), jwks, '42', 1000), /signature/);
+  assert.throws(() => verifyIdToken(make(ok, privateKey, { alg: 'none' }), jwks, '42', 1000), /unsupported/);
+});
+
+test('страницы для поисковиков: содержимое и разметка экранированы', () => {
+  const event: CollectedEventItem = {
+    id: 'danangevent-1-0', title: 'Йога <b>& чай</b>', description: '</script><script>alert(1)</script> $& утро',
+    starts_at: '2026-11-14T19:00:00+07:00', ends_at: null, place: 'My Khe', address: null, price: '100k', tags: [],
+    signup_url: 'https://t.me/anna_yoga', source_url: 'https://t.me/danangevent/1',
+  };
+  const template = '<html><head><title>Я с вами</title></head><body><div id="app"></div></body></html>';
+  const html = inject(template, eventPage(event, 'https://yaswami.test', 'Дананг'));
+  assert.match(html, /<title>Йога &#60;b&#62;&#38; чай&#60;\/b&#62; — сб, 14 ноября, 19:00, Дананг<\/title>/);
+  assert.match(html, /<link rel="canonical" href="https:\/\/yaswami.test\/e\/danangevent-1-0" \/>/);
+  assert.match(html, /"startDate":"2026-11-14T19:00:00\+07:00"/);
+  assert.equal(html.includes('<script>alert(1)'), false);
+  assert.equal(html.includes('$& утро'), true); // «$&» в тексте не превратилось в кусок шаблона
+  assert.equal((html.match(/<\/script>/g) ?? []).length, 2); // только свои: JSON-LD и начальные данные
+
+  const feed = inject(template, feedPage([event], 'https://yaswami.test', 'Дананг'));
+  assert.match(feed, /<h2>суббота, 14 ноября<\/h2><ul><li><a href="\/e\/danangevent-1-0">/);
+  assert.match(sitemap([event], 'https://yaswami.test'), /<loc>https:\/\/yaswami.test\/e\/danangevent-1-0<\/loc>/);
 });

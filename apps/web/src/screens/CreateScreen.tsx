@@ -96,7 +96,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
   return (
     <form onSubmit={submit} noValidate>
       <div className="top">
-        {onBack && <button type="button" className="chip" onClick={onBack}>← Мои события</button>}
+        {onBack && <button type="button" className="chip" onClick={onBack}>← Назад</button>}
         <h1>Что планируем?</h1>
         <p>Выберите формат — остальное займёт полминуты.</p>
       </div>

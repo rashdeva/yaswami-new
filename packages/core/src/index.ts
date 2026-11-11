@@ -3,3 +3,4 @@ export * from './api.ts';
 export * from './templates.ts';
 export * from './rsvp.ts';
 export * from './public-state.ts';
+export * from './collected.ts';

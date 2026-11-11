@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import type { Event } from '@yaswami/core';
 import { TEMPLATES } from '@yaswami/core';
@@ -16,12 +17,13 @@ function note({ event, is_host, my_approval_status }: EventListData): string {
 
 interface Props {
   events: EventListData[];
+  tabs: ReactNode;
   onOpen: (id: string) => void;
   onNew: () => void;
   onKind: (kind: Event['kind']) => void;
 }
 
-export function ListScreen({ events, onOpen, onNew, onKind }: Props) {
+export function ListScreen({ events, tabs, onOpen, onNew, onKind }: Props) {
   // Событие считается прошедшим через три часа после начала (или после конца, если он задан).
   const now = Date.now();
   const isPast = ({ event }: EventListData) => new Date(event.end_at ?? event.start_at).getTime() + (event.end_at ? 0 : 3 * 3600e3) < now;
@@ -55,7 +57,7 @@ export function ListScreen({ events, onOpen, onNew, onKind }: Props) {
 
   return (
     <>
-      <div className="top"><h1>Мои события</h1></div>
+      <div className="top">{tabs}<h1>Мои события</h1></div>
       {section('Скоро', upcoming)}
       {section('Прошедшие', past)}
       <div className="main"><div><button className="cta" onClick={() => { haptic.tap(); onNew(); }}>Новое событие</button></div></div>
