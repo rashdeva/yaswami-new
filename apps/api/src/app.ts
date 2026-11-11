@@ -110,7 +110,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/admin/inbox', async (c) => c.json(await inboxFeed(db, c.var.actor)))
     .get('/admin/conversations/:id/messages', async (c) => c.json(await inboxThread(db, c.req.param('id'))))
     .post('/admin/conversations/:id/messages', json(InboxSendInput), async (c) => {
-      await inboxSend(db, c.var.actor, c.req.param('id'), c.req.valid('json').text);
+      await inboxSend(db, `admin:${c.var.actor.id}`, c.req.param('id'), c.req.valid('json').text);
       return c.body(null, 204);
     })
     .patch('/admin/conversations/:id', json(ConversationUpdateInput), async (c) =>

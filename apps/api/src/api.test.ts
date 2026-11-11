@@ -667,6 +667,21 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual([((await back.json()) as Conversation).mode, back.status], ['agent', 200]);
   assert.deepEqual(await write('А сегодня что-нибудь есть?'), [REPLIES.no_date]);
 
+  // Те же операции через MCP — так работает Hermes. Не админу инструменты переписки не видны.
+  const mcp = async (auth: string, method: string, params?: object) =>
+    ((await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params })).json()) as { result: any }).result;
+  const toolNames = async (auth: string) => (await mcp(auth, 'tools/list')).tools.map((t: { name: string }) => t.name);
+  assert.ok(!(await toolNames(tma(71, 'Аня'))).includes('message_send'));
+  assert.ok((await toolNames(admin)).includes('message_send'));
+  const tool = async (name: string, args: object) => JSON.parse((await mcp(admin, 'tools/call', { name, arguments: args })).content[0].text);
+  assert.deepEqual((await tool('conversations_list', { waiting_only: true })).map((c: Conversation) => c.id), [id]);
+  sent.length = 0;
+  await tool('message_send', { conversation_id: id, text: 'Сегодня в 19:00 покер, записать?' });
+  assert.deepEqual(sent.map(([, b]) => b.text), ['Сегодня в 19:00 покер, записать?']);
+  const read = await tool('conversation_get', { conversation_id: id });
+  assert.deepEqual([read.conversation.mode, read.messages.at(-1).author], ['human', 'agent']);
+  assert.deepEqual(await tool('conversations_list', { waiting_only: true }), []);
+
   // Telegram не принял сообщение: оно остаётся в ленте как недоставленное, админка получает ошибку.
   const ok = bot.call;
   bot.call = async () => ({ ok: false, error_code: 403, description: 'bot was blocked by the user' });
