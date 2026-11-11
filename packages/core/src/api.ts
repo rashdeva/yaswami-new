@@ -36,6 +36,10 @@ export type TicketTypeUpdateInput = z.infer<typeof TicketTypeUpdateInput>;
 
 export { RsvpInput };
 
+/** Заход на событие. `ref` — id пользователя, по чьей ссылке пришли (хвост `-r<id>` в startapp). */
+export const VisitInput = z.object({ ref: z.number().int().positive().optional() });
+export type VisitInput = z.infer<typeof VisitInput>;
+
 /** Гость, как его видят другие: только имя, без username и id. */
 export interface GuestView {
   user_first_name: string;
@@ -100,6 +104,20 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   source_url: string; // публикация, из которой взято событие
   claimed_event_id: Event['id'] | null; // организатор подтвердил событие: запись идёт через событие Ясвами
   hosts?: CollectedHost[]; // как hosts у события в Luma; только в ответе на одно событие, в списках его нет
+}
+
+/**
+ * Человек из аудитории организатора — как CalendarContact в Luma API (`GET /v1/calendars/contacts/list`): те же имена
+ * полей, где они у нас есть. `username` — наше: вместо email у нас Telegram. Попадает в контакты, зайдя на событие
+ * организатора или ответив на него.
+ */
+export interface Contact {
+  id: string;
+  user_id: User['id'];
+  created_at: Date;
+  event_approved_count: number; // на сколько событий организатора человек идёт
+  first_name: string;
+  username: string | null;
 }
 
 /** Кто вошёл и на какие собранные события он уже записывался. */

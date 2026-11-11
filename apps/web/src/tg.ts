@@ -32,7 +32,12 @@ export const inTelegram = !!tg?.initData;
 const isMobile = ['android', 'ios'].includes((tg as { platform?: string } | undefined)?.platform ?? '');
 export const nativeBack = inTelegram && !!tg?.isVersionAtLeast('6.1');
 /** Событие, с которым открыли приложение: t.me/<бот>/<приложение>?startapp=<id>. В браузере — ?startapp=<id>. */
-export const startParam = tg?.initDataUnsafe.start_param ?? new URLSearchParams(location.search).get('startapp') ?? undefined;
+const rawStart = tg?.initDataUnsafe.start_param ?? new URLSearchParams(location.search).get('startapp') ?? undefined;
+// Хвост `-r<id>` — кто позвал: его дописывает «Позвать друзей» (format.ts, eventLink).
+const startMatch = /^(.*?)(?:-r(\d+))?$/.exec(rawStart ?? '');
+export const startParam = startMatch?.[1] || undefined;
+/** id пользователя, по чьей ссылке открыли приложение. */
+export const startRef = startMatch?.[2] ? Number(startMatch[2]) : undefined;
 
 const safely = (fn: () => void) => {
   try {

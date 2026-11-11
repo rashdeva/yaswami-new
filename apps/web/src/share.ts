@@ -4,8 +4,9 @@ import { eventLink, when } from './format.ts';
 import { inTelegram, tg } from './tg.ts';
 
 /** «Позвать друзей»: сразу открывает выбор чата Telegram (там же есть «скопировать ссылку»). Вызывать из обработчика нажатия. */
-export function shareEvent(event: EventData['event'], toast: (text: string) => void) {
-  shareLink(eventLink(event.id), `${TEMPLATES[event.kind].emoji} ${event.name}\n${when(event.start_at, event.timezone)}`, toast);
+export function shareEvent(event: EventData['event'], ref: number | undefined, toast: (text: string) => void) {
+  shareLink(eventLink(event.id, ref), `${TEMPLATES[event.kind].emoji} ${event.name}
+${when(event.start_at, event.timezone)}`, toast);
 }
 
 /** Открывает выбор чата Telegram со ссылкой (в браузере: системное «Поделиться», иначе копирует). */

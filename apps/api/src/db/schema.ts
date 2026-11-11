@@ -1,7 +1,7 @@
 // Таблицы Postgres. Источник правды — схемы в @yaswami/core; блок в конце файла роняет typecheck,
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, CollectedEvent, Event, Guest, Share, TicketType, User } from '@yaswami/core';
 import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
@@ -162,6 +162,42 @@ export const collectedEventSignups = pgTable(
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.external_id, t.user_id] }), index('collected_event_signups_user_idx').on(t.user_id)],
+);
+
+// Аудитория организатора — contacts календаря в Luma API. Организатор у нас — пользователь (events.user_id).
+// Сюда же лягут метки, блокировки и отписки, когда появятся рассылки.
+export const contacts = pgTable(
+  'contacts',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    host_user_id: telegramId('host_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('contacts_host_user_idx').on(t.host_user_id, t.user_id)],
+);
+
+// Заход вошедшего пользователя на событие — своё или собранное. Строка на каждый заход: по ним считается аудитория
+// организатора (events.user_id; у собранных — hosts по telegram_username) и кто кого привёл (referrer_id).
+// ponytail: журнал без свёртки; когда вырастет — сворачивать в (user, событие, первый/последний заход).
+export const visits = pgTable(
+  'visits',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    event_id: text().references(() => events.id, { onDelete: 'cascade' }),
+    collected_external_id: text().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
+    // Кто позвал: пользователь, чьей ссылкой «Позвать друзей» открыли событие.
+    referrer_id: telegramId('referrer_id').references(() => users.id, { onDelete: 'set null' }),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('visits_event_idx').on(t.event_id),
+    index('visits_collected_idx').on(t.collected_external_id),
+    index('visits_user_idx').on(t.user_id),
+    index('visits_referrer_idx').on(t.referrer_id),
+    check('visits_target_check', sql`num_nonnulls(${t.event_id}, ${t.collected_external_id}) = 1`),
+  ],
 );
 
 // Номер последней разобранной публикации по каждому источнику сборщика.

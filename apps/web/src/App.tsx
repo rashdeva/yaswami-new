@@ -234,6 +234,7 @@ export function App() {
         key={screen.id}
         id={screen.id}
         initial={screen.initial}
+        userId={me?.user.id}
         onBack={nativeBack ? null : () => go({ name: 'list' })}
         onKind={setKind}
         toast={showToast}
