@@ -695,6 +695,22 @@ test('переписка: бот пишет всё в базу, админ от�
   sent.length = 0;
   await tool('message_send', { conversation_id: id, text: 'Сегодня в 19:00 покер, записать?' });
   assert.deepEqual(sent.map(([, b]) => b.text), ['Сегодня в 19:00 покер, записать?']);
+  // Обложки: иллюстратор видит события без проверки, оставляет фото анонса; чужой адрес картинки не скачиваем.
+  await db.delete(collectedEvents);
+  const starts_at = new Date(Date.now() + 86_400_000);
+  await db.insert(collectedEvents).values({
+    external_id: 'telegram:danangevent/5#0', channel: 'danangevent', starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/5' },
+    event: { title: 'Баня', description: 'Парим', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: ['баня'], telegram_username: 'igor', whatsapp_phone: null, url: null, topic: 'баня' },
+  });
+  const [photo] = await db.insert(photos).values({ collected_external_id: 'telegram:danangevent/5#0', source: 'telegram:danangevent/5', data: Buffer.from([0xff, 0xd8, 1]) }).returning();
+  const cover = `${settings.publicUrl}/api/photos/${photo!.id}`;
+  assert.deepEqual(await tool('covers_pending', {}), [{ id: 'danangevent-5-0', title: 'Баня', description: 'Парим', topic: 'баня', tags: ['баня'], place: null, photo_url: cover }]);
+  assert.deepEqual(await tool('cover_set', { id: 'danangevent-5-0', image_url: 'https://evil.example/x.png' }), { error: 'bad_image_url' });
+  assert.deepEqual(await tool('cover_set', { id: 'danangevent-5-0' }), { cover_url: cover });
+  assert.deepEqual(await tool('covers_pending', {}), []);
+  assert.equal(((await (await app.request('/collected-events')).json()) as CollectedEventItem[])[0]!.cover_url, cover);
+  assert.ok(!(await toolNames(tma(71, 'Аня'))).includes('cover_set'));
+
   const read = await tool('conversation_get', { conversation_id: id });
   assert.deepEqual([read.conversation.mode, read.messages.at(-1).author], ['human', 'agent']);
   assert.deepEqual(await tool('conversations_list', { waiting_only: true }), []);

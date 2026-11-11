@@ -36,9 +36,9 @@ const PHOTO_MAX_BYTES = 200_000;
  * Какое готовое превью Telegram скачать: самое маленькое с длинной стороной от PHOTO_SIDE, иначе самое большое.
  * Сами картинки не сжимаем — Telegram уже хранит уменьшенные JPEG, поэтому библиотека для сжатия не нужна (ADR-0003).
  */
-export function pickThumb(sizes) {
+export function pickThumb(sizes, side = PHOTO_SIDE) {
   const sized = (sizes ?? []).filter((s) => s.w && s.h).sort((a, b) => Math.max(a.w, a.h) - Math.max(b.w, b.h));
-  return (sized.find((s) => Math.max(s.w, s.h) >= PHOTO_SIDE) ?? sized.at(-1))?.type ?? null;
+  return (sized.find((s) => Math.max(s.w, s.h) >= side) ?? sized.at(-1))?.type ?? null;
 }
 
 /**
