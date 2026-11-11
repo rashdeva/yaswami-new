@@ -7,6 +7,9 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import type { CollectedEventItem, EventView, Me } from '@yaswami/core';
 import { createApp } from './app.ts';
+import { handleUpdate, REPLIES } from './bot.ts';
+import { bot } from './telegram.ts';
+import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
@@ -32,6 +35,10 @@ before(async () => {
   app = createApp({ db, botToken: BOT_TOKEN });
 });
 after(() => db.$client.end());
+
+// Всё, что бот «отправил» за тест. Настоящих запросов к Telegram нет.
+const sent: [method: string, body: any][] = [];
+bot.call = async (method, body) => (sent.push([method, body]), { ok: true });
 
 function initData(id: number, first_name: string, authDate = Math.floor(Date.now() / 1000)) {
   const params = new URLSearchParams({ auth_date: String(authDate), user: JSON.stringify({ id, first_name, username: `u${id}` }) });
@@ -305,6 +312,7 @@ test('страницы для поисковиков: содержимое и р
   const event: CollectedEventItem = {
     id: 'danangevent-1-0', title: 'Йога <b>& чай</b>', description: '</script><script>alert(1)</script> $& утро',
     starts_at: '2026-11-14T19:00:00+07:00', ends_at: null, place: 'My Khe', address: null, price: '100k', tags: [],
+    topic: 'баня', what_happens: ['Парение <i>'], takeaway: null,
     signup_url: 'https://t.me/anna_yoga', source_url: 'https://t.me/danangevent/1', claimed_event_id: null,
   };
   const template = '<html><head><title>Я с вами</title></head><body><div id="app"></div></body></html>';
@@ -312,6 +320,7 @@ test('страницы для поисковиков: содержимое и р
   assert.match(html, /<title>Йога &#60;b&#62;&#38; чай&#60;\/b&#62; — сб, 14 ноября, 19:00, Дананг<\/title>/);
   assert.match(html, /<link rel="canonical" href="https:\/\/yaswami.test\/e\/danangevent-1-0" \/>/);
   assert.match(html, /"startDate":"2026-11-14T19:00:00\+07:00"/);
+  assert.match(html, /<ol><li>Парение &#60;i&#62;<\/li><\/ol><h2>Что такое баня<\/h2><p>Парная/); // шаги события и гид по Topic
   assert.equal(html.includes('<script>alert(1)'), false);
   assert.equal(html.includes('$& утро'), true); // «$&» в тексте не превратилось в кусок шаблона
   assert.equal((html.match(/<\/script>/g) ?? []).length, 2); // только свои: JSON-LD и начальные данные
@@ -319,4 +328,157 @@ test('страницы для поисковиков: содержимое и р
   const feed = inject(template, feedPage([event], 'https://yaswami.test', 'Дананг'));
   assert.match(feed, /<h2>суббота, 14 ноября<\/h2><ul><li><a href="\/e\/danangevent-1-0">/);
   assert.match(sitemap([event], 'https://yaswami.test'), /<loc>https:\/\/yaswami.test\/e\/danangevent-1-0<\/loc>/);
+});
+
+const HOUR = 3600e3;
+const iso = (ms: number) => new Date(ms).toISOString().slice(0, 19) + '+00:00';
+const extracted = (extra: Partial<CollectedEvent> = {}): CollectedEvent => ({
+  title: 'Йога на пляже', description: 'Утренняя практика для всех.', starts_at: iso(Date.now() + 48 * HOUR), ends_at: null,
+  place: 'Пляж Микхе', address: null, price: 'донейшн', tags: ['йога'], telegram_username: null, whatsapp_phone: null, url: null, ...extra,
+});
+const ANNOUNCEMENT = 'Йога на пляже в субботу в 7 утра — приходите все, будет очень душевно';
+const botMessage = (id: number, text: string, extra: object = {}) =>
+  ({ update_id: 1, message: { message_id: 1, date: Math.floor(Date.now() / 1000), chat: { id, type: 'private' }, from: { id, first_name: 'Аня', username: `u${id}` }, text, ...extra } });
+
+test('вебхук бота: без секрета закрыт, с чужим секретом — отказ', async () => {
+  const post = (a: ReturnType<typeof createApp>, secret?: string) =>
+    a.request('/telegram/webhook', { method: 'POST', headers: { 'content-type': 'application/json', ...(secret ? { 'x-telegram-bot-api-secret-token': secret } : {}) }, body: JSON.stringify({ update_id: 1 }) });
+  assert.equal((await post(app, 'anything')).status, 403, 'секрет не настроен');
+  const hooked = createApp({ db, botToken: BOT_TOKEN, telegram: { webhookSecret: 's3cret' } });
+  assert.equal((await post(hooked)).status, 403);
+  assert.equal((await post(hooked, 's3creT')).status, 403);
+  assert.equal((await post(hooked, 's3cret')).status, 200);
+});
+
+test('сообщение боту: анонс становится событием отправителя, ответ — виджет', async () => {
+  sent.length = 0;
+  const seen: unknown[] = [];
+  // Переслал своё же сообщение — это по-прежнему его анонс; дата публикации берётся от исходного.
+  const self = { type: 'user', date: 1794000000, sender_user: { id: 60, username: 'u60' } };
+  await handleUpdate(db, async (a) => (seen.push(a), [extracted()]), botMessage(60, ANNOUNCEMENT, { forward_origin: self }));
+  assert.deepEqual(seen, [{ id: 'bot/60/1', text: ANNOUNCEMENT, published_at: new Date(1794000000 * 1000).toISOString(), author_username: 'u60' }]);
+
+  const mine = (await (await call(tma(60, 'Аня'), 'GET', '/events')).json()) as { event: EventView['event']; is_host: boolean }[];
+  assert.deepEqual(mine.map((e) => [e.event.name, e.event.status, e.is_host, e.event.geo_address_json]), [['Йога на пляже', 'published', true, { address: 'Пляж Микхе' }]]);
+  const view = (await (await call(tma(60, 'Аня'), 'GET', `/events/${mine[0]!.event.id}`)).json()) as EventView;
+  assert.equal(view.ticket_types[0]!.price_text, 'донейшн');
+
+  assert.deepEqual(sent.map(([m, b]) => [m, b.chat_id]), [['sendWidget', 60]]);
+  assert.equal(JSON.parse(sent[0]![1].public_data).l, 'Событие создано и подтверждено');
+  assert.ok(sent[0]![1].reply_markup.inline_keyboard[0][0].url.endsWith(`startapp=${mine[0]!.event.id}`));
+});
+
+test('сообщение боту: отказы и лимит бесплатных событий', async () => {
+  const reply = async (extract: Parameters<typeof handleUpdate>[1], text: string, extra?: object) => {
+    sent.length = 0;
+    await handleUpdate(db, extract, botMessage(61, text, extra));
+    return sent.map(([m, b]) => (m === 'sendMessage' ? b.text : m));
+  };
+  const never = async () => assert.fail('ИИ вызывать не нужно');
+  assert.deepEqual(await reply(never, '/start'), [REPLIES.help]);
+  assert.deepEqual(await reply(never, ''), [REPLIES.help], 'фото без подписи');
+  assert.deepEqual(await reply(never, 'Сдаётся квартира у моря, две спальни, недорого, пишите в личку'), [REPLIES.no_date]);
+  assert.deepEqual(await reply(undefined, ANNOUNCEMENT), [REPLIES.unavailable], 'нет ключа Gemini');
+  assert.deepEqual(await reply(async () => [], ANNOUNCEMENT), [REPLIES.not_event]);
+  assert.deepEqual(await reply(async () => [extracted({ starts_at: 'в субботу' })], ANNOUNCEMENT), [REPLIES.not_event], 'дата не определена');
+  assert.deepEqual(await reply(async () => [extracted({ starts_at: iso(Date.now() - 48 * HOUR) })], ANNOUNCEMENT), [REPLIES.past]);
+  const error = console.error;
+  console.error = () => {};
+  assert.deepEqual(await reply(async () => { throw new Error('429'); }, ANNOUNCEMENT), [REPLIES.unavailable]);
+  console.error = error;
+  assert.deepEqual(await (await call(tma(61, 'Аня'), 'GET', '/events')).json(), [], 'ни один отказ события не создал');
+
+  // Расписание: каждое событие отдельно, пока хватает лимита; остальное — понятный отказ.
+  const limit = settings.freeEventsLimit;
+  settings.freeEventsLimit = 2;
+  try {
+    const week = [1, 2, 3, 4].map((d) => extracted({ title: `Йога, день ${d}`, starts_at: iso(Date.now() + d * 24 * HOUR) }));
+    assert.deepEqual(await reply(async () => week, ANNOUNCEMENT), ['sendWidget', 'sendWidget', REPLIES.limit(2)]);
+    assert.equal(((await (await call(tma(61, 'Аня'), 'GET', '/events')).json()) as unknown[]).length, 2);
+  } finally {
+    settings.freeEventsLimit = limit;
+  }
+});
+
+test('сообщение боту: то же собранное событие подтверждается только за своим контактом', async () => {
+  const e = extracted({ title: 'Коллажный кружок', telegram_username: 'u62' });
+  const row = (n: number) => ({
+    external_id: `telegram:danangevent/${n}#0`, channel: 'danangevent', announcement: { url: `https://t.me/danangevent/${n}` },
+    event: e, starts_at: new Date(e.starts_at), telegram_username: 'u62', signup_url: 'https://t.me/u62',
+  });
+  await db.insert(collectedEvents).values([row(901), row(902)]);
+  const claimed = async (n: number) => ((await (await app.request(`/collected-events/danangevent-${n}-0`)).json()) as CollectedEventItem).claimed_event_id;
+
+  await handleUpdate(db, async () => [e], botMessage(63, ANNOUNCEMENT)); // чужой: событие создано, витрина не тронута
+  assert.equal(await claimed(901), null);
+  await handleUpdate(db, async () => [e], botMessage(62, ANNOUNCEMENT));
+  const mine = (await (await call(tma(62, 'Аня'), 'GET', '/events')).json()) as { event: { id: string } }[];
+  assert.equal(await claimed(901), mine[0]!.event.id);
+  assert.equal(await claimed(902), null, 'подтверждается одна запись');
+});
+
+test('RSVP: уведомления гостю и организатору; сбой Telegram запись не ломает', async () => {
+  const { event } = await newEvent(tma(70, 'Миша'), { max_capacity: 5 });
+  const rsvp = async (id: number, approval_status: string) => {
+    sent.length = 0;
+    const res = await call(tma(id, `G${id}`), 'POST', `/events/${event.id}/rsvp`, { approval_status });
+    assert.equal(res.status, 200);
+    return sent.map(([m, b]) => [m, b.chat_id, JSON.parse(b.public_data).l]);
+  };
+  assert.deepEqual(await rsvp(71, 'approved'), [['sendWidget', 71, 'Вы записаны'], ['sendWidget', 70, 'Новая запись']]);
+  const toHost = sent[1]![1];
+  assert.deepEqual(JSON.parse(toHost.public_data).m.at(-1), ['👥', 'Записано: 1 из 5']);
+  assert.deepEqual(toHost.reply_markup.inline_keyboard[0][0], { text: 'Написать: G71', url: 'https://t.me/u71' });
+
+  assert.deepEqual(await rsvp(71, 'approved'), [], 'повторный ответ');
+  assert.deepEqual(await rsvp(72, 'maybe'), [], '«думаю» — не запись');
+  assert.deepEqual(await rsvp(71, 'declined'), []);
+  assert.deepEqual((await rsvp(71, 'approved')).length, 2, 'записался снова');
+  assert.deepEqual(await rsvp(70, 'approved'), [['sendWidget', 70, 'Вы записаны']], 'организатор сам себе гость');
+
+  const stub = bot.call;
+  const error = console.error;
+  console.error = () => {};
+  bot.call = async () => { throw new Error('telegram is down'); };
+  try {
+    const res = await call(tma(73, 'Нино'), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved' });
+    assert.equal(res.status, 200);
+    assert.equal(((await res.json()) as EventView).me?.approval_status, 'approved');
+    await new Promise((r) => setImmediate(r)); // даём уведомлениям упасть, пока console.error заглушён
+  } finally {
+    bot.call = stub;
+    console.error = error;
+  }
+});
+
+test('сообщение боту: пересланный чужой анонс — собранное событие на витрине, не событие отправителя', async () => {
+  const forward = (id: number, origin: object) => botMessage(id, ANNOUNCEMENT, { forward_origin: { date: 1794000000, ...origin } });
+  const channel = { type: 'channel', chat: { id: -1001234567890, username: 'DanangEvent' }, message_id: 777 };
+  const e = extracted({ title: 'Экстатик дэнс у моря', telegram_username: 'dj_kolya', price: null });
+  const item = async (slug: string) => (await (await app.request(`/collected-events/${slug}`)).json()) as CollectedEventItem;
+
+  sent.length = 0;
+  await handleUpdate(db, async () => [e], forward(64, channel));
+  // Ключ и адрес — как у сборщика: когда он дойдёт до этой публикации, второй записи не появится.
+  const added = await item('danangevent-777-0');
+  assert.deepEqual([added.title, added.source_url, added.claimed_event_id], ['Экстатик дэнс у моря', 'https://t.me/DanangEvent/777', null]);
+  assert.deepEqual(await (await call(tma(64, 'Аня'), 'GET', '/events')).json(), [], 'событие Ясвами не создано, лимит не тронут');
+  assert.deepEqual(sent.map(([m, b]) => [m, b.chat_id, JSON.parse(b.public_data).l]), [['sendWidget', 64, 'Добавлено на витрину']]);
+  assert.ok(sent[0]![1].reply_markup.inline_keyboard[0][0].url.endsWith('/e/danangevent-777-0'));
+
+  // Тот же анонс от другого человека и из лички: запись дополняется, а не дублируется.
+  const before = ((await (await app.request('/collected-events')).json()) as unknown[]).length;
+  await handleUpdate(db, async () => [{ ...e, price: '200k' }], forward(65, { type: 'user', sender_user: { id: 99, username: 'dj_kolya' } }));
+  assert.equal(((await (await app.request('/collected-events')).json()) as unknown[]).length, before);
+  assert.equal((await item('danangevent-777-0')).price, '200k');
+
+  // Переслано от человека, события ещё нет: источник — его профиль.
+  await handleUpdate(db, async () => [extracted({ title: 'Нетворкинг фаундеров' })], forward(65, { type: 'user', sender_user: { id: 99, username: 'dj_kolya' } }));
+  assert.equal((await item('bot65-1-0')).source_url, 'https://t.me/dj_kolya');
+
+  // Контактом в пересланном анонсе указан сам отправитель — это его событие.
+  sent.length = 0;
+  await handleUpdate(db, async () => [extracted({ title: 'Баня по-чёрному', telegram_username: '@U66' })], forward(66, { type: 'channel', chat: { id: -1005, username: 'banya' }, message_id: 3 }));
+  assert.equal(JSON.parse(sent[0]![1].public_data).l, 'Событие создано и подтверждено');
+  assert.equal(((await (await call(tma(66, 'Аня'), 'GET', '/events')).json()) as unknown[]).length, 1);
 });

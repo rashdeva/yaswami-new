@@ -1,12 +1,11 @@
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createExtractor } from './extract.mjs';
+import { createExtractor, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
-import { looksLikeEvent } from './prefilter.mjs';
 import { connect, fetchChatAnnouncements } from './mtproto.mjs';
-import { isSameEvent, mergeEvents } from './dedupe.mjs';
 import { createStore } from './store.mjs';
-import { createSummarizer, fetchProfile } from './host.mjs';
+import { fetchProfile } from './host.mjs';
+import { backfillTopics } from './backfill.mjs';
 
 const env = process.env;
 const channels = (env.CHANNELS ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
@@ -77,6 +76,8 @@ async function pollChannel(channel, known) {
 }
 
 do {
+  // Сбой дозаполнения (ИИ перегружен, лимит) не должен останавливать сбор: остаток доберём следующим проходом.
+  await backfillTopics({ store, extract, pause: () => sleep(llmPauseMs) }).catch((e) => console.error('дозаполнение:', e.message));
   const known = await store.upcoming();
   for (const channel of channels) {
     await pollChannel(channel, known).catch((e) => console.error(`${channel}: ${e.message}`));

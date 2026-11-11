@@ -38,6 +38,12 @@ export function createStore(url) {
       insert into hosts ${sql(host)} on conflict (telegram_id) do update set username = excluded.username`
       // Пока все пользователи — из Telegram, users.id и есть Telegram id.
       .then(() => sql`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`),
+    /** Предстоящие события без полей «что это мне даст»: собраны до их появления. */
+    withoutTopic: () => sql`
+      select external_id, announcement, event from collected_events
+      where coalesce(ends_at, starts_at) >= now() and not (event ? 'topic')`,
+    setEvent: (external_id, event) => sql`
+      update collected_events set event = ${sql.json(event)}, updated_at = now() where external_id = ${external_id}`,
     end: () => sql.end(),
   };
 }

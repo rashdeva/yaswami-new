@@ -12,7 +12,7 @@ assert.equal(signupUrl({ ...e, url: 'https://x.co/f' }, a, t), 'https://x.co/f')
 assert.equal(signupUrl({ ...e, telegram_username: 'a b', url: 'javascript:1' }, a, t), a.url);
 console.log('ok');
 
-const { looksLikeEvent } = await import('./prefilter.mjs');
+const { looksLikeEvent, isSameEvent, mergeEvents } = await import('@yaswami/extract');
 const pad = ' — приходите все, будет очень интересно и душевно';
 assert.ok(looksLikeEvent('Йога на пляже в субботу в 7 утра' + pad));
 assert.ok(looksLikeEvent('Networking night, Friday 8pm at the rooftop bar' + pad));
@@ -33,7 +33,6 @@ assert.deepEqual(toAnnouncement('x', { ...msg, sender: { bot: true } }), [], 'с
 console.log('mtproto ok');
 assert.equal(toAnnouncement('-1001234567890', msg)[0].url, 'https://t.me/c/1234567890/7', 'ссылка закрытого канала');
 
-const { isSameEvent, mergeEvents } = await import('./dedupe.mjs');
 const ev = (title, starts_at, telegram_username = null, extra = {}) =>
   ({ title, description: '', starts_at, ends_at: null, place: null, price: null, telegram_username, whatsapp_phone: null, ...extra });
 const D = '2026-11-13T12:00:00+07:00';
@@ -46,6 +45,24 @@ assert.ok(!isSameEvent(ev('Йога утром', '2026-11-13T07:00:00+07:00', 'k
 const m = mergeEvents(ev('Коллажная встреча', '2026-11-13T00:00:00+07:00', 'rita'), ev('Коллажный кружок', D, null, { place: 'Дом Культуры', price: '100k' }));
 assert.deepEqual([m.title, m.starts_at, m.place, m.price, m.telegram_username], ['Коллажная встреча', D, 'Дом Культуры', '100k', 'rita']);
 console.log('dedupe ok');
+assert.deepEqual(mergeEvents({ ...ev('Баня', D), what_happens: [] }, { ...ev('Баня', D), what_happens: ['Парение'] }).what_happens, ['Парение'], 'пустой список дополняется из повторного анонса');
+
+const { backfillTopics } = await import('./backfill.mjs');
+const saved = {};
+await backfillTopics({
+  store: {
+    withoutTopic: async () => [
+      { external_id: 'a#0', announcement: { id: 'a' }, event: ev('Баня', D, 'igor', { price: '450k' }) },
+      { external_id: 'a#1', announcement: { id: 'a' }, event: ev('Киноклуб', '2026-11-20T19:00:00+07:00') },
+    ],
+    setEvent: async (id, event) => { saved[id] = event; },
+  },
+  extract: async () => [ev('Вечер в бане', D, 'igor', { price: 'другая', topic: 'баня', what_happens: ['Парение'], takeaway: null })],
+  pause: async () => {},
+});
+assert.deepEqual([saved['a#0'].topic, saved['a#0'].what_happens, saved['a#0'].price, saved['a#0'].title], ['баня', ['Парение'], '450k', 'Баня'], 'дописаны только новые поля');
+assert.equal(saved['a#1'].topic, 'другое', 'не найденное при повторном разборе помечается, чтобы не разбирать снова');
+console.log('backfill ok');
 
 const { channelFromBio } = await import('./host.mjs');
 assert.equal(channelFromBio('Веду йогу. Канал: t.me/anna_yoga_life, запись @anna_yoga', 'anna_yoga'), 'anna_yoga_life');

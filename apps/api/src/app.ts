@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { validator } from 'hono/validator';
@@ -6,6 +7,8 @@ import type { AppConfig, User } from '@yaswami/core';
 import { EventCreateInput, EventUpdateInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
 import type { AuthMethod } from './auth.ts';
 import { authenticate, issueToken, revokeTokens } from './auth.ts';
+import type { Extract } from './bot.ts';
+import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
 import { handleMcp } from './mcp.ts';
 import * as s from './services.ts';
@@ -20,9 +23,11 @@ interface Options {
   config?: Partial<Pick<AppConfig, 'bot_username' | 'app_name'>>;
   /** Вход на сайте через Telegram: Client Secret из @BotFather и адрес сайта. Без них вход с сайта выключен. */
   webLogin?: { clientSecret: string; publicUrl: string };
+  /** Вебхук бота: секрет, который Telegram присылает в заголовке, и разбор анонсов. Без секрета вебхук закрыт. */
+  telegram?: { webhookSecret: string; extract?: Extract };
 }
 
-export function createApp({ db, botToken, config, webLogin: login }: Options) {
+export function createApp({ db, botToken, config, webLogin: login, telegram }: Options) {
   const web_login = !!(botToken && login?.clientSecret);
   return new Hono<{ Variables: { actor: User; method: AuthMethod } }>()
     .onError((e, c) => {
@@ -37,6 +42,15 @@ export function createApp({ db, botToken, config, webLogin: login }: Options) {
     // До проверки входа: витрину собранных событий видит и анонимный посетитель.
     .get('/collected-events', async (c) => c.json(await s.listCollectedEvents(db)))
     .get('/collected-events/:id', async (c) => c.json(await s.getCollectedEvent(db, c.req.param('id'))))
+    .post('/telegram/webhook', async (c) => {
+      const secret = Buffer.from(telegram?.webhookSecret ?? '');
+      const given = Buffer.from(c.req.header('x-telegram-bot-api-secret-token') ?? '');
+      if (!secret.length || given.length !== secret.length || !timingSafeEqual(given, secret)) return c.json({ error: 'forbidden' }, 403);
+      const update: unknown = await c.req.json();
+      // Отвечаем сразу, разбор идёт следом: ИИ думает секунды, а Telegram при медленном ответе шлёт обновление повторно.
+      void handleUpdate(db, telegram?.extract, update).catch(console.error);
+      return c.json({ ok: true });
+    })
     .route('/auth', webLogin({ db, botToken, clientSecret: login?.clientSecret ?? '', publicUrl: login?.publicUrl ?? '' }))
     .use(async (c, next) => {
       const auth = await authenticate(db, botToken, c.req.header('authorization'), getCookie(c, SESSION_COOKIE));

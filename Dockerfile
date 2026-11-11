@@ -9,6 +9,7 @@ COPY apps/api/package.json apps/api/
 COPY apps/collector/package.json apps/collector/
 COPY apps/web/package.json apps/web/
 COPY packages/core/package.json packages/core/
+COPY packages/extract/package.json packages/extract/
 
 # Мини-приложение: Vite собирает статику
 FROM base AS web
@@ -22,6 +23,7 @@ RUN pnpm install --frozen-lockfile --prod --filter "@yaswami/api..." --filter "@
 COPY apps/api apps/api
 COPY apps/collector apps/collector
 COPY packages/core packages/core
+COPY packages/extract packages/extract
 COPY --from=web /app/apps/web/dist apps/web/dist
 
 ENV NODE_ENV=production

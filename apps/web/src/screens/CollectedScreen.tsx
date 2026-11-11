@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
-import { collectedIsPast, collectedPath, collectedWhen } from '@yaswami/core';
+import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES } from '@yaswami/core';
 import { api, loginUrl } from '../api.ts';
 import { haptic, openExternal } from '../tg.ts';
 
@@ -64,6 +64,9 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
 
   const past = collectedIsPast(event);
   const where = [event.place, event.address].filter(Boolean).join(', ');
+  // Гид по Topic пишет редакция; у «другого» и у событий, собранных до появления поля, его нет.
+  const guide = event.topic ? TOPIC_GUIDES[event.topic] : undefined;
+  const level = event.beginner_friendly == null ? null : event.beginner_friendly ? 'Можно без опыта' : 'Нужен опыт';
 
   function signUp() {
     haptic.tap();
@@ -81,8 +84,8 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
     <>
       <div className={`hero${onBack ? '' : ' nb'}`}>
         {onBack && <button className="back" onClick={onBack}>← Все события</button>}
-        <div className="emo">📅</div>
-        <small>{past ? 'Событие прошло' : city}</small>
+        <div className="emo">{guide?.emoji ?? '📅'}</div>
+        <small>{past ? 'Событие прошло' : [city, guide && event.topic].filter(Boolean).join(' · ')}</small>
         <h1>{event.title}</h1>
       </div>
 
@@ -92,14 +95,48 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
         {event.price && <div><span>🎟</span><span>{event.price}</span></div>}
       </div></div>
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
+      {!!event.what_happens?.length && (
+        <>
+          <h2>Что будет</h2>
+          <div className="group"><ol className="steps">{event.what_happens.map((s) => <li key={s}><span>{s}</span></li>)}</ol></div>
+        </>
+      )}
+      {(event.for_whom || level) && (
+        <>
+          <h2>Для кого</h2>
+          <div className="group"><div className="pad">
+            {event.for_whom && <p>{event.for_whom}</p>}
+            {level && <span className={`badge${event.beginner_friendly ? '' : ' no'}`}>{level}</span>}
+          </div></div>
+        </>
+      )}
+      {event.takeaway && (
+        <>
+          <h2>С чем уйдёшь</h2>
+          <div className="group"><div className="pad"><p className="quote">{event.takeaway}</p><p className="from">Со слов организатора</p></div></div>
+        </>
+      )}
+      {guide && (
+        <>
+          <h2>Что такое {event.topic}</h2>
+          <div className="group">
+            <div className="pad"><p>{guide.what}</p><p>{guide.why}</p></div>
+            <details><summary>Если идёшь впервые</summary><p>{guide.first}</p></details>
+            <details><summary>Кому стоит быть осторожнее</summary><p>{guide.not_for}</p></details>
+          </div>
+          <p className="note">Гид написала редакция Ясвами — это не обещание организатора.</p>
+        </>
+      )}
       {event.hosts?.map((host) => (
-        <div className="group" key={host.name}><div className="meta">
-          <div><span>👤</span><span>{host.name}{!host.confirmed && ' · профиль собран автоматически'}</span></div>
-          {host.summary && <div className="text">{host.summary}</div>}
-          {host.channel_url && (
-            <div><span>📣</span><a href={host.channel_url} target="_blank" rel="noreferrer">Канал организатора</a></div>
-          )}
-        </div></div>
+        <Fragment key={host.name}>
+          <h2>Организатор</h2>
+          <div className="group"><div className="pad">
+            <p>{host.name}</p>
+            {host.summary && <p>{host.summary}</p>}
+            {host.channel_url && <p><a href={host.channel_url} target="_blank" rel="noreferrer">Канал организатора</a></p>}
+          </div></div>
+          {!host.confirmed && <p className="note">Профиль собран автоматически по открытому каналу организатора.</p>}
+        </Fragment>
       ))}
       {event.tags.length > 0 && <div className="tags">{event.tags.map((t) => <span key={t}>{t}</span>)}</div>}
 

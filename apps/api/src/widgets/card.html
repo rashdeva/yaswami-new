@@ -1,0 +1,31 @@
+<style>
+body{margin:0;padding:0}
+.h{padding:14px 14px 12px;color:#fff;background:linear-gradient(135deg,var(--a),var(--b))}
+.e{font-size:1.9em;line-height:1}
+.l{font-size:.72em;font-weight:600;letter-spacing:.07em;text-transform:uppercase;margin-top:8px;color:rgba(255,255,255,.85)}
+.t{font-size:1.25em;font-weight:700;line-height:1.2;margin-top:2px;overflow-wrap:anywhere}
+.b{padding:10px 14px max(12px,env(safe-area-inset-bottom));color:var(--tg-theme-text-color)}
+.m{display:flex;gap:8px;margin:4px 0;overflow-wrap:anywhere}
+.m span:first-child{flex:0 0 1.4em;text-align:center}
+</style>
+<div id=w></div>
+<script>
+(function(){
+var W=window.TelegramWidget,root=document.getElementById('w');
+if(!W)return;
+/* Карточка уведомления. Всё содержимое приходит в общем состоянии: e эмодзи · c два цвета шапки · l надпись · t заголовок · m строки [значок, текст].
+   Кнопки — обычная клавиатура под сообщением: так они работают и там, где виджет не нарисовался. */
+function E(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return'&#'+c.charCodeAt(0)+';';});}
+function draw(){
+var S;try{S=JSON.parse(W.publicData);}catch(e){}
+if(!S)return;
+var c=S.c||['#6366f1','#a855f7'];
+var h='<div class=h style="--a:'+E(c[0])+';--b:'+E(c[1])+'"><div class=e>'+E(S.e)+'</div><div class=l>'+E(S.l)+'</div><div class=t>'+E(S.t)+'</div></div><div class=b>';
+(S.m||[]).forEach(function(r){h+='<div class=m><span>'+E(r[0])+'</span><span>'+E(r[1])+'</span></div>';});
+root.innerHTML=h+'</div>';
+}
+W.onEvent('publicDataChanged',draw);
+draw();
+W.ready();
+})();
+</script>
