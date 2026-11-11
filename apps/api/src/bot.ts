@@ -104,7 +104,8 @@ export async function handleUpdate(db: Db, extract: Extract | undefined, update:
   // Не анонс, а вопрос — отвечает роль поддержки (support.ts). Её нет, она недоступна или человек пишет
   // слишком часто — прежний отказ бота `refusal`.
   const answer = async (refusal: string, limited = tooOften(m.from.id)) => {
-    if (!settings.supportUrl || limited) return say(refusal);
+    const allowed = !settings.supportUserIds.length || settings.supportUserIds.includes(m.from.id);
+    if (!settings.supportUrl || !allowed || limited) return say(refusal);
     void bot.call('sendChatAction', { chat_id: m.chatId, action: 'typing' });
     const reply = await support.ask([await supportContext(db, actor), ...(await supportHistory(db, conversation.id))]);
     if (!reply) return say(refusal);
