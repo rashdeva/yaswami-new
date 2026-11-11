@@ -54,14 +54,16 @@ await backfillTopics({
     withoutTopic: async () => [
       { external_id: 'a#0', announcement: { id: 'a' }, event: ev('Баня', D, 'igor', { price: '450k' }) },
       { external_id: 'a#1', announcement: { id: 'a' }, event: ev('Киноклуб', '2026-11-20T19:00:00+07:00') },
+      { external_id: 'b#0', announcement: { id: 'b' }, event: ev('Лекция', D) },
     ],
     setEvent: async (id, event) => { saved[id] = event; },
   },
-  extract: async () => [ev('Вечер в бане', D, 'igor', { price: 'другая', topic: 'баня', what_happens: ['Парение'], takeaway: null })],
+  extract: async (a) => a.id === 'b' ? Promise.reject(new Error('503')) : [ev('Вечер в бане', D, 'igor', { price: 'другая', topic: 'баня', what_happens: ['Парение'], takeaway: null })],
   pause: async () => {},
 });
 assert.deepEqual([saved['a#0'].topic, saved['a#0'].what_happens, saved['a#0'].price, saved['a#0'].title], ['баня', ['Парение'], '450k', 'Баня'], 'дописаны только новые поля');
 assert.equal(saved['a#1'].topic, 'другое', 'не найденное при повторном разборе помечается, чтобы не разбирать снова');
+assert.equal('b#0' in saved, false, 'анонс, на котором ИИ упал, не помечается и не мешает остальным');
 console.log('backfill ok');
 
 const { channelFromBio } = await import('./host.mjs');
