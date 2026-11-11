@@ -40,24 +40,41 @@ export function parseSupportReply(content: string): SupportReply {
   return { text: content.replace(HUMAN_MARK, '').trim(), human: mark ? mark[1]!.trim() || 'Просит человека' : null };
 }
 
-/** Заполняет main.ts из окружения; тесты подменяют `ask`. */
+/** Вопрос роли Hermes по её HTTP-входу. null — роль недоступна или ответила пусто. Не бросает. */
+async function askRole(url: string, key: string, history: SupportTurn[]): Promise<string | null> {
+  try {
+    const res = await fetch(`${url}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'hermes-agent', messages: history }),
+      signal: AbortSignal.timeout(90_000),
+    });
+    if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+    const content = ((await res.json()) as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content?.trim();
+    if (!content) throw new Error(`${url}: empty reply`);
+    return content;
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
+/** Тесты подменяют `ask`. null — роль недоступна: бот ответит сам, как раньше. */
 export const support = {
-  /** null — роль недоступна или ответила пусто: бот ответит сам, как раньше. Не бросает. */
   async ask(history: SupportTurn[]): Promise<SupportReply | null> {
-    try {
-      const res = await fetch(`${settings.supportUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${settings.supportKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ model: 'hermes-agent', messages: history }),
-        signal: AbortSignal.timeout(90_000),
-      });
-      if (!res.ok) throw new Error(`support: HTTP ${res.status}`);
-      const content = ((await res.json()) as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content?.trim();
-      if (!content) throw new Error('support: empty reply');
-      return parseSupportReply(content);
-    } catch (e) {
-      console.error(e);
-      return null;
-    }
+    const content = await askRole(settings.supportUrl, settings.supportKey, history);
+    return content === null ? null : parseSupportReply(content);
+  },
+};
+
+// Так роль hunter отказывается отвечать (agents/hunter/SOUL.md): подходящего события нет или вопрос не про то.
+const SKIP_MARK = /\[\[пропустить/i;
+
+/** Роль hunter (agents/hunter): по вопросу из чата пишет короткий ответ с событием. Тесты подменяют `ask`. */
+export const hunter = {
+  /** Текст ответа; null — роль недоступна или решила не отвечать. */
+  async ask(question: string): Promise<string | null> {
+    const content = await askRole(settings.hunterUrl, settings.hunterKey, [{ role: 'user', content: question }]);
+    return content === null || SKIP_MARK.test(content) ? null : content;
   },
 };

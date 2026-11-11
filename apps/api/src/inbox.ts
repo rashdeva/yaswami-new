@@ -1,10 +1,11 @@
 // Переписка (docs/agents-inbox.md): запись всего, что люди пишут боту и что бот или мы отвечаем, и операции админки.
-import { asc, desc, eq } from 'drizzle-orm';
-import type { AccountCreateInput, AccountMessageInput, Conversation, ConversationUpdateInput, InboxFeed, Message, TgAccount, User } from '@yaswami/core';
+import { and, asc, desc, eq, gt } from 'drizzle-orm';
+import type { AccountCreateInput, AccountMessageInput, Conversation, ConversationUpdateInput, InboxFeed, LeadInput, Message, TgAccount, User } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import { conversations, messages, tgAccounts, users } from './db/schema.ts';
 import { AppError } from './services.ts';
 import { settings } from './settings.ts';
+import { hunter } from './support.ts';
 import type { SupportTurn } from './support.ts';
 import type { BotResult, Incoming } from './telegram.ts';
 import { bot } from './telegram.ts';
@@ -17,7 +18,7 @@ const FEED_LIMIT = 200;
 interface Peer { id: number; name?: string; username?: string | null; account_id?: string }
 
 /** Дописывает сообщение в диалог с человеком; диалога ещё нет — заводит. `attention` не передан — не меняется. */
-async function record(db: Db, peer: Peer, message: Pick<Message, 'direction' | 'author' | 'text' | 'status'>, attention?: string | null): Promise<Conversation> {
+async function record(db: Db, peer: Peer, message: Pick<Message, 'direction' | 'author' | 'text' | 'status'> & { meta?: Message['meta'] }, attention?: string | null): Promise<Conversation> {
   const profile = peer.name ? { peer_name: peer.name, peer_username: peer.username ?? null } : {};
   const [conversation] = await db
     .insert(conversations)
@@ -51,6 +52,62 @@ export async function recordAccountMessage(db: Db, input: AccountMessageInput): 
   }
   const reason = 'Написал на аккаунт';
   await alertAdmins(await record(db, peer, { direction: 'in', author: 'user', text: input.text, status: 'received' }, reason), reason);
+}
+
+const CONTACT_AGAIN_DAYS = 7;
+
+/**
+ * Сборщик нашёл в чате вопрос «куда сходить». Роль hunter подбирает событие и пишет ответ — он ложится черновиком
+ * в «Ждут вас»: сами мы людям в чатах не пишем, каждое такое сообщение отправляет человек.
+ */
+export async function recordLead(db: Db, lead: LeadInput): Promise<void> {
+  if (!settings.hunterUrl) return;
+  if (settings.hunterUserIds.length && !settings.hunterUserIds.includes(lead.author.id)) return;
+  // Этому человеку мы уже писали на днях или его черновик ещё ждёт — второй раз не лезем.
+  const [known] = await db.select().from(conversations).where(and(eq(conversations.channel, 'account'), eq(conversations.peer_id, lead.author.id)));
+  if (known) {
+    const since = new Date(Date.now() - CONTACT_AGAIN_DAYS * 86_400_000);
+    const [recent] = await db.select({ id: messages.id }).from(messages)
+      .where(and(eq(messages.conversation_id, known.id), eq(messages.direction, 'out'), gt(messages.created_at, since))).limit(1);
+    if (recent) return;
+  }
+  // Отвечать будем с аккаунта: без подключённого аккаунта черновик некуда отправить.
+  const [account] = await db.select({ id: tgAccounts.id }).from(tgAccounts).where(eq(tgAccounts.status, 'active')).orderBy(asc(tgAccounts.created_at)).limit(1);
+  if (!account) return;
+
+  const before = lead.context.length ? `Перед этим в чате писали:\n${lead.context.map((t) => `- ${t}`).join('\n')}\n\n` : '';
+  const text = await hunter.ask(`Чат: ${lead.chat}\n\n${before}Вопрос (${lead.author.name}):\n${lead.text}`);
+  if (!text) return;
+
+  const reason = 'Черновик ответа в чат';
+  const peer = { ...lead.author, account_id: account.id };
+  const conversation = await record(db, peer, { direction: 'in', author: 'user', text: `[чат ${lead.chat}] ${lead.text}`, status: 'received' }, reason);
+  await db.insert(messages).values({
+    conversation_id: conversation.id, direction: 'out', author: 'agent:hunter', text, status: 'draft',
+    meta: { reason: `Вопрос в чате ${lead.chat}`, source_url: lead.url, reply_to: { chat: lead.chat, message_id: lead.message_id } },
+  });
+  await alertAdmins(conversation, reason);
+}
+
+async function draftById(db: Db, id: string): Promise<Message> {
+  const [message] = await db.select().from(messages).where(eq(messages.id, id));
+  if (!message) throw new AppError('not_found', 404);
+  if (message.status !== 'draft') throw new AppError('not_draft', 409);
+  return message;
+}
+
+/** Мы утвердили черновик агента: он встаёт в очередь на отправку, с нашим текстом, если мы его поправили. */
+export async function sendDraft(db: Db, id: string, text?: string): Promise<void> {
+  const draft = await draftById(db, id);
+  await db.update(messages).set({ status: 'queued', created_at: new Date(), ...(text ? { text } : {}) }).where(eq(messages.id, id));
+  await db.update(conversations).set({ attention: null, last_message_at: new Date() }).where(eq(conversations.id, draft.conversation_id));
+}
+
+/** Черновик отклонён: сообщение не уходит и из переписки пропадает. */
+export async function rejectDraft(db: Db, id: string): Promise<void> {
+  const draft = await draftById(db, id);
+  await db.delete(messages).where(eq(messages.id, id));
+  await db.update(conversations).set({ attention: null }).where(eq(conversations.id, draft.conversation_id));
 }
 
 export const setAttention = (db: Db, id: string, attention: string | null) => db.update(conversations).set({ attention }).where(eq(conversations.id, id));

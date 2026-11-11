@@ -4,13 +4,16 @@ import { getCookie } from 'hono/cookie';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
-import { AccountCreateInput, AccountLoginInput, AccountMessageInput, ConversationUpdateInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, VisitInput } from '@yaswami/core';
+import { AccountCreateInput, AccountLoginInput, AccountMessageInput, ConversationUpdateInput, DraftSendInput, LeadInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, VisitInput } from '@yaswami/core';
 import type { AuthMethod } from './auth.ts';
 import { authenticate, issueToken, revokeTokens } from './auth.ts';
 import type { Extract } from './bot.ts';
 import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
-import { createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, logSent, recordAccountMessage, requireAdmin, submitAccountLogin } from './inbox.ts';
+import {
+  createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, logSent, recordAccountMessage, recordLead, rejectDraft,
+  requireAdmin, sendDraft, submitAccountLogin,
+} from './inbox.ts';
 import { handleMcp } from './mcp.ts';
 import { getPhoto } from './photos.ts';
 import * as s from './services.ts';
@@ -63,12 +66,20 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       return c.json({ ok: true });
     })
     // Сборщик сообщает о личных сообщениях на наших аккаунтах Telegram. Без общего секрета вход закрыт.
-    .post('/internal/account-message', json(AccountMessageInput), async (c) => {
+    .use('/internal/*', async (c, next) => {
       const secret = Buffer.from(settings.collectorSecret);
       const given = Buffer.from(c.req.header('x-collector-secret') ?? '');
       if (!secret.length || given.length !== secret.length || !timingSafeEqual(given, secret)) return c.json({ error: 'forbidden' }, 403);
+      await next();
+    })
+    .post('/internal/account-message', json(AccountMessageInput), async (c) => {
       await recordAccountMessage(db, c.req.valid('json'));
       return c.body(null, 204);
+    })
+    // Вопрос «куда сходить» из чата: ответ роли занимает секунды, сборщик его не ждёт.
+    .post('/internal/lead', json(LeadInput), (c) => {
+      void recordLead(db, c.req.valid('json')).catch(console.error);
+      return c.body(null, 202);
     })
     .route('/auth', webLogin({ db, botToken, clientSecret: login?.clientSecret ?? '', publicUrl: login?.publicUrl ?? '' }))
     .use(async (c, next) => {
@@ -124,6 +135,14 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     })
     .patch('/admin/conversations/:id', json(ConversationUpdateInput), async (c) =>
       c.json(await inboxUpdate(db, c.req.param('id'), c.req.valid('json'))))
+    .post('/admin/messages/:id/send', json(DraftSendInput), async (c) => {
+      await sendDraft(db, c.req.param('id'), c.req.valid('json').text);
+      return c.body(null, 204);
+    })
+    .delete('/admin/messages/:id', async (c) => {
+      await rejectDraft(db, c.req.param('id'));
+      return c.body(null, 204);
+    })
     .post('/admin/accounts', json(AccountCreateInput), async (c) => c.json(await createAccount(db, c.req.valid('json')), 201))
     .post('/admin/accounts/:id/login', json(AccountLoginInput), async (c) => {
       await submitAccountLogin(db, c.req.param('id'), c.req.valid('json').secret);

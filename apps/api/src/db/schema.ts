@@ -283,6 +283,7 @@ export const messages = pgTable(
     author: text().notNull(),
     text: text().notNull(),
     status: text().$type<Message['status']>().notNull(),
+    meta: jsonb().$type<Message['meta']>(),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [index('messages_conversation_idx').on(t.conversation_id, t.created_at), index('messages_created_idx').on(t.created_at)],

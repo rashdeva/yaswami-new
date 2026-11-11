@@ -23,9 +23,22 @@ export interface Message {
   /** `user` — человек, `bot` — автоматический ответ или уведомление, `admin:<telegram id>` — кто-то из нас, `agent` — агент через MCP, `agent:support` — роль поддержки. */
   author: string;
   text: string;
-  /** `queued` — ждёт отправки с аккаунта: её делает сборщик, а не API. */
-  status: 'received' | 'queued' | 'sent' | 'failed';
+  /**
+   * `draft` — написал агент, ждёт нашего «отправить»; `queued` — ждёт отправки с аккаунта: её делает сборщик, а не API.
+   */
+  status: 'received' | 'draft' | 'queued' | 'sent' | 'failed';
+  meta: MessageMeta | null;
   created_at: Date;
+}
+
+/** Откуда взялся черновик агента и куда его отправлять. */
+export interface MessageMeta {
+  /** Почему агент хочет это написать — показываем рядом с черновиком. */
+  reason?: string;
+  /** Сообщение в чате, на которое это ответ: ссылка для нас. */
+  source_url?: string;
+  /** Отправить не в личку, а ответом на это сообщение в группе. */
+  reply_to?: { chat: string; message_id: number };
 }
 
 /** Лента админки: последние диалоги и последние сообщения во всех диалогах, свежие первыми. */
@@ -65,6 +78,21 @@ export const AccountMessageInput = z.object({
   text: z.string().min(1).max(10_000),
 });
 export type AccountMessageInput = z.infer<typeof AccountMessageInput>;
+
+/** Сборщик нашёл в чате вопрос «куда сходить»: сообщение, его автор и несколько сообщений перед ним. */
+export const LeadInput = z.object({
+  chat: z.string().min(1).max(100),
+  message_id: z.number().int(),
+  url: z.string().max(300),
+  author: z.object({ id: z.number().int(), name: z.string().min(1).max(200), username: z.string().nullable() }),
+  text: z.string().min(1).max(1000),
+  context: z.array(z.string().max(1000)).max(5),
+});
+export type LeadInput = z.infer<typeof LeadInput>;
+
+/** Отправить черновик агента, при желании — с исправленным текстом. */
+export const DraftSendInput = z.object({ text: z.string().trim().min(1).max(4000).optional() });
+export type DraftSendInput = z.infer<typeof DraftSendInput>;
 
 export const InboxSendInput = z.object({ text: z.string().trim().min(1).max(4000) });
 export type InboxSendInput = z.infer<typeof InboxSendInput>;

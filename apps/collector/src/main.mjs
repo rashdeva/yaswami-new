@@ -7,6 +7,7 @@ import { createStore } from './store.mjs';
 import { fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
 import { createSender } from './sender.mjs';
+import { fetchLeads } from './lead.mjs';
 
 const env = process.env;
 const channels = (env.CHANNELS ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
@@ -88,18 +89,32 @@ async function refreshPosts() {
   }
 }
 
+// Сообщение в API от имени сборщика: личное сообщение на аккаунте или вопрос из чата.
+const toApi = async (path, body) => {
+  const res = await fetch(`${env.API_URL}/internal/${path}`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-collector-secret': env.COLLECTOR_SECRET },
+    body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`API ответил ${res.status}`);
+};
+
+// Большие чаты, где ищем вопросы «куда сходить» (lead.mjs): username без @ через запятую. Анонсы из них не берём.
+const leadChats = (env.LEAD_CHATS ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
+
+async function pollLeads(chat) {
+  const key = `lead:${chat}`; // отметка в той же таблице, что у каналов с анонсами
+  const { last, leads } = await fetchLeads(userbot, chat, cursors[key] ?? 0);
+  for (const lead of leads) await toApi('lead', lead);
+  if (last !== cursors[key]) await store.saveCursor(key, (cursors[key] = last));
+  if (leads.length) console.log(`${chat}: вопросов «куда сходить» — ${leads.length}`);
+}
+
 // Аккаунты, которые пишут людям: вход по шагам из админки, приём и отправка личных сообщений (sender.mjs).
 // Работает рядом со сбором, раз в несколько секунд; без ключа и адреса API выключено.
 if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
   const sender = createSender({
     store, apiId: env.TG_API_ID, apiHash: env.TG_API_HASH, key: env.ACCOUNTS_KEY,
-    report: async (message) => {
-      const res = await fetch(`${env.API_URL}/internal/account-message`, {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-collector-secret': env.COLLECTOR_SECRET },
-        body: JSON.stringify(message), signal: AbortSignal.timeout(15_000),
-      });
-      if (!res.ok) throw new Error(`API ответил ${res.status}`);
-    },
+    report: (message) => toApi('account-message', message),
   });
   (async () => {
     for (;;) {
@@ -151,6 +166,10 @@ do {
   for (const channel of channels) {
     await pollChannel(channel, known).catch((e) => console.error(`${channel}: ${e.message}`));
     await sleep(2000); // не частим с запросами к Telegram
+  }
+  for (const chat of env.API_URL && env.COLLECTOR_SECRET ? leadChats : []) {
+    await pollLeads(chat).catch((e) => console.error(`вопросы ${chat}: ${e.message}`));
+    await sleep(2000);
   }
   await refreshPosts().catch((e) => console.error(`публикации: ${e.message}`));
   await profileHosts().catch((e) => console.error(`профили: ${e.message}`));

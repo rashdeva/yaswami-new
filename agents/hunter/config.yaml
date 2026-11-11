@@ -1,0 +1,29 @@
+# Роль hunter: по вопросу «куда сходить» из чата подбирает событие и пишет черновик ответа (docs/agents-inbox.md).
+# Ей показывают текст посторонних людей: один инструмент на чтение, памяти нет. Отправляет ответ не она —
+# черновик утверждает человек в админке.
+_config_version: 53 # формат конфига Hermes 0.23; без метки Hermes считает файл древним и ругается при старте
+model:
+  default: grok-4.6
+  provider: xai-oauth
+  base_url: https://api.x.ai/v1
+
+platform_toolsets:
+  api_server: [mcp-yaswami, skills]
+  cli: [mcp-yaswami, skills]
+
+mcp_servers:
+  yaswami:
+    url: "__MCP_URL__"
+    headers:
+      Authorization: "Bearer __MCP_TOKEN__"
+    tools:
+      include: [catalog_events] # только публичный каталог
+      resources: false
+      prompts: false
+
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+
+skills:
+  write_approval: true

@@ -7,7 +7,7 @@ import { collectedPath, EventCreateInput, EventUpdateInput, RsvpInput, TEMPLATES
 import type { Db } from './db/client.ts';
 import { eq } from 'drizzle-orm';
 import { users } from './db/schema.ts';
-import { conversationById, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin } from './inbox.ts';
+import { conversationById, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin, rejectDraft, sendDraft } from './inbox.ts';
 import { eventUrl } from './notifications.ts';
 import { verifyTicket } from './support.ts';
 import * as s from './services.ts';
@@ -141,6 +141,17 @@ function buildServer(db: Db, actor: User) {
       title: 'Update event of the person', shape: { ticket, event_id, ...EventUpdateInput.shape },
       description: 'Change an event the person hosts; only passed fields change. status "cancelled" cancels it. Error forbidden: the person is not the host.',
     }, async ({ ticket: t, event_id: id, ...input }) => s.updateEvent(db, await person(t), id, input));
+
+    const message_id = z.uuid().describe('Id of a message with status "draft" from conversation_get');
+    tool('draft_send', {
+      title: 'Send agent draft', shape: { message_id, text: z.string().trim().min(1).max(4000).optional().describe('Corrected text; omit to send as written') },
+      description: 'Approve a draft written by an agent (message status "draft"): it is queued and sent from our Telegram account. Only on an explicit go-ahead from the team. Error not_draft: already sent or rejected.',
+    }, (a) => sendDraft(db, a.message_id, a.text));
+
+    tool('draft_reject', {
+      title: 'Reject agent draft', destructive: true, shape: { message_id },
+      description: 'Reject a draft written by an agent: it is deleted and nothing is sent.',
+    }, (a) => rejectDraft(db, a.message_id));
 
     tool('conversation_update', {
       title: 'Update conversation', shape: { conversation_id, mode: z.enum(['agent', 'human']).optional(), done: z.boolean().optional().describe('true — the conversation no longer waits for a human') },

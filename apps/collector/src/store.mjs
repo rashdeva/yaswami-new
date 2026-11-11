@@ -75,7 +75,7 @@ export function createStore(url) {
     accountUpdate: (id, fields) => sql`update tg_accounts set ${sql({ ...fields, ...('login' in fields ? { login: fields.login && sql.json(fields.login) } : {}) })} where id = ${id}`,
     /** Сообщения, которые API поставил в очередь на отправку с аккаунтов, в порядке появления. */
     queued: () => sql`
-      select m.id, m.text, c.account_id, c.peer_id, c.peer_username
+      select m.id, m.text, m.meta, c.account_id, c.peer_id, c.peer_username
       from messages m join conversations c on c.id = m.conversation_id
       where m.status = 'queued' and c.channel = 'account' and c.account_id is not null
       order by m.created_at limit 20`,
