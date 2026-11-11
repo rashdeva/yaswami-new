@@ -139,7 +139,11 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
             {host.channel_url && <p><a href={host.channel_url} target="_blank" rel="noreferrer">Канал организатора</a></p>}
             {host.photos.length > 0 && (
               <div className="shots">
-                {host.photos.map((src) => <img key={src} src={src} alt="" loading="lazy" onError={(e) => { e.currentTarget.hidden = true; }} />)}
+                {host.photos.map((p) => (
+                  <a key={p.url} href={p.source_url} target="_blank" rel="noreferrer" aria-label="Публикация в канале организатора">
+                    <img src={p.url} alt="" loading="lazy" onError={(e) => { e.currentTarget.parentElement!.hidden = true; }} />
+                  </a>
+                ))}
               </div>
             )}
           </div></div>

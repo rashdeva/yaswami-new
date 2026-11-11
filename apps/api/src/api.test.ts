@@ -591,5 +591,6 @@ test('фото: аватар гостя и фото сообщества орг�
   }
   const shown = (await item()).hosts![0]!.photos;
   assert.equal(shown.length, 6);
-  assert.deepEqual(Buffer.from(await (await app.request(shown[0]!.replace(/^.*\/api/, ''))).arrayBuffer()), Buffer.from([0xff, 0xd8, 7]));
+  assert.deepEqual(shown.map((p) => p.source_url).slice(0, 2), ['https://t.me/photochan/7', 'https://t.me/photochan/6'], 'клик по фото ведёт на публикацию');
+  assert.deepEqual(Buffer.from(await (await app.request(shown[0]!.url.replace(/^.*\/api/, ''))).arrayBuffer()), Buffer.from([0xff, 0xd8, 7]));
 });
