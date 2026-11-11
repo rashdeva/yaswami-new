@@ -109,6 +109,16 @@ async function pollLeads(chat) {
   if (leads.length) console.log(`${chat}: вопросов «куда сходить» — ${leads.length}`);
 }
 
+// Railway проверяет /health при деплое (общий railway.json) и гасит старый контейнер, только когда новый ответил.
+if (env.PORT) createServer((_, res) => res.end('ok')).listen(env.PORT);
+// Пока старый контейнер жив, к Telegram не подключаемся: одну сессию нельзя использовать в двух местах сразу —
+// Telegram отзывает её навсегда (AUTH_KEY_DUPLICATED), и аккаунт приходится подключать заново. Так уже было.
+const startupDelayMs = Number(env.STARTUP_DELAY_MS ?? (env.RAILWAY_ENVIRONMENT ? 45_000 : 0));
+if (startupDelayMs) {
+  console.log(`Ждём ${startupDelayMs / 1000} с, пока остановится прежний контейнер`);
+  await sleep(startupDelayMs);
+}
+
 // Аккаунты, которые пишут людям: вход по шагам из админки, приём и отправка личных сообщений (sender.mjs).
 // Работает рядом со сбором, раз в несколько секунд; без ключа и адреса API выключено.
 if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
@@ -125,8 +135,6 @@ if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
 } else console.log('Аккаунты для переписки выключены: нужны ACCOUNTS_KEY, API_URL и COLLECTOR_SECRET');
 
 const cursors = await store.cursors();
-// Railway проверяет /health при деплое (общий railway.json); отвечаем, когда БД уже доступна.
-if (env.PORT) createServer((_, res) => res.end('ok')).listen(env.PORT);
 
 async function pollChannel(channel, known) {
   const fresh = (await fetchChatAnnouncements(userbot, channel, cursors[channel] ?? 0))
