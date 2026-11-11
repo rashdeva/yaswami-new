@@ -1,0 +1,124 @@
+/* ПРОТОТИП админки. Цвета — из tokens.css приложения. */
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, 'SF Pro Text', system-ui, sans-serif; }
+h1 { font-size: 17px; margin: 0; }
+h2 { font-size: 15px; margin: 0; display: flex; gap: 8px; align-items: center; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+input, textarea { background: var(--mat); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; width: 100%; resize: vertical; }
+
+.pa-hint { color: var(--hint); font-size: 12.5px; }
+.pa-hint.warn, td.warn { color: #c2410c; }
+.pa-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.pa-clip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pa-clip2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pa-card { background: var(--mat); border: 1px solid var(--stroke); border-radius: 18px; box-shadow: var(--shadow); padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.pa-btn { background: var(--btn); color: var(--btn-text); border: 0; border-radius: 999px; padding: 8px 16px; font-weight: 600; white-space: nowrap; }
+.pa-btn.ghost { background: var(--glass); color: var(--btn); border: 1px solid var(--line); }
+.pa-badges { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.pa-badge { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--line); }
+.pa-badge.warn { background: #ffedd5; color: #9a3412; }
+.pa-badge.bad { background: #fee2e2; color: #991b1b; }
+.pa-badge.dot { background: var(--btn); color: #fff; }
+.pa-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pa-chips span { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--line); }
+.pa-switch { display: flex; gap: 8px; align-items: center; }
+.pa-switch input { width: auto; }
+.pa-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pa-reason { font-size: 12.5px; color: #9a3412; margin: 0; }
+
+/* переписка */
+.pa-chat { display: flex; flex-direction: column; min-height: 0; }
+.pa-chathead { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.pa-thread { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.pa-msg { max-width: 72%; display: flex; flex-direction: column; gap: 4px; }
+.pa-msg.out { align-self: flex-end; align-items: flex-end; }
+.pa-bubble { padding: 9px 13px; border-radius: 18px; background: var(--mat); border: 1px solid var(--stroke); white-space: pre-wrap; }
+.pa-msg.agent .pa-bubble { background: color-mix(in srgb, var(--a) 14%, var(--mat)); }
+.pa-msg.admin .pa-bubble { background: var(--btn); color: var(--btn-text); border-color: transparent; }
+.pa-msg.draft .pa-bubble { border: 1.5px dashed #ea580c; background: #fff7ed; color: #431407; }
+.pa-meta { font-size: 11.5px; color: var(--hint); }
+.pa-composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+
+/* A: мессенджер */
+.pa-a { display: grid; grid-template-columns: 180px 320px 1fr; height: 100%; }
+.pa-rail { padding: 16px 10px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--line); }
+.pa-rail h1 { padding: 0 8px 12px; }
+.pa-rail button { background: none; border: 0; text-align: left; padding: 9px 10px; border-radius: 10px; display: flex; justify-content: space-between; }
+.pa-rail button.on { background: var(--mat); font-weight: 600; }
+.pa-list { list-style: none; margin: 0; padding: 8px; overflow: auto; border-right: 1px solid var(--line); }
+.pa-list li { padding: 10px; border-radius: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
+.pa-list li.on { background: var(--mat); box-shadow: var(--shadow); }
+.pa-a .pa-chat { padding-bottom: 56px; }
+.pa-page { grid-column: 2 / -1; padding: 24px; display: flex; flex-direction: column; gap: 16px; overflow: auto; }
+.pa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.pa-table { width: 100%; border-collapse: collapse; background: var(--mat); border-radius: 14px; overflow: hidden; }
+.pa-table th, .pa-table td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.pa-table th { font-size: 12px; color: var(--hint); font-weight: 500; }
+.pa-stepper { max-width: 420px; }
+.pa-stepper .pa-btn { align-self: flex-start; }
+
+/* B: очередь решений */
+.pa-b { display: grid; grid-template-columns: 240px 1fr 250px; height: 100%; }
+.pa-queue, .pa-side { padding: 16px 12px; display: flex; flex-direction: column; gap: 8px; overflow: auto; }
+.pa-queue { border-right: 1px solid var(--line); }
+.pa-side { border-left: 1px solid var(--line); }
+.pa-queue h2:not(:first-child), .pa-side h2:not(:first-child) { margin-top: 14px; }
+.pa-queue button { background: none; border: 0; text-align: left; padding: 9px 10px; border-radius: 12px; display: flex; flex-direction: column; }
+.pa-queue button.on { background: var(--mat); box-shadow: var(--shadow); }
+.pa-calm { padding: 4px 10px; }
+.pa-focus { display: grid; place-items: start center; padding: 32px 24px 90px; overflow: auto; }
+.pa-decision { width: min(620px, 100%); padding: 22px; gap: 12px; }
+.pa-decision h2 { font-size: 22px; }
+.pa-decision .pa-thread { padding: 0; flex: none; }
+.pa-decision .pa-composer { padding: 0; border: 0; }
+.pa-empty { text-align: center; margin-top: 18vh; }
+.pa-acc { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.pa-bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.pa-bar i { display: block; height: 100%; background: var(--ok); }
+.pa-bar i.full { background: #ea580c; }
+
+/* C: пульт-воронка */
+.pa-c { display: flex; flex-direction: column; height: 100%; }
+.pa-strip { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.pa-strip h1 { margin-right: 12px; }
+.pa-strip i { flex: 1; }
+.pa-pill { font-size: 12.5px; padding: 4px 10px; border-radius: 999px; background: var(--line); }
+.pa-pill.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); }
+.pa-pill.warn { background: #ffedd5; color: #9a3412; }
+.pa-board { flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 20px 20px 90px; overflow: auto; max-width: 1100px; }
+.pa-board section { display: flex; flex-direction: column; gap: 10px; }
+.pa-board article { cursor: pointer; }
+.pa-board article.on { outline: 2px solid var(--btn); }
+.pa-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100%); background: var(--bg); border-left: 1px solid var(--line); box-shadow: -20px 0 50px rgba(0, 0, 0, 0.12); }
+.pa-drawer .pa-chathead { padding-left: 48px; }
+.pa-close { position: absolute; top: 14px; left: 12px; background: none; border: 0; font-size: 22px; line-height: 1; }
+
+/* D: лента */
+.pa-d { display: flex; flex-direction: column; height: 100%; }
+.pa-keys { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.pa-keys button { background: none; border: 0; padding: 4px 10px; border-radius: 999px; }
+.pa-keys button.on { background: var(--mat); font-weight: 600; box-shadow: var(--shadow); }
+.pa-d main { flex: 1; overflow: auto; padding: 20px 20px 90px; }
+.pa-col { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.pa-col h2:not(:first-child) { margin-top: 18px; }
+.pa-pin { background: var(--mat); border: 1px solid var(--stroke); border-left: 4px solid #ea580c; border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
+.pa-quote { padding: 6px 10px; border-left: 2px solid var(--line); }
+.pa-sys { font-size: 12.5px; color: #9a3412; background: #ffedd5; border-radius: 10px; padding: 8px 12px; }
+.pa-ev { display: grid; grid-template-columns: 52px 1fr; gap: 10px; padding: 8px 12px; border-radius: 12px; border-left: 3px solid transparent; }
+.pa-ev.agent { border-left-color: color-mix(in srgb, var(--a) 55%, transparent); }
+.pa-ev.admin { border-left-color: var(--btn); }
+.pa-ev.user { border-left-color: var(--line); }
+.pa-ev.fresh { animation: pa-in 0.5s ease-out; }
+@keyframes pa-in { from { background: color-mix(in srgb, var(--ok) 22%, transparent); transform: translateY(-6px); opacity: 0; } }
+.pa-time { font-size: 12px; color: var(--hint); padding-top: 2px; }
+.pa-who { font-size: 12.5px; color: var(--hint); display: flex; gap: 6px; align-items: center; }
+.pa-d .sel { outline: 2px solid var(--btn); outline-offset: -2px; background: var(--mat); }
+.pa-inline { margin-top: 6px; }
+.pa-live { font-size: 11px; font-weight: 600; color: #166534; background: color-mix(in srgb, var(--ok) 20%, transparent); padding: 2px 8px; border-radius: 999px; }
+
+/* переключатель вариантов — не часть дизайна */
+.pa-switcher { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; background: #111; color: #fff; padding: 8px 14px; border-radius: 999px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35); z-index: 10; font-weight: 600; }
+.pa-switcher button { background: none; border: 0; color: #fff; font-size: 16px; }
+.pa-d .sel { scroll-margin: 60px 0 100px; }

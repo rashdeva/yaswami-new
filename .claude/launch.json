@@ -1,7 +1,44 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "api", "runtimeExecutable": "pnpm", "runtimeArgs": ["dev"], "port": 3000 },
-    { "name": "web", "runtimeExecutable": "pnpm", "runtimeArgs": ["dev:web"], "port": 5173 }
+    {
+      "name": "api",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "dev:web"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "web-prototype",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "apps/web",
+        "exec",
+        "vite",
+        "--port",
+        "5199",
+        "--strictPort"
+      ],
+      "port": 5199
+    },
+    {
+      "name": "api-admin-dev",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "DATABASE_URL=postgres://yaswami:yaswami@localhost:5432/yaswami_admin_dev ADMIN_IDS=1 TELEGRAM_WEBHOOK_SECRET=dev PORT=3100 node apps/api/src/main.ts"
+      ],
+      "port": 3100
+    }
   ]
 }
