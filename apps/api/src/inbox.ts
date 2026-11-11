@@ -15,7 +15,7 @@ const NO_TEXT = '[сообщение без текста]';
 const FEED_LIMIT = 200;
 
 /** Собеседник. `account_id` — он пишет на наш аккаунт Telegram, а не боту. */
-interface Peer { id: number; name?: string; username?: string | null; account_id?: string }
+interface Peer { id: number; name?: string; username?: string | null; account_id?: string | null }
 
 /** Дописывает сообщение в диалог с человеком; диалога ещё нет — заводит. `attention` не передан — не меняется. */
 async function record(db: Db, peer: Peer, message: Pick<Message, 'direction' | 'author' | 'text' | 'status'> & { meta?: Message['meta'] }, attention?: string | null): Promise<Conversation> {
@@ -23,7 +23,8 @@ async function record(db: Db, peer: Peer, message: Pick<Message, 'direction' | '
   const [conversation] = await db
     .insert(conversations)
     .values({
-      channel: peer.account_id ? 'account' : 'bot', account_id: peer.account_id,
+      // account_id задан, пусть и пустой, — переписка идёт с аккаунта (пустой: аккаунт ещё не подключён).
+      channel: peer.account_id === undefined ? 'bot' : 'account', account_id: peer.account_id,
       peer_id: peer.id, peer_name: peer.name ?? String(peer.id), peer_username: peer.username ?? null, attention,
     })
     .onConflictDoUpdate({
@@ -71,16 +72,15 @@ export async function recordLead(db: Db, lead: LeadInput): Promise<void> {
       .where(and(eq(messages.conversation_id, known.id), eq(messages.direction, 'out'), gt(messages.created_at, since))).limit(1);
     if (recent) return;
   }
-  // Отвечать будем с аккаунта: без подключённого аккаунта черновик некуда отправить.
-  const [account] = await db.select({ id: tgAccounts.id }).from(tgAccounts).where(eq(tgAccounts.status, 'active')).orderBy(asc(tgAccounts.created_at)).limit(1);
-  if (!account) return;
+  // Отвечать будем с аккаунта. Его ещё нет — черновик всё равно показываем: аккаунт подберётся при отправке.
+  const account = await activeAccount(db);
 
   const before = lead.context.length ? `Перед этим в чате писали:\n${lead.context.map((t) => `- ${t}`).join('\n')}\n\n` : '';
   const text = await hunter.ask(`Чат: ${lead.chat}\n\n${before}Вопрос (${lead.author.name}):\n${lead.text}`);
   if (!text) return;
 
   const reason = 'Черновик ответа в чат';
-  const peer = { ...lead.author, account_id: account.id };
+  const peer = { ...lead.author, account_id: account?.id ?? null };
   const conversation = await record(db, peer, { direction: 'in', author: 'user', text: `[чат ${lead.chat}] ${lead.text}`, status: 'received' }, reason);
   await db.insert(messages).values({
     conversation_id: conversation.id, direction: 'out', author: 'agent:hunter', text, status: 'draft',
@@ -88,6 +88,9 @@ export async function recordLead(db: Db, lead: LeadInput): Promise<void> {
   });
   await alertAdmins(conversation, reason);
 }
+
+const activeAccount = async (db: Db) =>
+  (await db.select({ id: tgAccounts.id }).from(tgAccounts).where(eq(tgAccounts.status, 'active')).orderBy(asc(tgAccounts.created_at)).limit(1))[0];
 
 async function draftById(db: Db, id: string): Promise<Message> {
   const [message] = await db.select().from(messages).where(eq(messages.id, id));
@@ -99,6 +102,13 @@ async function draftById(db: Db, id: string): Promise<Message> {
 /** Мы утвердили черновик агента: он встаёт в очередь на отправку, с нашим текстом, если мы его поправили. */
 export async function sendDraft(db: Db, id: string, text?: string): Promise<void> {
   const draft = await draftById(db, id);
+  // Черновик появился, когда аккаунта ещё не было, — отправляем с первого подключённого.
+  const conversation = await conversationById(db, draft.conversation_id);
+  if (conversation.channel === 'account' && !conversation.account_id) {
+    const account = await activeAccount(db);
+    if (!account) throw new AppError('no_account', 409);
+    await db.update(conversations).set({ account_id: account.id }).where(eq(conversations.id, conversation.id));
+  }
   await db.update(messages).set({ status: 'queued', created_at: new Date(), ...(text ? { text } : {}) }).where(eq(messages.id, id));
   await db.update(conversations).set({ attention: null, last_message_at: new Date() }).where(eq(conversations.id, draft.conversation_id));
 }

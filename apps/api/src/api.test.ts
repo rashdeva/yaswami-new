@@ -938,10 +938,16 @@ test('охотник: вопрос из чата становится черно
   let asked = '';
   hunter.ask = async (question) => ((asked = question), 'Сегодня в 19:00 бачата с нуля:\nhttps://yaswami.com/e/x');
 
-  // Без подключённого аккаунта отвечать не с чего — вопрос пропускаем, роль не спрашиваем.
-  await recordLead(db, lead);
-  assert.deepEqual([(await inbox()).conversations.length, asked], [0, '']);
+  // Аккаунта ещё нет: черновик всё равно появляется, но отправить его не с чего.
+  await recordLead(db, { ...lead, author: { id: 556, name: 'Никита', username: null } });
+  const orphan = (await inbox()).messages.find((m) => m.status === 'draft')!;
+  assert.equal((await inbox()).conversations[0]!.account_id, null);
+  assert.equal((await call(admin, 'POST', `/admin/messages/${orphan.id}/send`, {})).status, 409);
   const [account] = await db.insert(tgAccounts).values({ label: 'Аня', phone: '+84900000009', status: 'active' }).returning();
+  // Аккаунт подключили — тот же черновик уходит с него.
+  assert.equal((await call(admin, 'POST', `/admin/messages/${orphan.id}/send`, {})).status, 204);
+  assert.equal((await inbox()).conversations[0]!.account_id, account!.id);
+  await db.execute(sql`truncate conversations cascade`);
 
   // Пока роль проверяется, реагируем только на вопросы людей из списка.
   settings.hunterUserIds = [777];
