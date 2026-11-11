@@ -51,7 +51,7 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
   const past = rows.filter((r) => r.past).reverse();
 
   const first = (upcoming[0] ?? past[0])?.kind ?? 'o';
-  useEffect(() => onKind(first), [first, onKind]);
+  useEffect(() => { onKind(first); }, [first, onKind]);
 
   // Как в витрине: по дням, ближайшие первыми. Прошедшие — отдельным блоком в конце.
   const grid = (items: Row[]) => (
