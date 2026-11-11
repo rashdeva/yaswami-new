@@ -1,0 +1,13 @@
+{
+  "name": "@yaswami/api",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@yaswami/core": "workspace:*",
+    "drizzle-orm": "^0.45",
+    "postgres": "^3.4"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31"
+  }
+}

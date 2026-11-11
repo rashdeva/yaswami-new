@@ -1,0 +1,17 @@
+{
+  // Один конфиг на весь репозиторий. Сборки нет: Node запускает .ts напрямую, tsc только проверяет типы.
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["apps/*/src", "apps/*/*.ts", "packages/*/src"]
+}

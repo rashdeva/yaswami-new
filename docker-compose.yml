@@ -1,0 +1,24 @@
+# Локальный Postgres. Версия и PostGIS — как в шаблоне Railway `postgresql-extensions` (ADR 0002).
+# pgmq в этом образе нет: добавить вместе с очередью напоминаний.
+services:
+  db:
+    image: postgis/postgis:18-3.6
+    # Официальный образ есть только под amd64; на Apple Silicon идёт через эмуляцию — для разработки хватает.
+    platform: linux/amd64
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: yaswami
+      POSTGRES_PASSWORD: yaswami
+      POSTGRES_DB: yaswami
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      # Через TCP: во время первой инициализации сервер слушает только сокет, и проверка по сокету врёт.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U yaswami -d yaswami"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
