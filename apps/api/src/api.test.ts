@@ -320,7 +320,7 @@ test('страницы для поисковиков: содержимое и р
   assert.match(html, /<title>Йога &#60;b&#62;&#38; чай&#60;\/b&#62; — сб, 14 ноября, 19:00, Дананг<\/title>/);
   assert.match(html, /<link rel="canonical" href="https:\/\/yaswami.test\/e\/danangevent-1-0" \/>/);
   assert.match(html, /"startDate":"2026-11-14T19:00:00\+07:00"/);
-  assert.match(html, /<ol><li>Парение &#60;i&#62;<\/li><\/ol><h2>Что такое баня<\/h2><p>Парная/); // шаги события и гид по Topic
+  assert.match(html, /<ol><li>Парение &#60;i&#62;<\/li><\/ol><h2>баня — что это<\/h2><p>Парная/); // шаги события и гид по Topic
   assert.equal(html.includes('<script>alert(1)'), false);
   assert.equal(html.includes('$& утро'), true); // «$&» в тексте не превратилось в кусок шаблона
   assert.equal((html.match(/<\/script>/g) ?? []).length, 2); // только свои: JSON-LD и начальные данные
