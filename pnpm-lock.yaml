@@ -48,6 +48,9 @@ importers:
       '@google/genai':
         specifier: ^3.0.0
         version: 3.0.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(bufferutil@4.2.0)(utf-8-validate@5.0.10)
+      '@yaswami/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       postgres:
         specifier: ^3.4
         version: 3.4.9

@@ -28,6 +28,12 @@ export function createStore(url) {
       on conflict (external_id) do update set
         event = excluded.event, starts_at = excluded.starts_at, ends_at = excluded.ends_at,
         telegram_username = excluded.telegram_username, signup_url = excluded.signup_url, updated_at = now()`,
+    /** Предстоящие события без полей «что это мне даст»: собраны до их появления. */
+    withoutTopic: () => sql`
+      select external_id, announcement, event from collected_events
+      where coalesce(ends_at, starts_at) >= now() and not (event ? 'topic')`,
+    setEvent: (external_id, event) => sql`
+      update collected_events set event = ${sql.json(event)}, updated_at = now() where external_id = ${external_id}`,
     end: () => sql.end(),
   };
 }
