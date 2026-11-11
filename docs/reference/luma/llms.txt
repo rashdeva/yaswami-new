@@ -1,0 +1,105 @@
+# Luma Documentation
+
+> Use the Luma API to view and update your events, communities, and audience members. Create and manage events, register guests, and so much more.
+
+## API Reference: Overview
+- [Getting Started](https://docs.luma.com/reference/getting-started-with-your-api.md): Make your first request in just a few minutes.
+- [Rate Limits](https://docs.luma.com/reference/rate-limits.md)
+- [API Formats](https://docs.luma.com/reference/formats.md): Notes on various formats and quirks.
+- [Code Examples](https://docs.luma.com/reference/examples.md): We'll add different examples / tutorials to this page showing how people are using the Luma API.
+- [API Conventions](https://docs.luma.com/reference/api-conventions.md)
+- [Changelog](https://docs.luma.com/reference/changelog.md)
+
+## API Reference: Luma API
+- Events
+  - [Create Event](https://docs.luma.com/reference/post_v1-events-create.md)
+  - [Update Event](https://docs.luma.com/reference/post_v1-events-update.md)
+  - [Get Event](https://docs.luma.com/reference/get_v1-events-get.md): Return details about an event. For events you manage (`access: "manage"`), this includes full detail, host contact info, and a breakdown of guest counts by status. For public events you don’t manage…
+  - [Request Event Cancellation](https://docs.luma.com/reference/post_v1-events-cancel-request.md): Request a cancellation token for an event. Canceling an event is irreversible — it notifies all guests, processes refunds, and permanently deletes the event. Because of this, cancellation uses a…
+  - [Cancel Event](https://docs.luma.com/reference/post_v1-events-cancel.md): Cancel an event. You must first call /events/cancel/request to get a cancellation_token, then pass it here. This is irreversible — the event will be deleted, all guests will be notified, and refunds…
+  - [Add Guests](https://docs.luma.com/reference/post_v1-events-guests-add.md): Add guests to the event. By default, guests are added with the status "Going" (approved) and receive one ticket of the default ticket type. Use the `ticket` or `tickets` parameter to specify custom…
+  - [Get Guest](https://docs.luma.com/reference/get_v1-events-guests-get.md): Get detailed information for an event guest by looking them up by their ID. This supports looking them up by different parameters.  This response includes `event_ticket_orders`, which includes…
+  - [List Guests](https://docs.luma.com/reference/get_v1-events-guests-list.md): Get list of guests who have registered or been invited to an event.  This list response includes guest summaries and `event_tickets`, but not order-level details like `event_ticket_orders`. Use…
+  - [Update Guest Status](https://docs.luma.com/reference/post_v1-events-guests-update-status.md): Update a guest’s status. Set `status` to `approved` ("Going"), `declined`, `pending_approval`, or `waitlist`. Use `should_refund` to refund a paid guest when moving them out of an approved state. Use…
+  - [Update Guest Tickets](https://docs.luma.com/reference/post_v1-events-guests-update-tickets.md): Add or remove tickets from an existing guest. Added tickets are complimentary. Removed tickets are invalidated and, if `should_refund` is set, refunded for what the guest paid for them; otherwise no…
+  - [Send Invites](https://docs.luma.com/reference/post_v1-events-guests-send-invites.md): Send guests an invite to an event. We'll send an email, and if their phone number is linked to their Luma account, they'll also receive an SMS. Invites are sent in the background; the response lists…
+  - [Add Host](https://docs.luma.com/reference/post_v1-events-hosts-add.md): Add a host to an event. This works for both managers and check-in staff — use the access_level parameter to control permissions.
+  - [Update Host](https://docs.luma.com/reference/post_v1-events-hosts-update.md): Update a host's permissions or visibility on an event. Use this to change a host between check-in and manager access levels. The event creator's access level cannot be changed.
+  - [Remove Host](https://docs.luma.com/reference/post_v1-events-hosts-remove.md): Remove a host from an event. The event creator cannot be removed.
+  - [Create Ticket Type](https://docs.luma.com/reference/post_v1-events-ticket-types-create.md): Create a new ticket type for an event. Paid ticket types require the calendar to have a connected Stripe account.
+  - [Update Ticket Type](https://docs.luma.com/reference/post_v1-events-ticket-types-update.md): Update an existing ticket type configuration
+  - [Get Ticket Type](https://docs.luma.com/reference/get_v1-events-ticket-types-get.md): Get a single ticket type by ID
+  - [List Ticket Types](https://docs.luma.com/reference/get_v1-events-ticket-types-list.md): List all ticket types for an event
+  - [Delete Ticket Type](https://docs.luma.com/reference/post_v1-events-ticket-types-delete.md): Soft delete a ticket type. Guests already registered with it keep their tickets. Cannot delete the last remaining ticket type, or the last visible one.
+  - [Create Blast](https://docs.luma.com/reference/post_v1-events-blasts-create.md): Email a message to an event's guests now, or at `scheduled_for`. Blasts go out in the background, count against the calendar's send limit, and can't be recalled once sent. Returns the blast with…
+  - [Update Blast](https://docs.luma.com/reference/post_v1-events-blasts-update.md): Edit a blast. Only the fields you pass change. Before a blast is sent, everything can change. After it's sent, only `subject` and `content_md` can, which updates the post on the event page but not…
+  - [Get Blast](https://docs.luma.com/reference/get_v1-events-blasts-get.md): Get a blast by ID.
+  - [List Blasts](https://docs.luma.com/reference/get_v1-events-blasts-list.md): List the blasts (emails to guests) on an event, newest first. Sent blasts include `recipient_count` and `email_open_count`.
+  - [Delete Blast](https://docs.luma.com/reference/post_v1-events-blasts-delete.md): Delete a blast. Deleting a scheduled blast cancels the send. Deleting a sent blast removes the post from the event page, but the emails already delivered stay delivered.
+  - [Create Coupon](https://docs.luma.com/reference/post_v1-events-coupons-create.md): Create a coupon that can be applied when a guest is registering for an event. Restrict it to a ticket type with `event_ticket_type_id` — when that ticket type is hidden, this creates an unlock…
+  - [Update Coupon](https://docs.luma.com/reference/post_v1-events-coupons-update.md)
+  - [List Event Coupons](https://docs.luma.com/reference/get_v1-events-coupons-list.md): List all coupons that have been created for an event.
+- Calendars
+  - [Get Calendar](https://docs.luma.com/reference/get_v1-calendars-get.md): Get information about the calendar.
+  - [Update Calendar](https://docs.luma.com/reference/post_v1-calendars-update.md): Update a calendar's settings. Only the provided fields are changed. Pass null or an empty string to clear the website or a social handle.
+  - [List Events](https://docs.luma.com/reference/get_v1-calendars-events-list.md): Every event and API key on Luma is managed by a [Luma Calendar](https://help.luma.com/p/luma-calendar-overview). By default this lists the events your Calendar manages.  Each event includes an…
+  - [Lookup Event](https://docs.luma.com/reference/get_v1-calendars-events-lookup.md): See if an event already exists on the calendar. This is useful when figuring out if you want to submit an event to the calendar.
+  - [Add Event](https://docs.luma.com/reference/post_v1-calendars-events-add.md): Add or submit an existing event (on Luma or on an external platform) to the Luma calendar. By default, events added by a calendar manager are approved immediately. Use `submission_mode: "pending"` to…
+  - [Approve Event](https://docs.luma.com/reference/post_v1-calendars-events-approve.md): Approve a pending event submission on your calendar. The event becomes visible on the calendar and the submitter is notified.
+  - [Reject Event](https://docs.luma.com/reference/post_v1-calendars-events-reject.md): Reject a pending event submission on your calendar. The submitter is only emailed when you pass `notify_submitter: true` or a `message`.
+  - [List Calendar Admins](https://docs.luma.com/reference/get_v1-calendars-admins-list.md): List all admins for the calendar.
+  - [Add Calendar Admins](https://docs.luma.com/reference/post_v1-calendars-admins-add.md): Add admins to the calendar. Existing admins are skipped. On a Luma Plus calendar, adds that need more paid admin seats are rejected — add those admins in the Luma app, where the seat charge can be…
+  - [Import Contacts](https://docs.luma.com/reference/post_v1-calendars-contacts-import.md): Import contacts to your calendar to easily invite them to events and send them newsletters.
+  - [List Contacts](https://docs.luma.com/reference/get_v1-calendars-contacts-list.md)
+  - [Block Contact](https://docs.luma.com/reference/post_v1-calendars-contacts-block.md): Block a contact so they can’t follow your calendar or join its events. They stop receiving your invites and newsletters until you restore them.
+  - [Remove Contact](https://docs.luma.com/reference/post_v1-calendars-contacts-remove.md): Remove a contact from your calendar. They stop receiving your invites and newsletters but can follow again on their own later.
+  - [Restore Contact](https://docs.luma.com/reference/post_v1-calendars-contacts-restore.md): Restore a blocked or removed contact, returning them to your active contacts.
+  - [Create Contact Tag](https://docs.luma.com/reference/post_v1-calendars-contact-tags-create.md)
+  - [Update Contact Tag](https://docs.luma.com/reference/post_v1-calendars-contact-tags-update.md)
+  - [Delete Contact Tag](https://docs.luma.com/reference/post_v1-calendars-contact-tags-delete.md)
+  - [Apply Contact Tag](https://docs.luma.com/reference/post_v1-calendars-contact-tags-apply.md): Apply a tag to existing calendar contacts. This will not create new contacts.
+  - [Unapply Contact Tag](https://docs.luma.com/reference/post_v1-calendars-contact-tags-unapply.md): Unapply a tag from calendar contacts. Only affects existing contacts.
+  - [List Contact Tags](https://docs.luma.com/reference/get_v1-calendars-contact-tags-list.md)
+  - [Create Event Tag](https://docs.luma.com/reference/post_v1-calendars-event-tags-create.md)
+  - [Update Event Tag](https://docs.luma.com/reference/post_v1-calendars-event-tags-update.md)
+  - [Delete Event Tag](https://docs.luma.com/reference/post_v1-calendars-event-tags-delete.md)
+  - [Apply Event Tag](https://docs.luma.com/reference/post_v1-calendars-event-tags-apply.md): Apply a tag to events on the calendar.
+  - [Unapply Event Tag](https://docs.luma.com/reference/post_v1-calendars-event-tags-unapply.md): Unapply a tag from events on the calendar.
+  - [List Event Tags](https://docs.luma.com/reference/get_v1-calendars-event-tags-list.md)
+  - [Create Coupon](https://docs.luma.com/reference/post_v1-calendars-coupons-create.md): Create a coupon that can be applied to any event that is managed by the calendar. Be careful not to have the same code on an event and on the calendar.
+  - [Update Coupon](https://docs.luma.com/reference/post_v1-calendars-coupons-update.md)
+  - [List Calendar Coupons](https://docs.luma.com/reference/get_v1-calendars-coupons-list.md): List all coupons that have been created for a calendar.
+- Memberships
+  - [List Membership Tiers](https://docs.luma.com/reference/get_v1-memberships-tiers-list.md): List the calendar's membership tiers, including hidden ones (see is_hidden).
+  - [Add Member to Tier](https://docs.luma.com/reference/post_v1-memberships-members-add.md): Add a user to a membership tier. For paid tiers, set skip_payment to true if you are handling payment externally.
+  - [Update Member Status](https://docs.luma.com/reference/post_v1-memberships-members-update-status.md): Update a member's membership status. Approving a paid tier member captures their payment. Declining cancels any active subscription.
+- Webhooks
+  - [Create Webhook](https://docs.luma.com/reference/post_v2-webhooks-create.md): Create a new webhook endpoint to receive event notifications.
+  - [Update Webhook](https://docs.luma.com/reference/post_v2-webhooks-update.md): Update a webhook endpoint's event types or status (active/paused).
+  - [Get Webhook](https://docs.luma.com/reference/get_v2-webhooks-get.md): Get details about a specific webhook endpoint.
+  - [List Webhooks](https://docs.luma.com/reference/get_v1-webhooks-list.md): List all webhook endpoints for the calendar.
+  - [Delete Webhook](https://docs.luma.com/reference/post_v1-webhooks-delete.md): Delete a webhook endpoint.
+- Webhook Types
+  - [Event Created](https://docs.luma.com/reference/webhook_event_created.md): Triggered when a new event is created on your calendar.
+  - [Event Updated](https://docs.luma.com/reference/webhook_event_updated.md): Triggered when an event's details are updated (name, time, location, etc.) or a ticket type is created, updated, or deleted. The payload is the event; fetch ticket types from…
+  - [Event Canceled](https://docs.luma.com/reference/webhook_event_canceled.md): Triggered when an event is canceled.
+  - [Guest Registered](https://docs.luma.com/reference/webhook_guest_registered.md): Triggered when a guest registers for an event, including re-registrations after cancellation.
+  - [Guest Updated](https://docs.luma.com/reference/webhook_guest_updated.md): Triggered when a guest's registration is updated (approval status changed, answers updated, etc.).
+  - [Guest Refunded](https://docs.luma.com/reference/webhook_guest_refunded.md): Triggered when a host refunds a guest’s payment through Luma, including partial refunds. `refund` describes the refund that just happened; the guest’s `event_ticket_orders` reflect cumulative refunds…
+  - [Ticket Registered](https://docs.luma.com/reference/webhook_ticket_registered.md): Triggered when a ticket is purchased or registered. Includes ticket and guest details.
+  - [Calendar Person Subscribed](https://docs.luma.com/reference/webhook_calendar_person_subscribed.md): Triggered when someone subscribes to your calendar (becomes a follower).
+  - [Calendar Person Unsubscribed](https://docs.luma.com/reference/webhook_calendar_person_unsubscribed.md): Triggered when a person on your calendar opts out of hearing from you — an unsubscribe, block, or spam report; the payload does not say which. Use it to mirror the opt-out in an external CRM. Only…
+  - [Calendar Event Added](https://docs.luma.com/reference/webhook_calendar_event_added.md): Triggered when an event is added to a calendar — created on it, approved, transferred in, or made public. This can be a Luma event or an external event.
+  - [Calendar Event Submitted](https://docs.luma.com/reference/webhook_calendar_event_submitted.md): Triggered when an event is submitted to your calendar and is pending approval. This can be a Luma event or an external event. Use the `id` with the Approve Event or Reject Event endpoint to process…
+- Organizations
+  - [List Organization Admins](https://docs.luma.com/reference/get_v1-organizations-admins-list.md): List all admins for the organization.
+  - [List Organization Calendars](https://docs.luma.com/reference/get_v1-organizations-calendars-list.md): List all calendars belonging to the organization.
+  - [Create Calendar](https://docs.luma.com/reference/post_v2-organizations-calendars-create.md): Create a new calendar within the organization. The calendar will be managed by the API key owner.
+  - [List Organization Events](https://docs.luma.com/reference/get_v1-organizations-events-list.md): List all events across all calendars belonging to the organization. Events are deduplicated if they appear on multiple calendars within the organization.
+  - [Transfer Event Calendar](https://docs.luma.com/reference/post_v1-organizations-events-transfer-calendar.md): Transfer an event from its current managing calendar to a different calendar within the organization. The event's managing calendar changes to the destination calendar. Both the source and…
+- Miscellaneous
+  - [Get Self](https://docs.luma.com/reference/get_v1-users-get-self.md)
+  - [Lookup Entity](https://docs.luma.com/reference/get_v1-entities-lookup.md): Look up an event or calendar by its slug, Luma URL, or permanent public path such as `event/evt-...`, `e/evt-...`, or `calendar/cal-...`. URL query parameters and fragments are ignored.
+  - [Search Places](https://docs.luma.com/reference/get_v1-places-search.md): Search Google Maps for a place and get up to 5 candidates. Pass the chosen `place_id` as `geo_address_json: { type: "google", place_id }` when creating or updating an event.
+  - [Search Cover Images](https://docs.luma.com/reference/get_v1-images-search.md): Search Luma’s gallery of stock event cover images by keyword. Pass the chosen `image_url` as `cover_url` when creating or updating an event — gallery images don’t need to be uploaded first.
+  - [Create Upload URL](https://docs.luma.com/reference/post_v1-images-create-upload-url.md)
