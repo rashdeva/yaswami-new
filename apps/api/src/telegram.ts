@@ -83,6 +83,7 @@ export interface Incoming {
   publishedAt: string; // у пересланного — дата исходной публикации: от неё считаются «завтра» и «в субботу»
   authorUsername: string | null; // у пересланного из канала — null: канал не контакт для записи
   /** Откуда переслано; null — человек написал сам. `channel` — публикация канала, у неё есть адрес. */
+  replyTo: number | null; // на какое сообщение человек ответил
   origin: { userId?: number; username?: string; channel?: { id: number; username?: string; number: number } } | null;
 }
 
@@ -93,6 +94,7 @@ interface TgMessage {
   from?: TelegramUser & { is_bot?: boolean };
   text?: string;
   caption?: string;
+  reply_to_message?: { message_id: number };
   forward_origin?: {
     type: string; date: number; sender_user?: { id: number; username?: string };
     chat?: { id: number; username?: string }; message_id?: number;
@@ -110,6 +112,7 @@ export function parseIncoming(update: unknown): Incoming | null {
     from: { id: m.from.id, first_name: m.from.first_name, username: m.from.username, language_code: m.from.language_code },
     text: (m.text ?? m.caption ?? '').trim(),
     publishedAt: new Date((origin?.date ?? m.date) * 1000).toISOString(),
+    replyTo: m.reply_to_message?.message_id ?? null,
     authorUsername: (origin ? origin.sender_user?.username : m.from.username) ?? null,
     origin: origin
       ? {

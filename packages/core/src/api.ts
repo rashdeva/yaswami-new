@@ -66,6 +66,8 @@ export interface EventView {
   host: { first_name: string; user_photo_url: string | null };
   guests: GuestView[]; // отказавшихся видит только организатор
   guest_counts: { approved: number; maybe: number; declined: number }; // approved — занятые места, с учётом «+1»
+  /** Отзывы гостей после события: средняя оценка видна всем, сами отзывы — только организатору. */
+  feedback: { count: number; average: number | null; items: { user_first_name: string; rating: number; comment: string | null }[] };
   me: Guest | null;
   is_host: boolean;
 }

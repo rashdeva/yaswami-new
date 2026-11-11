@@ -28,7 +28,7 @@ const message = (extra: object) => ({ update_id: 1, message: { message_id: 9, da
 
 test('входящее сообщение: текст, подпись к фото, пересланная публикация', () => {
   assert.deepEqual(parseIncoming(message({ text: ' Йога завтра ' })), {
-    chatId: 5, messageId: 9, from, text: 'Йога завтра', publishedAt: new Date(1794366000 * 1000).toISOString(), authorUsername: 'anna_yoga', origin: null,
+    chatId: 5, messageId: 9, from, text: 'Йога завтра', publishedAt: new Date(1794366000 * 1000).toISOString(), authorUsername: 'anna_yoga', origin: null, replyTo: null,
   });
   assert.equal(parseIncoming(message({ photo: [{}], caption: 'Афиша' }))?.text, 'Афиша');
   assert.equal(parseIncoming(message({ photo: [{}] }))?.text, '', 'фото без подписи');
@@ -40,6 +40,7 @@ test('входящее сообщение: текст, подпись к фот�
   const user = parseIncoming(message({ text: 'x', forward_origin: { type: 'user', date: 1794000000, sender_user: { id: 8, username: 'igor' } } }))!;
   assert.deepEqual([user.authorUsername, user.origin], ['igor', { userId: 8, username: 'igor', channel: undefined }]);
 
+  assert.equal(parseIncoming(message({ text: 'Было здорово', reply_to_message: { message_id: 4 } }))?.replyTo, 4, 'ответ на сообщение бота');
   assert.equal(parseIncoming(message({ text: 'x', chat: { id: -100, type: 'supergroup' } })), null, 'группа');
   assert.equal(parseIncoming(message({ text: 'x', from: { ...from, is_bot: true } })), null, 'бот');
   assert.equal(parseIncoming({ update_id: 2, callback_query: {} }), null);
@@ -75,6 +76,17 @@ test('шаблоны: у каждого момента своя карточка
   assert.deepEqual(collected.rows, [['🗓', 'сб, 14 ноября, 19:00'], ['📍', 'Пляж Микхе, ул. Во Нгуен Зяп']]);
   assert.ok(collected.buttons[0]!.url.endsWith('/e/danangevent-7-0'));
 
+  // Отзывы: гостю — пять кнопок-оценок в один ряд, организатору — сводка.
+  const ask = toWidget(templates.feedback_request({ event }));
+  assert.deepEqual(ask.reply_markup.inline_keyboard, [[1, 2, 3, 4, 5].map((n) => ({ text: `${n} ⭐`, callback_data: `fb:e_0123456789:${n}` }))]);
+  const digest = templates.feedback_received({
+    event, count: 7, average: 4.571,
+    fresh: [{ first_name: 'Аня', rating: 5, comment: 'Было здорово' }, { first_name: 'Дато', rating: 3, comment: null }],
+  });
+  assert.deepEqual([digest.label, digest.rows], ['Новые отзывы', [['⭐', '4,6 из 5 · оценок: 7'], ['💬', 'Аня: ★★★★★ Было здорово'], ['💬', 'Дато: ★★★☆☆']]]);
+  const lots = templates.feedback_received({ event, count: 5, average: 5, fresh: Array.from({ length: 5 }, () => ({ first_name: 'Аня', rating: 5, comment: null })) });
+  assert.deepEqual(lots.rows.at(-1), ['…', 'и ещё 2 — все отзывы на странице события']);
+
   const confirmed = templates.rsvp_confirmed({ event: { ...event, start_at: new Date('2026-11-14T00:00:00+07:00'), geo_address_json: null } });
   assert.equal(confirmed.label, 'Вы записаны');
   assert.deepEqual(confirmed.rows, [['🗓', 'сб, 14 ноября']], 'время не указано — только день');
@@ -95,13 +107,18 @@ test('размер: код виджета ≤ 4096 байт после сжат�
     event_collected: templates.event_collected({ item: { ...item, id: 'x'.repeat(32) + '-1234567890-12', title: 'Щ'.repeat(500), place: 'Щ'.repeat(500) } }),
     guest_registered: templates.guest_registered({ event: big, guests: Array.from({ length: 500 }, () => ({ first_name: 'Щ'.repeat(64), username: 'b'.repeat(32) })), going: 100000 }),
     rsvp_confirmed: templates.rsvp_confirmed({ event: big }),
+    feedback_request: templates.feedback_request({ event: big }),
+    feedback_received: templates.feedback_received({
+      event: big, count: 100000, average: 4.25,
+      fresh: Array.from({ length: 50 }, () => ({ first_name: 'Щ'.repeat(64), rating: 5, comment: 'Щ'.repeat(1000) })),
+    }),
   };
   for (const [moment, card] of Object.entries(cards)) {
     const widget = toWidget(card);
     assert.equal(widget.html, widgetHtml);
     assert.ok(Buffer.byteLength(widget.public_data) <= 1024, `${moment}: состояние ${Buffer.byteLength(widget.public_data)} байт`);
     assert.ok([...widget.caption].length <= 1024, `${moment}: подпись`);
-    for (const [b] of widget.reply_markup.inline_keyboard) assert.ok([...b!.text].length <= 64 && URL.canParse(b!.url), `${moment}: кнопка`);
+    for (const [b] of widget.reply_markup.inline_keyboard) assert.ok([...b!.text].length <= 64 && ('url' in b! ? URL.canParse(b.url) : Buffer.byteLength(b!.callback_data) <= 64), `${moment}: кнопка`);
   }
 });
 

@@ -6,6 +6,7 @@ import type { Announcement } from '@yaswami/extract';
 import { looksLikeEvent } from '@yaswami/extract';
 import { upsertUser } from './auth.ts';
 import type { Db } from './db/client.ts';
+import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { notify } from './notifications.ts';
 import { addCollectedEvent, AppError, createEventFromAnnouncement, getEvent, listEvents, myCollectedEvents } from './services.ts';
@@ -81,6 +82,7 @@ async function supportContext(db: Db, actor: User): Promise<SupportTurn> {
 
 /** Обрабатывает одно обновление вебхука. `extract` нет — на сервере не задан GEMINI_API_KEY. */
 export async function handleUpdate(db: Db, extract: Extract | undefined, update: unknown): Promise<void> {
+  if (await handleFeedbackCallback(db, update)) return; // оценка события кнопкой под карточкой
   const m = parseIncoming(update);
   if (!m) return;
   // Любое сообщение боту, в том числе /start, заводит пользователя: вместе с ним сохраняется его аватар.
@@ -91,6 +93,10 @@ export async function handleUpdate(db: Db, extract: Extract | undefined, update:
     await bot.send('sendMessage', { chat_id: m.chatId, text });
     await setAttention(db, conversation.id, 'Бот не создал событие');
   };
+  // Ответ на «что понравилось и что улучшить?» — текст отзыва о событии, а не анонс и не вопрос.
+  if (m.replyTo && m.text && await saveFeedbackComment(db, actor.id, m.replyTo, m.text)) {
+    return void (await bot.send('sendMessage', { chat_id: m.chatId, text: 'Спасибо! Отзыв сохранён, организатор его увидит.' }));
+  }
   // Команда или сообщение без текста — просто справка, без пометки: иначе каждый /start ждал бы нас.
   if (!m.text || m.text.startsWith('/')) return void (await bot.send('sendMessage', { chat_id: m.chatId, text: REPLIES.help }));
   // Диалог ждёт человека: пометка в админке и сообщение нам в Telegram.

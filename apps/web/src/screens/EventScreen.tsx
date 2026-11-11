@@ -154,6 +154,21 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
         )}
       </div>
 
+      {view.feedback.count > 0 && (
+        <>
+          <h2>Отзывы · {view.feedback.average!.toFixed(1).replace('.', ',')} из 5 ({view.feedback.count})</h2>
+          {view.feedback.items.length > 0 && (
+            <div className="group">
+              {view.feedback.items.map((f, i) => (
+                <GuestRow key={i} name={f.user_first_name} photo={null} label={'★'.repeat(f.rating)}>
+                  {f.comment && <>: {f.comment}</>}
+                </GuestRow>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
       <div className="main"><div>
         {!is_host && open && (
           <div className="rsvp bar" role="group" aria-label="Ваш ответ">

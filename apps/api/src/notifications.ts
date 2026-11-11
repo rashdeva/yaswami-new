@@ -13,7 +13,8 @@ export interface Card {
   label: string;
   title: string;
   rows: [icon: string, text: string][];
-  buttons: { text: string; url: string }[];
+  buttons: { text: string; url: string }[]; // ссылки, по одной в ряд
+  actions?: { text: string; callback_data: string }[]; // ряд кнопок-ответов над ссылками; нажатие приходит боту
 }
 
 // По символам, а не по UTF-16: не режем эмодзи пополам.
@@ -38,7 +39,31 @@ const eventRows = (event: Event): Card['rows'] => [
 ];
 const open = (event: Event) => ({ text: 'Открыть событие', url: eventUrl(event.id) });
 
+const starsOf = (rating: number) => '★'.repeat(rating) + '☆'.repeat(5 - rating);
+const COMMENT_SHOWN = 60;
+const FRESH_SHOWN = 3;
+
 export const templates = {
+  /** Гостю после события: как прошло? Оценка — кнопками под сообщением, текст — ответом на следующее сообщение бота. */
+  feedback_request: ({ event }: { event: Event }): Card => ({
+    emoji: '💬', colors: ['#db2777', '#7c3aed'], label: 'Как всё прошло?', title: event.name,
+    rows: [['🗓', when(event)], ['⭐', 'Оцените событие — это займёт секунду']],
+    buttons: [],
+    actions: [1, 2, 3, 4, 5].map((n) => ({ text: `${n} ⭐`, callback_data: `fb:${event.id}:${n}` })),
+  }),
+  /** Организатору: сводка отзывов. `fresh` — новые с прошлой сводки, `count` и `average` — по всем отзывам события. */
+  feedback_received: (
+    { event, count, average, fresh }: { event: Event; count: number; average: number; fresh: { first_name: string; rating: number; comment: string | null }[] },
+  ): Card => ({
+    emoji: '⭐', colors: ['#db2777', '#7c3aed'], label: fresh.length > 1 ? 'Новые отзывы' : 'Новый отзыв', title: event.name,
+    rows: [
+      ['⭐', `${average.toFixed(1).replace('.', ',')} из 5 · оценок: ${count}`],
+      ...fresh.slice(0, FRESH_SHOWN).map((f): [string, string] =>
+        ['💬', `${cut(f.first_name, GUEST_NAME_SHORT)}: ${starsOf(f.rating)}${f.comment ? ` ${cut(f.comment, COMMENT_SHOWN)}` : ''}`]),
+      ...(fresh.length > FRESH_SHOWN ? [['…', `и ещё ${fresh.length - FRESH_SHOWN} — все отзывы на странице события`] as [string, string]] : []),
+    ],
+    buttons: [open(event)],
+  }),
   /** Организатору: событие создано из его сообщения боту. */
   event_created: ({ event }: { event: Event }): Card => ({
     emoji: '✨', colors: ['#16a34a', '#0d9488'], label: 'Событие создано и подтверждено', title: event.name,
@@ -89,7 +114,7 @@ export function toWidget(card: Card) {
     // Подпись обязательна: её видят клиенты, которые не умеют виджеты, и уведомление на заблокированном экране.
     caption: [`${card.emoji} ${card.label}: ${card.title}`, ...card.rows.map((r) => r.join(' '))].join('\n'),
     public_data: JSON.stringify({ e: card.emoji, c: card.colors, l: card.label, t: card.title, m: card.rows }),
-    reply_markup: { inline_keyboard: card.buttons.map((b) => [b]) },
+    reply_markup: { inline_keyboard: [...(card.actions ? [card.actions] : []), ...card.buttons.map((b) => [b])] },
   };
 }
 

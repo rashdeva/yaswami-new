@@ -16,6 +16,9 @@ import { createDb } from './db/client.ts';
 import { collectedEvents, hosts, photos, visits, tgAccounts } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
 import { settings } from './settings.ts';
+import { digestFeedback, requestFeedback } from './feedback.ts';
+import { eventFeedback, events as eventsTable } from './db/schema.ts';
+
 import { parseSupportReply, support, verifyTicket } from './support.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
@@ -40,7 +43,8 @@ after(() => db.$client.end());
 
 // Всё, что бот «отправил» за тест. Настоящих запросов к Telegram нет.
 const sent: [method: string, body: any][] = [];
-bot.call = async (method, body) => (sent.push([method, body]), { ok: true });
+let lastMessageId = 5000;
+bot.call = async (method, body) => (sent.push([method, body]), { ok: true, result: { message_id: ++lastMessageId } });
 Object.assign(bot.pace, { globalMs: 0, chatMs: 0 });
 
 function initData(id: number, first_name: string, authDate = Math.floor(Date.now() / 1000)) {
@@ -830,4 +834,73 @@ test('аккаунты Telegram: вход по шагам из админки, �
   assert.equal((await call(admin, 'DELETE', `/admin/accounts/${account.id}`)).status, 204);
   assert.equal((await call(admin, 'POST', `/admin/conversations/${id}/messages`, { text: 'Вы тут?' })).status, 409);
   settings.collectorSecret = '';
+});
+
+test('отзывы: запрос после события, оценка кнопкой, текст ответом, сводка организатору', async () => {
+  const { event } = await newEvent(tma(80, 'Миша'));
+  for (const id of [80, 81, 82]) await call(tma(id, `G${id}`), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved' });
+  await call(tma(84, 'G84'), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'maybe' });
+  await new Promise((r) => setTimeout(r, 100)); // уведомления о записи уходят с паузой — пусть не мешают
+  const labels = () => sent.filter(([m]) => m === 'sendWidget').map(([, b]) => [b.chat_id, JSON.parse(b.public_data).l]).sort();
+  const press = (id: number, data: string) => handleUpdate(db, undefined, { update_id: 1, callback_query: { id: 'q', from: { id, first_name: `G${id}` }, data } });
+
+  // Событие ещё не прошло — никого не спрашиваем.
+  sent.length = 0;
+  await requestFeedback(db);
+  assert.deepEqual(labels(), []);
+
+  // Закончилось час назад: спрашиваем записанных гостей, один раз; организатора и «думающих» — нет.
+  await db.update(eventsTable).set({ start_at: new Date(Date.now() - 4 * 3600e3), end_at: new Date(Date.now() - 3600e3) }).where(eq(eventsTable.id, event.id));
+  await requestFeedback(db);
+  await requestFeedback(db);
+  assert.deepEqual(labels(), [[81, 'Как всё прошло?'], [82, 'Как всё прошло?']]);
+
+  // Оценка: ответ на нажатие и одна просьба написать пару слов; повторное нажатие меняет оценку без новых сообщений.
+  sent.length = 0;
+  await press(81, `fb:${event.id}:4`);
+  await press(81, `fb:${event.id}:5`);
+  assert.deepEqual(sent.map(([m]) => m), ['answerCallbackQuery', 'sendMessage', 'answerCallbackQuery']);
+  assert.equal(sent[2]![1].text, 'Спасибо! Ваша оценка: ★★★★★');
+  const prompt = sent[1]![1];
+  assert.deepEqual([prompt.chat_id, prompt.reply_markup.force_reply], [81, true]);
+  const [row] = await db.select().from(eventFeedback).where(eq(eventFeedback.user_id, 81));
+  assert.equal(row!.rating, 5);
+
+  // Чужой и несуществующий запрос ничего не сохраняют.
+  sent.length = 0;
+  await press(83, `fb:${event.id}:1`);
+  assert.equal(sent[0]![1].text, 'Этот запрос уже не действует');
+  assert.equal((await db.select().from(eventFeedback).where(eq(eventFeedback.user_id, 83))).length, 0);
+
+  // Текст — ответом на просьбу бота: это отзыв, а не анонс и не вопрос.
+  sent.length = 0;
+  await handleUpdate(db, async () => assert.fail('ИИ вызывать не нужно'), botMessage(81, 'Было здорово, в субботу приду ещё', { reply_to_message: { message_id: row!.prompt_message_id } }));
+  assert.deepEqual(sent.map(([m, b]) => [m, b.text]), [['sendMessage', 'Спасибо! Отзыв сохранён, организатор его увидит.']]);
+
+  // Сводка организатору: одна на событие, повторно не уходит; новая оценка — новая сводка.
+  const settle = settings.feedbackSettleMs;
+  try {
+    sent.length = 0;
+    await digestFeedback(db);
+    assert.deepEqual(labels(), [], 'отзыв только что изменён — ждём');
+    settings.feedbackSettleMs = 0;
+    await digestFeedback(db);
+    await digestFeedback(db);
+    assert.deepEqual(labels(), [[80, 'Новый отзыв']]);
+    assert.deepEqual(JSON.parse(sent[0]![1].public_data).m, [['⭐', '5,0 из 5 · оценок: 1'], ['💬', 'Аня: ★★★★★ Было здорово, в субботу приду ещё']]);
+    sent.length = 0;
+    await press(82, `fb:${event.id}:3`);
+    await digestFeedback(db);
+    assert.deepEqual(JSON.parse(sent.find(([m]) => m === 'sendWidget')![1].public_data).m, [['⭐', '4,0 из 5 · оценок: 2'], ['💬', 'G82: ★★★☆☆']]);
+  } finally {
+    settings.feedbackSettleMs = settle;
+  }
+
+  // На странице события: средняя оценка — всем, сами отзывы — организатору.
+  const feedback = async (id: number) => ((await (await call(tma(id, `G${id}`), 'GET', `/events/${event.id}`)).json()) as EventView).feedback;
+  assert.deepEqual(await feedback(80), {
+    count: 2, average: 4,
+    items: [{ user_first_name: 'Аня', rating: 5, comment: 'Было здорово, в субботу приду ещё' }, { user_first_name: 'G82', rating: 3, comment: null }],
+  });
+  assert.deepEqual(await feedback(82), { count: 2, average: 4, items: [] });
 });
