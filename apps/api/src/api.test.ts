@@ -5,7 +5,7 @@ import { after, before, test } from 'node:test';
 import { asc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { CollectedEventItem, Contact, EventView, Me } from '@yaswami/core';
+import type { CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
 import { bot } from './telegram.ts';
@@ -592,4 +592,60 @@ test('фото: аватар гостя и фото сообщества орг�
   const shown = (await item()).hosts![0]!.photos;
   assert.equal(shown.length, 6);
   assert.deepEqual(Buffer.from(await (await app.request(shown[0]!.replace(/^.*\/api/, ''))).arrayBuffer()), Buffer.from([0xff, 0xd8, 7]));
+});
+
+test('переписка: бот пишет всё в базу, админ отвечает и берёт диалог на себя', async () => {
+  await db.execute(sql`truncate conversations cascade`);
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const never = async () => assert.fail('ИИ вызывать не нужно');
+  const inbox = async () => (await (await call(admin, 'GET', '/admin/inbox')).json()) as InboxFeed;
+  const write = async (text: string) => {
+    sent.length = 0;
+    await handleUpdate(db, never, botMessage(71, text));
+    return sent.map(([, b]) => b.text);
+  };
+
+  assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/inbox')).status, 403, 'не админ');
+
+  // /start — справка без пометки; вопрос, на который бот ответил отказом, ждёт нас.
+  assert.deepEqual(await write('/start'), [REPLIES.help]);
+  assert.equal((await inbox()).conversations[0]!.attention, null);
+  assert.deepEqual(await write('Как записаться на покер?'), [REPLIES.no_date]);
+  let feed = await inbox();
+  assert.equal(feed.me, 70);
+  assert.deepEqual(feed.conversations.map((c) => [c.peer_id, c.peer_name, c.mode, c.attention]), [[71, 'Аня', 'agent', 'Бот не создал событие']]);
+  assert.deepEqual(feed.messages.map((m) => [m.direction, m.author, m.text, m.status]), [
+    ['out', 'bot', REPLIES.no_date, 'sent'],
+    ['in', 'user', 'Как записаться на покер?', 'received'],
+    ['out', 'bot', REPLIES.help, 'sent'],
+    ['in', 'user', '/start', 'received'],
+  ]);
+
+  // Отвечаем сами: сообщение уходит через бота, диалог наш, пометка снята.
+  const id = feed.conversations[0]!.id;
+  sent.length = 0;
+  assert.equal((await call(admin, 'POST', `/admin/conversations/${id}/messages`, { text: 'Привет! Сейчас помогу.' })).status, 204);
+  assert.deepEqual(sent.map(([m, b]) => [m, b.chat_id, b.text]), [['sendMessage', 71, 'Привет! Сейчас помогу.']]);
+  feed = await inbox();
+  assert.deepEqual([feed.conversations[0]!.mode, feed.conversations[0]!.attention], ['human', null]);
+  assert.deepEqual([feed.messages[0]!.author, feed.messages[0]!.status], ['admin:70', 'sent']);
+
+  // Пока диалог наш, бот молчит, а новое сообщение снова ждёт нас.
+  assert.deepEqual(await write('Спасибо, жду'), []);
+  assert.equal((await inbox()).conversations[0]!.attention, 'Ответил вам');
+  const thread = (await (await call(admin, 'GET', `/admin/conversations/${id}/messages`)).json()) as Message[];
+  assert.deepEqual(thread.map((m) => m.text).slice(-2), ['Привет! Сейчас помогу.', 'Спасибо, жду']);
+
+  // Вернули боту — он снова отвечает.
+  const back = await call(admin, 'PATCH', `/admin/conversations/${id}`, { mode: 'agent', attention: null });
+  assert.deepEqual([((await back.json()) as Conversation).mode, back.status], ['agent', 200]);
+  assert.deepEqual(await write('А сегодня что-нибудь есть?'), [REPLIES.no_date]);
+
+  // Telegram не принял сообщение: оно остаётся в ленте как недоставленное, админка получает ошибку.
+  const ok = bot.call;
+  bot.call = async () => ({ ok: false, error_code: 403, description: 'bot was blocked by the user' });
+  assert.equal((await call(admin, 'POST', `/admin/conversations/${id}/messages`, { text: 'Вы тут?' })).status, 409);
+  bot.call = ok;
+  assert.deepEqual([(await inbox()).messages[0]!.text, (await inbox()).messages[0]!.status], ['Вы тут?', 'failed']);
 });

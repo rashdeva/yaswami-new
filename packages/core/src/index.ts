@@ -5,3 +5,4 @@ export * from './rsvp.ts';
 export * from './public-state.ts';
 export * from './collected.ts';
 export * from './topics.ts';
+export * from './inbox.ts';

@@ -6,6 +6,7 @@ import type { Announcement } from '@yaswami/extract';
 import { looksLikeEvent } from '@yaswami/extract';
 import { upsertUser } from './auth.ts';
 import type { Db } from './db/client.ts';
+import { recordIncoming, setAttention } from './inbox.ts';
 import { notify } from './notifications.ts';
 import { addCollectedEvent, AppError, createEventFromAnnouncement } from './services.ts';
 import { settings } from './settings.ts';
@@ -49,8 +50,16 @@ function tooOften(userId: number): boolean {
 export async function handleUpdate(db: Db, extract: Extract | undefined, update: unknown): Promise<void> {
   const m = parseIncoming(update);
   if (!m) return;
-  const say = async (text: string) => void (await bot.send('sendMessage', { chat_id: m.chatId, text }));
-  if (!m.text || m.text.startsWith('/')) return say(REPLIES.help);
+  const conversation = await recordIncoming(db, m);
+  // Отказ бота — повод нам заглянуть в диалог: человек хотел чего-то, чего бот не сделал.
+  const say = async (text: string) => {
+    await bot.send('sendMessage', { chat_id: m.chatId, text });
+    await setAttention(db, conversation.id, 'Бот не создал событие');
+  };
+  // Команда или сообщение без текста — просто справка, без пометки: иначе каждый /start ждал бы нас.
+  if (!m.text || m.text.startsWith('/')) return void (await bot.send('sendMessage', { chat_id: m.chatId, text: REPLIES.help }));
+  // Диалог ведём мы сами: бот молчит, пока человек не прислал анонс.
+  if (conversation.mode === 'human' && !looksLikeEvent(m.text)) return void (await setAttention(db, conversation.id, 'Ответил вам'));
   // Тот же дешёвый отсев, что у сборщика: без признака даты события нет, ИИ не тратим.
   if (!looksLikeEvent(m.text)) return say(REPLIES.no_date);
   if (!extract) return say(REPLIES.unavailable);
