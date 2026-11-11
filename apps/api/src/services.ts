@@ -132,7 +132,8 @@ export async function getCollectedEvent(db: Db, slug: string): Promise<Collected
   return {
     ...toCollectedItem(row),
     hosts: h
-      ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`, confirmed: h.user_id !== null,
+      ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`,
+          photo_url: `https://t.me/i/userpic/320/${h.username}.jpg`, confirmed: h.user_id !== null,
           // Источник фото сообщества — telegram:<канал>/<публикация>: из него же ссылка на публикацию.
           photos: shots.map((p) => ({ url: photoUrl(p.id), source_url: p.source.replace(/^telegram:/, 'https://t.me/') })) }]
       : [],
