@@ -1,7 +1,7 @@
 // Страницы, которые сервер отдаёт уже с содержимым: витрина и собранное событие. Поисковик и человек с медленной
 // сетью видят текст сразу; затем то же место занимает приложение (apps/web) и берёт данные из <script id="initial">.
 import type { CollectedEventItem } from '@yaswami/core';
-import { collectedDay, collectedDayKey, collectedIsPast, collectedPath, collectedTime, collectedWhen } from '@yaswami/core';
+import { collectedDay, collectedDayKey, collectedIsPast, collectedPath, collectedTime, collectedWhen, TOPIC_GUIDES } from '@yaswami/core';
 
 export interface Page {
   status: 200 | 404;
@@ -41,13 +41,16 @@ export function feedPage(items: CollectedEventItem[], publicUrl: string, city: s
 export function eventPage(e: CollectedEventItem, publicUrl: string, city: string): Page {
   const canonical = publicUrl + collectedPath(e.id);
   const where = [e.place, e.address].filter(Boolean).join(', ');
+  const guide = e.topic ? TOPIC_GUIDES[e.topic] : undefined;
+  const p = (text?: string | null) => (text ? `<p>${esc(text)}</p>` : '');
   return {
     status: 200,
     title: `${e.title} — ${collectedWhen(e.starts_at)}, ${city}`,
     description: short([collectedWhen(e.starts_at), where, e.price, e.description].filter(Boolean).join('. '), 200),
     canonical,
     body: `<main><h1>${esc(e.title)}</h1><p>${esc(collectedWhen(e.starts_at))}</p>${where && `<p>${esc(where)}</p>`}${
-      e.price ? `<p>${esc(e.price)}</p>` : ''}<p>${esc(e.description)}</p><p><a href="/">Все события · ${esc(city)}</a></p></main>`,
+      e.price ? `<p>${esc(e.price)}</p>` : ''}<p>${esc(e.description)}</p>${e.what_happens?.length ? `<ol>${e.what_happens.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : ''}${
+      p(e.for_whom)}${p(e.takeaway)}${guide ? `<h2>Что такое ${esc(e.topic!)}</h2>${p(guide.what)}${p(guide.why)}${p(guide.first)}${p(guide.not_for)}` : ''}<p><a href="/">Все события · ${esc(city)}</a></p></main>`,
     initial: { event: e },
     noindex: collectedIsPast(e),
     jsonLd: {
