@@ -15,6 +15,13 @@
       "when": 1794394996975,
       "tag": "0001_lively_ultron",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794398826398,
+      "tag": "0002_spotty_ben_urich",
+      "breakpoints": true
     }
   ]
 }
