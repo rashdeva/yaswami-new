@@ -203,6 +203,32 @@ export async function requestCollectedVideo(db: Db, slug: string): Promise<{ sta
   return { started: true };
 }
 
+/**
+ * Заказать ролик следующему событию без ролика: ближайшее по дате предстоящее. null — заказывать нечего,
+ * дневной лимит выбран или роль выключена. По одному за вызов: генерация идёт несколько минут.
+ */
+export async function requestNextVideo(db: Db): Promise<string | null> {
+  if (!settings.illustratorUrl) return null;
+  const [next] = await db.select({ external_id: collectedEvents.external_id }).from(collectedEvents)
+    .where(and(upcomingCollected, isNull(collectedEvents.video_at))).orderBy(asc(collectedEvents.starts_at)).limit(1);
+  if (!next) return null;
+  const slug = collectedSlug(next.external_id);
+  try {
+    await requestCollectedVideo(db, slug);
+    return slug;
+  } catch (e) {
+    if (e instanceof AppError) return null; // лимит на сегодня выбран или событие успели заказать вручную
+    throw e;
+  }
+}
+
+/** Ролики всем предстоящим событиям: раз в `everyMs` заказываем один, пока не кончатся события или дневной лимит. */
+export function startVideoLoop(db: Db, everyMs = 15 * 60_000): void {
+  const tick = () => requestNextVideo(db).then((slug) => slug && console.log(`ролик ${slug}: заказан`)).catch(console.error);
+  setInterval(tick, everyMs);
+  void tick();
+}
+
 /** Одно собранное событие. Прошедшее тоже отдаём: ссылка на него могла разойтись. */
 export async function getCollectedEvent(db: Db, slug: string): Promise<CollectedEventItem> {
   const [row] = await collectedWithCover(db).where(eq(collectedEvents.external_id, collectedExternalId(slug)));

@@ -15,6 +15,7 @@ import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
 import { collectedEvents, hosts, photos, visits, tgAccounts } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
+import { requestNextVideo } from './services.ts';
 import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
@@ -733,6 +734,12 @@ test('переписка: бот пишет всё в базу, админ от�
     event: { title: 'Йога', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'anna', whatsapp_phone: null, url: null },
   });
   assert.deepEqual(await tool('event_video_request', { id: 'danangevent-6-0' }), { error: 'video_limit' });
+  // Автообход: берёт ближайшее событие без ролика; лимит выбран — тихо пропускает.
+  assert.equal(await requestNextVideo(db), null, 'лимит на сегодня выбран');
+  settings.illustratorDailyLimit = 5;
+  assert.equal(await requestNextVideo(db), 'danangevent-6-0');
+  assert.equal(await requestNextVideo(db), null, 'событий без ролика не осталось');
+  await new Promise((r) => setTimeout(r, 50));
   illustrator.ask = draw;
   settings.illustratorUrl = '';
 
