@@ -20,3 +20,4 @@ Icon
 ### Project
 .env
 node_modules/
+dist/

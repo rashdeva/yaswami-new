@@ -7,14 +7,16 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p apps/web",
     "test": "node --env-file-if-exists=.env --test \"packages/**/*.test.ts\" \"apps/**/*.test.ts\"",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "db:generate": "pnpm --filter @yaswami/api exec drizzle-kit generate",
     "db:migrate": "pnpm --filter @yaswami/api exec drizzle-kit migrate",
     "dev": "node --env-file=.env --watch apps/api/src/main.ts",
-    "api:token": "node --env-file=.env apps/api/src/issue-token.ts"
+    "api:token": "node --env-file=.env apps/api/src/issue-token.ts",
+    "dev:web": "pnpm --filter @yaswami/web dev",
+    "build:web": "pnpm --filter @yaswami/web build"
   },
   "devDependencies": {
     "@types/node": "^24",
