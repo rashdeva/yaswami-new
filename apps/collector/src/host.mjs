@@ -23,17 +23,23 @@ async function fetchChannel(client, username) {
   const { fullChat } = await client.invoke(new telegram.Api.channels.GetFullChannel({ channel: entity }));
   const posts = await client.getMessages(entity, { limit: 30 });
   return {
-    username: entity.username.toLowerCase(), title: entity.title, about: fullChat.about,
+    id: String(entity.id), username: entity.username.toLowerCase(), title: entity.title, about: fullChat.about,
     posts: posts.map((m) => m.message?.slice(0, 1000)).filter(Boolean),
   };
 }
 
-/** { telegram_id, name, bio, channel: { username, title, about, posts } | null } или null, если username — не человек. */
+/** { telegram_id, name, bio, channel: { username, title, about, posts } | null } или null, если под username не человек и не канал. */
 export async function fetchProfile(client, username) {
   if (!client.connected) await client.connect();
   const full = await client.invoke(new telegram.Api.users.GetFullUser({ id: username })).catch(orNull);
   const user = full?.users[0];
-  if (!user || user.bot) return null;
+  if (user?.bot) return null;
+  if (!user) {
+    // Контактом указан канал площадки: организатор — сама площадка, профиль пишем по её каналу.
+    const channel = await fetchChannel(client, username).catch(orNull);
+    // У каналов и людей в Telegram разные нумерации: каналу даём id вида -100…, чтобы он не совпал с человеком.
+    return channel && { telegram_id: Number(`-100${channel.id}`), name: channel.title, bio: channel.about || null, channel };
+  }
   const bio = full.fullUser.about ?? null;
   // Личный канал, закреплённый в профиле, надёжнее ссылки из текста.
   const personal = full.chats.find((c) => String(c.id) === String(full.fullUser.personalChannelId))?.username;

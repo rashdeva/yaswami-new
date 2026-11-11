@@ -26,7 +26,7 @@ const extract = createExtractor({
 
 const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 // Поиск по username — самый флудоопасный вызов Telegram: за проход собираем немного профилей, остальные — в следующий.
-const PROFILES_PER_PASS = 5;
+const PROFILES_PER_PASS = 15;
 // Username, под которыми не человек (канал, бот, никого). ponytail: помним только в памяти процесса —
 // после перезапуска проверим ещё раз; при POLL_MINUTES=0 (cron) это надо класть в базу.
 const notPeople = new Set();
@@ -39,7 +39,7 @@ async function profileHosts() {
       const { telegram_id, name, bio, channel } = profile;
       await store.saveHost({ telegram_id, username, name, bio, channel: channel?.username ?? null, summary: await summarize(profile) });
     } else notPeople.add(username);
-    console.log(`@${username}: ${profile ? `профиль${profile.channel ? `, канал @${profile.channel.username}` : ''}` : 'не человек'}`);
+    console.log(`@${username}: ${profile ? `профиль${profile.channel ? `, канал @${profile.channel.username}` : ''}` : 'не человек и не канал'}`);
     await sleep(llmPauseMs);
   }
 }
