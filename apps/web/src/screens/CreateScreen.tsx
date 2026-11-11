@@ -144,13 +144,13 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
             <div className="row" aria-invalid={!!errors.tickets?.[i]?.name}>
               <label htmlFor={`ticket-name-${i}`}>Билет</label>
               <input id={`ticket-name-${i}`} {...register(`tickets.${i}.name`)} placeholder="Например, Early bird" maxLength={TICKET_NAME_MAX} autoComplete="off" />
-              <button type="button" className="quiet" aria-label="Убрать билет" onClick={() => remove(i)}>✕</button>
             </div>
           )}
           <div className="row">
             <label htmlFor={`ticket-price-${i}`}>Цена</label>
             <input id={`ticket-price-${i}`} {...register(`tickets.${i}.price`)} placeholder="Бесплатно, 1500 ₽, по донату…" maxLength={60} autoComplete="off" enterKeyHint="done" />
           </div>
+          {tickets.length > 1 && <button type="button" className="row del" onClick={() => remove(i)}>Удалить билет</button>}
         </div>
       ))}
       <button type="button" className="quiet" onClick={() => { append({ name: '', price: '' }); }}>＋ Добавить ещё билет</button>

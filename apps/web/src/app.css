@@ -53,6 +53,7 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 .row label { flex: 0 0 84px; color: var(--hint); }
 .row input, .row textarea { flex: 1; min-width: 0; border: 0; background: none; font: inherit; color: inherit; padding: 14px 0; }
 .row input::placeholder, .row textarea::placeholder { color: var(--hint); }
+.row.del { border: 0; border-top: .5px solid var(--line); background: none; color: var(--bad); cursor: pointer; }
 .row.tall { align-items: flex-start; }
 .row.tall label { padding-top: 15px; }
 .row textarea { resize: none; line-height: 1.35; min-height: 60px; field-sizing: content; }
