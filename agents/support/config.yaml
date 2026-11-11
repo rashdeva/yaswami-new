@@ -1,6 +1,7 @@
 # Роль support: отвечает людям, которые пишут боту «Я с вами» (docs/agents-inbox.md).
 # С ней говорят посторонние: один инструмент на чтение, памяти нет, писать она никому не может —
 # её ответ отправляет наш API (apps/api/src/support.ts).
+_config_version: 53 # формат конфига Hermes 0.23; без метки Hermes считает файл древним и ругается при старте
 model:
   default: grok-4.6
   provider: xai-oauth # свой вход: hermes -p support auth add xai-oauth --no-browser
