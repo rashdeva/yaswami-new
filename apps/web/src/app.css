@@ -193,6 +193,7 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
   .sheet { align-items: center; }
   .sheet > div { max-width: 440px; margin-bottom: 0; padding-top: 22px; }
   .sheet > div::before { display: none; }
+  .chips { flex-wrap: wrap; overflow-x: visible; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
@@ -247,3 +248,10 @@ a.item { text-decoration: none; color: inherit; }
 h2.cap::first-letter { text-transform: uppercase; }
 .pad .lead { display: block; margin-bottom: 8px; font-size: 12px; color: var(--hint); }
 .pad .cta { margin-top: 12px; }
+.plain { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+button.cover { width: 100%; padding: 0; border: 0; font: inherit; text-align: left; cursor: pointer; }
+.sheet > div { max-height: 85vh; overflow-y: auto; }
+.sheet .who { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; font-weight: 600; color: inherit; font-size: 17px; }
+.sheet .who .ava { width: 48px; height: 48px; object-fit: cover; border-radius: 50%; }
+.sheet .lead { display: block; margin-bottom: 10px; font-size: 12px; color: var(--hint); }
+.sheet .shots { margin-bottom: 4px; }

@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
-import type { CollectedEventItem } from '@yaswami/core';
+import { useEffect, useRef, useState } from 'react';
+import type { CollectedEventItem, CollectedHost } from '@yaswami/core';
 import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
 import { api, loginUrl } from '../api.ts';
 import { openExternal } from '../tg.ts';
@@ -29,6 +29,7 @@ interface Props {
 /** Событие, собранное из открытого канала. Записывает на него организатор: мы фиксируем намерение и ведём к нему. */
 export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp, onClaim, onOpenEvent, onSignedUp, onBack, toast }: Props) {
   const [claiming, setClaiming] = useState(false);
+  const [hostOpen, setHostOpen] = useState<CollectedHost | null>(null);
   const [event, setEvent] = useState<CollectedEventItem | null>(initial ?? null);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -116,32 +117,13 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
       <About topic={event.topic} what_happens={event.what_happens} for_whom={event.for_whom} beginner_friendly={event.beginner_friendly}
         takeaway={event.takeaway} guide={guide} guideNote="Гид написала редакция Ясвами — это не обещание организатора." />
-      {event.hosts?.map((host) => (
-        <Fragment key={host.name}>
-          <div className="group"><div className="pad">
-            <small className="lead">Канал организатора</small>
-            <p className="who">
-              {/* фото нет или скрыто настройками приватности — Telegram отвечает 404, тогда просто имя */}
-              <img className="ava" src={host.photo_url} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-              {host.name}
-            </p>
-            {host.summary && <p>{host.summary}</p>}
-            {host.photos.length > 0 && (
-              <div className="shots">
-                {host.photos.map((p) => (
-                  <a key={p.url} href={p.source_url} target="_blank" rel="noreferrer" aria-label="Публикация в канале организатора">
-                    <img src={p.url} alt="" loading="lazy" onError={(e) => { e.currentTarget.parentElement!.hidden = true; }} />
-                  </a>
-                ))}
-              </div>
-            )}
-            {host.channel_url && <button className="cta alt" onClick={() => openExternal(host.channel_url!)}>Перейти в канал</button>}
-          </div></div>
-        </Fragment>
-      ))}
       <h2>Участники</h2>
       <div className="group">
-        {host && <GuestRow name={host.name} photo={host.photo_url} label="организатор" />}
+        {event.hosts?.map((h) => (
+          <button key={h.name} className="plain" onClick={() => setHostOpen(h)}>
+            <GuestRow name={h.name} photo={h.photo_url} label="организатор ›" />
+          </button>
+        ))}
         {!!event.signups_count && <div className="guest empty">Интересуются: {event.signups_count}. Записывает организатор.</div>}
       </div>
 
@@ -174,6 +156,29 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
             <button className="cta alt" onClick={() => shareLink(collectedLink(id), `${event.title}\n${collectedWhen(event.starts_at)}, ${city}`, toast)}>Поделиться</button>
           </div>
         </div></div>
+      )}
+      {hostOpen && (
+        <div className="sheet" onClick={() => setHostOpen(null)}>
+          <div role="dialog" aria-label="Организатор" onClick={(e) => e.stopPropagation()}>
+            <small className="lead">Канал организатора</small>
+            <p className="who">
+              {/* фото нет или скрыто настройками приватности — Telegram отвечает 404, тогда просто имя */}
+              <img className="ava" src={hostOpen.photo_url} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+              {hostOpen.name}
+            </p>
+            {hostOpen.summary && <p>{hostOpen.summary}</p>}
+            {hostOpen.photos.length > 0 && (
+              <div className="shots">
+                {hostOpen.photos.map((p) => (
+                  <a key={p.url} href={p.source_url} target="_blank" rel="noreferrer" aria-label="Публикация в канале организатора">
+                    <img src={p.url} alt="" loading="lazy" onError={(e) => { e.currentTarget.parentElement!.hidden = true; }} />
+                  </a>
+                ))}
+              </div>
+            )}
+            {hostOpen.channel_url && <button className="cta alt" onClick={() => openExternal(hostOpen.channel_url!)}>Перейти в канал</button>}
+          </div>
+        </div>
       )}
     </>
   );
