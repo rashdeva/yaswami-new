@@ -71,7 +71,11 @@ async function pollChannel(channel, known) {
     if (candidate) await sleep(llmPauseMs); // бесплатный уровень Gemini считает запросы в минуту
     for (const [i, event] of events.entries()) {
       if (new Date(event.ends_at ?? event.starts_at) < Date.now()) continue; // уже прошло
+      // Канал-источник — не организатор: ИИ иногда подставляет его, когда в посте контакта нет.
+      if (event.telegram_username?.replace(/^@/, '').toLowerCase() === channel.toLowerCase()) event.telegram_username = null;
       const same = known.find((k) => isSameEvent(k.event, event));
+      // Событие без контакта не берём: записаться некуда. Появится контакт в другом посте — склеится или создастся там.
+      if (!same && !event.telegram_username && !event.whatsapp_phone) continue;
       const merged = same ? mergeEvents(same.event, event) : event;
       if (same && JSON.stringify(merged) === JSON.stringify(same.event)) continue; // повтор без новых сведений
       // Дубль дополняет запись первого анонса, а не создаёт вторую.
