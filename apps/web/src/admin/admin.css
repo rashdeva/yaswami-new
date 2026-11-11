@@ -1,0 +1,50 @@
+/* Админка переписки. Цвета — из tokens.css приложения. */
+/* Страница на весь экран: снимаем колонку и отступы, которые app.css задаёт мини-приложению. */
+html.admin, html.admin body { height: 100%; }
+html.admin body { font: 14px/1.45 -apple-system, 'SF Pro Text', system-ui, sans-serif; }
+html.admin #app { height: 100%; max-width: none; min-height: 0; padding: 0; }
+.ad h1 { font-size: 17px; line-height: 1.45; letter-spacing: 0; margin: 0 12px 0 0; }
+.ad h2 { font-size: 15px; letter-spacing: 0; margin: 0; display: flex; gap: 8px; align-items: center; }
+.ad h2:not(:first-child) { margin-top: 18px; }
+.ad input { font: inherit; color: inherit; background: var(--mat); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; width: 100%; }
+
+.ad { display: flex; flex-direction: column; height: 100%; }
+.ad-gate { height: 100%; display: grid; place-items: center; }
+.ad-strip { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.ad-strip i { flex: 1; }
+.ad main { flex: 1; overflow: auto; padding: 20px 20px 60px; }
+.ad-col { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.ad-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ad-hint { color: var(--hint); font-size: 12.5px; }
+.ad-pill { font-size: 12.5px; padding: 4px 10px; border-radius: 999px; background: var(--line); }
+.ad-pill.warn { background: #ffedd5; color: #9a3412; }
+.ad-badge { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--btn); color: #fff; }
+.ad-tag { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--line); }
+.ad-tag.bad { background: #fee2e2; color: #991b1b; }
+.ad-live { font-size: 11px; font-weight: 600; color: #166534; background: color-mix(in srgb, var(--ok) 20%, transparent); padding: 2px 8px; border-radius: 999px; }
+.ad-btn { background: var(--btn); color: var(--btn-text); border: 0; border-radius: 999px; padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+.ad-btn.ghost { background: var(--glass); color: var(--btn); border: 1px solid var(--line); }
+
+.ad-pin { background: var(--mat); border: 1px solid var(--stroke); border-left: 4px solid #ea580c; border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
+.ad-quote { padding: 6px 10px; border-left: 2px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ad-ev { display: grid; grid-template-columns: 52px 1fr; gap: 10px; padding: 8px 12px; border-radius: 12px; border-left: 3px solid transparent; }
+.ad-ev.bot { border-left-color: color-mix(in srgb, var(--a) 55%, transparent); }
+.ad-ev.admin { border-left-color: var(--btn); }
+.ad-ev.user { border-left-color: var(--line); }
+.ad-ev.fresh { animation: ad-in 0.5s ease-out; }
+@keyframes ad-in { from { background: color-mix(in srgb, var(--ok) 22%, transparent); transform: translateY(-6px); opacity: 0; } }
+.ad-time { font-size: 12px; color: var(--hint); padding-top: 2px; }
+.ad-who { font-size: 12.5px; color: var(--hint); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ad-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ad .sel { outline: 2px solid var(--btn); outline-offset: -2px; background: var(--mat); scroll-margin: 60px 0 100px; }
+.ad-reply { margin-top: 6px; }
+
+.ad-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100%); background: var(--bg); border-left: 1px solid var(--line); box-shadow: -20px 0 50px rgba(0, 0, 0, 0.12); display: flex; flex-direction: column; }
+.ad-drawer > header { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.ad-drawer .ad-reply { padding: 12px 16px; margin: 0; border-top: 1px solid var(--line); }
+.ad-thread { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.ad-msg { max-width: 80%; display: flex; flex-direction: column; gap: 4px; }
+.ad-msg.bot, .ad-msg.admin { align-self: flex-end; align-items: flex-end; }
+.ad-bubble { padding: 9px 13px; border-radius: 18px; background: var(--mat); border: 1px solid var(--stroke); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ad-msg.bot .ad-bubble { background: color-mix(in srgb, var(--a) 14%, var(--mat)); }
+.ad-msg.admin .ad-bubble { background: var(--btn); color: var(--btn-text); border-color: transparent; }

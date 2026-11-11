@@ -78,6 +78,13 @@
       "when": 1794416570878,
       "tag": "0010_tranquil_captain_britain",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794419210395,
+      "tag": "0011_long_the_captain",
+      "breakpoints": true
     }
   ]
 }

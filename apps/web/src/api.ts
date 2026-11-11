@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, CollectedEventItem, EventCreateInput, EventListItem, EventView, Me, MyCollectedItem, RsvpInput, VisitInput, Wire } from '@yaswami/core';
+import type { AppConfig, CollectedEventItem, Conversation, ConversationUpdateInput, EventCreateInput, EventListItem, EventView, InboxFeed, Me, Message, MyCollectedItem, RsvpInput, VisitInput, Wire } from '@yaswami/core';
 import { inTelegram, tg } from './tg.ts';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -23,6 +23,7 @@ const MESSAGES: Record<string, string> = {
   already_claimed: 'Это событие уже подтвердил организатор',
   unauthorized: 'Не получилось войти. Откройте приложение заново',
   invalid_input: 'Проверьте заполненные поля',
+  not_delivered: 'Telegram не доставил сообщение: человек не открывал бота или заблокировал его',
 };
 
 export class ApiError extends Error {
@@ -55,6 +56,10 @@ export type EventListData = Wire<EventListItem>;
 export const api = {
   config: () => request<AppConfig>('GET', '/config'),
   me: () => request<Me>('GET', '/me'),
+  inbox: () => request<Wire<InboxFeed>>('GET', '/admin/inbox'),
+  inboxThread: (id: string) => request<Wire<Message>[]>('GET', `/admin/conversations/${id}/messages`),
+  inboxSend: (id: string, text: string) => request<void>('POST', `/admin/conversations/${id}/messages`, { text }),
+  inboxUpdate: (id: string, input: ConversationUpdateInput) => request<Wire<Conversation>>('PATCH', `/admin/conversations/${id}`, input),
   logout: () => request<void>('POST', '/auth/logout'),
   collected: () => request<CollectedEventItem[]>('GET', '/collected-events'),
   collectedEvent: (id: string) => request<CollectedEventItem>('GET', `/collected-events/${encodeURIComponent(id)}`),

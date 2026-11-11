@@ -36,16 +36,19 @@ export const bot = {
   },
   /** Лимиты Telegram на исходящие: ~30 сообщений в секунду на бота и одно в секунду в один чат. Тесты обнуляют. */
   pace: { globalMs: 40, chatMs: 1000, retryAfterMaxS: 60 },
+  /** Запись отправленного в переписку (inbox.ts). Ставит createApp: у самого бота базы нет. */
+  log: undefined as ((method: string, body: { chat_id: number; [field: string]: unknown }, result: BotResult, author: string) => Promise<void>) | undefined,
   /**
    * Отправка сообщения в чат через очередь: выдерживает лимиты, а на 429 ждёт столько, сколько велел Telegram,
-   * и повторяет один раз. Всё, что бот пишет людям, идёт отсюда, а не через `call`.
+   * и повторяет один раз. Всё, что бот пишет людям, идёт отсюда, а не через `call`, и попадает в переписку;
+   * `author` — от чьего имени сообщение: `bot` или `admin:<id>`.
    * ponytail: очередь одна и в памяти — сообщение в «занятый» чат задерживает остальных на секунду, перезапуск
    * теряет неотправленное. Очереди по чатам или pgmq — когда уведомлений станет много.
    */
-  send(method: string, body: { chat_id: number; [field: string]: unknown }): Promise<BotResult> {
+  send(method: string, body: { chat_id: number; [field: string]: unknown }, author = 'bot'): Promise<BotResult> {
     if (queued >= QUEUE_MAX) return Promise.resolve({ ok: false, description: 'send queue is full' });
     queued++;
-    const run = tail.then(async () => {
+    const delivered = tail.then(async () => {
       const wait = Math.max(lastSent + bot.pace.globalMs, (lastSentTo.get(body.chat_id) ?? 0) + bot.pace.chatMs) - Date.now();
       if (wait > 0) await sleep(wait);
       let result = await bot.call(method, body);
@@ -57,8 +60,16 @@ export const bot = {
       if (lastSentTo.size > 10_000) lastSentTo.clear();
       lastSentTo.set(body.chat_id, lastSent);
       return result;
-    }).finally(() => queued--);
-    tail = run.catch(() => {});
+    });
+    tail = delivered.catch(() => {});
+    // Запись в переписку очередь не задерживает: следующее сообщение уходит, не дожидаясь базы.
+    // Сбой записи не должен ронять отправку.
+    const run = delivered
+      .then(async (result) => {
+        await bot.log?.(method, body, result, author).catch(console.error);
+        return result;
+      })
+      .finally(() => queued--);
     return run;
   },
 };

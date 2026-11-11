@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, CollectedEvent, Event, Guest, Share, TicketType, User } from '@yaswami/core';
+import type { Address, CollectedEvent, Conversation, Event, Guest, Message, Share, TicketType, User } from '@yaswami/core';
 import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -229,6 +229,36 @@ export const collectorCursors = pgTable('collector_cursors', {
   last_number: integer().notNull(),
 });
 
+// Переписка с людьми (docs/agents-inbox.md): всё, что человек написал боту и что бот или мы ответили.
+export const conversations = pgTable(
+  'conversations',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    channel: text().$type<Conversation['channel']>().notNull(),
+    peer_id: telegramId('peer_id').notNull(),
+    peer_name: text().notNull(),
+    peer_username: text(),
+    mode: text().$type<Conversation['mode']>().notNull().default('agent'),
+    attention: text(),
+    last_message_at: at('last_message_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('conversations_peer_idx').on(t.channel, t.peer_id), index('conversations_last_idx').on(t.last_message_at)],
+);
+
+export const messages = pgTable(
+  'messages',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    conversation_id: uuid().notNull().references(() => conversations.id, { onDelete: 'cascade' }),
+    direction: text().$type<Message['direction']>().notNull(),
+    author: text().notNull(),
+    text: text().notNull(),
+    status: text().$type<Message['status']>().notNull(),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('messages_conversation_idx').on(t.conversation_id, t.created_at), index('messages_created_idx').on(t.created_at)],
+);
+
 // Сверка с ядром: типы должны совпадать в обе стороны.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 export const tablesMatchCore: [
@@ -237,4 +267,6 @@ export const tablesMatchCore: [
   Same<typeof ticketTypes.$inferSelect, TicketType>,
   Same<typeof guests.$inferSelect, Guest>,
   Same<typeof shares.$inferSelect, Share>,
-] = [true, true, true, true, true];
+  Same<typeof conversations.$inferSelect, Conversation>,
+  Same<typeof messages.$inferSelect, Message>,
+] = [true, true, true, true, true, true, true];

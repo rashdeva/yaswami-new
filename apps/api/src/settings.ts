@@ -12,5 +12,7 @@ export const settings = {
   /** Сколько ждать перед уведомлением о записи: за это время гость может передумать, а записи — собраться в сводку. */
   notifyDelayMs: Number(process.env.NOTIFY_DELAY_MS ?? 20_000),
   /** Сколько анонсов в минуту один человек может прислать боту на разбор: ИИ ограничен по запросам. */
+  /** Telegram id тех, кому открыта админка переписки (/admin), через запятую. */
+  adminIds: (process.env.ADMIN_IDS ?? '').split(',').map(Number).filter(Boolean),
   botMessagesPerMinute: Number(process.env.BOT_MESSAGES_PER_MINUTE ?? 5),
 };

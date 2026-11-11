@@ -4,16 +4,18 @@ import { getCookie } from 'hono/cookie';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
-import { EventCreateInput, EventUpdateInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, VisitInput } from '@yaswami/core';
+import { ConversationUpdateInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, VisitInput } from '@yaswami/core';
 import type { AuthMethod } from './auth.ts';
 import { authenticate, issueToken, revokeTokens } from './auth.ts';
 import type { Extract } from './bot.ts';
 import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
+import { inboxFeed, inboxSend, inboxThread, inboxUpdate, logSent, requireAdmin } from './inbox.ts';
 import { handleMcp } from './mcp.ts';
 import { getPhoto } from './photos.ts';
 import * as s from './services.ts';
 import { settings } from './settings.ts';
+import { bot } from './telegram.ts';
 import { SESSION_COOKIE, webLogin } from './web-login.ts';
 
 const json = <T extends z.ZodType>(schema: T) => validator('json', (value) => schema.parse(value) as z.infer<T>);
@@ -30,6 +32,7 @@ interface Options {
 
 export function createApp({ db, botToken, config, webLogin: login, telegram }: Options) {
   const web_login = !!(botToken && login?.clientSecret);
+  bot.log = logSent(db);
   return new Hono<{ Variables: { actor: User; method: AuthMethod } }>()
     .onError((e, c) => {
       if (e instanceof s.AppError) return c.json({ error: e.code }, e.status);
@@ -98,6 +101,20 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await s.deleteTicketType(db, c.var.actor, c.req.param('id'));
       return c.body(null, 204);
     })
+
+    // Админка переписки: только для ADMIN_IDS.
+    .use('/admin/*', async (c, next) => {
+      requireAdmin(c.var.actor);
+      await next();
+    })
+    .get('/admin/inbox', async (c) => c.json(await inboxFeed(db, c.var.actor)))
+    .get('/admin/conversations/:id/messages', async (c) => c.json(await inboxThread(db, c.req.param('id'))))
+    .post('/admin/conversations/:id/messages', json(InboxSendInput), async (c) => {
+      await inboxSend(db, c.var.actor, c.req.param('id'), c.req.valid('json').text);
+      return c.body(null, 204);
+    })
+    .patch('/admin/conversations/:id', json(ConversationUpdateInput), async (c) =>
+      c.json(await inboxUpdate(db, c.req.param('id'), c.req.valid('json'))))
 
     // Выпустить токен можно только из мини-приложения: утёкший токен не должен плодить новые.
     .post('/tokens', async (c) => {
