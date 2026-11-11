@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
-import { collectedDay, collectedDayKey, collectedPath, collectedTime } from '@yaswami/core';
+import { collectedDay, collectedDayKey, collectedPath, collectedTime, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
 import { api } from '../api.ts';
 
 interface Props {
@@ -17,6 +17,7 @@ interface Props {
 export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
   const [items, setItems] = useState<CollectedEventItem[] | null>(initial ?? null);
   const [failed, setFailed] = useState<string | null>(null);
+  const [topic, setTopic] = useState<string | null>(null);
 
   useEffect(() => {
     if (!initial) api.collected().then(setItems, (e: Error) => setFailed(e.message));
@@ -27,8 +28,11 @@ export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
   }, [city]);
 
   // Дни идут по порядку: список уже отсортирован по времени начала.
+  // Фильтр предлагает только темы, по которым есть события; порядок — как в гиде.
+  const topics = Object.keys(TOPIC_GUIDES).filter((t) => items?.some((e) => e.topic === t));
   const days: CollectedEventItem[][] = [];
   for (const item of items ?? []) {
+    if (topic && item.topic !== topic) continue;
     const last = days.at(-1);
     if (last && collectedDayKey(last[0]!.starts_at) === collectedDayKey(item.starts_at)) last.push(item);
     else days.push([item]);
@@ -41,6 +45,16 @@ export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
         <h1>События</h1>
         <p>📍 {city}</p>
       </div>
+      {topics.length > 1 && (
+        <div className="chips">
+          <button className="chip" aria-pressed={!topic} onClick={() => setTopic(null)}>Все</button>
+          {topics.map((t) => (
+            <button key={t} className="chip" aria-pressed={topic === t} onClick={() => setTopic(topic === t ? null : t)}>
+              <img src={topicIcon(t)} alt="" />{t[0]!.toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
       {lead}
       {failed && <div className="state"><b>🌧</b><p>{failed}</p></div>}
       {!items && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
@@ -60,10 +74,11 @@ export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
                   onOpen(e);
                 }}
               >
-                <i className="t">{collectedTime(e.starts_at) || '··'}</i>
+                <img className="ico" src={topicIcon(e.topic)} alt="" loading="lazy" />
                 <div>
                   <b>{e.title}</b>
-                  <small>{[e.place, e.price].filter(Boolean).join(' · ') || 'подробности у организатора'}</small>
+                  <small>{[collectedTime(e.starts_at), e.place, e.price].filter(Boolean).join(' · ') || 'подробности у организатора'}</small>
+                  {e.beginner_friendly && <span className="badge sm">Можно без опыта</span>}
                 </div>
               </a>
             ))}

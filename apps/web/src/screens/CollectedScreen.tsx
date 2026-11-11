@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
-import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES } from '@yaswami/core';
+import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
 import { api, loginUrl } from '../api.ts';
 import { openExternal } from '../tg.ts';
 import { shareLink } from '../share.ts';
@@ -89,9 +89,10 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
     <>
       <div className={`hero${onBack ? '' : ' nb'}`}>
         {onBack && <button className="back" onClick={onBack}>← Все события</button>}
-        <div className="emo">{guide?.emoji ?? '📅'}</div>
+        <img className="emo" src={topicIcon(event.topic)} alt="" />
         <small>{past ? 'Событие прошло' : [city, guide && event.topic].filter(Boolean).join(' · ')}</small>
         <h1>{event.title}</h1>
+        {event.tags.length > 0 && <div className="tags">{event.tags.map((t) => <span key={t}>{t}</span>)}</div>}
       </div>
 
       <div className="group"><div className="meta">
@@ -129,7 +130,6 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
         {host && <GuestRow name={host.name} photo={host.photo_url} label="организатор" />}
         {!!event.signups_count && <div className="guest empty">Интересуются: {event.signups_count}. Записывает организатор.</div>}
       </div>
-      {event.tags.length > 0 && <div className="tags">{event.tags.map((t) => <span key={t}>{t}</span>)}</div>}
 
       <p className="note">
         {event.claimed_event_id
