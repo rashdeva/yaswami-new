@@ -117,6 +117,12 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   signups_count?: number; // сколько человек нажали «Записаться» в Ясвами (это интерес, не подтверждённое место); только в ответе на одно событие
 }
 
+/** Собранное событие в «Моих событиях»: куда человек заходил или нажимал «Записаться». */
+export interface MyCollectedItem {
+  event: CollectedEventItem;
+  signed_up: boolean; // иначе только заходил
+}
+
 /**
  * Человек из аудитории организатора — как CalendarContact в Luma API (`GET /v1/calendars/contacts/list`): те же имена
  * полей, где они у нас есть. `username` — наше: вместо email у нас Telegram. Попадает в контакты, зайдя на событие

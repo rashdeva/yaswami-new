@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AppConfig, CollectedEventItem, Event, Me } from '@yaswami/core';
+import type { AppConfig, CollectedEventItem, Event, Me, MyCollectedItem } from '@yaswami/core';
 import { collectedPath } from '@yaswami/core';
 import type { EventData, EventListData } from './api.ts';
 import { api, hasCredentials, loginUrl } from './api.ts';
@@ -50,6 +50,7 @@ export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined); // undefined — ещё выясняем
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [events, setEvents] = useState<EventListData[] | null>(null);
+  const [collected, setCollected] = useState<MyCollectedItem[]>([]);
   const [failed, setFailed] = useState<string | null>(null);
   const [kind, setKind] = useState<Event['kind']>('o');
   const [toast, setToast] = useState('');
@@ -64,9 +65,11 @@ export function App() {
   }, []);
 
   const loadEvents = useCallback(async () => {
-    const list = await api.events();
+    // Собранные события — «куда заходил»: их сбой не должен ронять список своих.
+    const [list, seen] = await Promise.all([api.events(), api.myCollected().catch(() => [])]);
     setEvents(list);
-    return list;
+    setCollected(seen);
+    return { length: list.length + seen.length };
   }, []);
 
   useEffect(() => {
@@ -87,6 +90,10 @@ export function App() {
       .catch((e: Error) => { if (!screenRef.current || isPrivate(screenRef.current)) setFailed(e.message); });
   }, [me, authed, loadEvents]);
 
+  // Зашёл на собранное событие и вернулся — оно должно появиться в списке.
+  const onList = screen?.name === 'list';
+  useEffect(() => { if (authed && onList) void loadEvents().catch(() => {}); }, [authed, onList, loadEvents]);
+
   const go = useCallback((next: Screen) => {
     const path = pathOf(next);
     if (path && path !== location.pathname) history.pushState(null, '', path);
@@ -104,7 +111,7 @@ export function App() {
   useEffect(() => { if (isPublic) setKind('o'); }, [isPublic]);
 
   // Куда ведёт «назад»: событие → свой список, создание → список или витрина. null — корень.
-  const hasEvents = !!events?.length;
+  const hasEvents = !!events?.length || collected.length > 0;
   const toMine = useCallback(() => go({ name: hasEvents ? 'list' : 'create' }), [go, hasEvents]);
   const fromCreate = useCallback(() => go({ name: hasEvents ? 'list' : 'feed' }), [go, hasEvents]);
   const back = screen?.name === 'collected'
@@ -161,7 +168,7 @@ export function App() {
       onFeed={() => go({ name: 'feed' })}
       onMine={() => (authed ? toMine() : void (location.href = loginUrl(MINE)))}
       onLogin={() => void (location.href = loginUrl(location.pathname))}
-      onLogout={() => void api.logout().then(() => { setMe(null); setEvents(null); go({ name: 'feed' }); }, (e: Error) => showToast(e.message))}
+      onLogout={() => void api.logout().then(() => { setMe(null); setEvents(null); setCollected([]); go({ name: 'feed' }); }, (e: Error) => showToast(e.message))}
     />
   );
 
@@ -215,7 +222,7 @@ export function App() {
       />
     );
   } else if (screen.name === 'list') {
-    content = <ListScreen events={events ?? []} tabs={tabs('mine')} lead={claimBanner} onOpen={(id) => go({ name: 'event', id })} onNew={() => go({ name: 'create' })} onKind={setKind} />;
+    content = <ListScreen events={events ?? []} collected={collected} onOpenCollected={(item) => go({ name: 'collected', id: item.id, initial: item })} tabs={tabs('mine')} lead={claimBanner} onOpen={(id) => go({ name: 'event', id })} onNew={() => go({ name: 'create' })} onKind={setKind} />;
   } else if (screen.name === 'create') {
     content = (
       <CreateScreen

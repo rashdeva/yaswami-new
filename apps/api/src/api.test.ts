@@ -219,6 +219,12 @@ test('собранные события: витрина без входа, за�
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
   assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: 20, first_name: 'Оля' }, collected_signups: ['danangevent-1-0'], claimable: [] });
 
+  // «Мои события»: куда записывался и куда только заходил
+  assert.equal((await call(guest, 'POST', '/collected-events/danangevent-2-0/visit', {})).status, 204);
+  const mine = (await (await call(guest, 'GET', '/me/collected')).json()) as { event: CollectedEventItem; signed_up: boolean }[];
+  assert.deepEqual(mine.map((m) => [m.event.id, m.signed_up]).sort(), [['danangevent-1-0', true], ['danangevent-2-0', false]]);
+  assert.deepEqual(await (await call(tma(21, 'Пусто'), 'GET', '/me/collected')).json(), []);
+
   // токен в cookie сайта входит так же, как в заголовке; после выхода он больше не действует
   const session = `ysw_session=${await issueToken(db, 20)}`;
   assert.equal((await app.request('/me', { headers: { cookie: session } })).status, 200);
