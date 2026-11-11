@@ -201,3 +201,4 @@ a.item { text-decoration: none; color: inherit; }
 .group summary::after { content: '+'; margin-left: auto; color: var(--hint); font-weight: 400; }
 .group details[open] summary::after { content: '–'; }
 .group details p { margin: 0; padding: 0 18px 15px; }
+h2.cap::first-letter { text-transform: uppercase; }

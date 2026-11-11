@@ -50,7 +50,7 @@ export function eventPage(e: CollectedEventItem, publicUrl: string, city: string
     canonical,
     body: `<main><h1>${esc(e.title)}</h1><p>${esc(collectedWhen(e.starts_at))}</p>${where && `<p>${esc(where)}</p>`}${
       e.price ? `<p>${esc(e.price)}</p>` : ''}<p>${esc(e.description)}</p>${e.what_happens?.length ? `<ol>${e.what_happens.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : ''}${
-      p(e.for_whom)}${p(e.takeaway)}${guide ? `<h2>Что такое ${esc(e.topic!)}</h2>${p(guide.what)}${p(guide.why)}${p(guide.first)}${p(guide.not_for)}` : ''}<p><a href="/">Все события · ${esc(city)}</a></p></main>`,
+      p(e.for_whom)}${p(e.takeaway)}${guide ? `<h2>${esc(e.topic!)} — что это</h2>${p(guide.what)}${p(guide.why)}${p(guide.first)}${p(guide.not_for)}` : ''}<p><a href="/">Все события · ${esc(city)}</a></p></main>`,
     initial: { event: e },
     noindex: collectedIsPast(e),
     jsonLd: {

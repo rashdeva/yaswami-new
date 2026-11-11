@@ -118,7 +118,7 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
       )}
       {guide && (
         <>
-          <h2>Что такое {event.topic}</h2>
+          <h2 className="cap">{event.topic} — что это</h2>
           <div className="group">
             <div className="pad"><p>{guide.what}</p><p>{guide.why}</p></div>
             <details><summary>Если идёшь впервые</summary><p>{guide.first}</p></details>

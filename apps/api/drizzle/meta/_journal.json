@@ -57,6 +57,13 @@
       "when": 1794406524418,
       "tag": "0007_loose_the_hand",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794407269637,
+      "tag": "0008_reclassify_other_topic",
+      "breakpoints": true
     }
   ]
 }
