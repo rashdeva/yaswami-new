@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { TEMPLATES } from '@yaswami/core';
 import type { EventData } from '../api.ts';
 import { eventLink, when } from '../format.ts';
-import { haptic, inTelegram, tg } from '../tg.ts';
+import { inTelegram, tg } from '../tg.ts';
 
 interface Props {
   view: EventData;
@@ -24,7 +24,6 @@ export function ShareSheet({ view: { event }, onClose, toast }: Props) {
   }, [onClose]);
 
   async function copy() {
-    haptic.tap();
     try {
       await navigator.clipboard.writeText(link);
       toast('Ссылка скопирована');
@@ -35,7 +34,6 @@ export function ShareSheet({ view: { event }, onClose, toast }: Props) {
   }
 
   function pickChat() {
-    haptic.tap();
     // ponytail: пока в чат уходит ссылка на событие. Сообщение с кнопками ответа прямо в чате —
     // когда у бота появится шаринг (savePreparedInlineMessage + shareMessage).
     if (inTelegram) {

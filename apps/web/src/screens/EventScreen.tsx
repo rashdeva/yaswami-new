@@ -81,7 +81,6 @@ export function EventScreen({ id, initial, sheet, onSheet, onBack, onKind, toast
   }
 
   function pickTicket(ticketId: string) {
-    haptic.select();
     setPicked(ticketId);
     if (me?.approval_status === 'approved') void respond('approved', ticketId); // уже идёт — меняем билет сразу
   }
@@ -155,7 +154,7 @@ export function EventScreen({ id, initial, sheet, onSheet, onBack, onKind, toast
       </div>
 
       <div className="main"><div>
-        <button className="cta" onClick={() => { haptic.tap(); onSheet(true); }}>{is_host ? 'Отправить в чат' : 'Позвать друзей'}</button>
+        <button className="cta" onClick={() => { onSheet(true); }}>{is_host ? 'Отправить в чат' : 'Позвать друзей'}</button>
       </div></div>
       {sheet && <ShareSheet view={view} onClose={() => onSheet(false)} toast={toast} />}
     </>

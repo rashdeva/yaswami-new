@@ -59,14 +59,12 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
   useEffect(() => onKind(kind), [kind, onKind]);
 
   const pickKind = (next: Event['kind']) => {
-    haptic.select();
     setValue('kind', next, set);
     // настройки шаблона: свадьбе — лимит 60 и «+1», спорту — 10 мест
     setValue('max_capacity', TEMPLATES[next].max_capacity ?? 0, set);
     setValue('allow_plus_one', TEMPLATES[next].allow_plus_one, set);
   };
   const stepCapacity = (direction: 1 | -1) => {
-    haptic.select();
     setValue('max_capacity', Math.max(0, capacity + direction * (capacity >= 20 ? 5 : 1)), set);
   };
 
@@ -128,14 +126,14 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
           </div>
         </div>
       ) : (
-        <button type="button" className="quiet" onClick={() => { haptic.tap(); setDescOpen(true); }}>＋ Добавить описание</button>
+        <button type="button" className="quiet" onClick={() => { setDescOpen(true); }}>＋ Добавить описание</button>
       )}
 
       <h2>Когда</h2>
       <div className="chips">
         {DAYS.map(([label, offset]) => (
           <button key={label} type="button" className="chip" aria-pressed={date === localDate(offset)}
-            onClick={() => { haptic.select(); setValue('date', localDate(offset), set); }}>
+            onClick={() => { setValue('date', localDate(offset), set); }}>
             {label}
           </button>
         ))}
@@ -165,7 +163,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
         <div className="row">
           Можно прийти с +1
           <button type="button" className="sw" role="switch" aria-checked={plusOne} aria-label="Можно прийти с +1"
-            onClick={() => { haptic.select(); setValue('allow_plus_one', !plusOne, set); }} />
+            onClick={() => { setValue('allow_plus_one', !plusOne, set); }} />
         </div>
       </div>
       <p className="note">Гостям не нужно ничего устанавливать: они открывают ссылку и отвечают в одно касание.</p>
