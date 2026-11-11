@@ -158,7 +158,7 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
             ))}
           </div>
         )}
-        <button className={is_host || !open ? 'cta' : 'cta alt'} style={{ marginTop: 0 }} onClick={() => shareEvent(view.event, userId, toast)}>Поделиться</button>
+        <button className={is_host || !open ? 'cta' : 'cta alt'} onClick={() => shareEvent(view.event, userId, toast)}>Поделиться</button>
       </div></div>
     </>
   );
