@@ -9,6 +9,7 @@ import { authenticate, issueToken, revokeTokens } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { handleMcp } from './mcp.ts';
 import * as s from './services.ts';
+import { settings } from './settings.ts';
 import { SESSION_COOKIE, webLogin } from './web-login.ts';
 
 const json = <T extends z.ZodType>(schema: T) => validator('json', (value) => schema.parse(value) as z.infer<T>);
@@ -16,7 +17,7 @@ const json = <T extends z.ZodType>(schema: T) => validator('json', (value) => sc
 interface Options {
   db: Db;
   botToken: string;
-  config?: Partial<Omit<AppConfig, 'web_login'>>;
+  config?: Partial<Pick<AppConfig, 'bot_username' | 'app_name'>>;
   /** Вход на сайте через Telegram: Client Secret из @BotFather и адрес сайта. Без них вход с сайта выключен. */
   webLogin?: { clientSecret: string; publicUrl: string };
 }
@@ -32,7 +33,7 @@ export function createApp({ db, botToken, config, webLogin: login }: Options) {
       return c.json({ error: 'internal' }, 500);
     })
     .get('/health', (c) => c.text('ok'))
-    .get('/config', (c) => c.json({ bot_username: null, app_name: 'app', city: 'Дананг', ...config, web_login } satisfies AppConfig))
+    .get('/config', (c) => c.json({ bot_username: null, app_name: 'app', ...config, web_login, city: settings.city, free_events_limit: settings.freeEventsLimit } satisfies AppConfig))
     // До проверки входа: витрину собранных событий видит и анонимный посетитель.
     .get('/collected-events', async (c) => c.json(await s.listCollectedEvents(db)))
     .get('/collected-events/:id', async (c) => c.json(await s.getCollectedEvent(db, c.req.param('id'))))
@@ -47,6 +48,7 @@ export function createApp({ db, botToken, config, webLogin: login }: Options) {
     .all('/mcp', (c) => handleMcp(db, c.var.actor, c.req.raw))
 
     .get('/me', async (c) => c.json(await s.me(db, c.var.actor)))
+    .post('/collected-events/:id/claim', async (c) => c.json(await s.claimCollectedEvent(db, c.var.actor, c.req.param('id')), 201))
     .post('/collected-events/:id/signup', async (c) => c.json(await s.signUpForCollectedEvent(db, c.var.actor, c.req.param('id'))))
 
     .get('/events', async (c) => c.json(await s.listEvents(db, c.var.actor)))

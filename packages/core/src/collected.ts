@@ -1,5 +1,5 @@
 // Показ собранных событий: одинаково на сервере (страницы для поисковиков) и на фронте.
-import type { CollectedEventItem } from './api.ts';
+import type { CollectedEvent, CollectedEventItem } from './api.ts';
 
 // Время события записано в самой строке ISO вместе со сдвигом города. Берём «настенные» цифры как есть,
 // чтобы показ не зависел ни от часового пояса устройства, ни от того, знает ли браузер этот сдвиг.
@@ -25,3 +25,20 @@ export const collectedIsPast = (e: Pick<CollectedEventItem, 'starts_at' | 'ends_
 
 /** Адрес страницы события на сайте. */
 export const collectedPath = (id: string) => `/e/${encodeURIComponent(id)}`;
+
+/**
+ * Куда ведёт «Записаться»: чат организатора в Telegram с готовым сообщением, иначе WhatsApp, иначе ссылка
+ * на регистрацию, иначе сам анонс. В сообщении — страница события на Ясвами: по ней организатор поймёт,
+ * откуда пришёл человек, и сможет подтвердить событие как своё.
+ */
+export function collectedSignupUrl(
+  event: Pick<CollectedEvent, 'title' | 'telegram_username' | 'whatsapp_phone' | 'url'>, sourceUrl: string, pageUrl: string,
+): string {
+  const text = encodeURIComponent(`Здравствуйте! Хочу записаться на «${event.title}». Нашёл событие на Ясвами: ${pageUrl}`);
+  const username = event.telegram_username?.replace(/^@/, '');
+  if (username && /^\w{4,32}$/.test(username)) return `https://t.me/${username}?text=${text}`;
+  const phone = event.whatsapp_phone?.replace(/\D/g, '');
+  if (phone) return `https://wa.me/${phone}?text=${text}`;
+  if (/^https?:\/\//.test(event.url ?? '')) return event.url!;
+  return sourceUrl;
+}

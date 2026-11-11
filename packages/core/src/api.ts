@@ -81,12 +81,15 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   id: string; // годится для адреса страницы: <канал>-<публикация>-<номер события в ней>
   signup_url: string; // куда ведёт «Записаться»: к организатору, а не в Ясвами
   source_url: string; // публикация, из которой взято событие
+  claimed_event_id: Event['id'] | null; // организатор подтвердил событие: запись идёт через событие Ясвами
 }
 
 /** Кто вошёл и на какие собранные события он уже записывался. */
 export interface Me {
   user: Pick<User, 'id' | 'first_name'>;
   collected_signups: CollectedEventItem['id'][];
+  /** Предстоящие собранные события, где контактом указан этот человек: их можно подтвердить как свои. */
+  claimable: CollectedEventItem[];
 }
 
 /** Открытые настройки для фронта: из чего собрать ссылку на событие t.me/<бот>/<приложение>?startapp=<id>. */
@@ -95,6 +98,7 @@ export interface AppConfig {
   app_name: string;
   web_login: boolean; // на сайте можно войти через Telegram (настроен Client Secret)
   city: string; // город витрины; пока он один
+  free_events_limit: number; // сколько событий создаётся бесплатно
 }
 
 /** Тот же тип, каким он приходит по сети: даты в JSON — строки ISO. */

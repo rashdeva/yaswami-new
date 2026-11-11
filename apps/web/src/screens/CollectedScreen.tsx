@@ -13,13 +13,18 @@ interface Props {
   /** Не вошёл, но на сайте можно войти через Telegram. */
   canLogin: boolean;
   signedUp: boolean;
+  /** Событие можно подтвердить как своё: контактом в анонсе указан этот человек. */
+  onClaim: (() => Promise<void>) | null;
+  /** Организатор уже подтвердил событие: запись идёт через событие Ясвами. */
+  onOpenEvent: (eventId: string) => void;
   onSignedUp: (id: string) => void;
   onBack: (() => void) | null;
   toast: (text: string) => void;
 }
 
 /** Событие, собранное из открытого канала. Записывает на него организатор: мы фиксируем намерение и ведём к нему. */
-export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp, onSignedUp, onBack, toast }: Props) {
+export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp, onClaim, onOpenEvent, onSignedUp, onBack, toast }: Props) {
+  const [claiming, setClaiming] = useState(false);
   const [event, setEvent] = useState<CollectedEventItem | null>(initial ?? null);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -61,6 +66,7 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
 
   function signUp() {
     haptic.tap();
+    if (event!.claimed_event_id) return onOpenEvent(event!.claimed_event_id);
     if (!authed && canLogin) {
       location.href = loginUrl(`${collectedPath(id)}?signup=1`);
       return;
@@ -88,15 +94,30 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
       {event.tags.length > 0 && <div className="tags">{event.tags.map((t) => <span key={t}>{t}</span>)}</div>}
 
       <p className="note">
-        {signedUp
-          ? 'Вы отметили, что пойдёте. Место подтверждает организатор — напишите ему.'
-          : 'Событие нашли в открытом канале. Записывает организатор: мы откроем чат с ним и готовым сообщением.'}
+        {event.claimed_event_id
+          ? 'Организатор принимает записи в Ясвами: ответьте «Пойду» — и вы в списке гостей.'
+          : signedUp
+            ? 'Вы отметили, что пойдёте. Место подтверждает организатор — напишите ему.'
+            : 'Событие нашли в открытом канале. Записывает организатор: мы откроем чат с ним и готовым сообщением.'}
         {' '}<a href={event.source_url} target="_blank" rel="noreferrer">Исходный анонс</a>
       </p>
+      {!event.claimed_event_id && !authed && canLogin && (
+        <button className="quiet" onClick={() => { location.href = loginUrl(collectedPath(id)); }}>Вы организатор? Войдите, чтобы принимать записи здесь</button>
+      )}
 
       {!past && (
         <div className="main"><div>
-          <button className="cta" onClick={signUp}>{signedUp ? 'Написать организатору' : 'Записаться'}</button>
+          {onClaim ? (
+            <button
+              className="cta"
+              disabled={claiming}
+              onClick={() => { haptic.tap(); setClaiming(true); void onClaim().finally(() => setClaiming(false)); }}
+            >
+              {claiming ? 'Минуту…' : 'Это моё событие'}
+            </button>
+          ) : (
+            <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>
+          )}
         </div></div>
       )}
     </>

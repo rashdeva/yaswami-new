@@ -9,11 +9,13 @@ interface Props {
   city: string;
   initial?: CollectedEventItem[];
   tabs: ReactNode;
+  /** Блок над списком: предложение организатору подтвердить свои события. */
+  lead?: ReactNode;
   onOpen: (event: CollectedEventItem) => void;
 }
 
 /** Витрина: все предстоящие события города. Открыта без входа. */
-export function FeedScreen({ city, initial, tabs, onOpen }: Props) {
+export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
   const [items, setItems] = useState<CollectedEventItem[] | null>(initial ?? null);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -40,6 +42,7 @@ export function FeedScreen({ city, initial, tabs, onOpen }: Props) {
         <h1>События</h1>
         <p>📍 {city}</p>
       </div>
+      {lead}
       {failed && <div className="state"><b>🌧</b><p>{failed}</p></div>}
       {!items && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
       {items?.length === 0 && <div className="state"><b>🌿</b><p>Пока ничего не запланировано. Загляните позже.</p></div>}
