@@ -49,6 +49,8 @@ function tooOften(userId: number): boolean {
 export async function handleUpdate(db: Db, extract: Extract | undefined, update: unknown): Promise<void> {
   const m = parseIncoming(update);
   if (!m) return;
+  // Любое сообщение боту, в том числе /start, заводит пользователя: вместе с ним сохраняется его аватар.
+  const actor = await upsertUser(db, m.from);
   const say = async (text: string) => void (await bot.send('sendMessage', { chat_id: m.chatId, text }));
   if (!m.text || m.text.startsWith('/')) return say(REPLIES.help);
   // Тот же дешёвый отсев, что у сборщика: без признака даты события нет, ИИ не тратим.
@@ -70,7 +72,6 @@ export async function handleUpdate(db: Db, extract: Extract | undefined, update:
 
   // Своё — то, что человек написал сам, переслал от себя же, или где контактом для записи указан он
   // (то же правило, что при подтверждении собранного события). Остальное пересланное — чужое.
-  const actor = await upsertUser(db, m.from);
   const own = !m.origin || m.origin.userId === actor.id;
   const isContact = (e: CollectedEvent) => !!actor.username && e.telegram_username?.replace(/^@/, '').toLowerCase() === actor.username.toLowerCase();
   // В публикации с расписанием каждое событие создаётся отдельно; свои — пока хватает лимита.

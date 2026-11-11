@@ -3,6 +3,7 @@ import type { TelegramUser } from './auth.ts';
 
 export interface BotResult {
   ok: boolean;
+  result?: unknown; // ответ метода; у отправки сообщений он нам не нужен
   description?: string;
   error_code?: number;
   parameters?: { retry_after?: number };
