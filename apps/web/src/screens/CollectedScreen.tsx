@@ -134,7 +134,11 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
         <Fragment key={host.name}>
           <h2>Организатор</h2>
           <div className="group"><div className="pad">
-            <p>{host.name}</p>
+            <p className="who">
+              {/* фото нет или скрыто настройками приватности — Telegram отвечает 404, тогда просто имя */}
+              <img className="ava" src={host.photo_url} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+              {host.name}
+            </p>
             {host.summary && <p>{host.summary}</p>}
             {host.channel_url && <p><a href={host.channel_url} target="_blank" rel="noreferrer">Канал организатора</a></p>}
             {host.photos.length > 0 && (

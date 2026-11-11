@@ -261,7 +261,7 @@ test('подтверждение владельцем: предлагается 
 
   // витрина теперь ведёт на событие Ясвами, повторно подтвердить нельзя, предложение исчезло
   const item = (await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem;
-  assert.deepEqual(item.hosts, [{ name: 'Ксения', summary: 'Преподаёт бачату.', channel_url: 'https://t.me/ksenia_dance', confirmed: true, photos: [] }]);
+  assert.deepEqual(item.hosts, [{ name: 'Ксения', summary: 'Преподаёт бачату.', channel_url: 'https://t.me/ksenia_dance', photo_url: 'https://t.me/i/userpic/320/u30.jpg', confirmed: true, photos: [] }]);
   assert.equal(item.claimed_event_id, view.event.id);
   assert.equal((await call(owner, 'POST', '/collected-events/danangevent-5-0/claim')).status, 409);
   assert.deepEqual(((await (await call(owner, 'GET', '/me')).json()) as Me).claimable, []);
