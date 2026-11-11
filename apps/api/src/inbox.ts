@@ -43,8 +43,9 @@ export const logSent = (db: Db) => async (method: string, body: { chat_id: numbe
   await record(db, { id: body.chat_id, name: user?.first_name, username: user?.username }, { direction: 'out', author, text, status: result.ok ? 'sent' : 'failed' });
 };
 
+export const isAdmin = (actor: User) => settings.adminIds.includes(actor.id);
 export function requireAdmin(actor: User) {
-  if (!settings.adminIds.includes(actor.id)) throw new AppError('forbidden', 403);
+  if (!isAdmin(actor)) throw new AppError('forbidden', 403);
 }
 
 export async function inboxFeed(db: Db, actor: User): Promise<InboxFeed> {
@@ -58,16 +59,19 @@ export async function inboxFeed(db: Db, actor: User): Promise<InboxFeed> {
 export const inboxThread = (db: Db, id: string): Promise<Message[]> =>
   db.select().from(messages).where(eq(messages.conversation_id, id)).orderBy(asc(messages.created_at)).limit(500);
 
-async function conversationById(db: Db, id: string): Promise<Conversation> {
+export async function conversationById(db: Db, id: string): Promise<Conversation> {
   const [conversation] = await db.select().from(conversations).where(eq(conversations.id, id));
   if (!conversation) throw new AppError('not_found', 404);
   return conversation;
 }
 
-/** Мы пишем человеку сами: сообщение уходит через бота, а диалог переходит к нам — бот в нём замолкает. */
-export async function inboxSend(db: Db, actor: User, id: string, text: string): Promise<void> {
+/**
+ * Мы пишем человеку сами: сообщение уходит через бота, а диалог переходит к нам — бот в нём замолкает.
+ * `author` — `admin:<telegram id>` из админки или `agent`, когда пишет агент через MCP.
+ */
+export async function inboxSend(db: Db, author: string, id: string, text: string): Promise<void> {
   const conversation = await conversationById(db, id);
-  const result = await bot.send('sendMessage', { chat_id: conversation.peer_id, text }, `admin:${actor.id}`);
+  const result = await bot.send('sendMessage', { chat_id: conversation.peer_id, text }, author);
   await db.update(conversations).set({ mode: 'human', attention: null }).where(eq(conversations.id, id));
   // Сообщение уже в ленте с пометкой «не доставлено»; ошибка — чтобы админка сказала об этом сразу.
   if (!result.ok) throw new AppError('not_delivered', 409);

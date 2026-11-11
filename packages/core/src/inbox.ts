@@ -19,7 +19,7 @@ export interface Message {
   id: string;
   conversation_id: string;
   direction: 'in' | 'out';
-  /** `user` — человек, `bot` — автоматический ответ или уведомление, `admin:<telegram id>` — кто-то из нас. */
+  /** `user` — человек, `bot` — автоматический ответ или уведомление, `admin:<telegram id>` — кто-то из нас, `agent` — агент через MCP. */
   author: string;
   text: string;
   status: 'received' | 'sent' | 'failed';

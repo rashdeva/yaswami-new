@@ -1,0 +1,23 @@
+# Роль operator: наш собеседник в командном чате Telegram (docs/agents-inbox.md).
+# Файл кладётся на том Hermes при каждом старте контейнера (agents/init.sh) — правки делаем здесь, а не на сервере.
+model:
+  default: grok-4.6
+  provider: xai-oauth # вход по подписке SuperGrok / X Premium+: hermes auth add xai-oauth --no-browser
+  base_url: https://api.x.ai/v1
+
+# Только то, что нужно оператору. Терминала, файлов, браузера и веба нет:
+# через переписку к модели попадает текст посторонних людей.
+platform_toolsets:
+  telegram: [mcp-yaswami, skills, memory, todo, cronjob]
+  api_server: [mcp-yaswami, skills, memory, todo, cronjob]
+  cli: [mcp-yaswami, skills, memory, todo, cronjob]
+
+mcp_servers:
+  yaswami:
+    url: "__MCP_URL__"
+    headers:
+      Authorization: "Bearer __MCP_TOKEN__"
+
+skills:
+  # Hermes умеет дописывать скиллы сам; его правки ждут нашего одобрения (/skills approve).
+  write_approval: true
