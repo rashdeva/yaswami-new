@@ -1,18 +1,18 @@
 import { Drawer } from 'vaul';
-import { useEffect, useRef, useState } from 'react';
-import type { CollectedEventItem, CollectedHost } from '@yaswami/core';
+import { useEffect, useState } from 'react';
+import type { CollectedHost } from '@yaswami/core';
 import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
-import { api, loginUrl } from '../api.ts';
+import { loginUrl } from '../api.ts';
+import { useCollectedEvent } from '../hooks/useCollectedEvent.ts';
 import { openExternal } from '../tg.ts';
 import { collectedLink } from '../format.ts';
 import { shareLink } from '../share.ts';
-import { About } from './About.tsx';
-import { GuestRow } from './GuestRow.tsx';
+import { About } from '../components/About.tsx';
+import { GuestRow } from '../components/GuestRow.tsx';
 
 interface Props {
   id: string;
   city: string;
-  initial?: CollectedEventItem;
   /** Человек вошёл: его «Записаться» можно зафиксировать. */
   authed: boolean;
   /** Не вошёл, но на сайте можно войти через Telegram. */
@@ -22,48 +22,25 @@ interface Props {
   onClaim: (() => Promise<void>) | null;
   /** Организатор уже подтвердил событие: запись идёт через событие Ясвами. */
   onOpenEvent: (eventId: string) => void;
-  onSignedUp: (id: string) => void;
   onBack: (() => void) | null;
   toast: (text: string) => void;
 }
 
 /** Событие, собранное из открытого канала. Записывает на него организатор: мы фиксируем намерение и ведём к нему. */
-export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp, onClaim, onOpenEvent, onSignedUp, onBack, toast }: Props) {
+export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim, onOpenEvent, onBack, toast }: Props) {
   const [claiming, setClaiming] = useState(false);
   const [hostOpen, setHostOpen] = useState<CollectedHost | null>(null);
-  const [event, setEvent] = useState<CollectedEventItem | null>(initial ?? null);
-  const [failed, setFailed] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Запрашиваем и при готовой карточке из списка: профиль организатора есть только в ответе на одно событие.
-    api.collectedEvent(id).then(setEvent, (e: Error) => setFailed(e.message));
-  }, [id]);
-
-  // Заход вошедшего человека: по ним организатор потом увидит свою аудиторию. Анонимных не считаем.
-  useEffect(() => { if (authed) void api.visitCollected(id).catch(() => {}); }, [id, authed]);
+  const { event, failed, signUp: recordSignUp } = useCollectedEvent(id, authed, toast);
 
   useEffect(() => {
     if (event) document.title = `${event.title} — ${collectedWhen(event.starts_at)}, ${city}`;
   }, [event, city]);
 
-  // Вернулись после входа, начатого кнопкой «Записаться»: фиксируем запись, к организатору человек перейдёт
-  // вторым нажатием — открыть новую вкладку без нажатия браузер не даст.
-  const resumed = useRef(false);
-  useEffect(() => {
-    if (resumed.current || !authed || !new URLSearchParams(location.search).has('signup')) return;
-    resumed.current = true;
-    history.replaceState(null, '', collectedPath(id));
-    api.signUp(id).then(() => {
-      onSignedUp(id);
-      toast('Вы записаны. Напишите организатору, чтобы подтвердить место');
-    }, (e: Error) => toast(e.message));
-  }, [authed, id, onSignedUp, toast]);
-
   if (!event) {
     return failed ? (
       <div className="state">
         <b>🫥</b>
-        <p>{failed}</p>
+        <p>{failed.message}</p>
         {onBack && <button className="chip" onClick={onBack}>← Все события</button>}
       </div>
     ) : (
@@ -84,7 +61,7 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
       return;
     }
     // Запись уходит в фоне, а ссылка открывается сразу: иначе браузер сочтёт новую вкладку всплывающим окном.
-    if (authed && !signedUp) void api.signUp(id).then(() => onSignedUp(id), () => {});
+    if (authed && !signedUp) recordSignUp();
     openExternal(event!.signup_url);
   }
 

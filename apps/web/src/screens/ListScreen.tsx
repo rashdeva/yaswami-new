@@ -5,7 +5,7 @@ import { collectedDay, collectedDayKey, collectedIsPast, collectedTime, topicIco
 import type { MyCollectedItem } from '@yaswami/core';
 import type { EventListData } from '../api.ts';
 import { kindIcon } from '../format.ts';
-import { Cover } from './Cover.tsx';
+import { Cover } from '../components/Cover.tsx';
 
 const MY_STATUS = { approved: 'вы идёте', maybe: 'вы думаете', declined: 'вы не идёте', waitlist: 'вы в листе ожидания' } as const;
 

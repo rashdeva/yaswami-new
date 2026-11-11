@@ -2,12 +2,11 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
 import { collectedDay, collectedDayKey, collectedPath, collectedTime, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
-import { api } from '../api.ts';
-import { Cover } from './Cover.tsx';
+import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
+import { Cover } from '../components/Cover.tsx';
 
 interface Props {
   city: string;
-  initial?: CollectedEventItem[];
   tabs: ReactNode;
   /** Блок над списком: предложение организатору подтвердить свои события. */
   lead?: ReactNode;
@@ -18,14 +17,9 @@ interface Props {
 const POPULAR = '🔥';
 
 /** Витрина: все предстоящие события города. Открыта без входа. */
-export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
-  const [items, setItems] = useState<CollectedEventItem[] | null>(initial ?? null);
-  const [failed, setFailed] = useState<string | null>(null);
+export function FeedScreen({ city, tabs, lead, onOpen }: Props) {
+  const { items, failed } = useCollectedFeed();
   const [topic, setTopic] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!initial) api.collected().then(setItems, (e: Error) => setFailed(e.message));
-  }, [initial]);
 
   useEffect(() => {
     document.title = `События в городе ${city} — Я с вами`;
@@ -63,7 +57,7 @@ export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
         </div>
       )}
       {lead}
-      {failed && <div className="state"><b>🌧</b><p>{failed}</p></div>}
+      {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}
       {!items && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
       {items?.length === 0 && <div className="state"><b>🌿</b><p>Пока ничего не запланировано. Загляните позже.</p></div>}
       {days.map((list) => (

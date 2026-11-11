@@ -5,7 +5,7 @@ import * as z from 'zod';
 import type { EventUpdateInput } from '@yaswami/core';
 import { ADDRESS_MAX, DESCRIPTION_MAX, Event, NAME_MAX, TEMPLATES, TICKET_NAME_MAX } from '@yaswami/core';
 import type { EventData } from '../api.ts';
-import { api } from '../api.ts';
+import { useCreateEvent } from '../hooks/useEvent.ts';
 import { fromWall, kindIcon, localDate, wallParts } from '../format.ts';
 import { haptic } from '../tg.ts';
 
@@ -51,6 +51,7 @@ interface Props {
 }
 
 export function CreateScreen({ onBack, onCreated, onKind, toast, editing }: Props) {
+  const createEvent = useCreateEvent();
   const event = editing?.event;
   const [date0, time0] = event ? wallParts(event.start_at, event.timezone) : [localDate(1), '19:30'];
   const schema = useMemo(() => makeSchema(!editing), [editing]);
@@ -100,7 +101,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast, editing }: Prop
         });
         return;
       }
-      const view = await api.createEvent({
+      const view = await createEvent({
         kind: v.kind,
         name: v.name,
         description: v.description || null,

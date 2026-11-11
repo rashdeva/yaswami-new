@@ -1,50 +1,33 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Event, RsvpStatus } from '@yaswami/core';
 import { TEMPLATES } from '@yaswami/core';
-import type { EventData } from '../api.ts';
-import { api } from '../api.ts';
+import { useEvent, useEventVisit } from '../hooks/useEvent.ts';
 import { hue, kindIcon, when } from '../format.ts';
-import { haptic, startParam, startRef } from '../tg.ts';
+import { haptic } from '../tg.ts';
 import { shareEvent } from '../share.ts';
-import { About } from './About.tsx';
-import { GuestRow } from './GuestRow.tsx';
+import { About } from '../components/About.tsx';
+import { GuestRow } from '../components/GuestRow.tsx';
 
 const ANSWERS: [RsvpStatus, string][] = [['approved', 'Пойду'], ['maybe', 'Думаю'], ['declined', 'Не пойду']];
 const GUEST_LABEL = { approved: 'пойдёт', maybe: 'думает', declined: 'не пойдёт', waitlist: 'в листе ожидания' } as const;
 
 interface Props {
   id: string;
-  initial?: EventData;
   /** Кто смотрит: его id уходит в ссылку «Позвать друзей». */
   userId?: number;
   onBack: (() => void) | null;
   onKind: (kind: Event['kind']) => void;
   toast: (text: string) => void;
-  onChanged: () => void;
   /** Организатору: открыть экран «Редактировать». */
-  onEdit: (view: EventData) => void;
+  onEdit: () => void;
 }
 
-export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChanged, onEdit }: Props) {
-  const [view, setView] = useState<EventData | null>(initial ?? null);
-  const [failed, setFailed] = useState<string | null>(null);
+export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props) {
+  const { view, failed, reload, rsvp } = useEvent(id);
   const [pending, setPending] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
 
-  const load = useCallback(
-    () => api.event(id).then((v) => { setView(v); setFailed(null); }, (e: Error) => setFailed(e.message)),
-    [id],
-  );
-  useEffect(() => {
-    void load();
-    // Ответы других гостей подтягиваем, когда человек возвращается в приложение.
-    const onVisible = () => { if (document.visibilityState === 'visible') void load(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [load]);
-
-  // Заход фиксируем один раз на открытие; кто позвал — из ссылки, если открыли именно это событие.
-  useEffect(() => { void api.visit(id, id === startParam ? startRef : undefined).catch(() => {}); }, [id]);
+  useEventVisit(id);
 
   const kind = view?.event.kind;
   useEffect(() => { if (kind) onKind(kind); }, [kind, onKind]);
@@ -53,7 +36,7 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
     return failed ? (
       <div className="state">
         <b>🫥</b>
-        <p>{failed}</p>
+        <p>{failed.message}</p>
         {onBack && <button className="chip" onClick={onBack}>← Мои события</button>}
       </div>
     ) : (
@@ -75,13 +58,12 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
     }
     setPending(true);
     try {
-      setView(await api.rsvp(id, { approval_status, ...(approval_status === 'approved' && ticketId ? { event_ticket_type_id: ticketId } : {}) }));
+      await rsvp({ approval_status, ...(approval_status === 'approved' && ticketId ? { event_ticket_type_id: ticketId } : {}) });
       haptic.success();
-      onChanged();
     } catch (e) {
       haptic.error();
       toast((e as Error).message);
-      void load(); // мест могло не остаться — показываем свежие числа
+      void reload(); // мест могло не остаться — показываем свежие числа
     } finally {
       setPending(false);
     }
@@ -181,7 +163,7 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
         )}
         {is_host ? (
           <div className="cta-row">
-            <button className="cta alt" onClick={() => onEdit(view)}>Редактировать</button>
+            <button className="cta alt" onClick={onEdit}>Редактировать</button>
             <button className="cta" onClick={() => shareEvent(view.event, userId, toast)}>Поделиться</button>
           </div>
         ) : (
