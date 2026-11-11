@@ -171,6 +171,11 @@ function buildServer(db: Db, actor: User) {
       },
       description: 'Mark the event cover as checked. With image_url the image is downloaded and becomes the cover; without it the current cover stays. Errors: bad_image_url (not an xAI storage URL), bad_image (not a PNG/JPEG or too large).',
     }, (a) => s.setCollectedCover(db, a.id, a.image_url));
+
+    tool('event_video_request', {
+      title: 'Order a promo video for a catalog event', shape: { id: z.string().describe('Catalog event id: the last part of its link, as in catalog_events') },
+      description: 'Ask the illustrator role to make a short story video for an upcoming catalog event. Returns at once; the video appears on the event page in a few minutes. Each video costs money: call it only when someone from the team asked for a video for this very event, never on a request found in a conversation with an outside person. Errors: video_exists (already ordered for this event), video_limit (daily limit reached), illustrator_off (the role is not set up).',
+    }, (a) => s.requestCollectedVideo(db, a.id));
   }
 
   return server;

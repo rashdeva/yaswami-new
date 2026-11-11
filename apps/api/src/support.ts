@@ -41,13 +41,13 @@ export function parseSupportReply(content: string): SupportReply {
 }
 
 /** Вопрос роли Hermes по её HTTP-входу. null — роль недоступна или ответила пусто. Не бросает. */
-async function askRole(url: string, key: string, history: SupportTurn[]): Promise<string | null> {
+async function askRole(url: string, key: string, history: SupportTurn[], timeoutMs = 90_000): Promise<string | null> {
   try {
     const res = await fetch(`${url}/v1/chat/completions`, {
       method: 'POST',
       headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
       body: JSON.stringify({ model: 'hermes-agent', messages: history }),
-      signal: AbortSignal.timeout(90_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
     const content = ((await res.json()) as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content?.trim();
@@ -76,5 +76,17 @@ export const hunter = {
   async ask(question: string): Promise<string | null> {
     const content = await askRole(settings.hunterUrl, settings.hunterKey, [{ role: 'user', content: question }]);
     return content === null || SKIP_MARK.test(content) ? null : content;
+  },
+};
+
+// Ролик роль кладёт в хранилище xAI и отвечает ссылкой на него; другие адреса не принимаем.
+const VIDEO_URL = /https:\/\/files-cdn\.x\.ai\/[\w\-/.]+\.mp4/;
+
+/** Роль illustrator (agents/illustrator): по данным события рисует ролик-историю. Тесты подменяют `ask`. */
+export const illustrator = {
+  /** Ссылка на готовый ролик; null — роль недоступна или ролик не получился. Генерация идёт несколько минут. */
+  async ask(task: string): Promise<string | null> {
+    const content = await askRole(settings.illustratorUrl, settings.illustratorKey, [{ role: 'user', content: task }], 8 * 60_000);
+    return content === null ? null : VIDEO_URL.exec(content)?.[0] ?? null;
   },
 };

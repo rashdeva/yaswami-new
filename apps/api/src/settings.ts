@@ -26,6 +26,13 @@ export const settings = {
   hunterUrl: (process.env.HUNTER_URL ?? '').replace(/\/$/, ''),
   hunterKey: process.env.HUNTER_KEY ?? '',
   hunterUserIds: (process.env.HUNTER_USER_IDS ?? '').split(',').map(Number).filter(Boolean),
+  /**
+   * Роль illustrator в Hermes: рисует ролик о событии (services.ts, requestCollectedVideo). Пусто — выключено.
+   * `illustratorDailyLimit` — сколько роликов можно заказать за сутки: каждая генерация стоит 1–2 доллара.
+   */
+  illustratorUrl: (process.env.ILLUSTRATOR_URL ?? '').replace(/\/$/, ''),
+  illustratorKey: process.env.ILLUSTRATOR_KEY ?? '',
+  illustratorDailyLimit: Number(process.env.ILLUSTRATOR_DAILY_LIMIT ?? 3),
   /** Общий со сборщиком секрет: им он подписывает сообщения с аккаунтов Telegram. Пусто — приём закрыт. */
   collectorSecret: process.env.COLLECTOR_SECRET ?? '',
   /** Telegram id тех, кому открыта админка переписки (/admin), через запятую. */

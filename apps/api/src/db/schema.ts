@@ -139,6 +139,12 @@ export const collectedEvents = pgTable(
     // Обложку (photos.collected_external_id) посмотрел иллюстратор: оставил фото анонса или нарисовал свою.
     // null — ещё не смотрел; такие события отдаёт covers_pending в MCP.
     cover_checked_at: at('cover_checked_at'),
+    // Короткий ролик-история о событии: рисует роль illustrator в Hermes (support.ts), лежит в хранилище xAI.
+    // ponytail: храним только ссылку — файл в 6–12 МБ в Postgres класть не стоит; если xAI начнёт брать деньги
+    // за хранение или ссылки протухнут, переносить в объектное хранилище.
+    video_url: text(),
+    // Когда ролик заказали: по этой отметке считается дневной лимит (генерация платная), и второй раз не заказываем.
+    video_at: at('video_at'),
     created_at: at('created_at').notNull().defaultNow(),
     updated_at: at('updated_at').notNull().defaultNow(),
   },
