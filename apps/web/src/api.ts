@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { EventCreateInput, EventListItem, EventView, RsvpInput, Wire } from '@yaswami/core';
+import type { AppConfig, EventCreateInput, EventListItem, EventView, RsvpInput, Wire } from '@yaswami/core';
 import { inTelegram, tg } from './tg.ts';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -47,6 +47,7 @@ export type EventData = Wire<EventView>;
 export type EventListData = Wire<EventListItem>;
 
 export const api = {
+  config: () => request<AppConfig>('GET', '/config'),
   events: () => request<EventListData[]>('GET', '/events'),
   event: (id: string) => request<EventData>('GET', `/events/${encodeURIComponent(id)}`),
   createEvent: (input: EventCreateInput) => request<EventData>('POST', '/events', input),

@@ -83,5 +83,11 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   source_url: string; // публикация, из которой взято событие
 }
 
+/** Открытые настройки для фронта: из чего собрать ссылку на событие t.me/<бот>/<приложение>?startapp=<id>. */
+export interface AppConfig {
+  bot_username: string | null;
+  app_name: string;
+}
+
 /** Тот же тип, каким он приходит по сети: даты в JSON — строки ISO. */
 export type Wire<T> = T extends Date ? string : T extends object ? { [K in keyof T]: Wire<T[K]> } : T;

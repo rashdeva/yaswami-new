@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import type { Event } from '@yaswami/core';
+import type { AppConfig, Event } from '@yaswami/core';
 import { TEMPLATES } from '@yaswami/core';
 
 /** «пт, 20 ноября, 19:00» — во времени самого события, а не устройства. */
@@ -24,10 +24,16 @@ export function localDate(offsetDays = 0): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Имя бота и приложения приходят с сервера (он знает своего бота); переменные VITE_* — запасной вариант для разработки.
+const link = { bot: import.meta.env.VITE_BOT_USERNAME || null, app: import.meta.env.VITE_APP_NAME || 'app' };
+export function setLinkConfig(config: AppConfig) {
+  link.bot = config.bot_username ?? link.bot;
+  link.app = config.app_name;
+}
+
 /** Ссылка, по которой событие открывается у гостя. */
 export function eventLink(id: string): string {
-  const bot = import.meta.env.VITE_BOT_USERNAME;
-  return bot
-    ? `https://t.me/${bot}/${import.meta.env.VITE_APP_NAME ?? 'app'}?startapp=${id}`
+  return link.bot
+    ? `https://t.me/${link.bot}/${link.app}?startapp=${id}`
     : `${location.origin}${location.pathname}?startapp=${id}`;
 }

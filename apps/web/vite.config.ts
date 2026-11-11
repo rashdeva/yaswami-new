@@ -6,7 +6,7 @@ export default defineConfig({
   envDir: '../..', // один .env в корне; в браузер попадают только переменные VITE_*
   server: {
     port: 5173,
-    // В разработке фронт ходит на /api, а Vite пересылает запросы локальному API без префикса.
-    proxy: { '/api': { target: 'http://localhost:3000', rewrite: (path) => path.replace(/^\/api/, '') } },
+    // В разработке фронт ходит на /api так же, как в продакшене; Vite пересылает запросы локальному API.
+    proxy: { '/api': 'http://localhost:3000' },
   },
 });
