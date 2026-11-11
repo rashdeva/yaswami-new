@@ -1,13 +1,16 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, EventCreateInput, EventListItem, EventView, RsvpInput, Wire } from '@yaswami/core';
+import type { AppConfig, CollectedEventItem, EventCreateInput, EventListItem, EventView, Me, RsvpInput, Wire } from '@yaswami/core';
 import { inTelegram, tg } from './tg.ts';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
 const devToken = import.meta.env.DEV ? import.meta.env.VITE_DEV_TOKEN : undefined;
 const authorization = inTelegram ? `tma ${tg!.initData}` : devToken ? `Bearer ${devToken}` : null;
 
-/** Есть чем представиться: открыты в Telegram или задан токен разработчика. */
-export const canAuth = authorization !== null;
+/** Вход известен сразу: открыты в Telegram или задан токен разработчика. Иначе — только cookie сайта, если она есть. */
+export const hasCredentials = authorization !== null;
+
+/** Адрес входа на сайте через Telegram; после входа человек вернётся на `back`. */
+export const loginUrl = (back: string) => `${BASE}/auth/telegram/login?return=${encodeURIComponent(back)}`;
 
 const MESSAGES: Record<string, string> = {
   full: 'Свободных мест больше нет',
@@ -28,19 +31,20 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, keepalive = false): Promise<T> {
   let res: Response;
   try {
     res = await fetch(BASE + path, {
       method,
       headers: { ...(authorization ? { authorization } : {}), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
       body: body === undefined ? undefined : JSON.stringify(body),
+      keepalive, // запрос переживёт уход со страницы
     });
   } catch {
     throw new ApiError('network');
   }
   if (!res.ok) throw new ApiError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'internal');
-  return (await res.json()) as T;
+  return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
 export type EventData = Wire<EventView>;
@@ -48,6 +52,11 @@ export type EventListData = Wire<EventListItem>;
 
 export const api = {
   config: () => request<AppConfig>('GET', '/config'),
+  me: () => request<Me>('GET', '/me'),
+  logout: () => request<void>('POST', '/auth/logout'),
+  collected: () => request<CollectedEventItem[]>('GET', '/collected-events'),
+  collectedEvent: (id: string) => request<CollectedEventItem>('GET', `/collected-events/${encodeURIComponent(id)}`),
+  signUp: (id: string) => request<CollectedEventItem>('POST', `/collected-events/${encodeURIComponent(id)}/signup`, undefined, true),
   events: () => request<EventListData[]>('GET', '/events'),
   event: (id: string) => request<EventData>('GET', `/events/${encodeURIComponent(id)}`),
   createEvent: (input: EventCreateInput) => request<EventData>('POST', '/events', input),

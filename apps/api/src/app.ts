@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { getCookie } from 'hono/cookie';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
@@ -8,10 +9,20 @@ import { authenticate, issueToken, revokeTokens } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { handleMcp } from './mcp.ts';
 import * as s from './services.ts';
+import { SESSION_COOKIE, webLogin } from './web-login.ts';
 
 const json = <T extends z.ZodType>(schema: T) => validator('json', (value) => schema.parse(value) as z.infer<T>);
 
-export function createApp({ db, botToken, config }: { db: Db; botToken: string; config?: AppConfig }) {
+interface Options {
+  db: Db;
+  botToken: string;
+  config?: Partial<Omit<AppConfig, 'web_login'>>;
+  /** Вход на сайте через Telegram: Client Secret из @BotFather и адрес сайта. Без них вход с сайта выключен. */
+  webLogin?: { clientSecret: string; publicUrl: string };
+}
+
+export function createApp({ db, botToken, config, webLogin: login }: Options) {
+  const web_login = !!(botToken && login?.clientSecret);
   return new Hono<{ Variables: { actor: User; method: AuthMethod } }>()
     .onError((e, c) => {
       if (e instanceof s.AppError) return c.json({ error: e.code }, e.status);
@@ -21,17 +32,22 @@ export function createApp({ db, botToken, config }: { db: Db; botToken: string; 
       return c.json({ error: 'internal' }, 500);
     })
     .get('/health', (c) => c.text('ok'))
-    .get('/config', (c) => c.json(config ?? ({ bot_username: null, app_name: 'app' } satisfies AppConfig)))
+    .get('/config', (c) => c.json({ bot_username: null, app_name: 'app', city: 'Дананг', ...config, web_login } satisfies AppConfig))
     // До проверки входа: витрину собранных событий видит и анонимный посетитель.
     .get('/collected-events', async (c) => c.json(await s.listCollectedEvents(db)))
+    .get('/collected-events/:id', async (c) => c.json(await s.getCollectedEvent(db, c.req.param('id'))))
+    .route('/auth', webLogin({ db, botToken, clientSecret: login?.clientSecret ?? '', publicUrl: login?.publicUrl ?? '' }))
     .use(async (c, next) => {
-      const auth = await authenticate(db, botToken, c.req.header('authorization'));
+      const auth = await authenticate(db, botToken, c.req.header('authorization'), getCookie(c, SESSION_COOKIE));
       if (!auth) return c.json({ error: 'unauthorized' }, 401, { 'WWW-Authenticate': 'Bearer' });
       c.set('actor', auth.user);
       c.set('method', auth.method);
       await next();
     })
     .all('/mcp', (c) => handleMcp(db, c.var.actor, c.req.raw))
+
+    .get('/me', async (c) => c.json(await s.me(db, c.var.actor)))
+    .post('/collected-events/:id/signup', async (c) => c.json(await s.signUpForCollectedEvent(db, c.var.actor, c.req.param('id'))))
 
     .get('/events', async (c) => c.json(await s.listEvents(db, c.var.actor)))
     .post('/events', json(EventCreateInput), async (c) => c.json(await s.createEvent(db, c.var.actor, c.req.valid('json')), 201))

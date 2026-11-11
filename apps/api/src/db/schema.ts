@@ -128,6 +128,17 @@ export const collectedEvents = pgTable(
   (t) => [index('collected_events_starts_idx').on(t.starts_at), index('collected_events_username_idx').on(t.telegram_username)],
 );
 
+// «Записаться» на собранное событие: фиксируем намерение и отправляем человека к организатору.
+export const collectedEventSignups = pgTable(
+  'collected_event_signups',
+  {
+    external_id: text().notNull().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
+    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.external_id, t.user_id] }), index('collected_event_signups_user_idx').on(t.user_id)],
+);
+
 // Номер последней разобранной публикации по каждому источнику сборщика.
 export const collectorCursors = pgTable('collector_cursors', {
   channel: text().primaryKey(),

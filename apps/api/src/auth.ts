@@ -1,4 +1,5 @@
-// Два способа войти: initData мини-приложения Telegram и токен доступа (для REST и MCP вне Telegram).
+// Способы войти: initData мини-приложения Telegram и токен доступа — в заголовке (REST и MCP вне Telegram)
+// или в cookie сайта (её ставит вход через Telegram в web-login.ts).
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { User } from '@yaswami/core';
@@ -57,6 +58,7 @@ export async function issueToken(db: Db, userId: number): Promise<string> {
   return token;
 }
 
+export const revokeToken = (db: Db, token: string) => db.delete(apiTokens).where(eq(apiTokens.token_hash, hashToken(token)));
 export const revokeTokens = (db: Db, userId: number) => db.delete(apiTokens).where(eq(apiTokens.user_id, userId));
 
 async function userByToken(db: Db, token: string): Promise<User | null> {
@@ -70,9 +72,11 @@ async function userByToken(db: Db, token: string): Promise<User | null> {
 
 export type AuthMethod = 'telegram' | 'token';
 
-/** Заголовок `Authorization: tma <initData>` или `Authorization: Bearer <токен>`. */
-export async function authenticate(db: Db, botToken: string, header: string | undefined): Promise<{ user: User; method: AuthMethod } | null> {
-  const [scheme, value] = (header ?? '').split(/\s+(.*)/s);
+/** Заголовок `Authorization: tma <initData>` или `Authorization: Bearer <токен>`; без заголовка — токен из cookie сайта. */
+export async function authenticate(
+  db: Db, botToken: string, header: string | undefined, cookieToken?: string,
+): Promise<{ user: User; method: AuthMethod } | null> {
+  const [scheme, value] = (header ?? (cookieToken ? `Bearer ${cookieToken}` : '')).split(/\s+(.*)/s);
   if (!value) return null;
   if (scheme === 'tma') {
     // Без токена бота подпись проверить нечем: вход через Telegram закрыт, а не открыт для всех.

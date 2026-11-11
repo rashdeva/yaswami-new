@@ -8,6 +8,7 @@ interface WebApp {
   isVersionAtLeast(version: string): boolean;
   onEvent(event: 'themeChanged', cb: () => void): void;
   openTelegramLink(url: string): void;
+  openLink(url: string): void;
   BackButton: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
   HapticFeedback: {
     impactOccurred(style: 'light' | 'medium'): void;
@@ -48,4 +49,10 @@ export function syncTheme() {
   apply();
   safely(() => tg?.onEvent('themeChanged', apply));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', apply);
+}
+
+/** Открывает внешнюю ссылку: чат Telegram — прямо в Telegram, остальное — в браузере. Вызывать прямо из обработчика нажатия. */
+export function openExternal(url: string) {
+  if (inTelegram && tg) return safely(() => (/^https:\/\/t\.me\//.test(url) ? tg.openTelegramLink(url) : tg.openLink(url)));
+  window.open(url, '_blank', 'noopener');
 }

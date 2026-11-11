@@ -1,6 +1,6 @@
 // Формы запросов и ответов. Одни и те же схемы проверяют REST-запросы, описывают инструменты MCP и формы на фронте.
 import * as z from 'zod';
-import type { Event, Guest, TicketType } from './schema.ts';
+import type { Event, Guest, TicketType, User } from './schema.ts';
 import { Event as EventSchema, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
 
 const isTimeZone = (tz: string) => {
@@ -78,15 +78,23 @@ export interface CollectedEvent {
 
 /** Карточка собранного события для витрины. */
 export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {
-  id: string;
+  id: string; // годится для адреса страницы: <канал>-<публикация>-<номер события в ней>
   signup_url: string; // куда ведёт «Записаться»: к организатору, а не в Ясвами
   source_url: string; // публикация, из которой взято событие
+}
+
+/** Кто вошёл и на какие собранные события он уже записывался. */
+export interface Me {
+  user: Pick<User, 'id' | 'first_name'>;
+  collected_signups: CollectedEventItem['id'][];
 }
 
 /** Открытые настройки для фронта: из чего собрать ссылку на событие t.me/<бот>/<приложение>?startapp=<id>. */
 export interface AppConfig {
   bot_username: string | null;
   app_name: string;
+  web_login: boolean; // на сайте можно войти через Telegram (настроен Client Secret)
+  city: string; // город витрины; пока он один
 }
 
 /** Тот же тип, каким он приходит по сети: даты в JSON — строки ISO. */

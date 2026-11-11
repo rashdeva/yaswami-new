@@ -2,12 +2,12 @@
 import { randomBytes } from 'node:crypto';
 import { and, asc, count, eq, exists, gte, or, sql } from 'drizzle-orm';
 import type {
-  CollectedEventItem, Event, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
+  CollectedEventItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User,
 } from '@yaswami/core';
 import { rsvp, ticketTypeRemovalError } from '@yaswami/core';
 import type { Db, Tx } from './db/client.ts';
-import { collectedEvents, events, guests, ticketTypes, users } from './db/schema.ts';
+import { collectedEvents, collectedEventSignups, events, guests, ticketTypes, users } from './db/schema.ts';
 
 export type ErrorStatus = 400 | 401 | 403 | 404 | 409;
 export class AppError extends Error {
@@ -85,6 +85,19 @@ export async function listEvents(db: Db, actor: User): Promise<EventListItem[]> 
   return rows.map((r) => ({ event: r.event, is_host: r.event.user_id === actor.id, my_approval_status: r.my_approval_status }));
 }
 
+// Идентификатор собранного события в адресах: telegram:<канал>/<публикация>#<номер> ↔ <канал>-<публикация>-<номер>.
+export const collectedSlug = (externalId: string) => externalId.replace(/^telegram:/, '').replace(/\/(\d+)#(\d+)$/, '-$1-$2');
+export function collectedExternalId(slug: string): string {
+  const m = /^(.+)-(\d+)-(\d+)$/.exec(slug);
+  if (!m) throw new AppError('not_found', 404);
+  return `telegram:${m[1]}/${m[2]}#${m[3]}`;
+}
+
+const toCollectedItem = ({ external_id, event, signup_url, announcement }: typeof collectedEvents.$inferSelect): CollectedEventItem => {
+  const { telegram_username, whatsapp_phone, url, ...shown } = event;
+  return { id: collectedSlug(external_id), ...shown, signup_url, source_url: announcement.url };
+};
+
 /** Предстоящие собранные события для витрины. Открыты всем: это пересказ публичных анонсов. */
 export async function listCollectedEvents(db: Db): Promise<CollectedEventItem[]> {
   const rows = await db
@@ -93,9 +106,29 @@ export async function listCollectedEvents(db: Db): Promise<CollectedEventItem[]>
     .where(gte(sql`coalesce(${collectedEvents.ends_at}, ${collectedEvents.starts_at})`, sql`now()`))
     .orderBy(asc(collectedEvents.starts_at))
     .limit(500); // ponytail: без постраничной выдачи, пока событий одного города меньше лимита
-  return rows.map(({ external_id, event: { telegram_username, whatsapp_phone, url, ...event }, signup_url, announcement }) => ({
-    id: external_id, ...event, signup_url, source_url: announcement.url,
-  }));
+  return rows.map(toCollectedItem);
+}
+
+/** Одно собранное событие. Прошедшее тоже отдаём: ссылка на него могла разойтись. */
+export async function getCollectedEvent(db: Db, slug: string): Promise<CollectedEventItem> {
+  const [row] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, collectedExternalId(slug)));
+  if (!row) throw new AppError('not_found', 404);
+  return toCollectedItem(row);
+}
+
+/** Фиксирует, что человек собрался на событие. Повторный вызов ничего не меняет. */
+export async function signUpForCollectedEvent(db: Db, actor: User, slug: string): Promise<CollectedEventItem> {
+  const item = await getCollectedEvent(db, slug);
+  await db.insert(collectedEventSignups).values({ external_id: collectedExternalId(slug), user_id: actor.id }).onConflictDoNothing();
+  return item;
+}
+
+export async function me(db: Db, actor: User): Promise<Me> {
+  const rows = await db
+    .select({ external_id: collectedEventSignups.external_id })
+    .from(collectedEventSignups)
+    .where(eq(collectedEventSignups.user_id, actor.id));
+  return { user: { id: actor.id, first_name: actor.first_name }, collected_signups: rows.map((r) => collectedSlug(r.external_id)) };
 }
 
 export async function createEvent(db: Db, actor: User, input: EventCreateInput): Promise<EventView> {
