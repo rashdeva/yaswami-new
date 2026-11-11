@@ -29,6 +29,21 @@ export function toAnnouncement(chat, msg) {
   }];
 }
 
+/** Отклик на публикацию: просмотры (у публикаций в группах их нет) и сумма реакций. */
+export const toStats = (msg) => ({
+  views: msg.views ?? null,
+  reactions: (msg.reactions?.results ?? []).reduce((n, r) => n + r.count, 0),
+});
+
+/** Отклик на публикации `numbers` одного источника: Map номер → { views, reactions }. Удалённые публикации пропущены. */
+export async function fetchStats(client, chat, numbers) {
+  if (!client.connected) await client.connect();
+  if (isPrivate(chat)) client.dialogsLoaded ??= client.getDialogs({});
+  await client.dialogsLoaded;
+  const messages = await client.getMessages(isPrivate(chat) ? Number(chat) : chat, { ids: numbers });
+  return new Map(messages.filter(Boolean).map((m) => [m.id, toStats(m)]));
+}
+
 // ponytail: username → (id, access_hash) кэшируется только в памяти процесса. При POLL_MINUTES=0 (cron)
 // resolveUsername дёргается на каждый запуск, а это самый флудоопасный вызов — тогда кэш надо класть в state.
 export async function fetchChatAnnouncements(client, chat, afterNumber) {

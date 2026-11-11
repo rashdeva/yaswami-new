@@ -7,7 +7,7 @@ import type {
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
 import { isSameEvent, mergeEvents } from '@yaswami/extract';
-import { ADDRESS_MAX, collectedPath, collectedSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
+import { ADDRESS_MAX, collectedPath, collectedSignupUrl, popularIds, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import type { Db, Tx } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, ticketTypes, users, visits } from './db/schema.ts';
 import { photoUrl } from './photos.ts';
@@ -106,11 +106,11 @@ export function collectedExternalId(slug: string): string {
   return `telegram:${m[1]}/${m[2]}#${m[3]}`;
 }
 
-const toCollectedItem = ({ external_id, event, announcement, claimed_event_id }: typeof collectedEvents.$inferSelect): CollectedEventItem => {
+const toCollectedItem = ({ external_id, event, announcement, claimed_event_id, views, reactions }: typeof collectedEvents.$inferSelect): CollectedEventItem => {
   const { telegram_username, whatsapp_phone, url, ...shown } = event;
   const id = collectedSlug(external_id);
   return {
-    id, ...shown, claimed_event_id, source_url: announcement.url,
+    id, ...shown, claimed_event_id, views, reactions, source_url: announcement.url,
     signup_url: collectedSignupUrl(event, announcement.url, settings.publicUrl + collectedPath(id)),
   };
 };
@@ -124,7 +124,8 @@ export async function listCollectedEvents(db: Db): Promise<CollectedEventItem[]>
     .where(upcomingCollected)
     .orderBy(asc(collectedEvents.starts_at))
     .limit(500); // ponytail: без постраничной выдачи, пока событий одного города меньше лимита
-  return rows.map(toCollectedItem);
+  const popular = popularIds(rows, (r) => r.external_id);
+  return rows.map((r) => ({ ...toCollectedItem(r), popular: popular.has(r.external_id) }));
 }
 
 /** Одно собранное событие. Прошедшее тоже отдаём: ссылка на него могла разойтись. */
@@ -136,8 +137,13 @@ export async function getCollectedEvent(db: Db, slug: string): Promise<Collected
     ? await db.select({ id: photos.id, source: photos.source }).from(photos).where(eq(photos.host_id, h.id)).orderBy(desc(photos.created_at)).limit(HOST_PHOTOS)
     : [];
   const [{ n: signups_count }] = await db.select({ n: count() }).from(collectedEventSignups).where(eq(collectedEventSignups.external_id, row.external_id)) as [{ n: number }];
+  // «Популярное» — относительно остальных предстоящих событий источника, поэтому смотрим на них все.
+  const upcoming = await db
+    .select({ external_id: collectedEvents.external_id, channel: collectedEvents.channel, views: collectedEvents.views, reactions: collectedEvents.reactions })
+    .from(collectedEvents).where(upcomingCollected);
   return {
     ...toCollectedItem(row),
+    popular: popularIds(upcoming, (r) => r.external_id).has(row.external_id),
     signups_count,
     hosts: h
       ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`,

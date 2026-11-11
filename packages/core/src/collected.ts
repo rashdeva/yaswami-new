@@ -23,6 +23,33 @@ export function collectedWhen(iso: string): string {
 export const collectedIsPast = (e: Pick<CollectedEventItem, 'starts_at' | 'ends_at'>, now = Date.now()) =>
   new Date(e.ends_at ?? e.starts_at).getTime() + (e.ends_at ? 0 : 3 * 3600e3) < now;
 
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length ? (s[(s.length - 1) >> 1]! + s[s.length >> 1]!) / 2 : 0;
+};
+
+/**
+ * Какие события «популярные»: публикация собрала заметно больше отклика, чем обычно собирают события этого источника.
+ * Сравниваем только внутри источника: у большого канала просмотров больше всегда.
+ * ponytail: наивное правило — порог от медианы предстоящих событий источника. Когда накопится история,
+ * сравнивать с обычной публикацией канала за месяц и учитывать возраст публикации.
+ */
+export function popularIds<T extends { channel: string; views: number | null; reactions: number | null }>(
+  rows: T[], id: (row: T) => string,
+): Set<string> {
+  const popular = new Set<string>();
+  const groups = new Map<string, T[]>();
+  for (const r of rows) groups.set(r.channel, [...(groups.get(r.channel) ?? []), r]);
+  for (const group of groups.values()) {
+    const reactions = Math.max(5, 2 * median(group.map((r) => r.reactions ?? 0)));
+    // По просмотрам судим, только когда есть с чем сравнить: меньше четырёх событий — медиана ни о чём.
+    const seen = group.flatMap((r) => r.views ?? []);
+    const views = seen.length >= 4 ? 1.5 * median(seen) : Infinity;
+    for (const r of group) if ((r.reactions ?? 0) >= reactions || (r.views ?? 0) > views) popular.add(id(r));
+  }
+  return popular;
+}
+
 /** Адрес страницы события на сайте. */
 export const collectedPath = (id: string) => `/e/${encodeURIComponent(id)}`;
 

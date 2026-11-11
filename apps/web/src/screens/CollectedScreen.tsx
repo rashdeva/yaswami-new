@@ -92,13 +92,21 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
         <img className="emo" src={topicIcon(event.topic)} alt="" />
         <small>{past ? 'Событие прошло' : [city, guide && event.topic].filter(Boolean).join(' · ')}</small>
         <h1>{event.title}</h1>
-        {event.tags.length > 0 && <div className="tags">{event.tags.map((t) => <span key={t}>{t}</span>)}</div>}
+        {(event.popular || event.tags.length > 0) && (
+          <div className="tags">
+            {event.popular && <span className="hot">Популярное</span>}
+            {event.tags.map((t) => <span key={t}>{t}</span>)}
+          </div>
+        )}
       </div>
 
       <div className="group"><div className="meta">
         <div><span>🗓</span><span>{collectedWhen(event.starts_at)}</span></div>
         {where && <div><span>📍</span><span>{where}</span></div>}
         {event.price && <div><span>🎟</span><span>{event.price}</span></div>}
+        {(!!event.views || !!event.reactions) && (
+          <div><span>👀</span><span>{[event.views && `${event.views.toLocaleString('ru')} просмотров`, event.reactions && `реакций: ${event.reactions}`].filter(Boolean).join(' · ')} у анонса</span></div>
+        )}
       </div></div>
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
       <About topic={event.topic} what_happens={event.what_happens} for_whom={event.for_whom} beginner_friendly={event.beginner_friendly}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Event, Guest, GuestWithName, TicketType } from './index.ts';
-import { Event as EventSchema, PUBLIC_STATE_MAX_BYTES, rsvp, ticketTypeRemovalError, toPublicState } from './index.ts';
+import { Event as EventSchema, popularIds, PUBLIC_STATE_MAX_BYTES, rsvp, ticketTypeRemovalError, toPublicState } from './index.ts';
 
 const now = new Date('2026-11-11T12:00:00Z');
 const event: Event = {
@@ -104,4 +104,17 @@ test('состояние виджета влезает в 1024 байта на �
   const json = toPublicState(big, [type('a')], guests, 'yaswamibot/app?startapp=' + 'x'.repeat(600));
   assert.ok(new TextEncoder().encode(json).length <= PUBLIC_STATE_MAX_BYTES);
   assert.equal(JSON.parse(json).t, big.name);
+});
+
+test('популярное: отклик сравнивается внутри источника', () => {
+  const row = (id: string, channel: string, views: number | null, reactions: number | null) => ({ id, channel, views, reactions });
+  const ids = (rows: ReturnType<typeof row>[]) => [...popularIds(rows, (r) => r.id)].sort();
+  // группа: просмотров нет, считаем реакции — нужно хотя бы пять и вдвое больше медианы
+  assert.deepEqual(ids([row('a', 'chat', null, 1), row('b', 'chat', null, 5), row('c', 'chat', null, null)]), ['b']);
+  assert.deepEqual(ids([row('a', 'chat', null, 10), row('b', 'chat', null, 12), row('c', 'chat', null, 25)]), ['c']);
+  // канал: просмотры в полтора раза выше медианы; большой канал не делает популярным всё подряд
+  const big = [row('a', 'big', 9000, 0), row('b', 'big', 10000, 0), row('c', 'big', 11000, 0), row('d', 'big', 20000, 0)];
+  assert.deepEqual(ids([...big, row('e', 'small', 300, 0)]), ['d']);
+  // мало событий — по просмотрам не судим
+  assert.deepEqual(ids(big.slice(2)), []);
 });
