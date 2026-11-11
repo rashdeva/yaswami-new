@@ -3,7 +3,7 @@ import type { Event, RsvpStatus } from '@yaswami/core';
 import { TEMPLATES } from '@yaswami/core';
 import type { EventData } from '../api.ts';
 import { api } from '../api.ts';
-import { hue, when } from '../format.ts';
+import { hue, kindIcon, when } from '../format.ts';
 import { haptic, startParam, startRef } from '../tg.ts';
 import { shareEvent } from '../share.ts';
 import { GuestRow } from './GuestRow.tsx';
@@ -93,7 +93,7 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
     <>
       <div className={`hero${onBack ? '' : ' nb'}`}>
         {onBack && <button className="back" onClick={onBack}>← Мои события</button>}
-        <div className="emo">{template.emoji}</div>
+        <img className="emo" src={kindIcon(event.kind)} alt="" />
         <small>{event.status === 'cancelled' ? 'Отменено' : event.status === 'draft' ? 'Черновик' : template.label}</small>
         <h1>{event.name}</h1>
       </div>

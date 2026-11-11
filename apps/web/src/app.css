@@ -39,7 +39,7 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 
 .kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 18px 16px 0; }
 .kind { border-radius: 24px; padding: 14px 6px 12px; text-align: center; font-size: 13px; font-weight: 500; line-height: 1.2; cursor: pointer; transition: transform .2s var(--spring), background .2s; }
-.kind b { display: block; font-size: 30px; font-weight: 400; margin-bottom: 6px; }
+.kind img { display: block; width: 40px; height: 40px; margin: 0 auto 6px; }
 .kind:active { transform: scale(.95); }
 .kind[aria-pressed='true'] {
   background: color-mix(in srgb, var(--a) 12%, var(--mat)); border-color: transparent;
