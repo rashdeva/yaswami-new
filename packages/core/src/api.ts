@@ -59,6 +59,7 @@ export interface GuestView {
 export interface EventView {
   event: Event;
   ticket_types: TicketType[];
+  host: { first_name: string; user_photo_url: string | null };
   guests: GuestView[]; // отказавшихся видит только организатор
   guest_counts: { approved: number; maybe: number; declined: number }; // approved — занятые места, с учётом «+1»
   me: Guest | null;
@@ -113,6 +114,7 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   source_url: string; // публикация, из которой взято событие
   claimed_event_id: Event['id'] | null; // организатор подтвердил событие: запись идёт через событие Ясвами
   hosts?: CollectedHost[]; // как hosts у события в Luma; только в ответе на одно событие, в списках его нет
+  signups?: { first_name: string; user_photo_url: string | null }[]; // кто нажал «Записаться» в Ясвами; только в ответе на одно событие
 }
 
 /**
