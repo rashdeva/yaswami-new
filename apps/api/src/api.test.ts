@@ -179,8 +179,8 @@ test('MCP: список инструментов, создание событи�
 
   const { tools } = await rpc('tools/list', {});
   assert.deepEqual(tools.map((t: { name: string }) => t.name).sort(), [
-    'catalog_events', 'event_create', 'event_get', 'event_rsvp', 'event_update', 'events_list',
-    'ticket_type_create', 'ticket_type_delete', 'ticket_type_update',
+    'catalog_events', 'contacts_list', 'event_create', 'event_get', 'event_rsvp', 'event_update', 'events_list',
+    'my_catalog_events', 'ticket_type_create', 'ticket_type_delete', 'ticket_type_update',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'event_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
@@ -661,6 +661,7 @@ test('переписка: бот пишет всё в базу, админ от�
   let feed = await inbox();
   assert.equal(feed.me, 70);
   assert.deepEqual(feed.conversations.map((c) => [c.peer_id, c.peer_name, c.mode, c.attention]), [[71, 'Аня', 'agent', 'Бот не создал событие']]);
+  assert.deepEqual([feed.conversations[0]!.kind, feed.conversations[0]!.stage], ['guest', 'bot']);
   assert.deepEqual(feed.messages.map((m) => [m.direction, m.author, m.text, m.status]), [
     ['out', 'bot', REPLIES.no_date, 'sent'],
     ['in', 'user', 'Как записаться на покер?', 'received'],
@@ -1030,6 +1031,7 @@ test('организаторы: запись на событие станови�
   assert.deepEqual(feed.conversations.map((c) => [c.channel, c.peer_id, c.peer_name, c.attention]), [['account', 9300, 'Марина', 'Черновик организатору']]);
   const draft = feed.messages[0]!;
   assert.deepEqual([draft.status, draft.author, draft.meta], ['draft', 'agent:host', { reason: 'На «Йога на рассвете» через нас записались' }]);
+  assert.deepEqual([feed.conversations[0]!.kind, feed.conversations[0]!.stage], ['organizer', 'draft'], 'кто это и на каком шаге');
   assert.deepEqual(sent.map(([, b]) => b.chat_id), [70], 'оповещение нам, организатору пока ничего');
 
   // Вторая запись на то же событие, пока черновик ждёт, — второго черновика нет.
@@ -1041,6 +1043,7 @@ test('организаторы: запись на событие станови�
   assert.equal((await call(admin, 'POST', `/admin/messages/${draft.id}/send`, {})).status, 204);
   feed = await inbox();
   assert.deepEqual([feed.messages[0]!.status, feed.messages[0]!.meta?.reply_to, feed.conversations[0]!.mode, feed.conversations[0]!.account_id], ['queued', undefined, 'agent', account!.id]);
+  assert.equal(feed.conversations[0]!.stage, 'contacted');
 
   // Организатор отвечает на аккаунт — роль готовит черновик ответа, видя всю переписку.
   const report = (text: string) =>
@@ -1059,6 +1062,7 @@ test('организаторы: запись на событие станови�
   host.ask = async (history) => ((asked = history), parseSupportReply('Да, это бесплатно.'));
   assert.equal((await report('А это платно?')).status, 204);
   const reply = await drafted();
+  assert.equal((await inbox()).conversations[0]!.stage, 'replied');
   assert.deepEqual([reply.text, reply.meta, (await inbox()).conversations[0]!.attention], ['Да, это бесплатно.', { reason: 'Ответ организатору' }, 'Черновик ответа организатору']);
   assert.deepEqual(asked.slice(1).map((t) => [t.role, t.content]), [['assistant', 'Марина, здравствуйте. На вашу йогу записался один человек.'], ['user', 'А это платно?']]);
 
@@ -1099,4 +1103,28 @@ test('MCP для оператора: любое событие сервиса, �
   assert.deepEqual((await tool(admin, 'admin_event_get', { event_id: event.id })).guest_counts, { approved: 0, maybe: 0, declined: 1 });
   assert.equal((await tool(admin, 'admin_event_update', { event_id: event.id, name: 'Покер в пятницу' })).event.name, 'Покер в пятницу');
   assert.deepEqual(await tool(admin, 'admin_event_get', { event_id: 'e_nope' }), { error: 'not_found' });
+
+  // От имени другого человека: админ создаёт событие за Олега и отвечает за Дашу; гостю такой параметр не дан.
+  assert.deepEqual((await tool(admin, 'admin_users_find', { query: 'u81' })).map((u: any) => u.id), [81]);
+  const made = await tool(admin, 'event_create', { as_user_id: 81, kind: 'o', name: 'Турнир', start_at: '2027-02-01T19:00:00+07:00', timezone: 'Asia/Ho_Chi_Minh' });
+  assert.ok((await tool(tma(81, 'Олег'), 'events_list', {})).some((e: any) => e.event.id === made.event.id && e.is_host), 'событие принадлежит Олегу');
+  assert.equal((await tool(admin, 'event_rsvp', { as_user_id: 82, event_id: made.event.id, approval_status: 'approved' })).me.user_id, 82);
+  assert.deepEqual(await tool(admin, 'events_list', { as_user_id: 999_999 }), { error: 'user_not_found' });
+  const forged = await tool(tma(82, 'Даша'), 'event_update', { as_user_id: 81, event_id: made.event.id, name: 'Взлом' });
+  assert.deepEqual(forged, { error: 'forbidden' }, 'гость не может действовать за другого');
+
+  // Каталог из анонсов: кто записался, убрать событие по просьбе организатора.
+  await db.execute(sql`delete from collected_events where channel = 'opchan'`);
+  const starts_at = new Date(Date.now() + 86_400_000);
+  await db.insert(collectedEvents).values({
+    external_id: 'telegram:opchan/1#0', channel: 'opchan', starts_at, signup_url: '', announcement: { url: 'https://t.me/opchan/1' },
+    event: { title: 'Баня', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'banya', whatsapp_phone: null, url: null },
+    telegram_username: 'banya',
+  });
+  assert.equal((await call(tma(82, 'Даша'), 'POST', '/collected-events/opchan-1-0/signup')).status, 200);
+  assert.deepEqual((await tool(admin, 'admin_catalog_event', { catalog_event_id: 'opchan-1-0' })).signups.map((u: any) => u.id), [82]);
+  await tool(admin, 'admin_catalog_event_delete', { catalog_event_id: 'opchan-1-0' });
+  assert.equal((await app.request('/collected-events/opchan-1-0')).status, 404);
+  assert.deepEqual(await tool(admin, 'admin_catalog_event_delete', { catalog_event_id: 'opchan-1-0' }), { error: 'not_found' });
+  assert.ok(Array.isArray(await tool(admin, 'accounts_list', {})) && Array.isArray(await tool(admin, 'admin_hosts_list', {})));
 });

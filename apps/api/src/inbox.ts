@@ -1,6 +1,6 @@
 // Переписка (docs/agents-inbox.md): запись всего, что люди пишут боту и что бот или мы отвечаем, и операции админки.
-import { and, asc, count, desc, eq, gt } from 'drizzle-orm';
-import type { AccountCreateInput, AccountMessageInput, Conversation, ConversationUpdateInput, InboxFeed, LeadInput, Message, TgAccount, User } from '@yaswami/core';
+import { and, asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import type { AccountCreateInput, AccountMessageInput, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message, TgAccount, User } from '@yaswami/core';
 import { collectedPath, collectedWhen } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, conversations, hosts, messages, tgAccounts, users } from './db/schema.ts';
@@ -223,10 +223,36 @@ export function requireAdmin(actor: User) {
   if (!isAdmin(actor)) throw new AppError('forbidden', 403);
 }
 
+/** Кто собеседник и на каком он шаге: по профилям организаторов, пользователям сервиса и самой переписке. */
+async function withStages(db: Db, rows: Conversation[]): Promise<InboxConversation[]> {
+  if (!rows.length) return [];
+  const peers = rows.map((c) => c.peer_id);
+  const organizers = new Map((await db.select({ id: hosts.telegram_id, user_id: hosts.user_id }).from(hosts).where(inArray(hosts.telegram_id, peers))).map((h) => [h.id, h.user_id]));
+  const members = new Set((await db.select({ id: users.id }).from(users).where(inArray(users.id, peers))).map((u) => u.id));
+  const ours = sql`${messages.direction} = 'out' and ${messages.status} in ('sent', 'queued')`;
+  const facts = new Map((await db
+    .select({
+      id: messages.conversation_id,
+      contacted: sql<boolean>`coalesce(bool_or(${ours}), false)`,
+      draft: sql<boolean>`coalesce(bool_or(${messages.status} = 'draft'), false)`,
+      // Ответил — написал нам после нашего первого сообщения.
+      replied: sql<boolean>`coalesce(max(${messages.created_at}) filter (where ${messages.direction} = 'in') > min(${messages.created_at}) filter (where ${ours}), false)`,
+    })
+    .from(messages).where(inArray(messages.conversation_id, rows.map((c) => c.id))).groupBy(messages.conversation_id)).map((f) => [f.id, f]));
+  return rows.map((c) => {
+    const f = facts.get(c.id);
+    const organizer = organizers.has(c.peer_id);
+    // Организатор «в сервисе», когда вошёл сам; гость из чата — когда появился среди пользователей.
+    const joined = organizer ? organizers.get(c.peer_id) != null : c.channel === 'account' && members.has(c.peer_id);
+    const stage = joined ? 'joined' : c.channel === 'bot' ? 'bot' : f?.replied ? 'replied' : f?.contacted ? 'contacted' : f?.draft ? 'draft' : 'wrote_us';
+    return { ...c, kind: organizer ? 'organizer' : 'guest', stage };
+  });
+}
+
 export async function inboxFeed(db: Db, actor: User): Promise<InboxFeed> {
   return {
     me: actor.id,
-    conversations: await db.select().from(conversations).orderBy(desc(conversations.last_message_at)).limit(FEED_LIMIT),
+    conversations: await withStages(db, await db.select().from(conversations).orderBy(desc(conversations.last_message_at)).limit(FEED_LIMIT)),
     messages: await db.select().from(messages).orderBy(desc(messages.created_at)).limit(FEED_LIMIT),
     accounts: await listAccounts(db),
   };
