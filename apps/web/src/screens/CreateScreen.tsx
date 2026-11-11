@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useFieldArray, useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { ADDRESS_MAX, DESCRIPTION_MAX, Event, NAME_MAX, TEMPLATES } from '@yaswami/core';
+import { ADDRESS_MAX, DESCRIPTION_MAX, Event, NAME_MAX, TEMPLATES, TICKET_NAME_MAX } from '@yaswami/core';
 import type { EventData } from '../api.ts';
 import { api } from '../api.ts';
 import { localDate } from '../format.ts';
@@ -22,8 +22,13 @@ const FormSchema = z
     time: z.string().regex(/^\d{2}:\d{2}$/, 'Выберите время'),
     max_capacity: z.number().int().min(0), // 0 — без лимита
     allow_plus_one: z.boolean(),
+    // Цена — свободный текст («1500 ₽», «донат», «бесплатно»); имя нужно, только когда билетов несколько.
+    tickets: z.array(z.object({ name: z.string().trim().max(TICKET_NAME_MAX), price: z.string().trim().max(60) })).min(1),
   })
   .superRefine((v, ctx) => {
+    if (v.tickets.length > 1) {
+      v.tickets.forEach((t, i) => t.name || ctx.addIssue({ code: 'custom', path: ['tickets', i, 'name'], message: 'Назовите билет' }));
+    }
     if (isUrl(v.place) ? !URL.canParse(v.place) : v.place.length > ADDRESS_MAX) {
       ctx.addIssue({ code: 'custom', path: ['place'], message: isUrl(v.place) ? 'Проверьте ссылку' : `Адрес длиннее ${ADDRESS_MAX} символов` });
     }
@@ -43,14 +48,16 @@ interface Props {
 }
 
 export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
-  const { register, handleSubmit, watch, setValue, formState: { errors, isValid, isSubmitting } } = useForm({
+  const { register, control, handleSubmit, watch, setValue, formState: { errors, isValid, isSubmitting } } = useForm({
     resolver: zodResolver(FormSchema),
     mode: 'onChange',
     defaultValues: {
       kind: 'f' as Event['kind'], name: '', place: '', description: '', date: localDate(1), time: '19:30',
       max_capacity: TEMPLATES.f.max_capacity ?? 0, allow_plus_one: TEMPLATES.f.allow_plus_one,
+      tickets: [{ name: '', price: '' }],
     },
   });
+  const { fields: tickets, append, remove } = useFieldArray({ control, name: 'tickets' });
   const [descOpen, setDescOpen] = useState(false);
   const { kind, date, max_capacity: capacity, allow_plus_one: plusOne } = watch();
   const template = TEMPLATES[kind];
@@ -80,6 +87,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
         meeting_url: isUrl(v.place) ? v.place : null,
         max_capacity: v.max_capacity || null,
         allow_plus_one: v.allow_plus_one,
+        ticket_types: v.tickets.map((t) => ({ ...(t.name && { name: t.name }), price_text: t.price || null })),
       });
       haptic.success();
       onCreated(view);
@@ -89,7 +97,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
     }
   });
 
-  const error = errors.place?.message ?? errors.date?.message ?? errors.time?.message;
+  const error = errors.place?.message ?? errors.date?.message ?? errors.time?.message ?? errors.tickets?.find?.((t) => t?.name)?.name?.message;
 
   return (
     <form onSubmit={submit} noValidate>
@@ -128,6 +136,24 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
       ) : (
         <button type="button" className="quiet" onClick={() => { setDescOpen(true); }}>＋ Добавить описание</button>
       )}
+
+      <h2>{tickets.length > 1 ? 'Билеты' : 'Цена'}</h2>
+      {tickets.map((t, i) => (
+        <div className="group" key={t.id}>
+          {tickets.length > 1 && (
+            <div className="row" aria-invalid={!!errors.tickets?.[i]?.name}>
+              <label htmlFor={`ticket-name-${i}`}>Билет</label>
+              <input id={`ticket-name-${i}`} {...register(`tickets.${i}.name`)} placeholder="Например, Early bird" maxLength={TICKET_NAME_MAX} autoComplete="off" />
+              <button type="button" className="quiet" aria-label="Убрать билет" onClick={() => remove(i)}>✕</button>
+            </div>
+          )}
+          <div className="row">
+            <label htmlFor={`ticket-price-${i}`}>Цена</label>
+            <input id={`ticket-price-${i}`} {...register(`tickets.${i}.price`)} placeholder="Бесплатно, 1500 ₽, по донату…" maxLength={60} autoComplete="off" enterKeyHint="done" />
+          </div>
+        </div>
+      ))}
+      <button type="button" className="quiet" onClick={() => { append({ name: '', price: '' }); }}>＋ Добавить ещё билет</button>
 
       <h2>Когда</h2>
       <div className="chips">
