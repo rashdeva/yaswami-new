@@ -42,9 +42,9 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
         start: event.start_at, past: new Date(event.end_at ?? event.start_at).getTime() + (event.end_at ? 0 : 3 * 3600e3) < now, open: () => { onOpen(event.id); },
       };
     }),
-    ...collected.map(({ event, signed_up }): Row => ({
+    ...collected.map(({ event }): Row => ({
       key: `c:${event.id}`, kind: 'o', icon: topicIcon(event.topic), title: event.title, cover: event.cover_url,
-      note: signed_up ? 'вы хотели записаться' : 'вы смотрели', start: event.starts_at, past: collectedIsPast(event, now), open: () => { onOpenCollected(event); },
+      note: 'вы заинтересовались', start: event.starts_at, past: collectedIsPast(event, now), open: () => { onOpenCollected(event); },
     })),
   ].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   const upcoming = rows.filter((r) => !r.past);
