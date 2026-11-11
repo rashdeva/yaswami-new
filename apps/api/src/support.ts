@@ -88,14 +88,20 @@ export const hunter = {
   },
 };
 
-// Ролик роль кладёт в хранилище xAI и отвечает ссылкой на него; другие адреса не принимаем.
+// Обложку и ролик роль кладёт в хранилище xAI и отвечает ссылками на них; другие адреса не принимаем.
+const COVER_URL = /https:\/\/files-cdn\.x\.ai\/[\w\-/.]+\.(?:png|jpe?g)/;
 const VIDEO_URL = /https:\/\/files-cdn\.x\.ai\/[\w\-/.]+\.mp4/;
 
-/** Роль illustrator (agents/illustrator): по данным события рисует ролик-историю. Тесты подменяют `ask`. */
+export interface Illustration { cover_url: string | null; video_url: string | null }
+
+export const parseIllustration = (content: string): Illustration =>
+  ({ cover_url: COVER_URL.exec(content)?.[0] ?? null, video_url: VIDEO_URL.exec(content)?.[0] ?? null });
+
+/** Роль illustrator (agents/illustrator): по данным события рисует обложку и ролик с неё. Тесты подменяют `ask`. */
 export const illustrator = {
-  /** Ссылка на готовый ролик; null — роль недоступна или ролик не получился. Генерация идёт несколько минут. */
-  async ask(task: string): Promise<string | null> {
-    const content = await askRole(settings.illustratorUrl, settings.illustratorKey, [{ role: 'user', content: task }], 8 * 60_000);
-    return content === null ? null : VIDEO_URL.exec(content)?.[0] ?? null;
+  /** Ссылки на обложку и ролик (чего нет — null); null — роль недоступна. Генерация идёт несколько минут. */
+  async ask(task: string): Promise<Illustration | null> {
+    const content = await askRole(settings.illustratorUrl, settings.illustratorKey, [{ role: 'user', content: task }], 10 * 60_000);
+    return content === null ? null : parseIllustration(content);
   },
 };

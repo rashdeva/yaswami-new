@@ -15,11 +15,12 @@ import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
 import { collectedEvents, hosts, photos, visits, tgAccounts } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
+import { requestNextVideo } from './services.ts';
 import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
 
-import { host, hunter, illustrator, parseSupportReply, support, verifyTicket } from './support.ts';
+import { host, hunter, illustrator, parseIllustration, parseSupportReply, support, verifyTicket } from './support.ts';
 import { recordHostLead, recordLead } from './inbox.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
@@ -722,7 +723,7 @@ test('переписка: бот пишет всё в базу, админ от�
   settings.illustratorUrl = 'http://illustrator.test';
   const draw = illustrator.ask;
   let task = '';
-  illustrator.ask = async (t) => ((task = t), 'https://files-cdn.x.ai/abc/file_1.mp4');
+  illustrator.ask = async (t) => ((task = t), { cover_url: null, video_url: 'https://files-cdn.x.ai/abc/file_1.mp4' });
   assert.deepEqual(await tool('event_video_request', { id: 'danangevent-5-0' }), { started: true });
   await new Promise((r) => setTimeout(r, 50));
   assert.ok(task.includes('"title":"Баня"') && task.includes(cover), 'роль получает данные события и фото анонса');
@@ -734,6 +735,15 @@ test('переписка: бот пишет всё в базу, админ от�
     event: { title: 'Йога', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'anna', whatsapp_phone: null, url: null },
   });
   assert.deepEqual(await tool('event_video_request', { id: 'danangevent-6-0' }), { error: 'video_limit' });
+  assert.deepEqual(parseIllustration('cover: https://files-cdn.x.ai/a/b_1.png\nvideo: https://files-cdn.x.ai/c/d_2.mp4'),
+    { cover_url: 'https://files-cdn.x.ai/a/b_1.png', video_url: 'https://files-cdn.x.ai/c/d_2.mp4' });
+  assert.deepEqual(parseIllustration('cover: https://evil.example/x.png\n[[не получилось: нет фото]]'), { cover_url: null, video_url: null }, 'чужие адреса не берём');
+  // Автообход: берёт ближайшее событие без ролика; лимит выбран — тихо пропускает.
+  assert.equal(await requestNextVideo(db), null, 'лимит на сегодня выбран');
+  settings.illustratorDailyLimit = 5;
+  assert.equal(await requestNextVideo(db), 'danangevent-6-0');
+  assert.equal(await requestNextVideo(db), null, 'событий без ролика не осталось');
+  await new Promise((r) => setTimeout(r, 50));
   illustrator.ask = draw;
   settings.illustratorUrl = '';
 

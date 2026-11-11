@@ -7,7 +7,7 @@ import { createApp } from './app.ts';
 import { createDb } from './db/client.ts';
 import { eventPage, feedPage, inject, notFoundPage, sitemap } from './pages.ts';
 import type { Page } from './pages.ts';
-import { AppError, getCollectedEvent, listCollectedEvents } from './services.ts';
+import { AppError, getCollectedEvent, listCollectedEvents, startVideoLoop } from './services.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 import { startFeedbackLoop } from './feedback.ts';
@@ -50,6 +50,7 @@ const api = createApp({
 
 // После событий бот просит у гостей отзыв и шлёт организаторам сводки. Без токена отправлять нечем.
 if (BOT_TOKEN) startFeedbackLoop(db);
+startVideoLoop(db); // без роли illustrator (ILLUSTRATOR_URL пуст) ничего не делает
 
 // Один сервер на всё: REST под /api, MCP на /mcp, остальное — собранное мини-приложение.
 const server = new Hono()
