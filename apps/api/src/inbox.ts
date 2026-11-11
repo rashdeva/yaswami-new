@@ -48,7 +48,9 @@ export const logSent = (db: Db) => async (method: string, body: { chat_id: numbe
 /** Сообщает нам в Telegram, что диалог ждёт человека. Пишет бот «Я с вами»; кто не открывал бота — не получит. */
 export async function alertAdmins(conversation: Conversation, reason: string): Promise<void> {
   const text = `${conversation.peer_name}${conversation.peer_username ? ` (@${conversation.peer_username})` : ''} ждёт человека: ${reason}\n${settings.publicUrl}/admin`;
-  await Promise.all(settings.adminIds.map((chat_id) => bot.send('sendMessage', { chat_id, text }, 'alert')));
+  // Админу, который сам и есть собеседник (проверяет бота), не пишем: оповещение упало бы в тот же чат.
+  const admins = settings.adminIds.filter((chat_id) => chat_id !== conversation.peer_id);
+  await Promise.all(admins.map((chat_id) => bot.send('sendMessage', { chat_id, text }, 'alert')));
 }
 
 /** Последние сообщения диалога в виде, который понимает роль поддержки: человек — user, всё наше — assistant. */
