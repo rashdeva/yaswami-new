@@ -5,7 +5,7 @@ import { after, before, test } from 'node:test';
 import { asc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
+import type { AdminOverview, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
 import { bot } from './telegram.ts';
@@ -1073,6 +1073,14 @@ test('организаторы: запись на событие станови�
   assert.equal((await report('А это платно?')).status, 204);
   const reply = await drafted();
   assert.equal((await inbox()).conversations[0]!.stage, 'replied');
+  // Разделы «Агенты» и «Организаторы»: кто ведёт диалог, что агент сделал, что известно об организаторе.
+  assert.equal((await inbox()).conversations[0]!.agent, 'host');
+  assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/overview')).status, 403);
+  const overview = (await (await call(admin, 'GET', '/admin/overview')).json()) as AdminOverview;
+  assert.deepEqual(overview.agents.find((x) => x.key === 'host'), { key: 'host', enabled: true, conversations: 1, drafts: 1, sent: 1, sent_today: 1 });
+  assert.deepEqual(overview.agents.find((x) => x.key === 'hunter'), { key: 'hunter', enabled: false, conversations: 0, drafts: 0, sent: 0, sent_today: 0 });
+  const marina = overview.hosts.find((h) => h.username === 'marina_yoga')!;
+  assert.deepEqual([marina.name, marina.registered, marina.events, marina.signups, marina.stage, marina.conversation_id], ['Марина', false, 1, 1, 'replied', (await inbox()).conversations[0]!.id]);
   assert.deepEqual([reply.text, reply.meta, (await inbox()).conversations[0]!.attention], ['Да, это бесплатно.', { reason: 'Ответ организатору' }, 'Черновик ответа организатору']);
   assert.deepEqual(asked.slice(1).map((t) => [t.role, t.content]), [['assistant', 'Марина, здравствуйте. На вашу йогу записался один человек.'], ['user', 'А это платно?']]);
 

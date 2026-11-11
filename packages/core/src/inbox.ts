@@ -57,6 +57,52 @@ export interface InboxConversation extends Conversation {
   /** `organizer` — у человека есть профиль организатора (собран сборщиком по его анонсам). */
   kind: 'organizer' | 'guest';
   stage: InboxStage;
+  /** Какой агент писал в этом диалоге; null — никакой (только бот или мы сами). */
+  agent: AgentKey | null;
+}
+
+/**
+ * Наши агенты — роли в Hermes (agents/). `operator` — собеседник команды в командном чате: в диалогах он появляется,
+ * когда пишет человеку по нашему поручению.
+ */
+export const AGENTS = {
+  support: { name: 'Поддержка', about: 'Отвечает людям, которые пишут боту «Я с вами»: как записаться, куда сходить, их события.', sends: 'Сам, сразу — только в ответ на сообщение человека боту.' },
+  hunter: { name: 'Охотник', about: 'Находит в чатах вопросы «куда сходить» и предлагает ответить событием из каталога.', sends: 'Только после вашего «Отправить»: ответом в чате с нашего аккаунта.' },
+  host: { name: 'Для организаторов', about: 'Пишет организатору, когда на его событие записались через нас, и отвечает на его вопросы.', sends: 'Только после вашего «Отправить»: в личку с нашего аккаунта.' },
+  operator: { name: 'Оператор', about: 'Ваш собеседник в командном чате Telegram: сводки, поиск по переписке, действия по вашему поручению.', sends: 'По вашему «да» в командном чате.' },
+} as const;
+export type AgentKey = keyof typeof AGENTS;
+
+/** Что агент сделал — для раздела «Агенты». */
+export interface AgentStats {
+  key: AgentKey;
+  /** Роль подключена к API (задан адрес её входа); оператор работает через командный чат и включён всегда. */
+  enabled: boolean;
+  conversations: number;
+  drafts: number; // ждут нашего решения
+  sent: number;
+  sent_today: number; // за последние 24 часа
+}
+
+/** Организатор событий каталога — для раздела «Организаторы». Профиль собран сборщиком по его открытому Telegram. */
+export interface HostRow {
+  telegram_id: number;
+  name: string;
+  username: string;
+  channel: string | null;
+  summary: string | null;
+  /** Вошёл в сервис сам. */
+  registered: boolean;
+  events: number; // предстоящих событий в каталоге
+  signups: number; // сколько раз на них нажали «Записаться»
+  /** Диалог с ним, если мы уже общались или готовим сообщение. */
+  conversation_id: string | null;
+  stage: InboxStage | null;
+}
+
+export interface AdminOverview {
+  agents: AgentStats[];
+  hosts: HostRow[];
 }
 
 export const INBOX_STAGES = {

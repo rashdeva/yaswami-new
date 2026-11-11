@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AccountCreateInput, AppConfig, CollectedEventItem, Conversation, ConversationUpdateInput, TgAccount, EventCreateInput, EventListItem, EventUpdateInput, EventView, InboxFeed, Me, Message, MyCollectedItem, RsvpInput, VisitInput, Wire } from '@yaswami/core';
+import type { AccountCreateInput, AdminOverview, AppConfig, CollectedEventItem, Conversation, ConversationUpdateInput, TgAccount, EventCreateInput, EventListItem, EventUpdateInput, EventView, InboxFeed, Me, Message, MyCollectedItem, RsvpInput, VisitInput, Wire } from '@yaswami/core';
 import { inTelegram, tg } from './tg.ts';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -62,6 +62,7 @@ export const api = {
   config: () => request<AppConfig>('GET', '/config'),
   me: () => request<Me>('GET', '/me'),
   inbox: () => request<Wire<InboxFeed>>('GET', '/admin/inbox'),
+  overview: () => request<Wire<AdminOverview>>('GET', '/admin/overview'),
   inboxThread: (id: string) => request<Wire<Message>[]>('GET', `/admin/conversations/${id}/messages`),
   inboxSend: (id: string, text: string) => request<void>('POST', `/admin/conversations/${id}/messages`, { text }),
   draftSend: (id: string, text?: string) => request<void>('POST', `/admin/messages/${id}/send`, text ? { text } : {}),
