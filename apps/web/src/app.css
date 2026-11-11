@@ -181,3 +181,23 @@ a.item { text-decoration: none; color: inherit; }
 .item.claim > div { flex: 1; min-width: 0; }
 .item.claim .chip:disabled { opacity: .55; cursor: default; }
 .note.lead { margin: 0 20px 12px; }
+
+/* «что это мне даст»: шаги события, для кого, обещание организатора, гид по Topic */
+.steps { list-style: none; margin: 0; padding: 6px 18px 10px; counter-reset: s; }
+.steps li { counter-increment: s; display: flex; gap: 12px; padding: 8px 0; border-top: .5px solid var(--line); }
+.steps li:first-child { border-top: 0; }
+.steps li::before { content: counter(s); flex: none; width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(150deg, var(--a), var(--b)); color: #fff; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+.pad { padding: 14px 18px; }
+.pad p { margin: 0; }
+.pad p + p { margin-top: 10px; }
+.pad .quote { border-left: 3px solid var(--a); padding-left: 12px; }
+.pad .from { font-size: 13px; color: var(--hint); }
+.badge { display: inline-block; font-size: 13px; font-weight: 600; border-radius: 99px; padding: 4px 10px; background: color-mix(in srgb, var(--ok) 18%, transparent); }
+.badge.no { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.pad p + .badge { margin-top: 10px; }
+.group details { border-top: .5px solid var(--line); }
+.group summary { padding: 15px 18px; font-weight: 600; cursor: pointer; list-style: none; display: flex; }
+.group summary::-webkit-details-marker { display: none; }
+.group summary::after { content: '+'; margin-left: auto; color: var(--hint); font-weight: 400; }
+.group details[open] summary::after { content: '–'; }
+.group details p { margin: 0; padding: 0 18px 15px; }

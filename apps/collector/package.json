@@ -9,6 +9,7 @@
     "test": "node src/test.mjs"
   },
   "dependencies": {
+    "@yaswami/core": "workspace:*",
     "@yaswami/extract": "workspace:*",
     "postgres": "^3.4",
     "telegram": "^2.26.22"

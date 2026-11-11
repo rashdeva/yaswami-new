@@ -74,6 +74,12 @@ export interface CollectedEvent {
   telegram_username: string | null;
   whatsapp_phone: string | null;
   url: string | null;
+  // Ниже — «что это мне даст»: поля появились позже остальных, у ранее собранных событий их нет.
+  topic?: string; // ключ TOPIC_GUIDES или OTHER_TOPIC
+  what_happens?: string[]; // что человек будет делать, по порядку публикации
+  for_whom?: string | null;
+  beginner_friendly?: boolean | null; // null — в анонсе не сказано
+  takeaway?: string | null; // только обещание самого организатора
 }
 
 /** Карточка собранного события для витрины. */

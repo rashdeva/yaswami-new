@@ -48,6 +48,9 @@ importers:
 
   apps/collector:
     dependencies:
+      '@yaswami/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@yaswami/extract':
         specifier: workspace:*
         version: link:../../packages/extract

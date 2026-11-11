@@ -26,7 +26,8 @@ export function isSameEvent(a: E, b: E): boolean {
 // Берём известное из обоих: напоминание без деталей не должно затирать полный анонс, и наоборот.
 export function mergeEvents(known: E, fresh: E): E {
   const merged: Record<string, unknown> & E = { ...known };
-  for (const [k, v] of Object.entries(fresh)) if (merged[k] == null || merged[k] === '') merged[k] = v;
+  const empty = (v: unknown) => v == null || v === '' || (Array.isArray(v) && v.length === 0); // пусто — и null, и '', и []
+  for (const [k, v] of Object.entries(fresh)) if (empty(merged[k])) merged[k] = v;
   if (time(known) === '00:00' && time(fresh) !== '00:00') Object.assign(merged, { starts_at: fresh.starts_at, ends_at: fresh.ends_at });
   if (fresh.description.length > known.description.length) merged.description = fresh.description;
   return merged;
