@@ -19,7 +19,8 @@ import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
 
-import { parseSupportReply, support, verifyTicket } from './support.ts';
+import { hunter, parseSupportReply, support, verifyTicket } from './support.ts';
+import { recordLead } from './inbox.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
 
@@ -903,4 +904,64 @@ test('отзывы: запрос после события, оценка кно�
     items: [{ user_first_name: 'Аня', rating: 5, comment: 'Было здорово, в субботу приду ещё' }, { user_first_name: 'G82', rating: 3, comment: null }],
   });
   assert.deepEqual(await feedback(82), { count: 2, average: 4, items: [] });
+});
+
+test('охотник: вопрос из чата становится черновиком, который отправляет человек', async () => {
+  await db.execute(sql`truncate conversations, tg_accounts cascade`);
+  settings.adminIds = [70];
+  settings.collectorSecret = 'collector-secret';
+  settings.hunterUrl = 'http://hunter.test';
+  const admin = tma(70, 'Админ');
+  const inbox = async () => (await (await call(admin, 'GET', '/admin/inbox')).json()) as InboxFeed;
+  const lead = { chat: 'danang_chat', message_id: 3, url: 'https://t.me/danang_chat/3', author: { id: 555, name: 'Даша', username: 'dasha_k' }, text: 'Куда сегодня сходить потанцевать?', context: ['Всем привет'] };
+  const ask = hunter.ask;
+  let asked = '';
+  hunter.ask = async (question) => ((asked = question), 'Сегодня в 19:00 бачата с нуля:\nhttps://yaswami.com/e/x');
+
+  // Без подключённого аккаунта отвечать не с чего — вопрос пропускаем, роль не спрашиваем.
+  await recordLead(db, lead);
+  assert.deepEqual([(await inbox()).conversations.length, asked], [0, '']);
+  const [account] = await db.insert(tgAccounts).values({ label: 'Аня', phone: '+84900000009', status: 'active' }).returning();
+
+  // Пока роль проверяется, реагируем только на вопросы людей из списка.
+  settings.hunterUserIds = [777];
+  await recordLead(db, lead);
+  assert.equal((await inbox()).conversations.length, 0);
+  settings.hunterUserIds = [555];
+  sent.length = 0;
+  await recordLead(db, lead);
+  assert.match(asked, /Чат: danang_chat[\s\S]*- Всем привет[\s\S]*Вопрос \(Даша\):\nКуда сегодня сходить потанцевать\?/);
+  let feed = await inbox();
+  assert.deepEqual(feed.conversations.map((c) => [c.channel, c.account_id, c.peer_id, c.attention]), [['account', account!.id, 555, 'Черновик ответа в чат']]);
+  const draft = feed.messages.find((m) => m.status === 'draft')!;
+  assert.deepEqual([draft.author, draft.meta], ['agent:hunter', { reason: 'Вопрос в чате danang_chat', source_url: lead.url, reply_to: { chat: 'danang_chat', message_id: 3 } }]);
+  assert.deepEqual(sent.map(([, b]) => b.chat_id), [70], 'нам пришло оповещение, человеку — ничего');
+
+  // Второй вопрос того же человека, пока черновик ждёт, — не дублируем.
+  await recordLead(db, { ...lead, message_id: 4 });
+  assert.equal((await inbox()).messages.filter((m) => m.status === 'draft').length, 1);
+
+  // Отправляем с правкой: черновик встаёт в очередь с нашим текстом и адресом ответа в чате.
+  assert.equal((await call(tma(71, 'Аня'), 'POST', `/admin/messages/${draft.id}/send`, {})).status, 403);
+  assert.equal((await call(admin, 'POST', `/admin/messages/${draft.id}/send`, { text: 'Сегодня бачата в 19:00' })).status, 204);
+  feed = await inbox();
+  assert.deepEqual([feed.messages[0]!.status, feed.messages[0]!.text, feed.messages[0]!.meta?.reply_to?.message_id, feed.conversations[0]!.attention], ['queued', 'Сегодня бачата в 19:00', 3, null]);
+  assert.equal((await call(admin, 'POST', `/admin/messages/${draft.id}/send`, {})).status, 409, 'второй раз не отправить');
+
+  // Через неделю тому же человеку можно ответить снова; отклонённый черновик пропадает.
+  await db.execute(sql`update messages set created_at = now() - interval '8 days'`);
+  await recordLead(db, { ...lead, message_id: 5 });
+  const second = (await inbox()).messages.find((m) => m.status === 'draft')!;
+  assert.equal((await call(admin, 'DELETE', `/admin/messages/${second.id}`)).status, 204);
+  feed = await inbox();
+  assert.deepEqual([feed.messages.some((m) => m.status === 'draft'), feed.conversations[0]!.attention], [false, null]);
+
+  // Роль решила не отвечать — ничего не создаём.
+  await db.execute(sql`truncate conversations cascade`);
+  hunter.ask = async () => null;
+  await recordLead(db, lead);
+  assert.equal((await inbox()).conversations.length, 0);
+
+  hunter.ask = ask;
+  Object.assign(settings, { hunterUrl: '', hunterUserIds: [], collectorSecret: '' });
 });

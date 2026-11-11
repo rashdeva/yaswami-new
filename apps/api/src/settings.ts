@@ -19,6 +19,13 @@ export const settings = {
   supportKey: process.env.SUPPORT_KEY ?? '',
   /** Кому роль поддержки отвечает: Telegram id через запятую. Пусто — всем. Пока роль проверяется, здесь только мы. */
   supportUserIds: (process.env.SUPPORT_USER_IDS ?? '').split(',').map(Number).filter(Boolean),
+  /**
+   * Роль hunter в Hermes: отвечает на вопросы «куда сходить» в чатах (inbox.ts, recordLead). Пусто — выключено.
+   * `hunterUserIds` — пока роль проверяется: реагируем только на вопросы этих людей (Telegram id через запятую).
+   */
+  hunterUrl: (process.env.HUNTER_URL ?? '').replace(/\/$/, ''),
+  hunterKey: process.env.HUNTER_KEY ?? '',
+  hunterUserIds: (process.env.HUNTER_USER_IDS ?? '').split(',').map(Number).filter(Boolean),
   /** Общий со сборщиком секрет: им он подписывает сообщения с аккаунтов Telegram. Пусто — приём закрыт. */
   collectorSecret: process.env.COLLECTOR_SECRET ?? '',
   /** Telegram id тех, кому открыта админка переписки (/admin), через запятую. */

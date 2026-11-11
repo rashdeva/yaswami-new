@@ -11,6 +11,7 @@ agents/
     config.yaml     модель, инструменты, подключение к нашему MCP
     skills/         скиллы роли (SKILL.md)
   support/          роль: отвечает людям, которые пишут боту «Я с вами» (профиль support)
+  hunter/           роль: пишет черновики ответов на вопросы «куда сходить» в чатах (профиль hunter)
 ```
 
 ## Выкладка
@@ -35,6 +36,7 @@ railway up agents --path-as-root --service hermes
 | `TELEGRAM_ALLOWED_USERS` | Telegram id тех, с кем бот разговаривает, через запятую |
 | `API_SERVER_ENABLED`, `API_SERVER_HOST`, `API_SERVER_KEY` | HTTP-вход Hermes: `true`, `::` и ключ роли `operator`; ключ не короче 16 символов, иначе вход молча не включается |
 | `SUPPORT_API_KEY` | ключ роли `support`; тот же ключ — в `SUPPORT_KEY` сервиса `api` |
+| `HUNTER_API_KEY` | ключ роли `hunter`; тот же ключ — в `HUNTER_KEY` сервиса `api` |
 
 ## Вход в модель
 

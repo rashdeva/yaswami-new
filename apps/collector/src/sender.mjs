@@ -112,9 +112,13 @@ export function createSender({ store, apiId, apiHash, key, report, connectClient
     const client = clients.get(row.account_id);
     if (!client) return; // аккаунт ещё не на связи — сообщение подождёт в очереди
     try {
-      // По id — без запроса к Telegram; по username — запасной путь: поиск по нему флудоопасен.
-      const sent = await client.sendMessage(Number(row.peer_id), { message: row.text })
-        .catch((e) => (row.peer_username ? client.sendMessage(row.peer_username, { message: row.text }) : Promise.reject(e)));
+      // Ответ на вопрос в чате уходит реплаем в этот чат (аккаунт должен в нём состоять), остальное — в личку.
+      const reply = row.meta?.reply_to;
+      const sent = reply
+        ? await client.sendMessage(/^-?\d+$/.test(reply.chat) ? Number(reply.chat) : reply.chat, { message: row.text, replyTo: reply.message_id })
+        // По id — без запроса к Telegram; по username — запасной путь: поиск по нему флудоопасен.
+        : await client.sendMessage(Number(row.peer_id), { message: row.text })
+          .catch((e) => (row.peer_username ? client.sendMessage(row.peer_username, { message: row.text }) : Promise.reject(e)));
       sentIds.get(row.account_id).add(sent.id);
       await store.messageStatus(row.id, 'sent');
     } catch (e) {

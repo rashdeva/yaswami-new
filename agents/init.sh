@@ -8,6 +8,7 @@ DATA="${HERMES_HOME:-/opt/data}"
 : "${YASWAMI_MCP_URL:?адрес MCP нашего API, например https://<сайт>/mcp}"
 : "${YASWAMI_MCP_TOKEN:?токен ysw_… пользователя из ADMIN_IDS}"
 : "${SUPPORT_API_KEY:?ключ HTTP-входа роли support, не короче 16 символов}"
+: "${HUNTER_API_KEY:?ключ HTTP-входа роли hunter, не короче 16 символов}"
 
 # Кладёт роль $1 в домашнюю папку профиля $2: характер, скиллы и конфиг с адресом и токеном нашего MCP.
 install_role() {
@@ -25,10 +26,15 @@ install_role() {
 # operator — профиль по умолчанию: командный чат в Telegram.
 install_role operator "$DATA"
 
-# support — отдельный профиль: отвечает людям, которые пишут боту. Один gateway обслуживает оба профиля
-# на общем порту; support доступен по адресу /p/support/v1 со своим ключом.
-SUPPORT="$DATA/profiles/support"
-[ -d "$SUPPORT" ] || s6-setuidgid hermes hermes profile create support
-install_role support "$SUPPORT"
-(umask 077; printf 'API_SERVER_ENABLED=true\nAPI_SERVER_KEY=%s\n' "$SUPPORT_API_KEY" > "$SUPPORT/.env")
-chown hermes:hermes "$SUPPORT/.env"
+# Остальные роли — отдельные профили: с ними говорит только наш API. Один gateway обслуживает все профили
+# на общем порту; роль доступна по адресу /p/<роль>/v1 со своим ключом.
+#   support — отвечает людям, которые пишут боту; hunter — пишет черновики ответов на вопросы в чатах.
+install_profile() {
+  home="$DATA/profiles/$1"
+  [ -d "$home" ] || s6-setuidgid hermes hermes profile create "$1"
+  install_role "$1" "$home"
+  (umask 077; printf 'API_SERVER_ENABLED=true\nAPI_SERVER_KEY=%s\n' "$2" > "$home/.env")
+  chown hermes:hermes "$home/.env"
+}
+install_profile support "$SUPPORT_API_KEY"
+install_profile hunter "$HUNTER_API_KEY"

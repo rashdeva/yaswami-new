@@ -26,6 +26,7 @@ const MESSAGES: Record<string, string> = {
   phone_taken: 'Аккаунт с таким номером уже добавлен',
   not_expected: 'Сейчас аккаунт не ждёт кода или пароля',
   account_gone: 'Аккаунт, с которого шла переписка, удалён',
+  not_draft: 'Черновик уже отправлен или отклонён',
   not_delivered: 'Telegram не доставил сообщение: человек не открывал бота или заблокировал его',
 };
 
@@ -62,6 +63,8 @@ export const api = {
   inbox: () => request<Wire<InboxFeed>>('GET', '/admin/inbox'),
   inboxThread: (id: string) => request<Wire<Message>[]>('GET', `/admin/conversations/${id}/messages`),
   inboxSend: (id: string, text: string) => request<void>('POST', `/admin/conversations/${id}/messages`, { text }),
+  draftSend: (id: string, text?: string) => request<void>('POST', `/admin/messages/${id}/send`, text ? { text } : {}),
+  draftReject: (id: string) => request<void>('DELETE', `/admin/messages/${id}`),
   accountCreate: (input: AccountCreateInput) => request<Wire<TgAccount>>('POST', '/admin/accounts', input),
   accountLogin: (id: string, secret: string) => request<void>('POST', `/admin/accounts/${id}/login`, { secret }),
   accountDelete: (id: string) => request<void>('DELETE', `/admin/accounts/${id}`),

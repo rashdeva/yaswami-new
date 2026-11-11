@@ -113,6 +113,7 @@ export default function Admin() {
   const [selected, setSelected] = useState(''); // ключ выбранной строки: c:<диалог> или m:<сообщение>
   const [thread, setThread] = useState<Msg[] | null>(null); // вся переписка выбранного диалога; null — закрыта
   const [showAccounts, setShowAccounts] = useState(false);
+  const [edited, setEdited] = useState<Record<string, string>>({}); // наши правки черновиков агента: id сообщения → текст
   const root = useRef<HTMLDivElement>(null);
   const seen = useRef<Set<string> | null>(null); // сообщения, которые были при первой загрузке: остальные подсвечиваем
 
@@ -139,9 +140,11 @@ export default function Admin() {
   // Через что идёт диалог: бот или наш аккаунт.
   const via = (c: Conv) => (c.channel === 'bot' ? 'боту' : `аккаунт «${labels.get(c.account_id ?? '') ?? 'удалён'}»`);
   const pinned = feed?.conversations.filter((c) => c.attention) ?? [];
+  // Черновики агента в ленту не идут: они ждут решения в «Ждут вас».
+  const drafts = new Map((feed?.messages ?? []).filter((m) => m.status === 'draft').map((m) => [m.conversation_id, m]));
   const events = (feed?.messages ?? []).flatMap((m) => {
     const c = byId.get(m.conversation_id);
-    return c ? [{ c, m }] : [];
+    return c && m.status !== 'draft' ? [{ c, m }] : [];
   });
   const rows = [...pinned.map((c) => ({ key: `c:${c.id}`, c })), ...events.map(({ c, m }) => ({ key: `m:${m.id}`, c }))];
   const at = Math.max(0, rows.findIndex((r) => r.key === selected));
@@ -167,15 +170,20 @@ export default function Admin() {
   }, [open, curId, newest]);
 
   useEffect(() => {
-    const focus = () => root.current?.querySelector<HTMLElement>('.sel input')?.focus();
+    const focus = (selector = 'input, textarea') => root.current?.querySelector<HTMLElement>(`.sel ${selector}`)?.focus();
+    const draft = cur && drafts.get(cur.c.id);
     const onKey = (e: KeyboardEvent) => {
       const typing = (e.target as HTMLElement).closest('input, textarea');
       if (e.key === 'Escape') return typing ? (typing as HTMLElement).blur() : setThread(null);
+      // В черновике Enter — перенос строки, отправка — Cmd/Ctrl+Enter.
+      if (typing && draft && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) return void act(api.draftSend(draft.id, edited[draft.id]));
       if (typing || !cur || e.metaKey || e.ctrlKey || e.altKey) return;
       const key = e.key.toLowerCase();
       if (e.key === 'ArrowDown' || key === 'j') setSelected(rows[Math.min(at + 1, rows.length - 1)]!.key);
       else if (e.key === 'ArrowUp' || key === 'k') setSelected(rows[Math.max(at - 1, 0)]!.key);
-      else if (e.key === 'Enter' || key === 'r' || key === 'к') focus();
+      else if (e.key === 'Enter' && draft) void act(api.draftSend(draft.id, edited[draft.id]));
+      else if ((key === 'x' || key === 'ч') && draft) void act(api.draftReject(draft.id));
+      else if (e.key === 'Enter' || key === 'r' || key === 'к' || key === 'e' || key === 'у') focus();
       else if (key === 't' || key === 'е') void act(api.inboxUpdate(cur.c.id, { mode: cur.c.mode === 'agent' ? 'human' : 'agent', attention: null }));
       else if (key === 'd' || key === 'в') void act(api.inboxUpdate(cur.c.id, { attention: null }));
       else if (key === 'o' || key === 'щ') setThread(open ? null : []);
@@ -206,7 +214,7 @@ export default function Admin() {
         <button className="ad-btn ghost" onClick={() => setShowAccounts(!showAccounts)}>Аккаунты: {feed.accounts.filter((a) => a.status === 'active').length}</button>
         <i />
         {(notice || problem) && <span className="ad-pill warn">{notice || 'Нет связи с сервером'}</span>}
-        <span className="ad-hint">↑↓ по ленте · Enter ответить · T взять / вернуть боту · D готово · O переписка · Esc</span>
+        <span className="ad-hint">↑↓ по ленте · Enter ответить или отправить черновик · X отклонить черновик · T взять / вернуть боту · D готово · O переписка · Esc</span>
       </header>
       <main>
         <div className="ad-col">
@@ -226,7 +234,23 @@ export default function Admin() {
               {feed.messages.filter((m) => m.conversation_id === c.id && m.direction === 'in').slice(0, 2).reverse().map((m) => (
                 <div key={m.id} className="ad-quote">{m.text}</div>
               ))}
-              <Reply onSend={send(c)} />
+              {drafts.has(c.id) ? (
+                ((draft) => (
+                  <>
+                    <div className="ad-hint warn">
+                      Агент предлагает ответить{draft.meta?.reply_to ? ' в чате' : ''}. {draft.meta?.reason}
+                      {draft.meta?.source_url && <> · <a href={draft.meta.source_url} target="_blank" rel="noreferrer">открыть сообщение</a></>}
+                    </div>
+                    <textarea rows={3} value={edited[draft.id] ?? draft.text} onChange={(e) => setEdited({ ...edited, [draft.id]: e.target.value })} />
+                    <div className="ad-inline">
+                      <button className="ad-btn" onClick={() => void act(api.draftSend(draft.id, edited[draft.id]))}>Отправить</button>
+                      <button className="ad-btn ghost" onClick={() => void act(api.draftReject(draft.id))}>Отклонить</button>
+                    </div>
+                  </>
+                ))(drafts.get(c.id)!)
+              ) : (
+                <Reply onSend={send(c)} />
+              )}
             </div>
           ))}
 
@@ -264,7 +288,7 @@ export default function Admin() {
             {thread.map((m) => (
               <div key={m.id} className={`ad-msg ${kind(m)}`}>
                 <div className="ad-bubble">{m.text}</div>
-                <div className="ad-hint">{who(cur.c, m, feed.me, via(cur.c))} · {m.status === 'failed' ? 'не доставлено' : m.status === 'queued' ? 'отправляется' : time(m.created_at)}</div>
+                <div className="ad-hint">{who(cur.c, m, feed.me, via(cur.c))} · {m.status === 'failed' ? 'не доставлено' : m.status === 'queued' ? 'отправляется' : m.status === 'draft' ? 'черновик, не отправлено' : time(m.created_at)}</div>
               </div>
             ))}
           </div>

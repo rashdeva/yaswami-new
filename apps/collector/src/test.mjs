@@ -171,5 +171,39 @@ console.log('cover ok');
   await handler({ isPrivate: true, message: { id: 900, out: true, message: 'Здравствуйте!', getChat: async () => user } });
   await handler({ isPrivate: true, message: { id: 901, out: true, message: 'пишу сам из Telegram', getChat: async () => user } });
   assert.deepEqual(reported.slice(1).map((m) => [m.direction, m.text]), [['out', 'пишу сам из Telegram']]);
+  // Утверждённый ответ на вопрос в чате уходит реплаем в чат, а не в личку.
+  client.sendMessage = async (peer, options) => { sentTo.push([peer, options]); return { id: 902 }; };
+  queue.push({ id: 'm3', text: 'Сегодня бачата в 19:00', account_id: 'a1', peer_id: '42', peer_username: 'tim', status: 'queued', meta: { reply_to: { chat: 'danang_chat', message_id: 3 } } });
+  await sender.tick();
+  assert.deepEqual(sentTo.at(-1), ['danang_chat', { message: 'Сегодня бачата в 19:00', replyTo: 3 }]);
   console.log('sender ok');
+}
+
+// Вопросы «куда сходить» в больших чатах: отбор без ИИ.
+{
+  const { looksLikeLead, pickLeads } = await import('./lead.mjs');
+  for (const yes of ['Ребят, куда сегодня можно сходить потанцевать?', 'Чем заняться в Дананге вечером?', 'Есть какие-нибудь мероприятия на выходных?',
+    'Подскажите, куда пойти с ребёнком', 'Ищу компанию на покер', 'Где тут можно поиграть в настолки?', "What's on tonight?", 'any events this weekend?']) {
+    assert.ok(looksLikeLead(yes), yes);
+  }
+  for (const no of ['Сдаю байк, недорого', 'Куда пропал свет на Ми Кхе?', 'Продам доску для сёрфа', 'Где купить сим-карту?', 'ок', 'Куда сходить? ' + 'очень длинный текст '.repeat(30)]) {
+    assert.ok(!looksLikeLead(no), no);
+  }
+  const now = 1_800_000_000_000;
+  const at = (minutesAgo) => now / 1000 - minutesAgo * 60;
+  const user = { className: 'User', id: 42n, firstName: 'Даша', lastName: 'К', username: 'dasha_k', bot: false };
+  const leads = pickLeads('danang_chat', [
+    { id: 1, date: at(30), message: 'Всем привет', sender: user },
+    { id: 2, date: at(29), message: 'Погода огонь', sender: user },
+    { id: 3, date: at(28), message: 'Куда сегодня сходить потанцевать?', sender: user },
+    { id: 4, date: at(200), message: 'Куда сходить вечером?', sender: user }, // старое
+    { id: 5, date: at(5), message: 'Чем заняться вечером?', sender: { ...user, bot: true } }, // бот
+    { id: 6, date: at(4), message: 'Чем заняться вечером?', sender: { className: 'Channel', id: 7n } }, // от имени канала
+  ], now);
+  assert.deepEqual(leads, [{
+    chat: 'danang_chat', message_id: 3, url: 'https://t.me/danang_chat/3',
+    author: { id: 42, name: 'Даша К', username: 'dasha_k' },
+    text: 'Куда сегодня сходить потанцевать?', context: ['Всем привет', 'Погода огонь'],
+  }]);
+  console.log('leads ok');
 }
