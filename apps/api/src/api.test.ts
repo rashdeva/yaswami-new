@@ -742,6 +742,11 @@ test('переписка: бот пишет всё в базу, админ от�
   sent.length = 0;
   await handleUpdate(db, async () => [], botMessage(71, 'Что будет в пятницу 20 ноября в 19:00?'));
   assert.deepEqual(sent.filter(([m]) => m === 'sendMessage').map(([, b]) => b.text), ['В пятницу покер в 19:00.']);
+  // Роль открыта только списку пользователей — остальным прежний отказ бота, роль даже не спрашиваем.
+  settings.supportUserIds = [70];
+  support.ask = async () => assert.fail('роль не для этого пользователя');
+  assert.deepEqual(await write('А мне ответят?'), [REPLIES.no_date]);
+  settings.supportUserIds = [];
   // Роль недоступна — прежний отказ бота.
   support.ask = async () => null;
   assert.deepEqual(await write('Алло?'), [REPLIES.no_date]);
