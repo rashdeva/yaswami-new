@@ -1,0 +1,46 @@
+/* Токены дизайна. Направление: iOS 26 Liquid Glass — контент лежит на цветном «воздухе» шаблона,
+   карточки — плотный материал, всё плавающее (кнопки, чипы, шторка) — стекло.
+   Тему выставляет tg.ts атрибутом data-theme: внутри Telegram она может не совпадать с системной. */
+:root {
+  --bg: #f2f2f7;
+  --text: #000;
+  --hint: rgba(60, 60, 67, 0.62);
+  --line: rgba(60, 60, 67, 0.13);
+  --mat: rgba(255, 255, 255, 0.66);
+  --glass: rgba(255, 255, 255, 0.42);
+  --stroke: rgba(255, 255, 255, 0.75);
+  --shine: rgba(255, 255, 255, 0.65);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --btn: #007aff;
+  --btn-text: #fff;
+  --ok: #34c759;
+  --bad: #ff3b30;
+  --air: 38%;
+  /* цвета шаблона события; экран переопределяет их через style */
+  --a: #6366f1;
+  --b: #a855f7;
+  --col: 430px;
+  --spring: cubic-bezier(0.3, 1.4, 0.5, 1);
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  --bg: #000;
+  --text: #fff;
+  --hint: rgba(235, 235, 245, 0.62);
+  --line: rgba(120, 120, 128, 0.3);
+  --mat: rgba(44, 44, 48, 0.6);
+  --glass: rgba(120, 120, 128, 0.26);
+  --stroke: rgba(255, 255, 255, 0.13);
+  --shine: rgba(255, 255, 255, 0.16);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  --btn: #0a84ff;
+  --ok: #30d158;
+  --bad: #ff453a;
+  --air: 30%;
+  color-scheme: dark;
+}
+@media (min-width: 700px) {
+  :root {
+    --col: 540px;
+  }
+}

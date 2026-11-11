@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
-import type { User } from '@yaswami/core';
+import type { AppConfig, User } from '@yaswami/core';
 import { EventCreateInput, EventUpdateInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
 import type { AuthMethod } from './auth.ts';
 import { authenticate, issueToken, revokeTokens } from './auth.ts';
@@ -11,7 +11,7 @@ import * as s from './services.ts';
 
 const json = <T extends z.ZodType>(schema: T) => validator('json', (value) => schema.parse(value) as z.infer<T>);
 
-export function createApp({ db, botToken }: { db: Db; botToken: string }) {
+export function createApp({ db, botToken, config }: { db: Db; botToken: string; config?: AppConfig }) {
   return new Hono<{ Variables: { actor: User; method: AuthMethod } }>()
     .onError((e, c) => {
       if (e instanceof s.AppError) return c.json({ error: e.code }, e.status);
@@ -21,6 +21,7 @@ export function createApp({ db, botToken }: { db: Db; botToken: string }) {
       return c.json({ error: 'internal' }, 500);
     })
     .get('/health', (c) => c.text('ok'))
+    .get('/config', (c) => c.json(config ?? ({ bot_username: null, app_name: 'app' } satisfies AppConfig)))
     // До проверки входа: витрину собранных событий видит и анонимный посетитель.
     .get('/collected-events', async (c) => c.json(await s.listCollectedEvents(db)))
     .use(async (c, next) => {

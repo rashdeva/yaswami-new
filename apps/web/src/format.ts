@@ -1,0 +1,39 @@
+import type { CSSProperties } from 'react';
+import type { AppConfig, Event } from '@yaswami/core';
+import { TEMPLATES } from '@yaswami/core';
+
+/** «пт, 20 ноября, 19:00» — во времени самого события, а не устройства. */
+export function when(startAt: string, timezone: string): string {
+  const date = new Date(startAt);
+  if (Number.isNaN(date.getTime())) return 'дата не выбрана';
+  const part = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('ru', { timeZone: timezone, ...options }).format(date);
+  return `${part({ weekday: 'short', day: 'numeric', month: 'long' })}, ${part({ hour: '2-digit', minute: '2-digit' })}`;
+}
+
+/** Цвета шаблона для «воздуха» под контентом и градиентов. */
+export const tint = (kind: Event['kind']) =>
+  ({ '--a': TEMPLATES[kind].colors[0], '--b': TEMPLATES[kind].colors[1] }) as CSSProperties;
+
+/** Постоянный цвет аватара по имени. */
+export const hue = (name: string) => [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 0);
+
+/** Локальная дата устройства как YYYY-MM-DD, со сдвигом в днях. */
+export function localDate(offsetDays = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Имя бота и приложения приходят с сервера (он знает своего бота); переменные VITE_* — запасной вариант для разработки.
+const link = { bot: import.meta.env.VITE_BOT_USERNAME || null, app: import.meta.env.VITE_APP_NAME || 'app' };
+export function setLinkConfig(config: AppConfig) {
+  link.bot = config.bot_username ?? link.bot;
+  link.app = config.app_name;
+}
+
+/** Ссылка, по которой событие открывается у гостя. */
+export function eventLink(id: string): string {
+  return link.bot
+    ? `https://t.me/${link.bot}/${link.app}?startapp=${id}`
+    : `${location.origin}${location.pathname}?startapp=${id}`;
+}

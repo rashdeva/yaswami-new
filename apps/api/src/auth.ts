@@ -42,7 +42,7 @@ export async function upsertUser(db: Db, tg: TelegramUser): Promise<User> {
   const profile = { first_name: tg.first_name, username: tg.username ?? null };
   const [user] = await db
     .insert(users)
-    .values({ id: tg.id, ...profile, lang: tg.language_code ?? 'ru', tz: 'UTC' })
+    .values({ id: tg.id, ...profile, lang: tg.language_code ?? 'ru', timezone: 'UTC' })
     .onConflictDoUpdate({ target: users.id, set: profile })
     .returning();
   return user!;

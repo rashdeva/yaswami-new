@@ -1,9 +1,9 @@
 import type { Event, Guest, TicketType } from './schema.ts';
-import { PLACE_MAX, TITLE_MAX } from './schema.ts';
+import { ADDRESS_MAX, NAME_MAX } from './schema.ts';
 
 export const PUBLIC_STATE_MAX_BYTES = 1024;
 const NAMES_MAX = 5;
-const NAME_MAX = 16;
+const GUEST_NAME_MAX = 16;
 
 const bytes = (s: string) => new TextEncoder().encode(s).length;
 // По символам, а не по UTF-16: не режем эмодзи пополам.
@@ -12,7 +12,7 @@ const cut = (s: string, n: number) => {
   return chars.length <= n ? s : chars.slice(0, n - 1).join('') + '…';
 };
 
-export type GuestWithName = Guest & { first_name: string };
+export type GuestWithName = Guest & { user_first_name: string };
 
 /**
  * Общее состояние виджета (`public_data`), строка не длиннее 1024 байт.
@@ -20,19 +20,19 @@ export type GuestWithName = Guest & { first_name: string };
  * g первые имена · m 1, если видимых типов билетов несколько («Пойду» открывает мини-приложение) · u ссылка.
  */
 export function toPublicState(event: Event, ticketTypes: TicketType[], guests: GuestWithName[], url: string): string {
-  const going = guests.filter((g) => g.status === 'going');
+  const approved = guests.filter((g) => g.approval_status === 'approved');
   const state = {
     r: event.rev,
     k: event.kind,
-    t: cut(event.title, TITLE_MAX),
-    d: Math.floor(event.starts_at.getTime() / 1000),
-    p: cut(event.place_text, PLACE_MAX),
-    c: event.capacity,
-    n: [going.reduce((n, g) => n + 1 + g.plus_ones, 0), guests.filter((g) => g.status === 'maybe').length],
-    g: going
-      .toSorted((a, b) => a.responded_at.getTime() - b.responded_at.getTime())
+    t: cut(event.name, NAME_MAX),
+    d: Math.floor(event.start_at.getTime() / 1000),
+    p: cut(event.geo_address_json?.address ?? '', ADDRESS_MAX),
+    c: event.max_capacity,
+    n: [approved.reduce((n, g) => n + 1 + g.plus_ones, 0), guests.filter((g) => g.approval_status === 'maybe').length],
+    g: approved
+      .toSorted((a, b) => a.registered_at.getTime() - b.registered_at.getTime())
       .slice(0, NAMES_MAX)
-      .map((g) => cut(g.first_name, NAME_MAX)),
+      .map((g) => cut(g.user_first_name, GUEST_NAME_MAX)),
     m: ticketTypes.filter((t) => !t.is_hidden).length > 1 ? 1 : 0,
     u: url,
   };

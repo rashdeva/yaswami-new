@@ -45,7 +45,7 @@ const call = (auth: string, method: string, path: string, body?: unknown) =>
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 const newEvent = async (auth: string, extra: object = {}) => {
-  const res = await call(auth, 'POST', '/events', { kind: 's', title: 'Футбол 5×5', starts_at: '2026-11-20T19:00:00+04:00', tz: 'Asia/Tbilisi', ...extra });
+  const res = await call(auth, 'POST', '/events', { kind: 's', name: 'Футбол 5×5', start_at: '2026-11-20T19:00:00+04:00', timezone: 'Asia/Tbilisi', ...extra });
   assert.equal(res.status, 201);
   return (await res.json()) as EventView;
 };
@@ -70,28 +70,28 @@ test('событие создаётся с типом билета по умол
   const host = tma(1, 'Миша');
   const created = await newEvent(host);
   assert.equal(created.ticket_types.length, 1);
-  assert.equal(created.event.starts_at, '2026-11-20T15:00:00.000Z');
+  assert.equal(created.event.start_at, '2026-11-20T15:00:00.000Z');
 
-  const res = await call(tma(2, 'Дато'), 'POST', `/events/${created.event.id}/rsvp`, { status: 'going' });
+  const res = await call(tma(2, 'Дато'), 'POST', `/events/${created.event.id}/rsvp`, { approval_status: 'approved' });
   assert.equal(res.status, 200);
   const view = (await res.json()) as EventView;
-  assert.deepEqual(view.counts, { going: 1, maybe: 0 });
+  assert.deepEqual(view.guest_counts, { approved: 1, maybe: 0, declined: 0 });
   assert.equal(view.event.rev, 1);
   assert.deepEqual(view.guests, [
-    { first_name: 'Дато', status: 'going', ticket_type_id: created.ticket_types[0]!.id, plus_ones: 0, is_me: true },
+    { user_first_name: 'Дато', approval_status: 'approved', event_ticket_type_id: created.ticket_types[0]!.id, plus_ones: 0, is_me: true },
   ]);
   assert.equal(view.is_host, false);
 
-  const list = (await (await call(tma(2, 'Дато'), 'GET', '/events')).json()) as { my_status: string; is_host: boolean }[];
-  assert.deepEqual(list.map((e) => [e.my_status, e.is_host]), [['going', false]]);
+  const list = (await (await call(tma(2, 'Дато'), 'GET', '/events')).json()) as { my_approval_status: string; is_host: boolean }[];
+  assert.deepEqual(list.map((e) => [e.my_approval_status, e.is_host]), [['approved', false]]);
 });
 
 test('последнее место достаётся одному из восьми одновременных гостей', async () => {
-  const { event } = await newEvent(tma(1, 'Миша'), { capacity: 1 });
+  const { event } = await newEvent(tma(1, 'Миша'), { max_capacity: 1 });
   // Сначала вход (создаёт пользователей и прогревает соединения), чтобы ответы стартовали действительно одновременно.
   const ids = Array.from({ length: 8 }, (_, i) => 30 + i);
   await Promise.all(ids.map((id) => call(tma(id, `G${id}`), 'GET', '/events')));
-  const results = await Promise.all(ids.map((id) => call(tma(id, `G${id}`), 'POST', `/events/${event.id}/rsvp`, { status: 'going' })));
+  const results = await Promise.all(ids.map((id) => call(tma(id, `G${id}`), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved' })));
   assert.deepEqual(results.map((r) => r.status).sort(), [200, ...Array(7).fill(409)]);
   const full = results.find((r) => r.status === 409)!;
   assert.deepEqual(await full.json(), { error: 'full' });
@@ -103,16 +103,16 @@ test('менять событие и типы билетов может толь
   const { event, ticket_types } = await newEvent(host, { status: 'draft' });
   assert.equal((await call(guest, 'GET', `/events/${event.id}`)).status, 404);
   assert.equal((await call(host, 'PATCH', `/events/${event.id}`, { status: 'published' })).status, 200);
-  assert.equal((await call(guest, 'PATCH', `/events/${event.id}`, { title: 'x' })).status, 403);
+  assert.equal((await call(guest, 'PATCH', `/events/${event.id}`, { name: 'x' })).status, 403);
   assert.equal((await call(guest, 'POST', `/events/${event.id}/ticket-types`, { name: 'VIP' })).status, 403);
-  assert.equal((await call(host, 'PATCH', `/events/${event.id}`, { title: '' })).status, 400);
+  assert.equal((await call(host, 'PATCH', `/events/${event.id}`, { name: '' })).status, 400);
 
   // последний тип не удалить; второй, пока его держит гость, — тоже
   const only = ticket_types[0]!.id;
   assert.deepEqual(await (await call(host, 'DELETE', `/ticket-types/${only}`)).json(), { error: 'ticket_type_last' });
   const vip = (await (await call(host, 'POST', `/events/${event.id}/ticket-types`, { name: 'VIP', max_capacity: 1 })).json()) as { id: string };
-  assert.deepEqual(await (await call(guest, 'POST', `/events/${event.id}/rsvp`, { status: 'going' })).json(), { error: 'ticket_required' });
-  assert.equal((await call(guest, 'POST', `/events/${event.id}/rsvp`, { status: 'going', ticket_type_id: vip.id })).status, 200);
+  assert.deepEqual(await (await call(guest, 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved' })).json(), { error: 'ticket_required' });
+  assert.equal((await call(guest, 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved', event_ticket_type_id: vip.id })).status, 200);
   assert.deepEqual(await (await call(host, 'DELETE', `/ticket-types/${vip.id}`)).json(), { error: 'ticket_type_in_use' });
   assert.equal((await call(host, 'DELETE', `/ticket-types/${only}`)).status, 204);
 });
@@ -143,22 +143,22 @@ test('MCP: список инструментов, создание событи�
     'ticket_type_create', 'ticket_type_delete', 'ticket_type_update',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'event_create');
-  assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'starts_at', 'title', 'tz']);
+  assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
 
   const created = await rpc('tools/call', {
     name: 'event_create',
-    arguments: { kind: 'c', title: 'Кофе', starts_at: '2026-12-01T10:00:00+04:00', tz: 'Asia/Tbilisi', capacity: 1 },
+    arguments: { kind: 'c', name: 'Кофе', start_at: '2026-12-01T10:00:00+04:00', timezone: 'Asia/Tbilisi', max_capacity: 1 },
   });
   const view = JSON.parse(created.content[0].text) as EventView;
   assert.equal(view.is_host, true);
 
   // событие, созданное через MCP, видно в REST
-  await call(tma(9, 'Лёша'), 'POST', `/events/${view.event.id}/rsvp`, { status: 'going' });
-  const full = await rpc('tools/call', { name: 'event_rsvp', arguments: { event_id: view.event.id, status: 'going' } });
+  await call(tma(9, 'Лёша'), 'POST', `/events/${view.event.id}/rsvp`, { approval_status: 'approved' });
+  const full = await rpc('tools/call', { name: 'event_rsvp', arguments: { event_id: view.event.id, approval_status: 'approved' } });
   assert.equal(full.isError, true);
   assert.deepEqual(JSON.parse(full.content[0].text), { error: 'full' });
 
-  const invalid = await rpc('tools/call', { name: 'event_create', arguments: { kind: 'zzz', title: 'x' } });
+  const invalid = await rpc('tools/call', { name: 'event_create', arguments: { kind: 'zzz', name: 'x' } });
   assert.equal(invalid.isError, true);
 });
 
