@@ -1,9 +1,10 @@
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createExtractor, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
+import { createExtractor, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
 import { connect, fetchChatAnnouncements } from './mtproto.mjs';
 import { createStore } from './store.mjs';
+import { fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
 
 const env = process.env;
@@ -22,6 +23,26 @@ const extract = createExtractor({
   city: env.CITY ?? 'Дананг',
   timezone: env.TIMEZONE ?? 'Asia/Ho_Chi_Minh',
 });
+
+const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
+// Поиск по username — самый флудоопасный вызов Telegram: за проход собираем немного профилей, остальные — в следующий.
+const PROFILES_PER_PASS = 5;
+// Username, под которыми не человек (канал, бот, никого). ponytail: помним только в памяти процесса —
+// после перезапуска проверим ещё раз; при POLL_MINUTES=0 (cron) это надо класть в базу.
+const notPeople = new Set();
+
+async function profileHosts() {
+  const usernames = (await store.unprofiled()).filter((u) => !notPeople.has(u)).slice(0, PROFILES_PER_PASS);
+  for (const username of usernames) {
+    const profile = await fetchProfile(userbot, username);
+    if (profile) {
+      const { telegram_id, name, bio, channel } = profile;
+      await store.saveHost({ telegram_id, username, name, bio, channel: channel?.username ?? null, summary: await summarize(profile) });
+    } else notPeople.add(username);
+    console.log(`@${username}: ${profile ? `профиль${profile.channel ? `, канал @${profile.channel.username}` : ''}` : 'не человек'}`);
+    await sleep(llmPauseMs);
+  }
+}
 
 const cursors = await store.cursors();
 // Railway проверяет /health при деплое (общий railway.json); отвечаем, когда БД уже доступна.
@@ -62,6 +83,7 @@ do {
     await pollChannel(channel, known).catch((e) => console.error(`${channel}: ${e.message}`));
     await sleep(2000); // не частим с запросами к Telegram
   }
+  await profileHosts().catch((e) => console.error(`профили: ${e.message}`));
   if (pollMinutes) await sleep(pollMinutes * 60_000);
 } while (pollMinutes);
 await userbot.disconnect();

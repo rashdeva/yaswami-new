@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
 import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES } from '@yaswami/core';
 import { api, loginUrl } from '../api.ts';
@@ -29,8 +29,9 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
   const [failed, setFailed] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!initial) api.collectedEvent(id).then(setEvent, (e: Error) => setFailed(e.message));
-  }, [id, initial]);
+    // Запрашиваем и при готовой карточке из списка: профиль организатора есть только в ответе на одно событие.
+    api.collectedEvent(id).then(setEvent, (e: Error) => setFailed(e.message));
+  }, [id]);
 
   useEffect(() => {
     if (event) document.title = `${event.title} — ${collectedWhen(event.starts_at)}, ${city}`;
@@ -126,6 +127,17 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
           <p className="note">Гид написала редакция Ясвами — это не обещание организатора.</p>
         </>
       )}
+      {event.hosts?.map((host) => (
+        <Fragment key={host.name}>
+          <h2>Организатор</h2>
+          <div className="group"><div className="pad">
+            <p>{host.name}</p>
+            {host.summary && <p>{host.summary}</p>}
+            {host.channel_url && <p><a href={host.channel_url} target="_blank" rel="noreferrer">Канал организатора</a></p>}
+          </div></div>
+          {!host.confirmed && <p className="note">Профиль собран автоматически по открытому каналу организатора.</p>}
+        </Fragment>
+      ))}
       {event.tags.length > 0 && <div className="tags">{event.tags.map((t) => <span key={t}>{t}</span>)}</div>}
 
       <p className="note">

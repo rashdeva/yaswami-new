@@ -132,6 +132,27 @@ export const collectedEvents = pgTable(
   (t) => [index('collected_events_starts_idx').on(t.starts_at), index('collected_events_username_idx').on(t.telegram_username)],
 );
 
+// Организатор собранного события (Host в Luma API). Профиль собирает сборщик: по контакту из анонса находит человека
+// в Telegram, берёт имя и «о себе», его канал и сводку ИИ по каналу.
+export const hosts = pgTable(
+  'hosts',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    // Пользователь Ясвами, если этот человек вошёл: профиль подтверждён. null — собран без его участия.
+    user_id: telegramId('user_id').references(() => users.id, { onDelete: 'set null' }),
+    // Кто это в Telegram: по этому id профиль привязывается к пользователю при входе. Отдельно от user_id:
+    // пользователи со временем будут не только из Telegram.
+    telegram_id: telegramId('telegram_id').notNull().unique(),
+    username: text().notNull(), // без @, в нижнем регистре; по нему профиль находится от collected_events.telegram_username
+    name: text().notNull(),
+    bio: text(),
+    channel: text(), // username канала: личный канал из профиля или ссылка из «о себе»
+    summary: text(),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('hosts_username_idx').on(t.username)],
+);
+
 // «Записаться» на собранное событие: фиксируем намерение и отправляем человека к организатору.
 export const collectedEventSignups = pgTable(
   'collected_event_signups',

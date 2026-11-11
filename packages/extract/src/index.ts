@@ -3,3 +3,4 @@
 export * from './extract.ts';
 export * from './prefilter.ts';
 export * from './dedupe.ts';
+export * from './host.ts';

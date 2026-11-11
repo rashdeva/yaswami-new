@@ -1,10 +1,10 @@
 // Способы войти: initData мини-приложения Telegram и токен доступа — в заголовке (REST и MCP вне Telegram)
 // или в cookie сайта (её ставит вход через Telegram в web-login.ts).
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { User } from '@yaswami/core';
 import type { Db } from './db/client.ts';
-import { apiTokens, users } from './db/schema.ts';
+import { apiTokens, hosts, users } from './db/schema.ts';
 
 const INIT_DATA_MAX_AGE_S = 24 * 60 * 60;
 const TOKEN_PREFIX = 'ysw_';
@@ -46,6 +46,9 @@ export async function upsertUser(db: Db, tg: TelegramUser): Promise<User> {
     .values({ id: tg.id, ...profile, lang: tg.language_code ?? 'ru', timezone: 'UTC' })
     .onConflictDoUpdate({ target: users.id, set: profile })
     .returning();
+  // Вошёл организатор, чей профиль уже собран по анонсам: привязываем профиль к нему.
+  // ponytail: запрос на каждый вход; если станет заметно — привязывать только при создании пользователя.
+  await db.update(hosts).set({ user_id: user!.id }).where(and(eq(hosts.telegram_id, tg.id), isNull(hosts.user_id)));
   return user!;
 }
 
