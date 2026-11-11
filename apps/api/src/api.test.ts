@@ -98,6 +98,14 @@ test('событие создаётся с типом билета по умол
   assert.deepEqual(list.map((e) => [e.my_approval_status, e.is_host]), [['approved', false]]);
 });
 
+test('билеты задаются при создании: цена — свободный текст, имя по умолчанию, порядок сохраняется', async () => {
+  const host = tma(1, 'Миша');
+  const one = await newEvent(host, { ticket_types: [{ price_text: 'по донату' }] });
+  assert.deepEqual(one.ticket_types.map((t) => [t.name, t.price_text]), [['Стандартный', 'по донату']]);
+  const many = await newEvent(host, { ticket_types: [{ name: 'Early bird', price_text: '1000 ₽' }, { name: 'Обычный', price_text: '1500 ₽' }] });
+  assert.deepEqual(many.ticket_types.map((t) => [t.name, t.price_text, t.position]), [['Early bird', '1000 ₽', 0], ['Обычный', '1500 ₽', 1]]);
+});
+
 test('последнее место достаётся одному из восьми одновременных гостей', async () => {
   const { event } = await newEvent(tma(1, 'Миша'), { max_capacity: 1 });
   // Сначала вход (создаёт пользователей и прогревает соединения), чтобы ответы стартовали действительно одновременно.

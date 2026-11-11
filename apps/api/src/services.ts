@@ -308,12 +308,14 @@ export async function createEvent(db: Db, actor: User, input: EventCreateInput):
   return db.transaction(async (tx) => {
     await assertUnderLimit(tx, actor);
     const id = newEventId();
+    const { ticket_types, ...fields } = input;
     await tx.insert(events).values({
-      ...input, id, user_id: actor.id, start_at: new Date(input.start_at),
+      ...fields, id, user_id: actor.id, start_at: new Date(input.start_at),
       end_at: input.end_at ? new Date(input.end_at) : null, status: input.status ?? 'published',
     });
     // У события всегда есть хотя бы один тип билета.
-    await tx.insert(ticketTypes).values({ event_id: id, name: DEFAULT_TICKET_NAME });
+    const types = ticket_types?.length ? ticket_types : [{}];
+    await tx.insert(ticketTypes).values(types.map((t, position) => ({ ...t, name: t.name ?? DEFAULT_TICKET_NAME, event_id: id, position })));
     return getEvent(tx, actor, id);
   });
 }

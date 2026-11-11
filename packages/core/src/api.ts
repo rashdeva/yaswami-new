@@ -19,15 +19,20 @@ const eventFields = EventSchema.pick({
   kind: true, name: true, description: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true,
 }).extend({ start_at: dateTime, end_at: dateTime.nullable(), timezone: timeZone });
 
+const ticketTypeFields = TicketTypeSchema.omit({ id: true, event_id: true });
+
 export const EventCreateInput = eventFields
   .partial({ description: true, end_at: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true })
-  .extend({ status: z.enum(['draft', 'published']).optional() });
+  .extend({
+    status: z.enum(['draft', 'published']).optional(),
+    // Типы билетов сразу при создании (порядок = position). Без них — один «Стандартный» без цены.
+    ticket_types: z.array(ticketTypeFields.partial()).max(10).optional(),
+  });
 export type EventCreateInput = z.infer<typeof EventCreateInput>;
 
 export const EventUpdateInput = eventFields.extend({ status: EventSchema.shape.status }).partial();
 export type EventUpdateInput = z.infer<typeof EventUpdateInput>;
 
-const ticketTypeFields = TicketTypeSchema.omit({ id: true, event_id: true });
 export const TicketTypeCreateInput = ticketTypeFields.partial().required({ name: true });
 export type TicketTypeCreateInput = z.infer<typeof TicketTypeCreateInput>;
 
