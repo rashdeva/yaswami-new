@@ -4,6 +4,7 @@ import { collectedPath } from '@yaswami/core';
 import type { EventData, EventListData } from './api.ts';
 import { api, hasCredentials, loginUrl } from './api.ts';
 import { setLinkConfig, tint } from './format.ts';
+import { ClaimBanner } from './screens/ClaimBanner.tsx';
 import { CollectedScreen } from './screens/CollectedScreen.tsx';
 import { CreateScreen } from './screens/CreateScreen.tsx';
 import { EventScreen } from './screens/EventScreen.tsx';
@@ -142,6 +143,21 @@ export function App() {
     (id: string) => setMe((m) => (m && !m.collected_signups.includes(id) ? { ...m, collected_signups: [...m.collected_signups, id] } : m)),
     [],
   );
+  // Организатор подтверждает собранное событие: оно становится его событием Ясвами и открывается сразу.
+  const claim = useCallback(async (item: CollectedEventItem) => {
+    try {
+      const view = await api.claim(item.id);
+      haptic.success();
+      setMe((m) => m && { ...m, claimable: m.claimable.filter((c) => c.id !== item.id) });
+      go({ name: 'event', id: view.event.id, initial: view });
+      setSheet(true); // сразу предлагаем отправить приглашение в чат
+      void loadEvents().catch(() => {});
+    } catch (e) {
+      haptic.error();
+      showToast((e as Error).message);
+    }
+  }, [go, loadEvents, showToast]);
+  const claimBanner = <ClaimBanner items={me?.claimable ?? []} onClaim={claim} />;
   const tabs = (current: 'feed' | 'mine') => (
     <Tabs
       current={current}
@@ -185,7 +201,7 @@ export function App() {
   } else if (!screen) {
     content = <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>;
   } else if (screen.name === 'feed') {
-    content = <FeedScreen city={city} initial={served.feed} tabs={tabs('feed')} onOpen={(event) => go({ name: 'collected', id: event.id, initial: event })} />;
+    content = <FeedScreen city={city} initial={served.feed} tabs={tabs('feed')} lead={claimBanner} onOpen={(event) => go({ name: 'collected', id: event.id, initial: event })} />;
   } else if (screen.name === 'collected') {
     content = (
       <CollectedScreen
@@ -196,13 +212,15 @@ export function App() {
         authed={authed}
         canLogin={canLogin}
         signedUp={!!me?.collected_signups.includes(screen.id)}
+        onClaim={me?.claimable.some((c) => c.id === screen.id) ? () => claim(me.claimable.find((c) => c.id === screen.id)!) : null}
+        onOpenEvent={(eventId) => go({ name: 'event', id: eventId })}
         onSignedUp={onSignedUp}
         onBack={nativeBack ? null : () => go({ name: 'feed' })}
         toast={showToast}
       />
     );
   } else if (screen.name === 'list') {
-    content = <ListScreen events={events ?? []} tabs={tabs('mine')} onOpen={(id) => go({ name: 'event', id })} onNew={() => go({ name: 'create' })} onKind={setKind} />;
+    content = <ListScreen events={events ?? []} tabs={tabs('mine')} lead={claimBanner} onOpen={(id) => go({ name: 'event', id })} onNew={() => go({ name: 'create' })} onKind={setKind} />;
   } else if (screen.name === 'create') {
     content = (
       <CreateScreen

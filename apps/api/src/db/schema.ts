@@ -121,7 +121,11 @@ export const collectedEvents = pgTable(
     ends_at: at('ends_at'),
     // Контакт для записи. По нему вошедшему организатору предлагают подтвердить событие.
     telegram_username: text(),
+    // ponytail: больше не читается — ссылку записи API собирает сам (collectedSignupUrl). Сборщик ещё пишет её;
+    // убрать колонку вместе с apps/collector/src/signup.mjs.
     signup_url: text().notNull(),
+    // Организатор подтвердил, что событие его: из него создано настоящее событие.
+    claimed_event_id: text().references(() => events.id, { onDelete: 'set null' }),
     created_at: at('created_at').notNull().defaultNow(),
     updated_at: at('updated_at').notNull().defaultNow(),
   },

@@ -7,10 +7,10 @@ import { createDb } from './db/client.ts';
 import { eventPage, feedPage, inject, notFoundPage, sitemap } from './pages.ts';
 import type { Page } from './pages.ts';
 import { AppError, getCollectedEvent, listCollectedEvents } from './services.ts';
+import { settings } from './settings.ts';
 
-const { DATABASE_URL, BOT_TOKEN, APP_NAME = 'app', PORT = '3000', TG_CLIENT_SECRET = '', CITY = 'Дананг', RAILWAY_PUBLIC_DOMAIN } = process.env;
-// Адрес сайта для ссылок в разметке и для возврата после входа через Telegram.
-const PUBLIC_URL = (process.env.PUBLIC_URL ?? (RAILWAY_PUBLIC_DOMAIN ? `https://${RAILWAY_PUBLIC_DOMAIN}` : `http://localhost:${PORT}`)).replace(/\/$/, '');
+const { DATABASE_URL, BOT_TOKEN, APP_NAME = 'app', PORT = '3000', TG_CLIENT_SECRET = '' } = process.env;
+const { publicUrl: PUBLIC_URL, city: CITY } = settings;
 if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
 if (!TG_CLIENT_SECRET) console.warn('TG_CLIENT_SECRET is not set: login on the website is disabled');
 if (!BOT_TOKEN) console.warn('BOT_TOKEN is not set: Telegram login is disabled, only access tokens work');
@@ -30,7 +30,7 @@ const db = createDb(DATABASE_URL);
 const api = createApp({
   db,
   botToken: BOT_TOKEN ?? '',
-  config: { bot_username: BOT_TOKEN ? await botUsername(BOT_TOKEN) : null, app_name: APP_NAME, city: CITY },
+  config: { bot_username: BOT_TOKEN ? await botUsername(BOT_TOKEN) : null, app_name: APP_NAME },
   webLogin: { clientSecret: TG_CLIENT_SECRET, publicUrl: PUBLIC_URL },
 });
 

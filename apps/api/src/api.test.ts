@@ -5,12 +5,13 @@ import { after, before, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { CollectedEventItem, EventView } from '@yaswami/core';
+import type { CollectedEventItem, EventView, Me } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
 import { collectedEvents } from './db/schema.ts';
+import { settings } from './settings.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
 
@@ -182,7 +183,10 @@ test('собранные события: витрина без входа, за�
   // витрина: только предстоящие, контакт организатора — только внутри ссылки записи
   const items = (await (await app.request('/collected-events')).json()) as CollectedEventItem[];
   assert.deepEqual(items.map((i) => i.id), ['danangevent-1-0']);
-  assert.equal(items[0]!.signup_url, 'https://t.me/anna_yoga?text=hi');
+  // ссылка записи собирается заново: в сообщении организатору — страница события на Ясвами
+  const link = new URL(items[0]!.signup_url);
+  assert.equal(link.origin + link.pathname, 'https://t.me/anna_yoga');
+  assert.match(link.searchParams.get('text')!, /«Йога».*Ясвами: http:\/\/localhost:\d+\/e\/danangevent-1-0$/);
   assert.equal('telegram_username' in items[0]!, false);
 
   // страница события открывается по id из адреса; прошедшее тоже, несуществующее — 404
@@ -195,13 +199,67 @@ test('собранные события: витрина без входа, за�
   const guest = tma(20, 'Оля');
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
-  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: 20, first_name: 'Оля' }, collected_signups: ['danangevent-1-0'] });
+  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: 20, first_name: 'Оля' }, collected_signups: ['danangevent-1-0'], claimable: [] });
 
   // токен в cookie сайта входит так же, как в заголовке; после выхода он больше не действует
   const session = `ysw_session=${await issueToken(db, 20)}`;
   assert.equal((await app.request('/me', { headers: { cookie: session } })).status, 200);
   assert.equal((await app.request('/auth/logout', { method: 'POST', headers: { cookie: session } })).status, 204);
   assert.equal((await app.request('/me', { headers: { cookie: session } })).status, 401);
+});
+
+test('подтверждение владельцем: предлагается по username, создаёт событие, второй раз и чужим — нельзя', async () => {
+  await db.delete(collectedEvents);
+  const starts_at = new Date(Date.now() + 86_400_000);
+  await db.insert(collectedEvents).values({
+    external_id: 'telegram:danangevent/5#0', channel: 'danangevent', starts_at, signup_url: '',
+    announcement: { url: 'https://t.me/danangevent/5' },
+    event: {
+      title: 'Бачата с нуля ' + 'очень '.repeat(20), description: 'Урок для начинающих', starts_at: starts_at.toISOString(), ends_at: null,
+      place: 'Studio', address: 'An Thuong 4', price: '150k', tags: [], telegram_username: 'U30', whatsapp_phone: null, url: null,
+    },
+    telegram_username: 'u30', // сборщик хранит контакт в нижнем регистре; у пользователя из tma() username — u<id>
+  });
+  const owner = tma(30, 'Ксения');
+  const stranger = tma(31, 'Олег');
+
+  const mine = (await (await call(owner, 'GET', '/me')).json()) as Me;
+  assert.deepEqual(mine.claimable.map((c) => c.id), ['danangevent-5-0']);
+  assert.deepEqual(((await (await call(stranger, 'GET', '/me')).json()) as Me).claimable, []);
+  assert.equal((await call(stranger, 'POST', '/collected-events/danangevent-5-0/claim')).status, 403);
+
+  const res = await call(owner, 'POST', '/collected-events/danangevent-5-0/claim');
+  assert.equal(res.status, 201);
+  const view = (await res.json()) as EventView;
+  assert.equal(view.is_host, true);
+  assert.equal(view.event.name.length, 60); // длинное название обрезано до лимита события
+  assert.deepEqual(
+    { status: view.event.status, timezone: view.event.timezone, address: view.event.geo_address_json, price: view.ticket_types[0]!.price_text },
+    { status: 'published', timezone: 'Asia/Ho_Chi_Minh', address: { address: 'Studio, An Thuong 4' }, price: '150k' },
+  );
+
+  // витрина теперь ведёт на событие Ясвами, повторно подтвердить нельзя, предложение исчезло
+  const item = (await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem;
+  assert.equal(item.claimed_event_id, view.event.id);
+  assert.equal((await call(owner, 'POST', '/collected-events/danangevent-5-0/claim')).status, 409);
+  assert.deepEqual(((await (await call(owner, 'GET', '/me')).json()) as Me).claimable, []);
+});
+
+test('лимит бесплатных событий: сверх него создать нельзя, подтверждённые тоже считаются', async () => {
+  const host = tma(40, 'Лена');
+  const limit = settings.freeEventsLimit;
+  settings.freeEventsLimit = 2;
+  try {
+    await newEvent(host);
+    await newEvent(host);
+    const res = await call(host, 'POST', '/events', { kind: 's', name: 'Третье', start_at: '2026-11-20T19:00:00+04:00', timezone: 'Asia/Tbilisi' });
+    assert.equal(res.status, 403);
+    assert.deepEqual(await res.json(), { error: 'events_limit' });
+    await newEvent(tma(41, 'Другой')); // лимит у каждого свой
+  } finally {
+    settings.freeEventsLimit = limit;
+  }
+  assert.equal(((await (await app.request('/config')).json()) as { free_events_limit: number }).free_events_limit, limit);
 });
 
 test('вход с сайта: выключен без Client Secret, возврат — только на свой сайт, id_token проверяется', async () => {
@@ -242,7 +300,7 @@ test('страницы для поисковиков: содержимое и р
   const event: CollectedEventItem = {
     id: 'danangevent-1-0', title: 'Йога <b>& чай</b>', description: '</script><script>alert(1)</script> $& утро',
     starts_at: '2026-11-14T19:00:00+07:00', ends_at: null, place: 'My Khe', address: null, price: '100k', tags: [],
-    signup_url: 'https://t.me/anna_yoga', source_url: 'https://t.me/danangevent/1',
+    signup_url: 'https://t.me/anna_yoga', source_url: 'https://t.me/danangevent/1', claimed_event_id: null,
   };
   const template = '<html><head><title>Я с вами</title></head><body><div id="app"></div></body></html>';
   const html = inject(template, eventPage(event, 'https://yaswami.test', 'Дананг'));

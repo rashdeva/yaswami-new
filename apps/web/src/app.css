@@ -177,3 +177,7 @@ a.item { text-decoration: none; color: inherit; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 16px 0; }
 .tags span { font-size: 13px; color: var(--hint); border: .5px solid var(--stroke); border-radius: 99px; padding: 4px 10px; }
 .note a { color: var(--btn); text-decoration: none; }
+.item.claim { cursor: default; }
+.item.claim > div { flex: 1; min-width: 0; }
+.item.claim .chip:disabled { opacity: .55; cursor: default; }
+.note.lead { margin: 0 20px 12px; }

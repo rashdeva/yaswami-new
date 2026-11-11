@@ -31,9 +31,10 @@ pnpm --filter @yaswami/collector test
 - `event` (jsonb) — то, что извлёк ИИ: `title`, `description`, `starts_at` и `ends_at` (ISO 8601 с offset), `place`, `address`, `price`, `tags`, `telegram_username`, `whatsapp_phone`, `url`.
 - `announcement` (jsonb) — публикация первого анонса: `id`, `url`, `published_at`, `author_username`, `text`.
 - `starts_at`, `ends_at`, `telegram_username` — те же значения колонками, для выборок.
-- `signup_url` — куда ведёт кнопка «Записаться»: личка организатора в Telegram с готовым сообщением (`SIGNUP_MESSAGE`), иначе WhatsApp, иначе ссылка на регистрацию, иначе сама публикация.
+- `signup_url` — устарела: ссылку записи API собирает сам (`collectedSignupUrl` в `@yaswami/core`) и добавляет в сообщение организатору страницу события на Ясвами. Сборщик пока продолжает её заполнять.
+- `claimed_event_id` — организатор подтвердил событие как своё: из него создано событие Ясвами, запись идёт через него.
 
-`telegram_username` — ключ, по которому вошедшему через Telegram организатору можно предложить подтвердить свои события.
+`telegram_username` — ключ, по которому вошедшему организатору предлагается подтвердить свои события (`claimCollectedEvent` в `apps/api/src/services.ts`).
 
 Повторный анонс того же события (`src/dedupe.mjs`) не создаёт вторую строку, а дополняет первую и обновляет `updated_at`.
 

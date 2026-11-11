@@ -1,13 +1,14 @@
 // Операции над событиями. REST и MCP вызывают только эти функции — правила доступа и записи живут здесь.
 import { randomBytes } from 'node:crypto';
-import { and, asc, count, eq, exists, gte, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, exists, gte, isNull, or, sql } from 'drizzle-orm';
 import type {
   CollectedEventItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User,
 } from '@yaswami/core';
-import { rsvp, ticketTypeRemovalError } from '@yaswami/core';
+import { ADDRESS_MAX, collectedPath, collectedSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError } from '@yaswami/core';
 import type { Db, Tx } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, events, guests, ticketTypes, users } from './db/schema.ts';
+import { settings } from './settings.ts';
 
 export type ErrorStatus = 400 | 401 | 403 | 404 | 409;
 export class AppError extends Error {
@@ -93,17 +94,22 @@ export function collectedExternalId(slug: string): string {
   return `telegram:${m[1]}/${m[2]}#${m[3]}`;
 }
 
-const toCollectedItem = ({ external_id, event, signup_url, announcement }: typeof collectedEvents.$inferSelect): CollectedEventItem => {
+const toCollectedItem = ({ external_id, event, announcement, claimed_event_id }: typeof collectedEvents.$inferSelect): CollectedEventItem => {
   const { telegram_username, whatsapp_phone, url, ...shown } = event;
-  return { id: collectedSlug(external_id), ...shown, signup_url, source_url: announcement.url };
+  const id = collectedSlug(external_id);
+  return {
+    id, ...shown, claimed_event_id, source_url: announcement.url,
+    signup_url: collectedSignupUrl(event, announcement.url, settings.publicUrl + collectedPath(id)),
+  };
 };
+const upcomingCollected = gte(sql`coalesce(${collectedEvents.ends_at}, ${collectedEvents.starts_at})`, sql`now()`);
 
 /** Предстоящие собранные события для витрины. Открыты всем: это пересказ публичных анонсов. */
 export async function listCollectedEvents(db: Db): Promise<CollectedEventItem[]> {
   const rows = await db
     .select()
     .from(collectedEvents)
-    .where(gte(sql`coalesce(${collectedEvents.ends_at}, ${collectedEvents.starts_at})`, sql`now()`))
+    .where(upcomingCollected)
     .orderBy(asc(collectedEvents.starts_at))
     .limit(500); // ponytail: без постраничной выдачи, пока событий одного города меньше лимита
   return rows.map(toCollectedItem);
@@ -123,16 +129,57 @@ export async function signUpForCollectedEvent(db: Db, actor: User, slug: string)
   return item;
 }
 
+/**
+ * Организатор подтверждает, что собранное событие — его: из него создаётся настоящее событие Ясвами с ним во главе.
+ * Право подтверждает username в Telegram: он же указан в анонсе как контакт для записи.
+ */
+export async function claimCollectedEvent(db: Db, actor: User, slug: string): Promise<EventView> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select().from(collectedEvents).where(eq(collectedEvents.external_id, collectedExternalId(slug))).for('update');
+    if (!row) throw new AppError('not_found', 404);
+    if (row.claimed_event_id) throw new AppError('already_claimed', 409);
+    if (!actor.username || row.telegram_username !== actor.username.toLowerCase()) throw new AppError('forbidden', 403);
+
+    const id = newEventId();
+    const { title, description, place, address, price } = row.event;
+    const where = [place, address].filter(Boolean).join(', ');
+    // Лимит бесплатных событий здесь не проверяется: подтверждение — вход организатора в Ясвами, а не новое событие.
+    await tx.insert(events).values({
+      id, user_id: actor.id, kind: 'o', status: 'published', timezone: settings.timezone,
+      name: title.trim().slice(0, NAME_MAX), description: description.trim().slice(0, DESCRIPTION_MAX) || null,
+      start_at: row.starts_at, end_at: row.ends_at,
+      geo_address_json: where ? { address: where.slice(0, ADDRESS_MAX) } : null,
+    });
+    await tx.insert(ticketTypes).values({ event_id: id, name: DEFAULT_TICKET_NAME, price_text: price?.slice(0, 60) ?? null });
+    await tx.update(collectedEvents).set({ claimed_event_id: id }).where(eq(collectedEvents.external_id, row.external_id));
+    return getEvent(tx, actor, id);
+  });
+}
+
 export async function me(db: Db, actor: User): Promise<Me> {
-  const rows = await db
+  const signups = await db
     .select({ external_id: collectedEventSignups.external_id })
     .from(collectedEventSignups)
     .where(eq(collectedEventSignups.user_id, actor.id));
-  return { user: { id: actor.id, first_name: actor.first_name }, collected_signups: rows.map((r) => collectedSlug(r.external_id)) };
+  const claimable = actor.username
+    ? await db
+        .select()
+        .from(collectedEvents)
+        .where(and(eq(collectedEvents.telegram_username, actor.username.toLowerCase()), isNull(collectedEvents.claimed_event_id), upcomingCollected))
+        .orderBy(asc(collectedEvents.starts_at))
+    : [];
+  return {
+    user: { id: actor.id, first_name: actor.first_name },
+    collected_signups: signups.map((r) => collectedSlug(r.external_id)),
+    claimable: claimable.map(toCollectedItem),
+  };
 }
 
 export async function createEvent(db: Db, actor: User, input: EventCreateInput): Promise<EventView> {
   return db.transaction(async (tx) => {
+    // Считаются все события организатора за всё время, включая подтверждённые из собранных.
+    const [mine] = await tx.select({ n: count() }).from(events).where(eq(events.user_id, actor.id));
+    if (mine!.n >= settings.freeEventsLimit) throw new AppError('events_limit', 403);
     const id = newEventId();
     await tx.insert(events).values({
       ...input, id, user_id: actor.id, start_at: new Date(input.start_at),

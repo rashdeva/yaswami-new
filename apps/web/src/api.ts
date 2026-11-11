@@ -19,6 +19,8 @@ const MESSAGES: Record<string, string> = {
   ticket_unknown: 'Такого билета больше нет',
   not_found: 'Событие не найдено',
   forbidden: 'Это может только организатор',
+  events_limit: 'Бесплатные события закончились. Подписка для большего числа скоро появится',
+  already_claimed: 'Это событие уже подтвердил организатор',
   unauthorized: 'Не получилось войти. Откройте приложение заново',
   invalid_input: 'Проверьте заполненные поля',
 };
@@ -56,6 +58,7 @@ export const api = {
   logout: () => request<void>('POST', '/auth/logout'),
   collected: () => request<CollectedEventItem[]>('GET', '/collected-events'),
   collectedEvent: (id: string) => request<CollectedEventItem>('GET', `/collected-events/${encodeURIComponent(id)}`),
+  claim: (id: string) => request<EventData>('POST', `/collected-events/${encodeURIComponent(id)}/claim`),
   signUp: (id: string) => request<CollectedEventItem>('POST', `/collected-events/${encodeURIComponent(id)}/signup`, undefined, true),
   events: () => request<EventListData[]>('GET', '/events'),
   event: (id: string) => request<EventData>('GET', `/events/${encodeURIComponent(id)}`),
