@@ -48,3 +48,13 @@ html.admin #app { height: 100%; max-width: none; min-height: 0; padding: 0; }
 .ad-bubble { padding: 9px 13px; border-radius: 18px; background: var(--mat); border: 1px solid var(--stroke); white-space: pre-wrap; overflow-wrap: anywhere; }
 .ad-msg.bot .ad-bubble { background: color-mix(in srgb, var(--a) 14%, var(--mat)); }
 .ad-msg.admin .ad-bubble { background: var(--btn); color: var(--btn-text); border-color: transparent; }
+
+/* аккаунты Telegram */
+.ad-accounts { background: var(--mat); border: 1px solid var(--stroke); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.ad-account { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.ad-inline { display: flex; gap: 8px; flex-wrap: wrap; }
+.ad-inline input { flex: 1 1 140px; min-width: 0; }
+.ad-tag { white-space: nowrap; }
+.ad-tag.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: #166534; }
+.ad-hint.warn { color: #c2410c; }
+.ad-link { align-self: flex-start; background: none; border: 0; padding: 0; font: inherit; font-size: 12.5px; color: var(--hint); text-decoration: underline; cursor: pointer; }

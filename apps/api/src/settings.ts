@@ -15,6 +15,10 @@ export const settings = {
   /** Роль поддержки в Hermes (support.ts): адрес её HTTP-входа без косой черты в конце и ключ. Пусто — бот отвечает сам. */
   supportUrl: (process.env.SUPPORT_URL ?? '').replace(/\/$/, ''),
   supportKey: process.env.SUPPORT_KEY ?? '',
+  /** Кому роль поддержки отвечает: Telegram id через запятую. Пусто — всем. Пока роль проверяется, здесь только мы. */
+  supportUserIds: (process.env.SUPPORT_USER_IDS ?? '').split(',').map(Number).filter(Boolean),
+  /** Общий со сборщиком секрет: им он подписывает сообщения с аккаунтов Telegram. Пусто — приём закрыт. */
+  collectorSecret: process.env.COLLECTOR_SECRET ?? '',
   /** Telegram id тех, кому открыта админка переписки (/admin), через запятую. */
   adminIds: (process.env.ADMIN_IDS ?? '').split(',').map(Number).filter(Boolean),
   botMessagesPerMinute: Number(process.env.BOT_MESSAGES_PER_MINUTE ?? 5),

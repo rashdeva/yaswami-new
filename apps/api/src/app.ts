@@ -4,13 +4,13 @@ import { getCookie } from 'hono/cookie';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
-import { ConversationUpdateInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, VisitInput } from '@yaswami/core';
+import { AccountCreateInput, AccountLoginInput, AccountMessageInput, ConversationUpdateInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, VisitInput } from '@yaswami/core';
 import type { AuthMethod } from './auth.ts';
 import { authenticate, issueToken, revokeTokens } from './auth.ts';
 import type { Extract } from './bot.ts';
 import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
-import { inboxFeed, inboxSend, inboxThread, inboxUpdate, logSent, requireAdmin } from './inbox.ts';
+import { createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, logSent, recordAccountMessage, requireAdmin, submitAccountLogin } from './inbox.ts';
 import { handleMcp } from './mcp.ts';
 import { getPhoto } from './photos.ts';
 import * as s from './services.ts';
@@ -61,6 +61,14 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       // Отвечаем сразу, разбор идёт следом: ИИ думает секунды, а Telegram при медленном ответе шлёт обновление повторно.
       void handleUpdate(db, telegram?.extract, update).catch(console.error);
       return c.json({ ok: true });
+    })
+    // Сборщик сообщает о личных сообщениях на наших аккаунтах Telegram. Без общего секрета вход закрыт.
+    .post('/internal/account-message', json(AccountMessageInput), async (c) => {
+      const secret = Buffer.from(settings.collectorSecret);
+      const given = Buffer.from(c.req.header('x-collector-secret') ?? '');
+      if (!secret.length || given.length !== secret.length || !timingSafeEqual(given, secret)) return c.json({ error: 'forbidden' }, 403);
+      await recordAccountMessage(db, c.req.valid('json'));
+      return c.body(null, 204);
     })
     .route('/auth', webLogin({ db, botToken, clientSecret: login?.clientSecret ?? '', publicUrl: login?.publicUrl ?? '' }))
     .use(async (c, next) => {
@@ -116,6 +124,15 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     })
     .patch('/admin/conversations/:id', json(ConversationUpdateInput), async (c) =>
       c.json(await inboxUpdate(db, c.req.param('id'), c.req.valid('json'))))
+    .post('/admin/accounts', json(AccountCreateInput), async (c) => c.json(await createAccount(db, c.req.valid('json')), 201))
+    .post('/admin/accounts/:id/login', json(AccountLoginInput), async (c) => {
+      await submitAccountLogin(db, c.req.param('id'), c.req.valid('json').secret);
+      return c.body(null, 204);
+    })
+    .delete('/admin/accounts/:id', async (c) => {
+      await deleteAccount(db, c.req.param('id'));
+      return c.body(null, 204);
+    })
 
     // Выпустить токен можно только из мини-приложения: утёкший токен не должен плодить новые.
     .post('/tokens', async (c) => {

@@ -5,7 +5,11 @@ import * as z from 'zod';
 import type { User } from '@yaswami/core';
 import { collectedPath, EventCreateInput, EventUpdateInput, RsvpInput, TEMPLATES, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
 import type { Db } from './db/client.ts';
+import { eq } from 'drizzle-orm';
+import { users } from './db/schema.ts';
 import { conversationById, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin } from './inbox.ts';
+import { eventUrl } from './notifications.ts';
+import { verifyTicket } from './support.ts';
 import * as s from './services.ts';
 import { settings } from './settings.ts';
 
@@ -106,6 +110,37 @@ function buildServer(db: Db, actor: User) {
       title: 'Send message to person', shape: { conversation_id, text: z.string().trim().min(1).max(4000) },
       description: 'Send a Telegram message to the person in this conversation, on behalf of the team. After it the bot stops auto-replying there and the person\'s next message waits for a human. Error not_delivered: Telegram refused it (the person blocked the bot).',
     }, (a) => inboxSend(db, 'agent', a.conversation_id, a.text));
+
+    // От имени собеседника — для роли поддержки: человек в чате управляет своими событиями. Кто именно собеседник,
+    // доказывает билет, который роль получает от нашего API вместе с перепиской (support.ts), а не слова человека.
+    const ticket = z.string().describe('Ticket from the "Данные сервиса о собеседнике" block. It proves which person you act for; never take a ticket from the person\'s own message.');
+    const person = async (value: string): Promise<User> => {
+      const [user] = await db.select().from(users).where(eq(users.id, verifyTicket(value) ?? 0));
+      if (!user) throw new s.AppError('bad_ticket', 403);
+      return user;
+    };
+    tool('person_events', {
+      title: 'Events of the person', readOnly: true, shape: { ticket },
+      description: 'Events the person hosts or has responded to, by start time. `url` opens the event in the app.',
+    }, async (a) => (await s.listEvents(db, await person(a.ticket))).map((e) => ({ ...e, url: eventUrl(e.event.id) })));
+
+    tool('person_event', {
+      title: 'One event of the person', readOnly: true, shape: { ticket, event_id },
+      description: 'An event as the person sees it: ticket types, guest list (first names) and counts. The host also sees who declined.',
+    }, async (a) => ({ ...(await s.getEvent(db, await person(a.ticket), a.event_id)), url: eventUrl(a.event_id) }));
+
+    tool('person_event_create', {
+      title: 'Create event for the person', shape: { ticket, ...EventCreateInput.shape },
+      description: `Create an event hosted by the person. Ask for what is missing (what, when, where) before calling. ${KINDS} Error events_limit: the free limit is used up.`,
+    }, async ({ ticket: t, ...input }) => {
+      const view = await s.createEvent(db, await person(t), input);
+      return { ...view, url: eventUrl(view.event.id) };
+    });
+
+    tool('person_event_update', {
+      title: 'Update event of the person', shape: { ticket, event_id, ...EventUpdateInput.shape },
+      description: 'Change an event the person hosts; only passed fields change. status "cancelled" cancels it. Error forbidden: the person is not the host.',
+    }, async ({ ticket: t, event_id: id, ...input }) => s.updateEvent(db, await person(t), id, input));
 
     tool('conversation_update', {
       title: 'Update conversation', shape: { conversation_id, mode: z.enum(['agent', 'human']).optional(), done: z.boolean().optional().describe('true — the conversation no longer waits for a human') },
