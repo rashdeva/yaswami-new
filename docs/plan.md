@@ -98,7 +98,11 @@
 
 ### 6. Деплой
 
-- [ ] Проект Railway: сервис API (Hono на Node, отдаёт и статику мини-приложения), Postgres из шаблона `postgresql-extensions` с PostGIS и pgmq; long polling → вебхук с проверкой секрета.
+- [x] Проект Railway `yaswami`: сервис `api` (Hono на Node, образ из `Dockerfile`, миграции при старте) и `postgres` из шаблона `postgresql-extensions` (PostGIS, pgmq). Адрес: https://api-production-2aba5fcf.up.railway.app, деплой — `railway up --service api`.
+- [ ] Задать `BOT_TOKEN` в переменных сервиса `api`; без него вход через Telegram закрыт.
+- [ ] Закрыть публичный TCP-доступ к базе, если он не нужен.
+- [ ] `railway.json` перестаёт работать 2026-12-01: перенести проверку `/health` в `.railway/railway.ts` (`railway config migrate`).
+- [ ] Раздача мини-приложения и long polling → вебхук с проверкой секрета — вместе с ботом и фронтом.
 - [ ] App Sleeping на API выключен.
 - [ ] Новый токен бота в секретах, старый отозван.
 

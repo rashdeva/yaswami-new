@@ -75,7 +75,8 @@ export async function authenticate(db: Db, botToken: string, header: string | un
   const [scheme, value] = (header ?? '').split(/\s+(.*)/s);
   if (!value) return null;
   if (scheme === 'tma') {
-    const tg = verifyInitData(value, botToken);
+    // Без токена бота подпись проверить нечем: вход через Telegram закрыт, а не открыт для всех.
+    const tg = botToken ? verifyInitData(value, botToken) : null;
     return tg ? { user: await upsertUser(db, tg), method: 'telegram' } : null;
   }
   if (scheme?.toLowerCase() === 'bearer' && value.startsWith(TOKEN_PREFIX)) {

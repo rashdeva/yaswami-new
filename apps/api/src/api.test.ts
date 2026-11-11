@@ -56,6 +56,13 @@ test('initData: чужая подпись и устаревшие данные �
   assert.equal(verifyInitData(initData(1, 'Миша').replace('%D0%9C', '%D0%9D'), BOT_TOKEN), null);
   assert.equal((await call('tma garbage', 'GET', '/events')).status, 401);
   assert.equal((await app.request('/events')).status, 401);
+
+  // Без токена бота вход через Telegram закрыт — даже для подписи, сделанной пустым ключом.
+  const noBot = createApp({ db, botToken: '' });
+  const params = new URLSearchParams({ auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id: 1, first_name: 'x' }) });
+  const secret = createHmac('sha256', 'WebAppData').update('').digest();
+  params.set('hash', createHmac('sha256', secret).update([...params].map(([k, v]) => `${k}=${v}`).sort().join('\n')).digest('hex'));
+  assert.equal((await noBot.request('/events', { headers: { authorization: `tma ${params}` } })).status, 401);
 });
 
 test('событие создаётся с типом билета по умолчанию; гость записывается, виден только по имени', async () => {
