@@ -9,8 +9,9 @@ model:
   base_url: https://api.x.ai/v1
 
 platform_toolsets:
-  api_server: [skills, image_gen, video_gen]
-  cli: [skills, image_gen, video_gen]
+  # vision — чтобы посмотреть на фото анонса и решить, есть ли на нём что сохранять
+  api_server: [skills, vision, image_gen, video_gen]
+  cli: [skills, vision, image_gen, video_gen]
 
 # Тот же вход по подписке, что и у модели. Картинка и ролик остаются в хранилище xAI, роль получает публичные ссылки.
 image_gen:
