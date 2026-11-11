@@ -195,7 +195,10 @@ export default function Admin() {
   // Переписка следует за выбранным диалогом и обновляется вместе с лентой.
   const open = view === 'people' || drawer;
   useEffect(() => {
-    if (!open || !curId) return setThread([]);
+    if (!open || !curId) {
+      setThread([]);
+      return;
+    }
     let stale = false;
     void api.inboxThread(curId).then((messages) => !stale && setThread(messages), () => {});
     return () => { stale = true; };
@@ -230,7 +233,7 @@ export default function Admin() {
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
   });
-  useEffect(() => root.current?.querySelector('.sel')?.scrollIntoView({ block: 'nearest' }), [at, view]);
+  useEffect(() => { root.current?.querySelector('.sel')?.scrollIntoView({ block: 'nearest' }); }, [at, view]);
 
   if (!feed) {
     return (

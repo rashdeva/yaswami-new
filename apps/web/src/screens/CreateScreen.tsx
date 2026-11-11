@@ -72,7 +72,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast, editing }: Prop
   const template = TEMPLATES[kind];
   const set = { shouldValidate: true, shouldDirty: true };
 
-  useEffect(() => onKind(kind), [kind, onKind]);
+  useEffect(() => { onKind(kind); }, [kind, onKind]);
 
   const pickKind = (next: Event['kind']) => {
     setValue('kind', next, set);
