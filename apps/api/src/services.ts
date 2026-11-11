@@ -2,6 +2,7 @@
 import { randomBytes } from 'node:crypto';
 import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import type {
+  AdminCollectedEvent, CollectedModerateInput, CollectedStatus,
   CollectedEventItem, Contact, MyCollectedItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
 } from '@yaswami/core';
@@ -119,6 +120,8 @@ const toCollectedItem = ({ external_id, event, announcement, claimed_event_id, v
   };
 };
 const upcomingCollected = gte(sql`coalesce(${collectedEvents.ends_at}, ${collectedEvents.starts_at})`, sql`now()`);
+/** В ленту, на страницу события и в каталог для агентов попадает только опубликованное (модерация). */
+const published = eq(collectedEvents.status, 'published');
 /** Собранные события вместе с id обложки. */
 const collectedWithCover = (db: Db | Tx) => db
   .select({ ...getTableColumns(collectedEvents), cover_id: photos.id })
@@ -128,7 +131,7 @@ const collectedWithCover = (db: Db | Tx) => db
 /** Предстоящие собранные события для витрины. Открыты всем: это пересказ публичных анонсов. */
 export async function listCollectedEvents(db: Db): Promise<CollectedEventItem[]> {
   const rows = await collectedWithCover(db)
-    .where(upcomingCollected)
+    .where(and(upcomingCollected, published))
     .orderBy(asc(collectedEvents.starts_at))
     .limit(500); // ponytail: без постраничной выдачи, пока событий одного города меньше лимита
   const popular = popularIds(rows, (r) => r.external_id);
@@ -188,6 +191,7 @@ export async function requestCollectedVideo(db: Db, slug: string): Promise<{ sta
   const row = await db.transaction(async (tx) => {
     const [found] = await collectedWithCover(tx).where(eq(collectedEvents.external_id, external_id)).for('update', { of: collectedEvents });
     if (!found) throw new AppError('not_found', 404);
+    if (found.status !== 'approved' && found.status !== 'published') throw new AppError('not_approved', 409);
     // Ролик есть или заказ ещё может быть в работе — второй не нужен. Заказ старше VIDEO_STALE_MS без ролика
     // считаем потерянным (API перезапустился, роль не справилась) и даём повторить, пока есть попытки.
     const lost = found.video_at && !found.video_url && Date.now() - found.video_at.getTime() > VIDEO_STALE_MS && found.video_tries < VIDEO_TRIES;
@@ -209,41 +213,90 @@ export async function requestCollectedVideo(db: Db, slug: string): Promise<{ sta
     if (made?.cover_url) await setCollectedCover(db, slug, made.cover_url);
     if (made?.video_url) await db.update(collectedEvents).set({ video_url: made.video_url }).where(eq(collectedEvents.external_id, external_id));
     if (!made?.cover_url || !made.video_url) console.error(`ролик ${slug}: роль вернула не всё`, made);
+    await publishProcessed(db);
   }).catch((e) => console.error(`ролик ${slug}:`, e));
   return { started: true };
 }
 
 /**
- * Заказать ролик следующему событию без ролика: ближайшее по дате предстоящее. null — заказывать нечего,
- * дневной лимит выбран или роль выключена. По одному за вызов: генерация идёт несколько минут.
+ * Одобренные события, с которыми обработка закончена, выходят в ленту: ролик готов; попытки кончились и последняя
+ * давно молчит (тогда публикуем как есть — с фото анонса или иконкой); либо обрабатывать сейчас некому или не на что
+ * (`asIs`: роль выключена или дневной лимит выбран) — одобренное не должно ждать сутки.
+ */
+async function publishProcessed(db: Db, asIs = false): Promise<void> {
+  const done = or(isNotNull(collectedEvents.video_url),
+    and(gte(collectedEvents.video_tries, VIDEO_TRIES), lt(collectedEvents.video_at, new Date(Date.now() - VIDEO_STALE_MS))));
+  await db.update(collectedEvents).set({ status: 'published', updated_at: new Date() })
+    .where(and(eq(collectedEvents.status, 'approved'), asIs ? undefined : done));
+}
+
+/**
+ * Шаг очереди обработки: публикует готовое и заказывает обложку с роликом следующему событию — сначала одобренным
+ * (они ждут выхода в ленту), потом уже опубликованным без ролика; внутри — ближайшее по дате. По одному за вызов:
+ * генерация идёт несколько минут. Возвращает, кому заказано; null — некому или нельзя.
+ * Очередь живёт в базе (статус, video_at, video_tries), поэтому перезапуск API её не теряет: оборванный заказ
+ * через VIDEO_STALE_MS берётся снова.
  */
 export async function requestNextVideo(db: Db): Promise<string | null> {
+  await publishProcessed(db, !settings.illustratorUrl);
   if (!settings.illustratorUrl) return null;
   const [next] = await db.select({ external_id: collectedEvents.external_id }).from(collectedEvents)
-    .where(and(upcomingCollected, isNull(collectedEvents.video_url), lt(collectedEvents.video_tries, VIDEO_TRIES),
+    .where(and(upcomingCollected, inArray(collectedEvents.status, ['approved', 'published']), isNull(collectedEvents.video_url),
+      lt(collectedEvents.video_tries, VIDEO_TRIES),
       or(isNull(collectedEvents.video_at), lt(collectedEvents.video_at, new Date(Date.now() - VIDEO_STALE_MS)))))
-    .orderBy(asc(collectedEvents.starts_at)).limit(1);
+    .orderBy(sql`${collectedEvents.status} = 'published'`, asc(collectedEvents.starts_at)).limit(1);
   if (!next) return null;
   const slug = collectedSlug(next.external_id);
   try {
     await requestCollectedVideo(db, slug);
     return slug;
   } catch (e) {
-    if (e instanceof AppError) return null; // лимит на сегодня выбран или событие успели заказать вручную
-    throw e;
+    if (!(e instanceof AppError)) throw e;
+    if (e.code === 'video_limit') await publishProcessed(db, true); // лимит на сегодня выбран: одобренное выходит как есть
+    return null;
   }
 }
 
-/** Ролики всем предстоящим событиям: раз в `everyMs` заказываем один, пока не кончатся события или дневной лимит. */
+/** Очередь обработки: раз в `everyMs` один шаг (requestNextVideo). */
 export function startVideoLoop(db: Db, everyMs = 15 * 60_000): void {
   const tick = () => requestNextVideo(db).then((slug) => slug && console.log(`ролик ${slug}: заказан`)).catch(console.error);
   setInterval(tick, everyMs);
   void tick();
 }
 
+/** Все собранные события для админки модерации: ждущие решения сверху, дальше по дате; прошедшие не показываем. */
+export async function listCollectedForAdmin(db: Db): Promise<AdminCollectedEvent[]> {
+  const rows = await collectedWithCover(db).where(upcomingCollected)
+    .orderBy(sql`${collectedEvents.status} <> 'pending'`, asc(collectedEvents.starts_at)).limit(500);
+  return rows.map((r) => ({ ...toCollectedItem(r), status: r.status, channel: r.channel }));
+}
+
+/**
+ * Решение модератора. approved: событие встаёт в очередь обработки и выйдет в ленту, когда она закончится
+ * (уже обработанное — сразу). rejected: не выводится нигде; так же снимается с публикации опубликованное.
+ */
+export async function moderateCollectedEvent(db: Db, slug: string, { status }: CollectedModerateInput): Promise<{ status: CollectedStatus }> {
+  const [row] = await db.update(collectedEvents).set({ status, updated_at: new Date() })
+    .where(eq(collectedEvents.external_id, collectedExternalId(slug))).returning({ status: collectedEvents.status });
+  if (!row) throw new AppError('not_found', 404);
+  if (status === 'approved') {
+    // Не ждём шага очереди: обработанное публикуется сразу, необработанному заказываем обложку и ролик.
+    await requestNextVideo(db);
+    const [now] = await db.select({ status: collectedEvents.status }).from(collectedEvents).where(eq(collectedEvents.external_id, collectedExternalId(slug)));
+    return { status: now!.status };
+  }
+  return row;
+}
+
+/** Удалить собранное событие совсем. Повторный анонс создаст его заново — чтобы этого не было, отклоняй, а не удаляй. */
+export async function deleteCollectedEvent(db: Db, slug: string): Promise<void> {
+  const gone = await db.delete(collectedEvents).where(eq(collectedEvents.external_id, collectedExternalId(slug))).returning({ id: collectedEvents.external_id });
+  if (!gone.length) throw new AppError('not_found', 404);
+}
+
 /** Одно собранное событие. Прошедшее тоже отдаём: ссылка на него могла разойтись. */
 export async function getCollectedEvent(db: Db, slug: string): Promise<CollectedEventItem> {
-  const [row] = await collectedWithCover(db).where(eq(collectedEvents.external_id, collectedExternalId(slug)));
+  const [row] = await collectedWithCover(db).where(and(eq(collectedEvents.external_id, collectedExternalId(slug)), published));
   if (!row) throw new AppError('not_found', 404);
   const [h] = row.telegram_username ? await db.select().from(hosts).where(eq(hosts.username, row.telegram_username)) : [];
   const shots = h
@@ -253,7 +306,7 @@ export async function getCollectedEvent(db: Db, slug: string): Promise<Collected
   // «Популярное» — относительно остальных предстоящих событий источника, поэтому смотрим на них все.
   const upcoming = await db
     .select({ external_id: collectedEvents.external_id, channel: collectedEvents.channel, views: collectedEvents.views, reactions: collectedEvents.reactions })
-    .from(collectedEvents).where(upcomingCollected);
+    .from(collectedEvents).where(and(upcomingCollected, published));
   return {
     ...toCollectedItem(row),
     popular: popularIds(upcoming, (r) => r.external_id).has(row.external_id),
@@ -425,7 +478,7 @@ export async function myCollectedEvents(db: Db, actor: User): Promise<MyCollecte
   const rows = await db
     .select()
     .from(collectedEvents)
-    .where(or(inArray(collectedEvents.external_id, signed), inArray(collectedEvents.external_id, seen)))
+    .where(and(published, or(inArray(collectedEvents.external_id, signed), inArray(collectedEvents.external_id, seen))))
     .orderBy(asc(collectedEvents.starts_at));
   return rows.map((r) => ({ event: toCollectedItem(r), signed_up: signedIds.has(r.external_id) }));
 }

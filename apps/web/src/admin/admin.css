@@ -101,3 +101,12 @@ html.admin #app { height: 100%; max-width: none; min-height: 0; padding: 0; }
 .ad-stats b { color: var(--text); font-size: 15px; margin-right: 4px; }
 .ad-link { color: var(--btn); }
 .ad-chips { align-items: center; }
+
+/* раздел «События»: модерация собранных событий */
+.ad-event { flex-direction: row; gap: 12px; align-items: flex-start; }
+.ad-event > img, .ad-nocover { flex: none; width: 84px; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 10px; background: var(--line); }
+.ad-nocover { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--hint); }
+.ad-event > div { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ad-desc { margin: 0; font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ad-event .ad-btn { padding: 6px 12px; font-size: 13px; }
+.ad-tabs .ad-badge { margin-left: 6px; }

@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AccountCreateInput, AdminOverview, AppConfig, CollectedEventItem, Conversation, ConversationUpdateInput, TgAccount, EventCreateInput, EventListItem, EventUpdateInput, EventView, InboxFeed, Me, Message, MyCollectedItem, RsvpInput, VisitInput, Wire } from '@yaswami/core';
+import type { AdminCollectedEvent, AccountCreateInput, AdminOverview, AppConfig, CollectedEventItem, Conversation, ConversationUpdateInput, TgAccount, EventCreateInput, EventListItem, EventUpdateInput, EventView, InboxFeed, Me, Message, MyCollectedItem, RsvpInput, VisitInput, Wire } from '@yaswami/core';
 import { inTelegram, tg } from './tg.ts';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -70,6 +70,9 @@ export const api = {
   accountCreate: (input: AccountCreateInput) => request<Wire<TgAccount>>('POST', '/admin/accounts', input),
   accountLogin: (id: string, secret: string) => request<void>('POST', `/admin/accounts/${id}/login`, { secret }),
   accountDelete: (id: string) => request<void>('DELETE', `/admin/accounts/${id}`),
+  adminEvents: () => request<AdminCollectedEvent[]>('GET', '/admin/events'),
+  adminEventModerate: (id: string, status: 'approved' | 'rejected') => request<{ status: string }>('PATCH', `/admin/events/${encodeURIComponent(id)}`, { status }),
+  adminEventDelete: (id: string) => request<void>('DELETE', `/admin/events/${encodeURIComponent(id)}`),
   inboxUpdate: (id: string, input: ConversationUpdateInput) => request<Wire<Conversation>>('PATCH', `/admin/conversations/${id}`, input),
   logout: () => request<void>('POST', '/auth/logout'),
   collected: () => request<CollectedEventItem[]>('GET', '/collected-events'),
