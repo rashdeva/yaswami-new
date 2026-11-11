@@ -29,8 +29,9 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
   const [failed, setFailed] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!initial) api.collectedEvent(id).then(setEvent, (e: Error) => setFailed(e.message));
-  }, [id, initial]);
+    // Запрашиваем и при готовой карточке из списка: профиль организатора есть только в ответе на одно событие.
+    api.collectedEvent(id).then(setEvent, (e: Error) => setFailed(e.message));
+  }, [id]);
 
   useEffect(() => {
     if (event) document.title = `${event.title} — ${collectedWhen(event.starts_at)}, ${city}`;
@@ -91,6 +92,15 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
         {event.price && <div><span>🎟</span><span>{event.price}</span></div>}
       </div></div>
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
+      {event.hosts?.map((host) => (
+        <div className="group" key={host.name}><div className="meta">
+          <div><span>👤</span><span>{host.name}{!host.confirmed && ' · профиль собран автоматически'}</span></div>
+          {host.summary && <div className="text">{host.summary}</div>}
+          {host.channel_url && (
+            <div><span>📣</span><a href={host.channel_url} target="_blank" rel="noreferrer">Канал организатора</a></div>
+          )}
+        </div></div>
+      ))}
       {event.tags.length > 0 && <div className="tags">{event.tags.map((t) => <span key={t}>{t}</span>)}</div>}
 
       <p className="note">

@@ -28,6 +28,16 @@ export function createStore(url) {
       on conflict (external_id) do update set
         event = excluded.event, starts_at = excluded.starts_at, ends_at = excluded.ends_at,
         telegram_username = excluded.telegram_username, signup_url = excluded.signup_url, updated_at = now()`,
+    /** Контакты предстоящих событий, по которым профиль ещё не собран. */
+    unprofiled: async () => (await sql`
+      select distinct telegram_username from collected_events
+      where telegram_username ~ '^\\w{4,32}$' and coalesce(ends_at, starts_at) >= now()
+        and telegram_username not in (select username from hosts)`).map((r) => r.telegram_username),
+    /** Профиль организатора. Сменил username — строка та же. Уже входил в Ясвами — профиль сразу привязан к нему. */
+    saveHost: (host) => sql`
+      insert into hosts ${sql(host)} on conflict (telegram_id) do update set username = excluded.username`
+      // Пока все пользователи — из Telegram, users.id и есть Telegram id.
+      .then(() => sql`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`),
     end: () => sql.end(),
   };
 }

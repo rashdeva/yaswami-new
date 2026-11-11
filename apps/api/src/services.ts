@@ -7,7 +7,7 @@ import type {
 } from '@yaswami/core';
 import { ADDRESS_MAX, collectedPath, collectedSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError } from '@yaswami/core';
 import type { Db, Tx } from './db/client.ts';
-import { collectedEvents, collectedEventSignups, events, guests, ticketTypes, users } from './db/schema.ts';
+import { collectedEvents, collectedEventSignups, events, guests, hosts, ticketTypes, users } from './db/schema.ts';
 import { settings } from './settings.ts';
 
 export type ErrorStatus = 400 | 401 | 403 | 404 | 409;
@@ -119,7 +119,13 @@ export async function listCollectedEvents(db: Db): Promise<CollectedEventItem[]>
 export async function getCollectedEvent(db: Db, slug: string): Promise<CollectedEventItem> {
   const [row] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, collectedExternalId(slug)));
   if (!row) throw new AppError('not_found', 404);
-  return toCollectedItem(row);
+  const [h] = row.telegram_username ? await db.select().from(hosts).where(eq(hosts.username, row.telegram_username)) : [];
+  return {
+    ...toCollectedItem(row),
+    hosts: h
+      ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`, confirmed: h.user_id !== null }]
+      : [],
+  };
 }
 
 /** Фиксирует, что человек собрался на событие. Повторный вызов ничего не меняет. */

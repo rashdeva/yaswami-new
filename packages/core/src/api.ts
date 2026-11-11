@@ -76,12 +76,24 @@ export interface CollectedEvent {
   url: string | null;
 }
 
+/**
+ * Организатор собранного события: профиль составлен автоматически по его Telegram и каналу. Имена — как у Host
+ * в Luma API (`hosts`, `name`); `summary`, `channel_url` и `confirmed` — наши: у человека в Luma нет ни описания, ни ссылок.
+ */
+export interface CollectedHost {
+  name: string;
+  summary: string | null; // сводка ИИ по каналу и «о себе»
+  channel_url: string | null;
+  confirmed: boolean; // человек вошёл в Ясвами; иначе профиль собран без его участия
+}
+
 /** Карточка собранного события для витрины. */
 export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {
   id: string; // годится для адреса страницы: <канал>-<публикация>-<номер события в ней>
   signup_url: string; // куда ведёт «Записаться»: к организатору, а не в Ясвами
   source_url: string; // публикация, из которой взято событие
   claimed_event_id: Event['id'] | null; // организатор подтвердил событие: запись идёт через событие Ясвами
+  hosts?: CollectedHost[]; // как hosts у события в Luma; только в ответе на одно событие, в списках его нет
 }
 
 /** Кто вошёл и на какие собранные события он уже записывался. */

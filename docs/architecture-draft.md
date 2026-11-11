@@ -70,6 +70,8 @@ Share       id, event_id, kind (widget|inline_message), chat_id?, message_id?, i
 
 Чего в Luma нет и что остаётся нашим: `kind` (шаблон), `status`, `allow_plus_one` и `plus_ones`, `widget_id`, `rev`, `price_text`, `position` и ответ гостя `maybe` («Думаю»). Ответ «Пойду» хранится как `approved`. Адреса запросов пока свои (`POST /events`, `POST /events/:id/rsvp`), а не как в Luma (`/v1/events/create`).
 
+Профиль организатора собранного события отдаётся массивом `hosts` с полем `name`, как Host в Luma. Описания и ссылок у человека в Luma нет, поэтому `summary`, `channel_url` и `confirmed` — наши; `id`, `email` и `avatar_url` из Luma Host не отдаём.
+
 ### Типы билетов
 
 Имена полей — как в Luma API (`name`, `description`, `max_capacity`, `is_hidden`). Билет бесплатный: гость записывается сразу, система деньги не трогает.

@@ -10,7 +10,7 @@ import { createApp } from './app.ts';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { collectedEvents } from './db/schema.ts';
+import { collectedEvents, hosts } from './db/schema.ts';
 import { settings } from './settings.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
@@ -220,6 +220,10 @@ test('подтверждение владельцем: предлагается 
     },
     telegram_username: 'u30', // сборщик хранит контакт в нижнем регистре; у пользователя из tma() username — u<id>
   });
+  // профиль организатора собран сборщиком до его входа: привяжется к пользователю по Telegram id, когда тот войдёт
+  await db.delete(hosts);
+  await db.insert(hosts).values({ telegram_id: 30, username: 'u30', name: 'Ксения', channel: 'ksenia_dance', summary: 'Преподаёт бачату.' });
+  assert.equal(((await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem).hosts![0]!.confirmed, false);
   const owner = tma(30, 'Ксения');
   const stranger = tma(31, 'Олег');
 
@@ -240,6 +244,7 @@ test('подтверждение владельцем: предлагается 
 
   // витрина теперь ведёт на событие Ясвами, повторно подтвердить нельзя, предложение исчезло
   const item = (await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem;
+  assert.deepEqual(item.hosts, [{ name: 'Ксения', summary: 'Преподаёт бачату.', channel_url: 'https://t.me/ksenia_dance', confirmed: true }]);
   assert.equal(item.claimed_event_id, view.event.id);
   assert.equal((await call(owner, 'POST', '/collected-events/danangevent-5-0/claim')).status, 409);
   assert.deepEqual(((await (await call(owner, 'GET', '/me')).json()) as Me).claimable, []);

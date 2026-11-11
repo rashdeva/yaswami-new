@@ -46,3 +46,9 @@ assert.ok(!isSameEvent(ev('Йога утром', '2026-11-13T07:00:00+07:00', 'k
 const m = mergeEvents(ev('Коллажная встреча', '2026-11-13T00:00:00+07:00', 'rita'), ev('Коллажный кружок', D, null, { place: 'Дом Культуры', price: '100k' }));
 assert.deepEqual([m.title, m.starts_at, m.place, m.price, m.telegram_username], ['Коллажная встреча', D, 'Дом Культуры', '100k', 'rita']);
 console.log('dedupe ok');
+
+const { channelFromBio } = await import('./host.mjs');
+assert.equal(channelFromBio('Веду йогу. Канал: t.me/anna_yoga_life, запись @anna_yoga', 'anna_yoga'), 'anna_yoga_life');
+assert.equal(channelFromBio('Запись @Anna_Yoga, почта anna@gmail.com, t.me/joinchat/abc, @yoga_bot', 'anna_yoga'), null, 'сам контакт, почта, приглашение, бот');
+assert.equal(channelFromBio(null, 'anna_yoga'), null);
+console.log('host ok');
