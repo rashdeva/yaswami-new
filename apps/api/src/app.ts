@@ -72,6 +72,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .all('/mcp', (c) => handleMcp(db, c.var.actor, c.req.raw))
 
     .get('/me', async (c) => c.json(await s.me(db, c.var.actor)))
+    .get('/me/collected', async (c) => c.json(await s.myCollectedEvents(db, c.var.actor)))
     .post('/collected-events/:id/claim', async (c) => c.json(await s.claimCollectedEvent(db, c.var.actor, c.req.param('id')), 201))
     .post('/collected-events/:id/signup', async (c) => c.json(await s.signUpForCollectedEvent(db, c.var.actor, c.req.param('id'))))
     .post('/collected-events/:id/visit', json(VisitInput), async (c) => {
