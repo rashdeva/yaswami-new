@@ -5,6 +5,7 @@ import type { Db } from './db/client.ts';
 import { conversations, messages, users } from './db/schema.ts';
 import { AppError } from './services.ts';
 import { settings } from './settings.ts';
+import type { SupportTurn } from './support.ts';
 import type { BotResult, Incoming } from './telegram.ts';
 import { bot } from './telegram.ts';
 
@@ -37,11 +38,24 @@ export const setAttention = (db: Db, id: string, attention: string | null) => db
 /** Запись исходящего: её вызывает `bot.send` на каждое сообщение бота человеку — ответ, уведомление, наше из админки. */
 export const logSent = (db: Db) => async (method: string, body: { chat_id: number; text?: unknown; caption?: unknown }, result: BotResult, author: string) => {
   // Виджет не прошёл — следом то же уходит обычным сообщением (notifications.ts); неудачную попытку не пишем.
-  if (method === 'sendWidget' && !result.ok) return;
+  // Оповещение нам самим (alertAdmins) — не переписка с человеком.
+  if ((method === 'sendWidget' && !result.ok) || author === 'alert') return;
   const [user] = await db.select().from(users).where(eq(users.id, body.chat_id));
   const text = typeof body.text === 'string' ? body.text : typeof body.caption === 'string' ? body.caption : NO_TEXT;
   await record(db, { id: body.chat_id, name: user?.first_name, username: user?.username }, { direction: 'out', author, text, status: result.ok ? 'sent' : 'failed' });
 };
+
+/** Сообщает нам в Telegram, что диалог ждёт человека. Пишет бот «Я с вами»; кто не открывал бота — не получит. */
+export async function alertAdmins(conversation: Conversation, reason: string): Promise<void> {
+  const text = `${conversation.peer_name}${conversation.peer_username ? ` (@${conversation.peer_username})` : ''} ждёт человека: ${reason}\n${settings.publicUrl}/admin`;
+  await Promise.all(settings.adminIds.map((chat_id) => bot.send('sendMessage', { chat_id, text }, 'alert')));
+}
+
+/** Последние сообщения диалога в виде, который понимает роль поддержки: человек — user, всё наше — assistant. */
+export async function supportHistory(db: Db, id: string): Promise<SupportTurn[]> {
+  const rows = await db.select().from(messages).where(eq(messages.conversation_id, id)).orderBy(desc(messages.created_at)).limit(20);
+  return rows.reverse().filter((m) => m.status !== 'failed').map((m) => ({ role: m.direction === 'in' ? 'user' : 'assistant', content: m.text }));
+}
 
 export const isAdmin = (actor: User) => settings.adminIds.includes(actor.id);
 export function requireAdmin(actor: User) {

@@ -16,6 +16,7 @@ import { createDb } from './db/client.ts';
 import { collectedEvents, hosts, photos, visits } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
 import { settings } from './settings.ts';
+import { parseSupportReply, support } from './support.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
 
@@ -173,7 +174,7 @@ test('MCP: список инструментов, создание событи�
 
   const { tools } = await rpc('tools/list', {});
   assert.deepEqual(tools.map((t: { name: string }) => t.name).sort(), [
-    'event_create', 'event_get', 'event_rsvp', 'event_update', 'events_list',
+    'catalog_events', 'event_create', 'event_get', 'event_rsvp', 'event_update', 'events_list',
     'ticket_type_create', 'ticket_type_delete', 'ticket_type_update',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'event_create');
@@ -643,7 +644,7 @@ test('переписка: бот пишет всё в базу, админ от�
   const write = async (text: string) => {
     sent.length = 0;
     await handleUpdate(db, never, botMessage(71, text));
-    return sent.map(([, b]) => b.text);
+    return sent.filter(([method, b]) => method === 'sendMessage' && b.chat_id === 71).map(([, b]) => b.text); // без оповещений нам самим
   };
 
   assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/inbox')).status, 403, 'не админ');
@@ -673,6 +674,7 @@ test('переписка: бот пишет всё в базу, админ от�
 
   // Пока диалог наш, бот молчит, а новое сообщение снова ждёт нас.
   assert.deepEqual(await write('Спасибо, жду'), []);
+  assert.deepEqual(sent.map(([, b]) => [b.chat_id, b.text.split('\n')[0]]), [[70, 'Аня (@u71) ждёт человека: Ответил вам']], 'нам пришло оповещение');
   assert.equal((await inbox()).conversations[0]!.attention, 'Ответил вам');
   const thread = (await (await call(admin, 'GET', `/admin/conversations/${id}/messages`)).json()) as Message[];
   assert.deepEqual(thread.map((m) => m.text).slice(-2), ['Привет! Сейчас помогу.', 'Спасибо, жду']);
@@ -696,6 +698,39 @@ test('переписка: бот пишет всё в базу, админ от�
   const read = await tool('conversation_get', { conversation_id: id });
   assert.deepEqual([read.conversation.mode, read.messages.at(-1).author], ['human', 'agent']);
   assert.deepEqual(await tool('conversations_list', { waiting_only: true }), []);
+
+  // Роль поддержки: на вопрос без даты отвечает она, а не отказ бота; переписку получает целиком.
+  await call(admin, 'PATCH', `/admin/conversations/${id}`, { mode: 'agent', attention: null });
+  settings.supportUrl = 'http://support.test';
+  const ask = support.ask;
+  let asked: Parameters<typeof support.ask>[0] = [];
+  support.ask = async (history) => ((asked = history), { text: 'Откройте событие и нажмите «Пойду».', human: null });
+  assert.deepEqual(await write('Как отменить запись?'), ['Откройте событие и нажмите «Пойду».']);
+  assert.deepEqual(asked.at(-1), { role: 'user', content: 'Как отменить запись?' });
+  assert.ok(asked.some((t) => t.role === 'assistant' && t.content === 'Сегодня в 19:00 покер, записать?'), 'в истории есть прошлые ответы');
+  feed = await inbox();
+  assert.deepEqual([feed.messages[0]!.author, feed.conversations[0]!.attention], ['agent:support', null]);
+  // Роль зовёт человека: пометка в админке и сообщение нам; оповещение в переписку не попадает.
+  support.ask = async () => parseSupportReply('Передал команде, вам ответят.\n[[человек: жалоба на организатора]]');
+  sent.length = 0;
+  await handleUpdate(db, never, botMessage(71, 'Организатор взял деньги и пропал'));
+  assert.deepEqual(sent.filter(([m]) => m === 'sendMessage').map(([, b]) => [b.chat_id, b.text.split('\n')[0]]), [
+    [71, 'Передал команде, вам ответят.'],
+    [70, 'Аня (@u71) ждёт человека: жалоба на организатора'],
+  ]);
+  feed = await inbox();
+  assert.deepEqual([feed.conversations.length, feed.conversations[0]!.attention], [1, 'жалоба на организатора']);
+  // Дата в тексте есть, а события ИИ не нашёл — это тоже вопрос роли, а не отказ.
+  support.ask = async () => ({ text: 'В пятницу покер в 19:00.', human: null });
+  sent.length = 0;
+  await handleUpdate(db, async () => [], botMessage(71, 'Что будет в пятницу 20 ноября в 19:00?'));
+  assert.deepEqual(sent.filter(([m]) => m === 'sendMessage').map(([, b]) => b.text), ['В пятницу покер в 19:00.']);
+  // Роль недоступна — прежний отказ бота.
+  support.ask = async () => null;
+  assert.deepEqual(await write('Алло?'), [REPLIES.no_date]);
+  support.ask = ask;
+  settings.supportUrl = '';
+  assert.deepEqual(parseSupportReply('Привет!\n[[человек:]]'), { text: 'Привет!', human: 'Просит человека' });
 
   // Telegram не принял сообщение: оно остаётся в ленте как недоставленное, админка получает ошибку.
   const ok = bot.call;

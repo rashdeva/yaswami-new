@@ -6,10 +6,11 @@ import type { Announcement } from '@yaswami/extract';
 import { looksLikeEvent } from '@yaswami/extract';
 import { upsertUser } from './auth.ts';
 import type { Db } from './db/client.ts';
-import { recordIncoming, setAttention } from './inbox.ts';
+import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { notify } from './notifications.ts';
 import { addCollectedEvent, AppError, createEventFromAnnouncement } from './services.ts';
 import { settings } from './settings.ts';
+import { support } from './support.ts';
 import type { Incoming } from './telegram.ts';
 import { bot, parseIncoming } from './telegram.ts';
 
@@ -60,10 +61,25 @@ export async function handleUpdate(db: Db, extract: Extract | undefined, update:
   };
   // Команда или сообщение без текста — просто справка, без пометки: иначе каждый /start ждал бы нас.
   if (!m.text || m.text.startsWith('/')) return void (await bot.send('sendMessage', { chat_id: m.chatId, text: REPLIES.help }));
+  // Диалог ждёт человека: пометка в админке и сообщение нам в Telegram.
+  const callHuman = async (reason: string) => {
+    await setAttention(db, conversation.id, reason);
+    await alertAdmins(conversation, reason);
+  };
   // Диалог ведём мы сами: бот молчит, пока человек не прислал анонс.
-  if (conversation.mode === 'human' && !looksLikeEvent(m.text)) return void (await setAttention(db, conversation.id, 'Ответил вам'));
+  if (conversation.mode === 'human' && !looksLikeEvent(m.text)) return callHuman('Ответил вам');
   // Тот же дешёвый отсев, что у сборщика: без признака даты события нет, ИИ не тратим.
-  if (!looksLikeEvent(m.text)) return say(REPLIES.no_date);
+  // Не анонс, а вопрос — отвечает роль поддержки (support.ts). Её нет, она недоступна или человек пишет
+  // слишком часто — прежний отказ бота `refusal`.
+  const answer = async (refusal: string, limited = tooOften(m.from.id)) => {
+    if (!settings.supportUrl || limited) return say(refusal);
+    void bot.call('sendChatAction', { chat_id: m.chatId, action: 'typing' });
+    const reply = await support.ask(await supportHistory(db, conversation.id));
+    if (!reply) return say(refusal);
+    if (reply.text) await bot.send('sendMessage', { chat_id: m.chatId, text: reply.text }, 'agent:support');
+    if (reply.human) await callHuman(reply.human);
+  };
+  if (!looksLikeEvent(m.text)) return answer(REPLIES.no_date);
   if (!extract) return say(REPLIES.unavailable);
   if (tooOften(m.from.id)) return say(REPLIES.too_often);
 
@@ -75,7 +91,8 @@ export async function handleUpdate(db: Db, extract: Extract | undefined, update:
     return say(REPLIES.unavailable);
   }
   const dated = found.filter((e) => !Number.isNaN(Date.parse(e.starts_at)));
-  if (!dated.length) return say(REPLIES.not_event);
+  // Дата в тексте есть, а события нет («что будет в пятницу?») — тоже вопрос. Лимит уже посчитан перед разбором.
+  if (!dated.length) return answer(REPLIES.not_event, false);
   const upcoming = dated.filter((e) => Date.parse(e.ends_at ?? e.starts_at) >= Date.now());
   if (!upcoming.length) return say(REPLIES.past);
 
