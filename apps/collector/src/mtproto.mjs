@@ -22,7 +22,8 @@ export function toAnnouncement(chat, msg) {
     url: isPrivate(chat) ? `https://t.me/c/${chat.replace(/^-100/, '')}/${msg.id}` : `https://t.me/${chat}/${msg.id}`,
     published_at: new Date(msg.date * 1000).toISOString(),
     image_url: null,
-    author_username: msg.sender?.username ?? null,
+    // Автор — только человек: у публикации канала отправитель сам канал, ему в личку не написать.
+    author_username: msg.sender?.className === 'User' ? msg.sender.username ?? null : null,
     // ponytail: ссылки, спрятанные под текстом, теряются — msg.message это текст без разметки.
     text: msg.message,
   }];

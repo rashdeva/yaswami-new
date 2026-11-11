@@ -22,12 +22,13 @@ assert.ok(!looksLikeEvent('Завтра йога в 7:00'), 'слишком ко
 console.log('prefilter ok');
 
 const { toAnnouncement } = await import('./mtproto.mjs');
-const msg = { id: 7, message: 'Завтрак в пятницу', date: 1794366000, sender: { username: 'ivan', bot: false } };
+const msg = { id: 7, message: 'Завтрак в пятницу', date: 1794366000, sender: { className: 'User', username: 'ivan', bot: false } };
 assert.deepEqual(toAnnouncement('danangevent', msg), [{
   id: 'danangevent/7', number: 7, url: 'https://t.me/danangevent/7',
   published_at: new Date(1794366000 * 1000).toISOString(), image_url: null, author_username: 'ivan', text: 'Завтрак в пятницу',
 }]);
 assert.deepEqual(toAnnouncement('x', { ...msg, message: '' }), [], 'сообщение без текста');
+assert.equal(toAnnouncement('x', { ...msg, sender: { className: 'Channel', username: 'x' } })[0].author_username, null, 'канал — не автор');
 assert.deepEqual(toAnnouncement('x', { ...msg, sender: { bot: true } }), [], 'сообщение бота');
 console.log('mtproto ok');
 assert.equal(toAnnouncement('-1001234567890', msg)[0].url, 'https://t.me/c/1234567890/7', 'ссылка закрытого канала');
