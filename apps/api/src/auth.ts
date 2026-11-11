@@ -5,6 +5,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import type { User } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import { apiTokens, hosts, users } from './db/schema.ts';
+import { saveUserPhoto } from './photos.ts';
 
 const INIT_DATA_MAX_AGE_S = 24 * 60 * 60;
 const TOKEN_PREFIX = 'ysw_';
@@ -14,6 +15,7 @@ export interface TelegramUser {
   first_name: string;
   username?: string;
   language_code?: string;
+  photo_url?: string; // есть в initData мини-приложения; вход с сайта его не сообщает
 }
 
 /** Проверка подписи initData по документации Telegram Mini Apps. null — подпись неверна или данные устарели. */
@@ -49,6 +51,8 @@ export async function upsertUser(db: Db, tg: TelegramUser): Promise<User> {
   // Вошёл организатор, чей профиль уже собран по анонсам: привязываем профиль к нему.
   // ponytail: запрос на каждый вход; если станет заметно — привязывать только при создании пользователя.
   await db.update(hosts).set({ user_id: user!.id }).where(and(eq(hosts.telegram_id, tg.id), isNull(hosts.user_id)));
+  // Аватар сохраняем в фоне: вход не ждёт загрузки картинки.
+  if (tg.photo_url) void saveUserPhoto(db, user!.id, tg.photo_url);
   return user!;
 }
 

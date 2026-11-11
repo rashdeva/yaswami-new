@@ -136,6 +136,11 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
             <p>{host.name}</p>
             {host.summary && <p>{host.summary}</p>}
             {host.channel_url && <p><a href={host.channel_url} target="_blank" rel="noreferrer">Канал организатора</a></p>}
+            {host.photos.length > 0 && (
+              <div className="shots">
+                {host.photos.map((src) => <img key={src} src={src} alt="" loading="lazy" onError={(e) => { e.currentTarget.hidden = true; }} />)}
+              </div>
+            )}
           </div></div>
           {!host.confirmed && <p className="note">Профиль собран автоматически по открытому каналу организатора.</p>}
         </Fragment>

@@ -11,6 +11,7 @@ import type { Extract } from './bot.ts';
 import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
 import { handleMcp } from './mcp.ts';
+import { getPhoto } from './photos.ts';
 import * as s from './services.ts';
 import { settings } from './settings.ts';
 import { SESSION_COOKIE, webLogin } from './web-login.ts';
@@ -42,6 +43,12 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     // До проверки входа: витрину собранных событий видит и анонимный посетитель.
     .get('/collected-events', async (c) => c.json(await s.listCollectedEvents(db)))
     .get('/collected-events/:id', async (c) => c.json(await s.getCollectedEvent(db, c.req.param('id'))))
+    // Фото из базы (ADR-0003). Открыто всем: <img> не шлёт заголовок входа, а id фото не угадать.
+    .get('/photos/:id', async (c) => {
+      const data = await getPhoto(db, c.req.param('id'));
+      if (!data) return c.json({ error: 'not_found' }, 404);
+      return c.body(new Uint8Array(data), 200, { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' });
+    })
     .post('/telegram/webhook', async (c) => {
       const secret = Buffer.from(telegram?.webhookSecret ?? '');
       const given = Buffer.from(c.req.header('x-telegram-bot-api-secret-token') ?? '');

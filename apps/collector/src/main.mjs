@@ -4,7 +4,7 @@ import { createExtractor, createSummarizer, isSameEvent, looksLikeEvent, mergeEv
 import { signupUrl } from './signup.mjs';
 import { connect, fetchChatAnnouncements } from './mtproto.mjs';
 import { createStore } from './store.mjs';
-import { fetchProfile } from './host.mjs';
+import { fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
 
 const env = process.env;
@@ -41,6 +41,20 @@ async function profileHosts() {
     } else notPeople.add(username);
     console.log(`@${username}: ${profile ? `профиль${profile.channel ? `, канал @${profile.channel.username}` : ''}` : 'не человек и не канал'}`);
     await sleep(llmPauseMs);
+  }
+}
+
+// Фото сообщества обновляем раз в неделю; за проход — несколько каналов: поиск канала по username тоже флудоопасен.
+const PHOTOS_REFRESH_DAYS = Number(env.PHOTOS_REFRESH_DAYS ?? 7);
+const PHOTO_HOSTS_PER_PASS = 5;
+
+async function refreshPhotos() {
+  for (const host of await store.stalePhotos(PHOTOS_REFRESH_DAYS, PHOTO_HOSTS_PER_PASS)) {
+    const latest = await fetchChannelPhotos(userbot, host.channel, await store.photoSources(host.id));
+    if (latest) await store.savePhotos(host.id, latest.sources, latest.added);
+    await store.photosChecked(host.id); // и когда канал недоступен: иначе спрашивали бы его каждый проход
+    console.log(`@${host.channel}: ${latest ? `фото ${latest.sources.length}, новых ${latest.added.length}` : 'канал недоступен'}`);
+    await sleep(2000);
   }
 }
 
@@ -84,6 +98,7 @@ do {
     await sleep(2000); // не частим с запросами к Telegram
   }
   await profileHosts().catch((e) => console.error(`профили: ${e.message}`));
+  await refreshPhotos().catch((e) => console.error(`фото: ${e.message}`));
   if (pollMinutes) await sleep(pollMinutes * 60_000);
 } while (pollMinutes);
 await userbot.disconnect();

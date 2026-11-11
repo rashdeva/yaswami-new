@@ -147,7 +147,11 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
       <div className="group">
         {guests.length > 0 ? guests.map((g, i) => (
           <div key={i} className="guest">
-            <div className="ava" style={{ background: `hsl(${hue(g.user_first_name)},55%,48%)` }}>{[...g.user_first_name][0]}</div>
+            <div className="ava" style={{ background: `hsl(${hue(g.user_first_name)},55%,48%)` }}>
+              {[...g.user_first_name][0]}
+              {/* Фото поверх буквы: не загрузилось — остаётся кружок с буквой. */}
+              {g.user_photo_url && <img src={g.user_photo_url} alt="" loading="lazy" onError={(e) => { e.currentTarget.hidden = true; }} />}
+            </div>
             {g.user_first_name}{g.is_me && ' (вы)'}{g.plus_ones > 0 && ` +${g.plus_ones}`}
             <span>{GUEST_LABEL[g.approval_status]}</span>
           </div>

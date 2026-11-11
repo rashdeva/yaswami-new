@@ -66,8 +66,27 @@ assert.equal(saved['a#1'].topic, 'другое', 'не найденное при
 assert.equal('b#0' in saved, false, 'анонс, на котором ИИ упал, не помечается и не мешает остальным');
 console.log('backfill ok');
 
-const { channelFromBio } = await import('./host.mjs');
+const { channelFromBio, fetchChannelPhotos, pickThumb } = await import('./host.mjs');
 assert.equal(channelFromBio('Веду йогу. Канал: t.me/anna_yoga_life, запись @anna_yoga', 'anna_yoga'), 'anna_yoga_life');
 assert.equal(channelFromBio('Запись @Anna_Yoga, почта anna@gmail.com, t.me/joinchat/abc, @yoga_bot', 'anna_yoga'), null, 'сам контакт, почта, приглашение, бот');
 assert.equal(channelFromBio(null, 'anna_yoga'), null);
 console.log('host ok');
+
+const sizes = [{ type: 'i' }, { type: 'm', w: 320, h: 213 }, { type: 'x', w: 800, h: 533 }, { type: 'y', w: 1280, h: 853 }];
+assert.equal(pickThumb(sizes), 'm', 'самое маленькое превью от 320px');
+assert.equal(pickThumb([{ type: 'i' }, { type: 's', w: 100, h: 67 }]), 's', 'мелкая картинка — берём что есть');
+assert.equal(pickThumb([{ type: 'i' }]), null, 'размеров нет');
+const jpeg = Buffer.from([0xff, 0xd8, 1, 2]);
+const post = (id, media) => ({ id, media });
+const photo = { className: 'MessageMediaPhoto', photo: { sizes } };
+const fake = {
+  connected: true,
+  getMessages: async () => [post(9, photo), post(8, { className: 'MessageMediaWebPage' }), post(7, photo), post(6, null), post(5, photo)],
+  downloadMedia: async (m, { thumb }) => (assert.equal(thumb, 'm'), m.id === 5 ? Buffer.from('<html>') : jpeg),
+};
+assert.deepEqual(await fetchChannelPhotos(fake, 'anna', ['telegram:anna/9']), {
+  sources: ['telegram:anna/9', 'telegram:anna/7', 'telegram:anna/5'],
+  added: [{ source: 'telegram:anna/7', data: jpeg }],
+}, 'только фото публикаций; известное не качаем, не-JPEG не сохраняем');
+assert.equal(await fetchChannelPhotos({ ...fake, getMessages: async () => { throw new Error('CHANNEL_PRIVATE'); } }, 'anna'), null);
+console.log('photos ok');
