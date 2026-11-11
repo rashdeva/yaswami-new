@@ -6,6 +6,7 @@ import { connect, fetchChatAnnouncements, fetchStats } from './mtproto.mjs';
 import { createStore } from './store.mjs';
 import { fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
+import { createSender } from './sender.mjs';
 
 const env = process.env;
 const channels = (env.CHANNELS ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
@@ -70,6 +71,27 @@ async function refreshStats() {
     await sleep(2000);
   }
 }
+
+// Аккаунты, которые пишут людям: вход по шагам из админки, приём и отправка личных сообщений (sender.mjs).
+// Работает рядом со сбором, раз в несколько секунд; без ключа и адреса API выключено.
+if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
+  const sender = createSender({
+    store, apiId: env.TG_API_ID, apiHash: env.TG_API_HASH, key: env.ACCOUNTS_KEY,
+    report: async (message) => {
+      const res = await fetch(`${env.API_URL}/internal/account-message`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-collector-secret': env.COLLECTOR_SECRET },
+        body: JSON.stringify(message), signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) throw new Error(`API ответил ${res.status}`);
+    },
+  });
+  (async () => {
+    for (;;) {
+      await sender.tick().catch((e) => console.error('аккаунты:', e.message));
+      await sleep(Number(env.SENDER_POLL_MS ?? 4000));
+    }
+  })();
+} else console.log('Аккаунты для переписки выключены: нужны ACCOUNTS_KEY, API_URL и COLLECTOR_SECRET');
 
 const cursors = await store.cursors();
 // Railway проверяет /health при деплое (общий railway.json); отвечаем, когда БД уже доступна.

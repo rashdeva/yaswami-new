@@ -5,7 +5,7 @@ import { after, before, test } from 'node:test';
 import { asc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message } from '@yaswami/core';
+import type { CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
 import { bot } from './telegram.ts';
@@ -13,10 +13,10 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { collectedEvents, hosts, photos, visits } from './db/schema.ts';
+import { collectedEvents, hosts, photos, visits, tgAccounts } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
 import { settings } from './settings.ts';
-import { parseSupportReply, support } from './support.ts';
+import { parseSupportReply, support, verifyTicket } from './support.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
 
@@ -707,9 +707,26 @@ test('переписка: бот пишет всё в базу, админ от�
   support.ask = async (history) => ((asked = history), { text: 'Откройте событие и нажмите «Пойду».', human: null });
   assert.deepEqual(await write('Как отменить запись?'), ['Откройте событие и нажмите «Пойду».']);
   assert.deepEqual(asked.at(-1), { role: 'user', content: 'Как отменить запись?' });
+  assert.match(asked[0]!.content, /^Данные сервиса о собеседнике \(Аня\)[\s\S]*События, которые он создал:\n- /, 'роль получает события и записи самого человека');
   assert.ok(asked.some((t) => t.role === 'assistant' && t.content === 'Сегодня в 19:00 покер, записать?'), 'в истории есть прошлые ответы');
   feed = await inbox();
   assert.deepEqual([feed.messages[0]!.author, feed.conversations[0]!.attention], ['agent:support', null]);
+  // С билетом из переписки роль работает с событиями самого человека; без верного билета — отказ.
+  settings.supportKey = 'support-key-for-tests';
+  const ticket = /Билет[^:]*: (\S+)/.exec((await (async () => { await write('Покажи мои события'); return asked[0]!.content; })()))![1]!;
+  assert.equal(verifyTicket(ticket), 71);
+  assert.equal(verifyTicket(ticket.replace(/^71/, '70')), null, 'чужой номер под той же подписью');
+  assert.equal(verifyTicket(ticket, Date.now() + 31 * 60_000), null, 'просрочен');
+  const made = await tool('person_event_create', { ticket, kind: 'o', name: 'Йога на пляже', start_at: '2027-01-10T07:00:00+07:00', timezone: 'Asia/Ho_Chi_Minh' });
+  assert.equal(made.is_host, true);
+  assert.ok(made.url.includes(made.event.id));
+  assert.ok((await tool('person_events', { ticket })).some((e: any) => e.event.name === 'Йога на пляже' && e.is_host), 'в списке событий человека');
+  assert.equal((await tool('person_event_update', { ticket, event_id: made.event.id, name: 'Йога на рассвете' })).event.name, 'Йога на рассвете');
+  assert.deepEqual(await tool('person_events', { ticket: 'подделка' }), { error: 'bad_ticket' });
+  const view = (await (await call(tma(71, 'Аня'), 'GET', `/events/${made.event.id}`)).json()) as EventView;
+  assert.deepEqual([view.event.name, view.is_host], ['Йога на рассвете', true], 'событие принадлежит человеку, а не владельцу токена');
+  settings.supportKey = '';
+
   // Роль зовёт человека: пометка в админке и сообщение нам; оповещение в переписку не попадает.
   support.ask = async () => parseSupportReply('Передал команде, вам ответят.\n[[человек: жалоба на организатора]]');
   sent.length = 0;
@@ -738,4 +755,58 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.equal((await call(admin, 'POST', `/admin/conversations/${id}/messages`, { text: 'Вы тут?' })).status, 409);
   bot.call = ok;
   assert.deepEqual([(await inbox()).messages[0]!.text, (await inbox()).messages[0]!.status], ['Вы тут?', 'failed']);
+});
+
+test('аккаунты Telegram: вход по шагам из админки, сообщения с аккаунта, ответ через очередь', async () => {
+  await db.execute(sql`truncate conversations, tg_accounts cascade`);
+  settings.adminIds = [70];
+  settings.collectorSecret = 'collector-secret';
+  const admin = tma(70, 'Админ');
+  const inbox = async () => (await (await call(admin, 'GET', '/admin/inbox')).json()) as InboxFeed;
+
+  // Новый аккаунт ждёт, пока сборщик запросит код; код раньше времени не принимается.
+  assert.equal((await call(tma(71, 'Аня'), 'POST', '/admin/accounts', { label: 'Аня', phone: '+84900000001' })).status, 403);
+  assert.equal((await call(admin, 'POST', '/admin/accounts', { label: 'Аня', phone: '8-900' })).status, 400, 'номер не в международном формате');
+  const created = await call(admin, 'POST', '/admin/accounts', { label: 'Аня', phone: '+84900000001' });
+  const account = (await created.json()) as TgAccount;
+  assert.deepEqual([created.status, account.status], [201, 'login_requested']);
+  assert.equal((await call(admin, 'POST', '/admin/accounts', { label: 'Дубль', phone: '+84900000001' })).status, 409);
+  assert.equal((await call(admin, 'POST', `/admin/accounts/${account.id}/login`, { secret: '12345' })).status, 409);
+  // Сборщик запросил код — админ вводит его; наружу ни код, ни сессия не отдаются.
+  await db.update(tgAccounts).set({ status: 'login_code', session: 'sealed' }).where(eq(tgAccounts.id, account.id));
+  assert.equal((await call(admin, 'POST', `/admin/accounts/${account.id}/login`, { secret: '12345' })).status, 204);
+  const [row] = await db.select().from(tgAccounts);
+  assert.deepEqual(row!.login, { secret: '12345' });
+  assert.deepEqual(Object.keys((await inbox()).accounts[0]!).sort(), ['created_at', 'id', 'label', 'last_error', 'phone', 'status']);
+
+  // Сборщик сообщает о личном сообщении на аккаунте: без секрета — отказ.
+  const report = (body: object, secret?: string) =>
+    app.request('/internal/account-message', { method: 'POST', headers: { 'content-type': 'application/json', ...(secret ? { 'x-collector-secret': secret } : {}) }, body: JSON.stringify(body) });
+  const incoming = { account_id: account.id, peer: { id: 555, name: 'Тим', username: 'tim_poker' }, direction: 'in', text: 'А что это за сервис?' };
+  assert.equal((await report(incoming)).status, 403);
+  assert.equal((await report(incoming, 'wrong-secret-0000')).status, 403);
+  sent.length = 0;
+  assert.equal((await report(incoming, 'collector-secret')).status, 204);
+  let feed = await inbox();
+  assert.deepEqual(feed.conversations.map((c) => [c.channel, c.account_id, c.peer_name, c.attention]), [['account', account.id, 'Тим', 'Написал на аккаунт']]);
+  assert.deepEqual(sent.map(([, b]) => [b.chat_id, b.text.split('\n')[0]]), [[70, 'Тим (@tim_poker) ждёт человека: Написал на аккаунт']]);
+
+  // Ответ из админки не идёт через бота: ложится в очередь, её заберёт сборщик.
+  const id = feed.conversations[0]!.id;
+  sent.length = 0;
+  assert.equal((await call(admin, 'POST', `/admin/conversations/${id}/messages`, { text: 'Каталог событий Дананга.' })).status, 204);
+  assert.deepEqual(sent, []);
+  feed = await inbox();
+  assert.deepEqual([feed.messages[0]!.status, feed.messages[0]!.author, feed.conversations[0]!.mode, feed.conversations[0]!.attention], ['queued', 'admin:70', 'human', null]);
+
+  // Ответили прямо из Telegram — сообщение в ленте, диалог ведём мы.
+  await call(admin, 'PATCH', `/admin/conversations/${id}`, { mode: 'agent' });
+  assert.equal((await report({ ...incoming, direction: 'out', text: 'Пишу с телефона' }, 'collector-secret')).status, 204);
+  feed = await inbox();
+  assert.deepEqual([feed.messages[0]!.text, feed.messages[0]!.author, feed.conversations[0]!.mode], ['Пишу с телефона', 'admin', 'human']);
+
+  // Аккаунт удалили: диалог остался, но ответить не с чего.
+  assert.equal((await call(admin, 'DELETE', `/admin/accounts/${account.id}`)).status, 204);
+  assert.equal((await call(admin, 'POST', `/admin/conversations/${id}/messages`, { text: 'Вы тут?' })).status, 409);
+  settings.collectorSecret = '';
 });

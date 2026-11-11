@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, CollectedEventItem, Conversation, ConversationUpdateInput, EventCreateInput, EventListItem, EventUpdateInput, EventView, InboxFeed, Me, Message, MyCollectedItem, RsvpInput, VisitInput, Wire } from '@yaswami/core';
+import type { AccountCreateInput, AppConfig, CollectedEventItem, Conversation, ConversationUpdateInput, TgAccount, EventCreateInput, EventListItem, EventUpdateInput, EventView, InboxFeed, Me, Message, MyCollectedItem, RsvpInput, VisitInput, Wire } from '@yaswami/core';
 import { inTelegram, tg } from './tg.ts';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -23,6 +23,9 @@ const MESSAGES: Record<string, string> = {
   already_claimed: 'Это событие уже подтвердил организатор',
   unauthorized: 'Не получилось войти. Откройте приложение заново',
   invalid_input: 'Проверьте заполненные поля',
+  phone_taken: 'Аккаунт с таким номером уже добавлен',
+  not_expected: 'Сейчас аккаунт не ждёт кода или пароля',
+  account_gone: 'Аккаунт, с которого шла переписка, удалён',
   not_delivered: 'Telegram не доставил сообщение: человек не открывал бота или заблокировал его',
 };
 
@@ -59,6 +62,9 @@ export const api = {
   inbox: () => request<Wire<InboxFeed>>('GET', '/admin/inbox'),
   inboxThread: (id: string) => request<Wire<Message>[]>('GET', `/admin/conversations/${id}/messages`),
   inboxSend: (id: string, text: string) => request<void>('POST', `/admin/conversations/${id}/messages`, { text }),
+  accountCreate: (input: AccountCreateInput) => request<Wire<TgAccount>>('POST', '/admin/accounts', input),
+  accountLogin: (id: string, secret: string) => request<void>('POST', `/admin/accounts/${id}/login`, { secret }),
+  accountDelete: (id: string) => request<void>('DELETE', `/admin/accounts/${id}`),
   inboxUpdate: (id: string, input: ConversationUpdateInput) => request<Wire<Conversation>>('PATCH', `/admin/conversations/${id}`, input),
   logout: () => request<void>('POST', '/auth/logout'),
   collected: () => request<CollectedEventItem[]>('GET', '/collected-events'),

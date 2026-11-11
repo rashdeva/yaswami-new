@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, CollectedEvent, Conversation, Event, Guest, Guide, Message, Share, TicketType, User } from '@yaswami/core';
+import type { Address, CollectedEvent, Conversation, Event, Guest, Guide, Message, Share, TgAccount, TicketType, User } from '@yaswami/core';
 import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -239,12 +239,26 @@ export const collectorCursors = pgTable('collector_cursors', {
   last_number: integer().notNull(),
 });
 
-// Переписка с людьми (docs/agents-inbox.md): всё, что человек написал боту и что бот или мы ответили.
+// Аккаунты Telegram, с которых мы пишем людям. `session` (зашифрована ключом сборщика) и `login` (код и пароль
+// на время входа) читает и пишет только сборщик; API отдаёт наружу остальные поля.
+export const tgAccounts = pgTable('tg_accounts', {
+  id: uuid().primaryKey().defaultRandom(),
+  label: text().notNull(),
+  phone: text().notNull().unique(),
+  status: text().$type<TgAccount['status']>().notNull().default('login_requested'),
+  last_error: text(),
+  created_at: at('created_at').notNull().defaultNow(),
+  session: text(),
+  login: jsonb().$type<{ secret?: string }>(),
+});
+
+// Переписка с людьми (docs/agents-inbox.md): всё, что человек написал боту или на наш аккаунт и что мы ответили.
 export const conversations = pgTable(
   'conversations',
   {
     id: uuid().primaryKey().defaultRandom(),
     channel: text().$type<Conversation['channel']>().notNull(),
+    account_id: uuid().references(() => tgAccounts.id, { onDelete: 'set null' }),
     peer_id: telegramId('peer_id').notNull(),
     peer_name: text().notNull(),
     peer_username: text(),

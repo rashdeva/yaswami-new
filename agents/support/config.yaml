@@ -17,7 +17,8 @@ mcp_servers:
     headers:
       Authorization: "Bearer __MCP_TOKEN__"
     tools:
-      include: [catalog_events] # только публичный каталог; переписка и события команды роли не видны
+      # Публичный каталог и события самого собеседника (по билету от нашего API); переписка и чужие события роли не видны.
+      include: [catalog_events, person_events, person_event, person_event_create, person_event_update]
       resources: false
       prompts: false
 

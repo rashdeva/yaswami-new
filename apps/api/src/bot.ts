@@ -1,16 +1,17 @@
 // Сообщение боту → событие. Человек пишет анонс или пересылает публикацию; бот разбирает её тем же механизмом,
 // что и сборщик каналов (@yaswami/extract), и отвечает виджетом. Свой анонс становится событием отправителя,
 // пересланный чужой — собранным событием на витрине, без хозяина.
-import type { CollectedEvent } from '@yaswami/core';
+import type { CollectedEvent, User } from '@yaswami/core';
 import type { Announcement } from '@yaswami/extract';
 import { looksLikeEvent } from '@yaswami/extract';
 import { upsertUser } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { notify } from './notifications.ts';
-import { addCollectedEvent, AppError, createEventFromAnnouncement } from './services.ts';
+import { addCollectedEvent, AppError, createEventFromAnnouncement, getEvent, listEvents, myCollectedEvents } from './services.ts';
 import { settings } from './settings.ts';
-import { support } from './support.ts';
+import { issueTicket, support } from './support.ts';
+import type { SupportTurn } from './support.ts';
 import type { Incoming } from './telegram.ts';
 import { bot, parseIncoming } from './telegram.ts';
 
@@ -47,6 +48,37 @@ function tooOften(userId: number): boolean {
   return false;
 }
 
+const RSVP_WORDS = { approved: 'идёт', maybe: 'думает', declined: 'не идёт', waitlist: 'в листе ожидания' } as const;
+
+/**
+ * Что сервис знает о собеседнике — первым сообщением в переписке для роли поддержки. Только его собственные
+ * события и записи: чужих данных у роли нет, поэтому показать их по ошибке она не может.
+ * ponytail: до 10 ближайших событий каждого вида; по своим событиям — отдельный запрос за числом гостей.
+ */
+async function supportContext(db: Db, actor: User): Promise<SupportTurn> {
+  const soon = <T>(items: T[], at: (item: T) => string | Date) => items.filter((i) => new Date(at(i)).getTime() > Date.now() - 86_400_000).slice(0, 10);
+  const events = soon(await listEvents(db, actor), (e) => e.event.start_at);
+  const hosted = await Promise.all(events.filter((e) => e.is_host).map(async ({ event }) => {
+    const { guest_counts: n } = await getEvent(db, actor, event.id);
+    return `- «${event.name}», ${event.start_at.toISOString()} (${event.timezone}), ${event.status}; идут: ${n.approved}, думают: ${n.maybe}, отказались: ${n.declined}`;
+  }));
+  const answered = events.filter((e) => !e.is_host && e.my_approval_status)
+    .map(({ event, my_approval_status }) => `- «${event.name}», ${event.start_at.toISOString()} (${event.timezone}) — ${RSVP_WORDS[my_approval_status!]}`);
+  const collected = soon(await myCollectedEvents(db, actor), (c) => c.event.starts_at)
+    .map(({ event, signed_up }) => `- «${event.title}», ${event.starts_at} — ${signed_up ? 'нажимал «Записаться» (место подтверждает организатор)' : 'только смотрел'}`);
+  const section = (title: string, lines: string[]) => `${title}:\n${lines.length ? lines.join('\n') : '- нет'}`;
+  return {
+    role: 'system',
+    content: [
+      `Данные сервиса о собеседнике (${actor.first_name}). Это его собственные события и записи — их можно ему показывать. Данных о других людях здесь нет.`,
+      `Билет для инструментов person_* (действует полчаса, человеку не показывай): ${issueTicket(actor.id)}`,
+      section('События, которые он создал', hosted),
+      section('События, на которые он ответил', answered),
+      section('События из каталога, которые он открывал', collected),
+    ].join('\n\n'),
+  };
+}
+
 /** Обрабатывает одно обновление вебхука. `extract` нет — на сервере не задан GEMINI_API_KEY. */
 export async function handleUpdate(db: Db, extract: Extract | undefined, update: unknown): Promise<void> {
   const m = parseIncoming(update);
@@ -74,7 +106,7 @@ export async function handleUpdate(db: Db, extract: Extract | undefined, update:
   const answer = async (refusal: string, limited = tooOften(m.from.id)) => {
     if (!settings.supportUrl || limited) return say(refusal);
     void bot.call('sendChatAction', { chat_id: m.chatId, action: 'typing' });
-    const reply = await support.ask(await supportHistory(db, conversation.id));
+    const reply = await support.ask([await supportContext(db, actor), ...(await supportHistory(db, conversation.id))]);
     if (!reply) return say(refusal);
     if (reply.text) await bot.send('sendMessage', { chat_id: m.chatId, text: reply.text }, 'agent:support');
     if (reply.human) await callHuman(reply.human);
