@@ -61,11 +61,16 @@
 ### 3. API и бот (`apps/api`, `packages/telegram`)
 
 - [x] `docker-compose.yml` с Postgres + PostGIS (тот же образ, что будет на Railway).
-- [ ] Hono на Node, Postgres + Drizzle: таблицы `users`, `events`, `ticket_types`, `guests`, `shares`, миграции. _Таблицы и первая миграция готовы (`apps/api/src/db/schema.ts`, `pnpm db:up && pnpm db:migrate`); Hono ещё нет._
+- [x] Hono на Node, Postgres + Drizzle: таблицы `users`, `events`, `ticket_types`, `guests`, `shares`, миграции.
 - [x] Сверка таблиц с ядром: источник правды — схемы zod из `packages/core`; рядом с таблицами Drizzle проверка типов (тип строки таблицы = тип из ядра), при расхождении `typecheck` падает.
-- [ ] Проверка `initData` мини-приложения → `User`.
-- [ ] REST: `POST /events` (создаёт и тип билета по умолчанию), `GET /events/:id`, `GET /events` (мои), `PATCH /events/:id`, `POST /events/:id/rsvp` (с необязательным `ticket_type_id`), `POST /events/:id/share` (готовит сообщение, возвращает id для `shareMessage`).
-- [ ] REST типов билетов: `POST /events/:id/ticket-types`, `PATCH /ticket-types/:id`, `DELETE /ticket-types/:id`.
+- [x] Проверка `initData` мини-приложения → `User`.
+- [ ] REST: `POST /events` (создаёт и тип билета по умолчанию), `GET /events/:id`, `GET /events` (мои), `PATCH /events/:id`, `POST /events/:id/rsvp` (с необязательным `ticket_type_id`), `POST /events/:id/share` (готовит сообщение, возвращает id для `shareMessage`). _Готово всё, кроме `POST /events/:id/share` — он появится вместе с ботом._
+- [x] REST типов билетов: `POST /events/:id/ticket-types`, `PATCH /ticket-types/:id`, `DELETE /ticket-types/:id`.
+- [x] Общий слой операций `apps/api/src/services.ts`: REST и MCP вызывают одни и те же функции, правила доступа и записи живут только там. Запись гостя идёт в транзакции с блокировкой строки события.
+- [x] MCP-сервер на `/mcp` (Streamable HTTP, без сессий) для Claude, Codex и других клиентов: `events_list`, `event_get`, `event_create`, `event_update`, `event_rsvp`, `ticket_type_create`, `ticket_type_update`, `ticket_type_delete`. Описания входных данных берутся из схем ядра.
+- [x] Токены доступа для REST и MCP вне Telegram: `Authorization: Bearer ysw_…`, в базе хранится только хэш; выпуск — `POST /tokens` из мини-приложения или `pnpm api:token <telegram id>` из консоли, отзыв — `DELETE /tokens`.
+- [ ] Команда бота `/token` и кнопка в мини-приложении для выпуска токена.
+- [ ] Вход для claude.ai через OAuth — если понадобится подключение без ручной вставки токена.
 - [ ] Обновления через long polling (тот же обработчик потом станет вебхуком): `callback_query` (`rsvp:<id>:<g|n|m>`), `widget_query`, `/start <event>`.
 - [ ] Обёртка Bot API: `sendWidget`, `editMessageWidgetData`, `editSharedWidgetData`, `answerWidgetQuery`, `savePreparedInlineMessage`, `editMessageText`, `answerCallbackQuery`.
 - [ ] Обновление витрин после RSVP: все `shares` события; для общего виджета — не чаще раза в секунду, изменения склеиваются.

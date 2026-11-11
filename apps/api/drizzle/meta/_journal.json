@@ -8,6 +8,13 @@
       "when": 1794394117375,
       "tag": "0000_faithful_power_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794394996975,
+      "tag": "0001_lively_ultron",
+      "breakpoints": true
     }
   ]
 }

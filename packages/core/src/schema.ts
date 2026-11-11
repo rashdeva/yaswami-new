@@ -31,7 +31,7 @@ export const Event = z.object({
   starts_at: z.date(),
   tz: z.string(),
   place_text: z.string().max(PLACE_MAX),
-  place_url: z.url().nullable(),
+  place_url: z.url({ protocol: /^https?$/ }).nullable(), // только http(s): ссылка попадает в интерфейс
   capacity: z.number().int().positive().nullable(), // общий лимит мест события
   allow_plus_one: z.boolean(),
   status: z.enum(EVENT_STATUSES),

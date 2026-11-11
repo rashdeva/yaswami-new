@@ -1,0 +1,155 @@
+// Тесты на настоящем Postgres (нужен `pnpm db:up`). Работают в отдельной базе yaswami_test, рабочую не трогают.
+import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
+import { after, before, test } from 'node:test';
+import { sql } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import postgres from 'postgres';
+import type { EventView } from '@yaswami/core';
+import { createApp } from './app.ts';
+import { issueToken, verifyInitData } from './auth.ts';
+import type { Db } from './db/client.ts';
+import { createDb } from './db/client.ts';
+
+const BOT_TOKEN = '123456:test-token';
+const url = new URL(process.env.DATABASE_URL ?? 'postgres://yaswami:yaswami@localhost:5432/yaswami');
+let db: Db;
+let app: ReturnType<typeof createApp>;
+
+before(async () => {
+  const admin = postgres(url.href, { max: 1 });
+  const [found] = await admin`select 1 from pg_database where datname = 'yaswami_test'`;
+  if (!found) await admin`create database yaswami_test`;
+  await admin.end();
+  url.pathname = '/yaswami_test';
+  db = createDb(url.href);
+  await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
+  await db.execute(sql`truncate users cascade`);
+  app = createApp({ db, botToken: BOT_TOKEN });
+});
+after(() => db.$client.end());
+
+function initData(id: number, first_name: string, authDate = Math.floor(Date.now() / 1000)) {
+  const params = new URLSearchParams({ auth_date: String(authDate), user: JSON.stringify({ id, first_name, username: `u${id}` }) });
+  const check = [...params].map(([k, v]) => `${k}=${v}`).sort().join('\n');
+  const secret = createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
+  params.set('hash', createHmac('sha256', secret).update(check).digest('hex'));
+  return params.toString();
+}
+const tma = (id: number, name: string) => `tma ${initData(id, name)}`;
+const call = (auth: string, method: string, path: string, body?: unknown) =>
+  app.request(path, {
+    method,
+    headers: { authorization: auth, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+const newEvent = async (auth: string, extra: object = {}) => {
+  const res = await call(auth, 'POST', '/events', { kind: 's', title: 'Футбол 5×5', starts_at: '2026-11-20T19:00:00+04:00', tz: 'Asia/Tbilisi', ...extra });
+  assert.equal(res.status, 201);
+  return (await res.json()) as EventView;
+};
+
+test('initData: чужая подпись и устаревшие данные не проходят', async () => {
+  assert.equal(verifyInitData(initData(1, 'Миша'), BOT_TOKEN)?.id, 1);
+  assert.equal(verifyInitData(initData(1, 'Миша'), 'other:token'), null);
+  assert.equal(verifyInitData(initData(1, 'Миша', 1), BOT_TOKEN), null);
+  assert.equal(verifyInitData(initData(1, 'Миша').replace('%D0%9C', '%D0%9D'), BOT_TOKEN), null);
+  assert.equal((await call('tma garbage', 'GET', '/events')).status, 401);
+  assert.equal((await app.request('/events')).status, 401);
+});
+
+test('событие создаётся с типом билета по умолчанию; гость записывается, виден только по имени', async () => {
+  const host = tma(1, 'Миша');
+  const created = await newEvent(host);
+  assert.equal(created.ticket_types.length, 1);
+  assert.equal(created.event.starts_at, '2026-11-20T15:00:00.000Z');
+
+  const res = await call(tma(2, 'Дато'), 'POST', `/events/${created.event.id}/rsvp`, { status: 'going' });
+  assert.equal(res.status, 200);
+  const view = (await res.json()) as EventView;
+  assert.deepEqual(view.counts, { going: 1, maybe: 0 });
+  assert.equal(view.event.rev, 1);
+  assert.deepEqual(view.guests, [
+    { first_name: 'Дато', status: 'going', ticket_type_id: created.ticket_types[0]!.id, plus_ones: 0, is_me: true },
+  ]);
+  assert.equal(view.is_host, false);
+
+  const list = (await (await call(tma(2, 'Дато'), 'GET', '/events')).json()) as { my_status: string; is_host: boolean }[];
+  assert.deepEqual(list.map((e) => [e.my_status, e.is_host]), [['going', false]]);
+});
+
+test('последнее место достаётся одному из восьми одновременных гостей', async () => {
+  const { event } = await newEvent(tma(1, 'Миша'), { capacity: 1 });
+  // Сначала вход (создаёт пользователей и прогревает соединения), чтобы ответы стартовали действительно одновременно.
+  const ids = Array.from({ length: 8 }, (_, i) => 30 + i);
+  await Promise.all(ids.map((id) => call(tma(id, `G${id}`), 'GET', '/events')));
+  const results = await Promise.all(ids.map((id) => call(tma(id, `G${id}`), 'POST', `/events/${event.id}/rsvp`, { status: 'going' })));
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, ...Array(7).fill(409)]);
+  const full = results.find((r) => r.status === 409)!;
+  assert.deepEqual(await full.json(), { error: 'full' });
+});
+
+test('менять событие и типы билетов может только организатор; черновик чужим не виден', async () => {
+  const host = tma(1, 'Миша');
+  const guest = tma(2, 'Дато');
+  const { event, ticket_types } = await newEvent(host, { status: 'draft' });
+  assert.equal((await call(guest, 'GET', `/events/${event.id}`)).status, 404);
+  assert.equal((await call(host, 'PATCH', `/events/${event.id}`, { status: 'published' })).status, 200);
+  assert.equal((await call(guest, 'PATCH', `/events/${event.id}`, { title: 'x' })).status, 403);
+  assert.equal((await call(guest, 'POST', `/events/${event.id}/ticket-types`, { name: 'VIP' })).status, 403);
+  assert.equal((await call(host, 'PATCH', `/events/${event.id}`, { title: '' })).status, 400);
+
+  // последний тип не удалить; второй, пока его держит гость, — тоже
+  const only = ticket_types[0]!.id;
+  assert.deepEqual(await (await call(host, 'DELETE', `/ticket-types/${only}`)).json(), { error: 'ticket_type_last' });
+  const vip = (await (await call(host, 'POST', `/events/${event.id}/ticket-types`, { name: 'VIP', max_capacity: 1 })).json()) as { id: string };
+  assert.deepEqual(await (await call(guest, 'POST', `/events/${event.id}/rsvp`, { status: 'going' })).json(), { error: 'ticket_required' });
+  assert.equal((await call(guest, 'POST', `/events/${event.id}/rsvp`, { status: 'going', ticket_type_id: vip.id })).status, 200);
+  assert.deepEqual(await (await call(host, 'DELETE', `/ticket-types/${vip.id}`)).json(), { error: 'ticket_type_in_use' });
+  assert.equal((await call(host, 'DELETE', `/ticket-types/${only}`)).status, 204);
+});
+
+test('токен: выпускается только из мини-приложения, отзывается, даёт доступ к REST', async () => {
+  const issued = await call(tma(7, 'Ника'), 'POST', '/tokens');
+  assert.equal(issued.status, 201);
+  const bearer = `Bearer ${((await issued.json()) as { token: string }).token}`;
+  assert.equal((await call(bearer, 'GET', '/events')).status, 200);
+  assert.equal((await call(bearer, 'POST', '/tokens')).status, 403);
+  assert.equal((await call(bearer, 'DELETE', '/tokens')).status, 204);
+  assert.equal((await call(bearer, 'GET', '/events')).status, 401);
+});
+
+test('MCP: список инструментов, создание события и ошибка правил как ответ инструмента', async () => {
+  await call(tma(8, 'Саша'), 'GET', '/events'); // первый вход создаёт пользователя
+  const bearer = `Bearer ${await issueToken(db, 8)}`;
+  const rpc = async (method: string, params: object) => {
+    const res = await call(bearer, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params });
+    assert.equal(res.status, 200);
+    return ((await res.json()) as { result: any }).result;
+  };
+  assert.equal((await call('Bearer ysw_nope', 'POST', '/mcp', {})).status, 401);
+
+  const { tools } = await rpc('tools/list', {});
+  assert.deepEqual(tools.map((t: { name: string }) => t.name).sort(), [
+    'event_create', 'event_get', 'event_rsvp', 'event_update', 'events_list',
+    'ticket_type_create', 'ticket_type_delete', 'ticket_type_update',
+  ]);
+  const create = tools.find((t: { name: string }) => t.name === 'event_create');
+  assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'starts_at', 'title', 'tz']);
+
+  const created = await rpc('tools/call', {
+    name: 'event_create',
+    arguments: { kind: 'c', title: 'Кофе', starts_at: '2026-12-01T10:00:00+04:00', tz: 'Asia/Tbilisi', capacity: 1 },
+  });
+  const view = JSON.parse(created.content[0].text) as EventView;
+  assert.equal(view.is_host, true);
+
+  // событие, созданное через MCP, видно в REST
+  await call(tma(9, 'Лёша'), 'POST', `/events/${view.event.id}/rsvp`, { status: 'going' });
+  const full = await rpc('tools/call', { name: 'event_rsvp', arguments: { event_id: view.event.id, status: 'going' } });
+  assert.equal(full.isError, true);
+  assert.deepEqual(JSON.parse(full.content[0].text), { error: 'full' });
+
+  const invalid = await rpc('tools/call', { name: 'event_create', arguments: { kind: 'zzz', title: 'x' } });
+  assert.equal(invalid.isError, true);
+});

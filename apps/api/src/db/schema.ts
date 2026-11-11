@@ -94,6 +94,17 @@ export const shares = pgTable(
   (t) => [index('shares_event_idx').on(t.event_id), check('shares_kind_check', oneOf('kind', SHARE_KINDS))],
 );
 
+// Токены доступа для REST и MCP вне Telegram. Храним только sha256: сам токен показывается один раз.
+export const apiTokens = pgTable(
+  'api_tokens',
+  {
+    token_hash: text().primaryKey(),
+    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('api_tokens_user_idx').on(t.user_id)],
+);
+
 // Сверка с ядром: типы должны совпадать в обе стороны.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 export const tablesMatchCore: [
