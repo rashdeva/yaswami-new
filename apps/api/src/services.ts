@@ -1,13 +1,13 @@
 // Операции над событиями. REST и MCP вызывают только эти функции — правила доступа и записи живут здесь.
 import { randomBytes } from 'node:crypto';
-import { and, asc, count, eq, exists, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, exists, gte, or, sql } from 'drizzle-orm';
 import type {
-  Event, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
+  CollectedEventItem, Event, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User,
 } from '@yaswami/core';
 import { rsvp, ticketTypeRemovalError } from '@yaswami/core';
 import type { Db, Tx } from './db/client.ts';
-import { events, guests, ticketTypes, users } from './db/schema.ts';
+import { collectedEvents, events, guests, ticketTypes, users } from './db/schema.ts';
 
 export type ErrorStatus = 400 | 401 | 403 | 404 | 409;
 export class AppError extends Error {
@@ -81,6 +81,19 @@ export async function listEvents(db: Db, actor: User): Promise<EventListItem[]> 
     .where(or(eq(events.host_id, actor.id), exists(db.select().from(guests).where(mine))))
     .orderBy(asc(events.starts_at));
   return rows.map((r) => ({ event: r.event, is_host: r.event.host_id === actor.id, my_status: r.my_status }));
+}
+
+/** Предстоящие собранные события для витрины. Открыты всем: это пересказ публичных анонсов. */
+export async function listCollectedEvents(db: Db): Promise<CollectedEventItem[]> {
+  const rows = await db
+    .select()
+    .from(collectedEvents)
+    .where(gte(sql`coalesce(${collectedEvents.ends_at}, ${collectedEvents.starts_at})`, sql`now()`))
+    .orderBy(asc(collectedEvents.starts_at))
+    .limit(500); // ponytail: без постраничной выдачи, пока событий одного города меньше лимита
+  return rows.map(({ external_id, event: { telegram_username, whatsapp_phone, url, ...event }, signup_url, announcement }) => ({
+    id: external_id, ...event, signup_url, source_url: announcement.url,
+  }));
 }
 
 export async function createEvent(db: Db, actor: User, input: EventCreateInput): Promise<EventView> {

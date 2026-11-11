@@ -39,6 +39,8 @@ pnpm --filter @yaswami/collector test
 
 `collector_cursors` — номер последней разобранной публикации по каждому источнику.
 
+Наружу события отдаёт API: `GET /collected-events` — предстоящие события по дате, без входа (`listCollectedEvents` в `apps/api/src/services.ts`).
+
 ## Railway
 
 Сервис `collector` в проекте `yaswami` собирается из общего `Dockerfile`; переменная `ENTRY=apps/collector/src/main.mjs` выбирает, что запускать. Остальные переменные — как в `.env.example`, `DATABASE_URL` ссылается на адрес БД сервиса `api`. Деплой: `railway up --service collector`.

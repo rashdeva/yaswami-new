@@ -21,6 +21,8 @@ export function createApp({ db, botToken }: { db: Db; botToken: string }) {
       return c.json({ error: 'internal' }, 500);
     })
     .get('/health', (c) => c.text('ok'))
+    // До проверки входа: витрину собранных событий видит и анонимный посетитель.
+    .get('/collected-events', async (c) => c.json(await s.listCollectedEvents(db)))
     .use(async (c, next) => {
       const auth = await authenticate(db, botToken, c.req.header('authorization'));
       if (!auth) return c.json({ error: 'unauthorized' }, 401, { 'WWW-Authenticate': 'Bearer' });

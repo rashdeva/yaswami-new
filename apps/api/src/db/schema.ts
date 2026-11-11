@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import type { Event, Guest, Share, TicketType, User } from '@yaswami/core';
+import type { CollectedEvent, Event, Guest, Share, TicketType, User } from '@yaswami/core';
 import { EVENT_KINDS, EVENT_STATUSES, GUEST_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -112,8 +112,8 @@ export const collectedEvents = pgTable(
   {
     external_id: text().primaryKey(), // telegram:<канал>/<публикация>#<номер события в ней>
     channel: text().notNull(),
-    announcement: jsonb().notNull(),
-    event: jsonb().notNull(),
+    announcement: jsonb().$type<{ url: string }>().notNull(),
+    event: jsonb().$type<CollectedEvent>().notNull(),
     starts_at: at('starts_at').notNull(),
     ends_at: at('ends_at'),
     // Контакт для записи. По нему вошедшему организатору предлагают подтвердить событие.
