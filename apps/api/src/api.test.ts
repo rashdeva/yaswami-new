@@ -743,6 +743,13 @@ test('переписка: бот пишет всё в базу, админ от�
   settings.illustratorDailyLimit = 5;
   assert.equal(await requestNextVideo(db), 'danangevent-6-0');
   assert.equal(await requestNextVideo(db), null, 'событий без ролика не осталось');
+  // Заказ, оборванный перезапуском API: через 20 минут без ролика повторяем, но только один раз.
+  await new Promise((r) => setTimeout(r, 50));
+  await db.update(collectedEvents).set({ video_url: null, video_at: new Date(Date.now() - 21 * 60_000) }).where(eq(collectedEvents.external_id, 'telegram:danangevent/6#0'));
+  assert.equal(await requestNextVideo(db), 'danangevent-6-0', 'потерянный заказ повторяется');
+  await new Promise((r) => setTimeout(r, 50));
+  await db.update(collectedEvents).set({ video_url: null, video_at: new Date(Date.now() - 21 * 60_000) }).where(eq(collectedEvents.external_id, 'telegram:danangevent/6#0'));
+  assert.equal(await requestNextVideo(db), null, 'третьей попытки нет');
   await new Promise((r) => setTimeout(r, 50));
   illustrator.ask = draw;
   settings.illustratorUrl = '';

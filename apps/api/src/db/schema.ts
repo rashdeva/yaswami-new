@@ -145,6 +145,9 @@ export const collectedEvents = pgTable(
     video_url: text(),
     // Когда ролик заказали: по этой отметке считается дневной лимит (генерация платная), и второй раз не заказываем.
     video_at: at('video_at'),
+    // Сколько раз ролик заказывали. Заказ живёт в памяти процесса API: перезапуск (выкладка) обрывает его,
+    // и результат теряется — такой заказ повторяем, но не больше VIDEO_TRIES раз, чтобы не рисовать по кругу.
+    video_tries: integer().notNull().default(0),
     created_at: at('created_at').notNull().defaultNow(),
     updated_at: at('updated_at').notNull().defaultNow(),
   },

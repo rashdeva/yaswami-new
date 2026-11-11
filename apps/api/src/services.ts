@@ -1,6 +1,6 @@
 // Операции над событиями. REST и MCP вызывают только эти функции — правила доступа и записи живут здесь.
 import { randomBytes } from 'node:crypto';
-import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import type {
   CollectedEventItem, Contact, MyCollectedItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
@@ -175,6 +175,9 @@ export async function setCollectedCover(db: Db, slug: string, imageUrl?: string)
   });
 }
 
+const VIDEO_STALE_MS = 20 * 60_000; // роль отвечает не дольше 10 минут (support.ts); через 20 заказ точно не в работе
+const VIDEO_TRIES = 2;
+
 /**
  * Заказать у роли illustrator обложку в фирменном стиле и ролик с неё. Отвечаем сразу: генерация идёт несколько
  * минут, обложка и ссылка на ролик запишутся в событие, когда роль закончит. Один заказ на событие и дневной лимит.
@@ -185,10 +188,15 @@ export async function requestCollectedVideo(db: Db, slug: string): Promise<{ sta
   const row = await db.transaction(async (tx) => {
     const [found] = await collectedWithCover(tx).where(eq(collectedEvents.external_id, external_id)).for('update', { of: collectedEvents });
     if (!found) throw new AppError('not_found', 404);
-    if (found.video_at) throw new AppError('video_exists', 409);
-    const [{ n }] = await tx.select({ n: count() }).from(collectedEvents).where(gte(collectedEvents.video_at, sql`now() - interval '1 day'`)) as [{ n: number }];
+    // Ролик есть или заказ ещё может быть в работе — второй не нужен. Заказ старше VIDEO_STALE_MS без ролика
+    // считаем потерянным (API перезапустился, роль не справилась) и даём повторить, пока есть попытки.
+    const lost = found.video_at && !found.video_url && Date.now() - found.video_at.getTime() > VIDEO_STALE_MS && found.video_tries < VIDEO_TRIES;
+    if (found.video_at && !lost) throw new AppError('video_exists', 409);
+    // Лимит считает события, а не попытки: повтор потерянного заказа его не расходует.
+    const [{ n }] = await tx.select({ n: count() }).from(collectedEvents)
+      .where(and(gte(collectedEvents.video_at, sql`now() - interval '1 day'`), ne(collectedEvents.external_id, external_id))) as [{ n: number }];
     if (n >= settings.illustratorDailyLimit) throw new AppError('video_limit', 409);
-    await tx.update(collectedEvents).set({ video_at: new Date() }).where(eq(collectedEvents.external_id, external_id));
+    await tx.update(collectedEvents).set({ video_at: new Date(), video_tries: found.video_tries + 1 }).where(eq(collectedEvents.external_id, external_id));
     return found;
   });
   const { title, description, topic, what_happens, place } = row.event;
@@ -212,7 +220,9 @@ export async function requestCollectedVideo(db: Db, slug: string): Promise<{ sta
 export async function requestNextVideo(db: Db): Promise<string | null> {
   if (!settings.illustratorUrl) return null;
   const [next] = await db.select({ external_id: collectedEvents.external_id }).from(collectedEvents)
-    .where(and(upcomingCollected, isNull(collectedEvents.video_at))).orderBy(asc(collectedEvents.starts_at)).limit(1);
+    .where(and(upcomingCollected, isNull(collectedEvents.video_url), lt(collectedEvents.video_tries, VIDEO_TRIES),
+      or(isNull(collectedEvents.video_at), lt(collectedEvents.video_at, new Date(Date.now() - VIDEO_STALE_MS)))))
+    .orderBy(asc(collectedEvents.starts_at)).limit(1);
   if (!next) return null;
   const slug = collectedSlug(next.external_id);
   try {
