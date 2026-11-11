@@ -5,9 +5,12 @@ import type {
   CollectedEventItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User,
 } from '@yaswami/core';
+import type { CollectedEvent } from '@yaswami/core';
+import { isSameEvent, mergeEvents } from '@yaswami/extract';
 import { ADDRESS_MAX, collectedPath, collectedSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError } from '@yaswami/core';
 import type { Db, Tx } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, events, guests, ticketTypes, users } from './db/schema.ts';
+import { notify } from './notifications.ts';
 import { settings } from './settings.ts';
 
 export type ErrorStatus = 400 | 401 | 403 | 404 | 409;
@@ -129,6 +132,75 @@ export async function signUpForCollectedEvent(db: Db, actor: User, slug: string)
   return item;
 }
 
+/** Событие Ясвами из того, что извлёк ИИ: организатор — `actor`, один тип билета с ценой из анонса. */
+async function insertExtractedEvent(tx: Tx, actor: User, extracted: CollectedEvent): Promise<string> {
+  const id = newEventId();
+  const { title, description, place, address, price } = extracted;
+  const where = [place, address].filter(Boolean).join(', ');
+  await tx.insert(events).values({
+    id, user_id: actor.id, kind: 'o', status: 'published', timezone: settings.timezone,
+    name: title.trim().slice(0, NAME_MAX), description: description.trim().slice(0, DESCRIPTION_MAX) || null,
+    start_at: new Date(extracted.starts_at), end_at: extracted.ends_at ? new Date(extracted.ends_at) : null,
+    geo_address_json: where ? { address: where.slice(0, ADDRESS_MAX) } : null,
+  });
+  await tx.insert(ticketTypes).values({ event_id: id, name: DEFAULT_TICKET_NAME, price_text: price?.slice(0, 60) ?? null });
+  return id;
+}
+
+// Считаются все события организатора за всё время, включая подтверждённые из собранных.
+async function assertUnderLimit(tx: Tx, actor: User) {
+  const [mine] = await tx.select({ n: count() }).from(events).where(eq(events.user_id, actor.id));
+  if (mine!.n >= settings.freeEventsLimit) throw new AppError('events_limit', 403);
+}
+
+/**
+ * Чужой анонс, пересланный боту, попадает на витрину как собранное событие — так же, как из каналов сборщика.
+ * Повтор уже известного события (isSameEvent) дополняет его запись, а не создаёт вторую.
+ */
+export async function addCollectedEvent(
+  db: Db, source: { channel: string; number: number; url: string }, index: number, extracted: CollectedEvent,
+): Promise<CollectedEventItem> {
+  return db.transaction(async (tx) => {
+    const known = await tx.select().from(collectedEvents).where(upcomingCollected).for('update');
+    const same = known.find((r) => isSameEvent(r.event, extracted));
+    const event = same ? mergeEvents(same.event, extracted) : extracted;
+    const values = {
+      event, starts_at: new Date(event.starts_at), ends_at: event.ends_at ? new Date(event.ends_at) : null,
+      telegram_username: event.telegram_username?.replace(/^@/, '').toLowerCase() ?? null, updated_at: new Date(),
+    };
+    const [row] = await tx
+      .insert(collectedEvents)
+      .values({
+        ...values, channel: source.channel, announcement: { url: source.url }, signup_url: source.url,
+        external_id: same?.external_id ?? `telegram:${source.channel}/${source.number}#${index}`,
+      })
+      .onConflictDoUpdate({ target: collectedEvents.external_id, set: values })
+      .returning();
+    return toCollectedItem(row!);
+  });
+}
+
+/**
+ * Событие из анонса, который человек прислал боту: он считается организатором. Если то же событие уже собрано
+ * из каналов и контактом в нём указан он же — оно подтверждается за ним (правило то же, что в claimCollectedEvent).
+ */
+export async function createEventFromAnnouncement(db: Db, actor: User, extracted: CollectedEvent): Promise<EventView> {
+  return db.transaction(async (tx) => {
+    await assertUnderLimit(tx, actor);
+    const id = await insertExtractedEvent(tx, actor, extracted);
+    if (actor.username) {
+      const rows = await tx
+        .select()
+        .from(collectedEvents)
+        .where(and(eq(collectedEvents.telegram_username, actor.username.toLowerCase()), isNull(collectedEvents.claimed_event_id), upcomingCollected))
+        .for('update');
+      const same = rows.find((r) => isSameEvent(r.event, extracted));
+      if (same) await tx.update(collectedEvents).set({ claimed_event_id: id }).where(eq(collectedEvents.external_id, same.external_id));
+    }
+    return getEvent(tx, actor, id);
+  });
+}
+
 /**
  * Организатор подтверждает, что собранное событие — его: из него создаётся настоящее событие Ясвами с ним во главе.
  * Право подтверждает username в Telegram: он же указан в анонсе как контакт для записи.
@@ -140,17 +212,8 @@ export async function claimCollectedEvent(db: Db, actor: User, slug: string): Pr
     if (row.claimed_event_id) throw new AppError('already_claimed', 409);
     if (!actor.username || row.telegram_username !== actor.username.toLowerCase()) throw new AppError('forbidden', 403);
 
-    const id = newEventId();
-    const { title, description, place, address, price } = row.event;
-    const where = [place, address].filter(Boolean).join(', ');
     // Лимит бесплатных событий здесь не проверяется: подтверждение — вход организатора в Ясвами, а не новое событие.
-    await tx.insert(events).values({
-      id, user_id: actor.id, kind: 'o', status: 'published', timezone: settings.timezone,
-      name: title.trim().slice(0, NAME_MAX), description: description.trim().slice(0, DESCRIPTION_MAX) || null,
-      start_at: row.starts_at, end_at: row.ends_at,
-      geo_address_json: where ? { address: where.slice(0, ADDRESS_MAX) } : null,
-    });
-    await tx.insert(ticketTypes).values({ event_id: id, name: DEFAULT_TICKET_NAME, price_text: price?.slice(0, 60) ?? null });
+    const id = await insertExtractedEvent(tx, actor, row.event);
     await tx.update(collectedEvents).set({ claimed_event_id: id }).where(eq(collectedEvents.external_id, row.external_id));
     return getEvent(tx, actor, id);
   });
@@ -177,9 +240,7 @@ export async function me(db: Db, actor: User): Promise<Me> {
 
 export async function createEvent(db: Db, actor: User, input: EventCreateInput): Promise<EventView> {
   return db.transaction(async (tx) => {
-    // Считаются все события организатора за всё время, включая подтверждённые из собранных.
-    const [mine] = await tx.select({ n: count() }).from(events).where(eq(events.user_id, actor.id));
-    if (mine!.n >= settings.freeEventsLimit) throw new AppError('events_limit', 403);
+    await assertUnderLimit(tx, actor);
     const id = newEventId();
     await tx.insert(events).values({
       ...input, id, user_id: actor.id, start_at: new Date(input.start_at),
@@ -209,13 +270,15 @@ export async function updateEvent(db: Db, actor: User, id: string, input: EventU
 }
 
 export async function rsvpEvent(db: Db, actor: User, id: string, input: RsvpInput): Promise<EventView> {
-  return db.transaction(async (tx) => {
+  let registered = false; // гость только что записался: до этого ответа «пойду» у него не было
+  const view = await db.transaction(async (tx) => {
     // Блокировка строки события: два гостя не займут одно последнее место.
     const event = await findEvent(tx, actor, id, true);
+    const before = await tx.select().from(guests).where(eq(guests.event_id, id));
     const result = rsvp({
       event,
       ticketTypes: await typesOf(tx, id),
-      guests: await tx.select().from(guests).where(eq(guests.event_id, id)),
+      guests: before,
       user_id: actor.id,
       approval_status: input.approval_status,
       event_ticket_type_id: input.event_ticket_type_id,
@@ -229,9 +292,17 @@ export async function rsvpEvent(db: Db, actor: User, id: string, input: RsvpInpu
         .values(result.guest)
         .onConflictDoUpdate({ target: [guests.event_id, guests.user_id], set: { approval_status, event_ticket_type_id, plus_ones, registered_at } });
       await bumpRev(tx, id);
+      registered = approval_status === 'approved' && before.find((g) => g.user_id === actor.id)?.approval_status !== 'approved';
     }
     return getEvent(tx, actor, id);
   });
+  // После фиксации записи и без ожидания: недоступный Telegram не задерживает и не ломает ответ гостю.
+  if (registered) {
+    const { event } = view;
+    void notify(actor.id, 'rsvp_confirmed', { event });
+    if (event.user_id !== actor.id) void notify(event.user_id, 'guest_registered', { event, guest: actor, going: view.guest_counts.approved });
+  }
+  return view;
 }
 
 export async function createTicketType(db: Db, actor: User, eventId: string, input: TicketTypeCreateInput): Promise<TicketType> {

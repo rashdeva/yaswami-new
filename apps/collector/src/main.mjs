@@ -1,10 +1,8 @@
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createExtractor } from './extract.mjs';
+import { createExtractor, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
-import { looksLikeEvent } from './prefilter.mjs';
 import { connect, fetchChatAnnouncements } from './mtproto.mjs';
-import { isSameEvent, mergeEvents } from './dedupe.mjs';
 import { createStore } from './store.mjs';
 import { backfillTopics } from './backfill.mjs';
 

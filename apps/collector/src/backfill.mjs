@@ -1,7 +1,7 @@
 // События, собранные до появления полей «что это мне даст» (topic и др.), разбираем заново по сохранённому
 // анонсу и дописываем только эти поля: остальное уже могло быть дополнено повторными анонсами.
 import { OTHER_TOPIC } from '@yaswami/core';
-import { isSameEvent } from './dedupe.mjs';
+import { isSameEvent } from '@yaswami/extract';
 
 const FIELDS = ['topic', 'what_happens', 'for_whom', 'beginner_friendly', 'takeaway'];
 
