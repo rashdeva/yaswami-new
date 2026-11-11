@@ -95,3 +95,71 @@ const { toStats } = await import('./mtproto.mjs');
 assert.deepEqual(toStats({ views: 1200, reactions: { results: [{ count: 7 }, { count: 3 }] } }), { views: 1200, reactions: 10 });
 assert.deepEqual(toStats({}), { views: null, reactions: 0 }, 'публикация в группе без реакций');
 console.log('stats ok');
+
+// Аккаунты для переписки: вход по шагам, приём и отправка — на поддельном клиенте Telegram и хранилище в памяти.
+{
+  const { createSender, seal, unseal } = await import('./sender.mjs');
+  const key = 'ab'.repeat(32);
+  assert.equal(unseal(key, seal(key, 'сессия')), 'сессия');
+  assert.throws(() => unseal('cd'.repeat(32), seal(key, 'сессия')), 'чужим ключом не открыть');
+
+  const account = { id: 'a1', label: 'Аня', phone: '+84900000001', status: 'login_requested', session: null, login: null };
+  const queue = [];
+  const reported = [];
+  const store = {
+    accounts: async () => [account],
+    accountUpdate: async (_id, fields) => void Object.assign(account, fields),
+    queued: async () => queue.filter((m) => m.status === 'queued'),
+    messageStatus: async (id, status) => void (queue.find((m) => m.id === id).status = status),
+  };
+  const fail = (errorMessage) => Object.assign(new Error(errorMessage), { errorMessage });
+  let handler;
+  const sentTo = [];
+  const client = {
+    session: { save: () => 'SESSION' },
+    connect: async () => {},
+    sendCode: async () => ({ phoneCodeHash: 'hash' }),
+    invoke: async (request) => { throw fail(request.phoneCode === '11111' ? 'SESSION_PASSWORD_NEEDED' : 'PHONE_CODE_INVALID'); },
+    signInWithPassword: async (_api, { password }) => { if ((await password()) !== 'верный') throw fail('PASSWORD_HASH_INVALID'); },
+    addEventHandler: (fn) => { handler = fn; },
+    getDialogs: async () => [],
+    sendMessage: async (peer, { message }) => { if (peer === 42) throw fail('PEER_ID_INVALID'); sentTo.push([peer, message]); return { id: 900 }; },
+    disconnect: async () => {},
+  };
+  const sender = createSender({ store, apiId: '1', apiHash: 'h', key, report: async (m) => void reported.push(m), connectClient: () => client, log: () => {} });
+
+  await sender.tick();
+  assert.equal(account.status, 'login_code', 'код запрошен');
+  await sender.tick();
+  assert.equal(account.status, 'login_code', 'без кода ждём');
+  account.login = { secret: '00000' };
+  await sender.tick();
+  assert.deepEqual([account.status, account.login, account.last_error], ['login_code', null, 'Неверный код']);
+  account.login = { secret: '11111' };
+  await sender.tick();
+  assert.deepEqual([account.status, account.login], ['login_password', null], 'нужен пароль, код стёрт');
+  account.login = { secret: 'не тот' };
+  await sender.tick();
+  assert.deepEqual([account.status, account.last_error], ['login_password', 'Неверный пароль']);
+  account.login = { secret: 'верный' };
+  await sender.tick();
+  assert.deepEqual([account.status, account.login, unseal(key, account.session)], ['active', null, 'SESSION'], 'вошли, сессия зашифрована');
+
+  // Входящее личное сообщение уходит в API; сообщение из группы и от бота — нет.
+  const user = { className: 'User', id: 42n, firstName: 'Тим', lastName: null, username: 'tim', bot: false };
+  await handler({ isPrivate: true, message: { id: 1, out: false, message: 'Привет', getChat: async () => user } });
+  await handler({ isPrivate: false, message: { id: 2, out: false, message: 'в группе', getChat: async () => user } });
+  await handler({ isPrivate: true, message: { id: 3, out: false, message: 'я бот', getChat: async () => ({ ...user, bot: true }) } });
+  assert.deepEqual(reported, [{ account_id: 'a1', peer: { id: 42, name: 'Тим', username: 'tim' }, direction: 'in', text: 'Привет' }]);
+
+  // Очередь: по id не вышло — отправляем по username; своё отправленное в API не возвращаем.
+  queue.push({ id: 'm1', text: 'Здравствуйте!', account_id: 'a1', peer_id: '42', peer_username: 'tim', status: 'queued' });
+  queue.push({ id: 'm2', text: 'Без адреса', account_id: 'a1', peer_id: '42', peer_username: null, status: 'queued' });
+  await sender.tick();
+  assert.deepEqual(sentTo, [['tim', 'Здравствуйте!']]);
+  assert.deepEqual(queue.map((m) => m.status), ['sent', 'failed']);
+  await handler({ isPrivate: true, message: { id: 900, out: true, message: 'Здравствуйте!', getChat: async () => user } });
+  await handler({ isPrivate: true, message: { id: 901, out: true, message: 'пишу сам из Telegram', getChat: async () => user } });
+  assert.deepEqual(reported.slice(1).map((m) => [m.direction, m.text]), [['out', 'пишу сам из Telegram']]);
+  console.log('sender ok');
+}
