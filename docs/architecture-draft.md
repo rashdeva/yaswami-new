@@ -54,29 +54,31 @@ prototypes/   то, что сделано сейчас; уедет в packages/w
 
 ## Модель данных
 
-Словарь — по образцу Luma, без оплаты, купонов и календарей.
+Имена полей — как в Luma API (сверено с документацией 2026-11-11): `name`, `start_at`, `end_at`, `timezone`, `user_id`, `max_capacity`, `geo_address_json`, `meeting_url`, у гостя — `approval_status`, `registered_at`. Без оплаты, купонов и календарей.
 
 ```
-User        id (telegram id), first_name, username, lang, tz
-Event       id (короткий slug), host_id → User, kind (f|b|w|c|s|o), title,
-            starts_at (UTC), tz, place_text, place_url?, capacity?, allow_plus_one,
-            status (draft|published|cancelled), widget_id?, rev
+User        id (telegram id), first_name, username, lang, timezone
+Event       id (короткий slug), user_id → User (организатор), kind (f|b|w|c|s|o), name, description?,
+            start_at (UTC), end_at?, timezone, geo_address_json {address}?, meeting_url?, max_capacity?,
+            allow_plus_one, status (draft|published|cancelled), widget_id?, rev, created_at
 TicketType  id, event_id, name (≤ 30), description?, max_capacity?, is_hidden,
             price_text?, position
-Guest       (event_id, user_id) — первичный ключ; status (going|maybe|declined|waitlist),
-            ticket_type_id → TicketType, plus_ones, responded_at
+Guest       (event_id, user_id) — первичный ключ; approval_status (approved|maybe|declined|waitlist),
+            event_ticket_type_id → TicketType, plus_ones, registered_at
 Share       id, event_id, kind (widget|inline_message), chat_id?, message_id?, inline_message_id?
 ```
+
+Чего в Luma нет и что остаётся нашим: `kind` (шаблон), `status`, `allow_plus_one` и `plus_ones`, `widget_id`, `rev`, `price_text`, `position` и ответ гостя `maybe` («Думаю»). Ответ «Пойду» хранится как `approved`. Адреса запросов пока свои (`POST /events`, `POST /events/:id/rsvp`), а не как в Luma (`/v1/events/create`).
 
 ### Типы билетов
 
 Имена полей — как в Luma API (`name`, `description`, `max_capacity`, `is_hidden`). Билет бесплатный: гость записывается сразу, система деньги не трогает.
 
 - У события всегда есть хотя бы один тип. При создании события заводится тип по умолчанию; последний оставшийся и последний видимый тип удалить нельзя (правило Luma).
-- `max_capacity` — лимит мест этого типа; `Event.capacity` — общий лимит события. Запись проходит, если не превышен ни один.
+- `max_capacity` типа — лимит мест этого типа; `Event.max_capacity` — общий лимит события. Запись проходит, если не превышен ни один.
 - `price_text` — подпись вроде «30 лари, оплата на месте». Заменяет поля Luma `type` / `cents` / `currency`, которые нужны только для оплаты.
 - `is_hidden` — тип не виден в общем списке; в v1 назначается только организатором.
-- Отличие от Luma: у гостя один билет (`ticket_type_id`), а не массив `event_tickets`. «+1» остаётся числом `plus_ones`.
+- Отличие от Luma: у гостя один билет (`event_ticket_type_id`), а не массив `event_tickets`. «+1» остаётся числом `plus_ones`.
 - Один видимый тип — гость отвечает кнопкой в чате, как раньше. Несколько — кнопка «Пойду» открывает мини-приложение с выбором типа: в виджет и в три кнопки выбор не помещается.
 - Не берём сейчас: `require_approval`, окно продаж (`valid_start_at` / `valid_end_at`), `max_per_guest`, `tint_color`, платные типы, купоны.
 

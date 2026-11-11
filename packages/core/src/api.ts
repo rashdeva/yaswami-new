@@ -16,11 +16,11 @@ const dateTime = z.iso.datetime({ offset: true }).describe('ISO 8601 with offset
 const timeZone = z.string().refine(isTimeZone, 'unknown time zone').describe('IANA time zone, e.g. Asia/Tbilisi');
 
 const eventFields = EventSchema.pick({
-  kind: true, title: true, place_text: true, place_url: true, capacity: true, allow_plus_one: true,
-}).extend({ starts_at: dateTime, tz: timeZone });
+  kind: true, name: true, description: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true,
+}).extend({ start_at: dateTime, end_at: dateTime.nullable(), timezone: timeZone });
 
 export const EventCreateInput = eventFields
-  .partial({ place_text: true, place_url: true, capacity: true, allow_plus_one: true })
+  .partial({ description: true, end_at: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true })
   .extend({ status: z.enum(['draft', 'published']).optional() });
 export type EventCreateInput = z.infer<typeof EventCreateInput>;
 
@@ -38,9 +38,9 @@ export { RsvpInput };
 
 /** Гость, как его видят другие: только имя, без username и id. */
 export interface GuestView {
-  first_name: string;
-  status: Guest['status'];
-  ticket_type_id: string | null;
+  user_first_name: string;
+  approval_status: Guest['approval_status'];
+  event_ticket_type_id: string | null;
   plus_ones: number;
   is_me: boolean;
 }
@@ -50,7 +50,7 @@ export interface EventView {
   event: Event;
   ticket_types: TicketType[];
   guests: GuestView[]; // отказавшихся видит только организатор
-  counts: { going: number; maybe: number };
+  guest_counts: { approved: number; maybe: number; declined: number }; // approved — занятые места, с учётом «+1»
   me: Guest | null;
   is_host: boolean;
 }
@@ -58,7 +58,7 @@ export interface EventView {
 export interface EventListItem {
   event: Event;
   is_host: boolean;
-  my_status: Guest['status'] | null;
+  my_approval_status: Guest['approval_status'] | null;
 }
 
 /** Событие, собранное из Telegram-канала (apps/collector): хозяина в Ясвами у него ещё нет, данные извлечены ИИ. */
@@ -82,3 +82,6 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   signup_url: string; // куда ведёт «Записаться»: к организатору, а не в Ясвами
   source_url: string; // публикация, из которой взято событие
 }
+
+/** Тот же тип, каким он приходит по сети: даты в JSON — строки ISO. */
+export type Wire<T> = T extends Date ? string : T extends object ? { [K in keyof T]: Wire<T[K]> } : T;

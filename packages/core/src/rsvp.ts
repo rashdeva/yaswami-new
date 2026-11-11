@@ -11,8 +11,8 @@ export interface RsvpArgs {
   ticketTypes: TicketType[];
   guests: Guest[];
   user_id: number;
-  status: RsvpStatus;
-  ticket_type_id?: string;
+  approval_status: RsvpStatus;
+  event_ticket_type_id?: string;
   now: Date;
 }
 
@@ -24,34 +24,34 @@ const sum = (gs: Guest[]) => gs.reduce((n, g) => n + seats(g), 0);
  * с блокировкой строки события, иначе двое займут последнее место.
  */
 export function rsvp(a: RsvpArgs): RsvpResult {
-  const { event, ticketTypes, guests, user_id, status, now } = a;
+  const { event, ticketTypes, guests, user_id, approval_status, now } = a;
   if (event.status !== 'published') return { ok: false, error: 'closed' };
 
   const prev = guests.find((g) => g.user_id === user_id);
   const others = guests.filter((g) => g.user_id !== user_id);
   const plus_ones = prev?.plus_ones ?? 0;
-  let ticket_type_id: string | null = null;
+  let event_ticket_type_id: string | null = null;
 
-  if (status === 'going') {
+  if (approval_status === 'approved') {
     const visible = ticketTypes.filter((t) => !t.is_hidden);
     // Скрытый тип гость сам выбрать не может — только сохранить уже назначенный организатором.
-    const type = a.ticket_type_id
-      ? ticketTypes.find((t) => t.id === a.ticket_type_id && (!t.is_hidden || prev?.ticket_type_id === t.id))
-      : (ticketTypes.find((t) => t.id === prev?.ticket_type_id) ?? (visible.length === 1 ? visible[0] : undefined));
-    if (!type) return { ok: false, error: a.ticket_type_id ? 'ticket_unknown' : 'ticket_required' };
+    const type = a.event_ticket_type_id
+      ? ticketTypes.find((t) => t.id === a.event_ticket_type_id && (!t.is_hidden || prev?.event_ticket_type_id === t.id))
+      : (ticketTypes.find((t) => t.id === prev?.event_ticket_type_id) ?? (visible.length === 1 ? visible[0] : undefined));
+    if (!type) return { ok: false, error: a.event_ticket_type_id ? 'ticket_unknown' : 'ticket_required' };
 
-    const going = others.filter((g) => g.status === 'going');
+    const approved = others.filter((g) => g.approval_status === 'approved');
     const need = 1 + plus_ones;
-    const inType = sum(going.filter((g) => g.ticket_type_id === type.id));
+    const inType = sum(approved.filter((g) => g.event_ticket_type_id === type.id));
     if (type.max_capacity !== null && inType + need > type.max_capacity) return { ok: false, error: 'full' };
-    if (event.capacity !== null && sum(going) + need > event.capacity) return { ok: false, error: 'full' };
-    ticket_type_id = type.id;
+    if (event.max_capacity !== null && sum(approved) + need > event.max_capacity) return { ok: false, error: 'full' };
+    event_ticket_type_id = type.id;
   }
 
-  if (prev && prev.status === status && prev.ticket_type_id === ticket_type_id) {
+  if (prev && prev.approval_status === approval_status && prev.event_ticket_type_id === event_ticket_type_id) {
     return { ok: true, event, guests, guest: prev, changed: false };
   }
-  const guest: Guest = { event_id: event.id, user_id, status, ticket_type_id, plus_ones, responded_at: now };
+  const guest: Guest = { event_id: event.id, user_id, approval_status, event_ticket_type_id, plus_ones, registered_at: now };
   return { ok: true, event: { ...event, rev: event.rev + 1 }, guests: [...others, guest], guest, changed: true };
 }
 

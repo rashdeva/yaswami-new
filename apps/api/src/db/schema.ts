@@ -2,8 +2,8 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import type { CollectedEvent, Event, Guest, Share, TicketType, User } from '@yaswami/core';
-import { EVENT_KINDS, EVENT_STATUSES, GUEST_STATUSES, SHARE_KINDS } from '@yaswami/core';
+import type { Address, CollectedEvent, Event, Guest, Share, TicketType, User } from '@yaswami/core';
+import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -15,31 +15,34 @@ export const users = pgTable('users', {
   first_name: text().notNull(),
   username: text(),
   lang: text().notNull(),
-  tz: text().notNull(),
+  timezone: text().notNull(),
 });
 
 export const events = pgTable(
   'events',
   {
     id: text().primaryKey(),
-    host_id: telegramId('host_id').notNull().references(() => users.id),
+    user_id: telegramId('user_id').notNull().references(() => users.id), // организатор
     kind: text({ enum: EVENT_KINDS }).notNull(),
-    title: text().notNull(),
-    starts_at: at('starts_at').notNull(),
-    tz: text().notNull(),
-    place_text: text().notNull(),
-    place_url: text(),
-    capacity: integer(),
+    name: text().notNull(),
+    description: text(),
+    start_at: at('start_at').notNull(),
+    end_at: at('end_at'),
+    timezone: text().notNull(),
+    geo_address_json: jsonb().$type<Address>(),
+    meeting_url: text(),
+    max_capacity: integer(),
     allow_plus_one: boolean().notNull().default(false),
     status: text({ enum: EVENT_STATUSES }).notNull().default('draft'),
     widget_id: text(),
     rev: integer().notNull().default(0),
+    created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [
-    index('events_host_idx').on(t.host_id),
+    index('events_user_idx').on(t.user_id),
     check('events_kind_check', oneOf('kind', EVENT_KINDS)),
     check('events_status_check', oneOf('status', EVENT_STATUSES)),
-    check('events_capacity_check', sql`${t.capacity} > 0`),
+    check('events_max_capacity_check', sql`${t.max_capacity} > 0`),
   ],
 );
 
@@ -66,18 +69,18 @@ export const guests = pgTable(
   {
     event_id: text().notNull().references(() => events.id, { onDelete: 'cascade' }),
     user_id: telegramId('user_id').notNull().references(() => users.id),
-    status: text({ enum: GUEST_STATUSES }).notNull(),
+    approval_status: text({ enum: APPROVAL_STATUSES }).notNull(),
     // Тип с записавшимися гостями удалить нельзя.
-    ticket_type_id: uuid().references(() => ticketTypes.id, { onDelete: 'restrict' }),
+    event_ticket_type_id: uuid().references(() => ticketTypes.id, { onDelete: 'restrict' }),
     plus_ones: integer().notNull().default(0),
-    responded_at: at('responded_at').notNull(),
+    registered_at: at('registered_at').notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.event_id, t.user_id] }),
     index('guests_user_idx').on(t.user_id),
-    check('guests_status_check', oneOf('status', GUEST_STATUSES)),
+    check('guests_approval_status_check', oneOf('approval_status', APPROVAL_STATUSES)),
     check('guests_plus_ones_check', sql`${t.plus_ones} >= 0`),
-    check('guests_ticket_check', sql`${t.status} not in ('going', 'waitlist') or ${t.ticket_type_id} is not null`),
+    check('guests_ticket_check', sql`${t.approval_status} not in ('approved', 'waitlist') or ${t.event_ticket_type_id} is not null`),
   ],
 );
 

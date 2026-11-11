@@ -3,14 +3,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import * as z from 'zod';
 import type { User } from '@yaswami/core';
-import { EventCreateInput, EventUpdateInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
+import { EventCreateInput, EventUpdateInput, RsvpInput, TEMPLATES, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import * as s from './services.ts';
 
 const event_id = z.string().describe('Event id, e.g. e_2a9c41b7d0');
-const ticket_type_id = z.string().describe('Ticket type id (uuid)');
+const event_ticket_type_id = z.string().describe('Ticket type id (uuid)');
 
-const KINDS = 'Event kind is a visual template: f — party, b — birthday, w — wedding, c — coffee/meetup, s — sport, o — other.';
+const KINDS = `Event kind is a visual template: ${Object.entries(TEMPLATES).map(([k, t]) => `${k} — ${t.name}`).join(', ')}.`;
 
 function buildServer(db: Db, actor: User) {
   const server = new McpServer({ name: 'yaswami', version: '0.1.0' });
@@ -51,7 +51,7 @@ function buildServer(db: Db, actor: User) {
 
   tool('event_create', {
     title: 'Create event', shape: EventCreateInput.shape,
-    description: `Create an event hosted by the user. A default free ticket type is created with it. ${KINDS}`,
+    description: `Create an event hosted by the user. Field names follow the Luma API (name, start_at, timezone, max_capacity). A default free ticket type is created with it. ${KINDS}`,
   }, (a) => s.createEvent(db, actor, a));
 
   tool('event_update', {
@@ -61,7 +61,7 @@ function buildServer(db: Db, actor: User) {
 
   tool('event_rsvp', {
     title: 'Respond to event', shape: { event_id, ...RsvpInput.shape },
-    description: 'Set the user\'s own response: going, maybe or declined. Pass ticket_type_id when the event has several visible ticket types. Errors: full, ticket_required, closed.',
+    description: 'Set the user\'s own response: approved (going), maybe or declined. Pass event_ticket_type_id when the event has several visible ticket types. Errors: full, ticket_required, closed.',
   }, ({ event_id: id, ...input }) => s.rsvpEvent(db, actor, id, input));
 
   tool('ticket_type_create', {
@@ -70,14 +70,14 @@ function buildServer(db: Db, actor: User) {
   }, ({ event_id: id, ...input }) => s.createTicketType(db, actor, id, input));
 
   tool('ticket_type_update', {
-    title: 'Update ticket type', shape: { ticket_type_id, ...TicketTypeUpdateInput.shape },
+    title: 'Update ticket type', shape: { event_ticket_type_id, ...TicketTypeUpdateInput.shape },
     description: 'Change a ticket type of an event the user hosts. The last visible ticket type cannot be hidden.',
-  }, ({ ticket_type_id: id, ...input }) => s.updateTicketType(db, actor, id, input));
+  }, ({ event_ticket_type_id: id, ...input }) => s.updateTicketType(db, actor, id, input));
 
   tool('ticket_type_delete', {
-    title: 'Delete ticket type', destructive: true, shape: { ticket_type_id },
+    title: 'Delete ticket type', destructive: true, shape: { event_ticket_type_id },
     description: 'Delete a ticket type. Fails if guests hold it or if it is the last (or last visible) type of the event.',
-  }, (a) => s.deleteTicketType(db, actor, a.ticket_type_id));
+  }, (a) => s.deleteTicketType(db, actor, a.event_ticket_type_id));
 
   return server;
 }
