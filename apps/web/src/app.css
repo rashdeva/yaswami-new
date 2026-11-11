@@ -245,3 +245,5 @@ a.item { text-decoration: none; color: inherit; }
 .group details[open] summary::after { content: '–'; }
 .group details p { margin: 0; padding: 0 18px 15px; }
 h2.cap::first-letter { text-transform: uppercase; }
+.pad .lead { display: block; margin-bottom: 8px; font-size: 12px; color: var(--hint); }
+.pad .cta { margin-top: 12px; }

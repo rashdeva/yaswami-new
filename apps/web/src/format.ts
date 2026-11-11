@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { AppConfig, Event } from '@yaswami/core';
-import { TEMPLATES } from '@yaswami/core';
+import { collectedPath, TEMPLATES } from '@yaswami/core';
 
 /** «пт, 20 ноября, 19:00» — во времени самого события, а не устройства. */
 export function when(startAt: string, timezone: string): string {
@@ -40,6 +40,11 @@ export function eventLink(id: string, ref?: number): string {
   return link.bot
     ? `https://t.me/${link.bot}/${link.app}?startapp=${start}`
     : `${location.origin}${location.pathname}?startapp=${start}`;
+}
+
+/** Ссылка на событие из открытого канала: в мини-апке (startapp=c_<id>), если id допустим для Telegram, иначе на сайт. */
+export function collectedLink(id: string): string {
+  return link.bot && /^[\w-]{1,60}$/.test(id) ? `https://t.me/${link.bot}/${link.app}?startapp=c_${id}` : location.origin + collectedPath(id);
 }
 
 /** Дата и время начала так, как они на стене в часовом поясе события: ['2026-11-20', '19:30']. */
