@@ -157,7 +157,7 @@ export function EventScreen({ id, initial, userId, onBack, onKind, toast, onChan
       </div>
 
       <div className="main"><div>
-        <button className="cta" onClick={() => shareEvent(view.event, userId, toast)}>{is_host ? 'Отправить в чат' : 'Позвать друзей'}</button>
+        <button className="cta" onClick={() => shareEvent(view.event, userId, toast)}>Поделиться</button>
       </div></div>
     </>
   );
