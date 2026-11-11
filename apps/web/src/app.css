@@ -195,7 +195,8 @@ a.item { text-decoration: none; color: inherit; }
 .pad p + p { margin-top: 10px; }
 /* фото сообщества организатора: лента, листается вбок */
 .shots { display: flex; gap: 6px; margin-top: 12px; overflow-x: auto; scrollbar-width: none; }
-.shots img { flex: none; width: 104px; height: 104px; object-fit: cover; border-radius: 14px; }
+.shots a { flex: none; }
+.shots img { display: block; width: 104px; height: 104px; object-fit: cover; border-radius: 14px; }
 .pad .quote { border-left: 3px solid var(--a); padding-left: 12px; }
 .pad .from { font-size: 13px; color: var(--hint); }
 .badge { display: inline-block; font-size: 13px; font-weight: 600; border-radius: 99px; padding: 4px 10px; background: color-mix(in srgb, var(--ok) 18%, transparent); }

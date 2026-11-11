@@ -127,13 +127,14 @@ export async function getCollectedEvent(db: Db, slug: string): Promise<Collected
   if (!row) throw new AppError('not_found', 404);
   const [h] = row.telegram_username ? await db.select().from(hosts).where(eq(hosts.username, row.telegram_username)) : [];
   const shots = h
-    ? await db.select({ id: photos.id }).from(photos).where(eq(photos.host_id, h.id)).orderBy(desc(photos.created_at)).limit(HOST_PHOTOS)
+    ? await db.select({ id: photos.id, source: photos.source }).from(photos).where(eq(photos.host_id, h.id)).orderBy(desc(photos.created_at)).limit(HOST_PHOTOS)
     : [];
   return {
     ...toCollectedItem(row),
     hosts: h
       ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`, confirmed: h.user_id !== null,
-          photos: shots.map((p) => photoUrl(p.id)) }]
+          // Источник фото сообщества — telegram:<канал>/<публикация>: из него же ссылка на публикацию.
+          photos: shots.map((p) => ({ url: photoUrl(p.id), source_url: p.source.replace(/^telegram:/, 'https://t.me/') })) }]
       : [],
   };
 }
