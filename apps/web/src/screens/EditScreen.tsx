@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { Event, Guide } from '@yaswami/core';
-import { ABOUT_MAX, ABOUT_STEP_MAX, ADDRESS_MAX, DESCRIPTION_MAX, GUIDE_MAX, NAME_MAX, TOPIC_GUIDES } from '@yaswami/core';
+import { ABOUT_MAX, ABOUT_STEP_MAX, GUIDE_MAX, TOPIC_GUIDES } from '@yaswami/core';
 import type { EventData } from '../api.ts';
 import { api } from '../api.ts';
-import { fromWall, wallParts } from '../format.ts';
 import { haptic } from '../tg.ts';
+import { CreateScreen } from './CreateScreen.tsx';
 
 /** Разделы экрана «Редактировать». Новый раздел (билеты, абонементы…) — новая строка здесь и своя форма ниже. */
 export type EditSection = 'main' | 'about';
@@ -61,7 +61,7 @@ export function EditScreen({ id, initial, section, onSection, onBack, onKind, on
         <h1>{section ? SECTIONS.find((s) => s.id === section)!.title : 'Редактировать'}</h1>
         <p>{view.event.name}</p>
       </div>
-      {section === 'main' ? <MainForm event={view.event} save={save} />
+      {section === 'main' ? <CreateScreen onBack={null} onKind={onKind} toast={toast} editing={{ event: view.event, onSave: save }} />
         : section === 'about' ? <AboutForm event={view.event} save={save} />
         : (
           <div className="group">
@@ -78,78 +78,8 @@ export function EditScreen({ id, initial, section, onSection, onBack, onKind, on
 }
 
 type Save = (input: Parameters<typeof api.updateEvent>[1]) => Promise<void>;
-const isUrl = (s: string) => /^https?:\/\//i.test(s);
-
 function SaveBar({ disabled, busy }: { disabled: boolean; busy: boolean }) {
   return <div className="main"><div><button className="cta" disabled={disabled || busy}>{busy ? 'Сохраняем…' : 'Сохранить'}</button></div></div>;
-}
-
-function MainForm({ event, save }: { event: EventData['event']; save: Save }) {
-  const [date0, time0] = wallParts(event.start_at, event.timezone);
-  const [name, setName] = useState(event.name);
-  const [place, setPlace] = useState(event.geo_address_json?.address ?? event.meeting_url ?? '');
-  const [description, setDescription] = useState(event.description ?? '');
-  const [date, setDate] = useState(date0);
-  const [time, setTime] = useState(time0);
-  const [capacity, setCapacity] = useState(event.max_capacity?.toString() ?? '');
-  const [plusOne, setPlusOne] = useState(event.allow_plus_one);
-  const [busy, setBusy] = useState(false);
-
-  const cap = capacity === '' ? null : Number(capacity);
-  const placeBad = isUrl(place) ? !URL.canParse(place) : place.length > ADDRESS_MAX;
-  const invalid = !name.trim() || !date || !time || placeBad || (cap !== null && (!Number.isInteger(cap) || cap < 1));
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    await save({
-      name: name.trim(),
-      description: description.trim() || null,
-      start_at: fromWall(date, time, event.timezone),
-      geo_address_json: place && !isUrl(place) ? { address: place.trim() } : null,
-      meeting_url: isUrl(place) ? place : null,
-      max_capacity: cap,
-      allow_plus_one: plusOne,
-    });
-    setBusy(false);
-  };
-
-  return (
-    <form onSubmit={(e) => void submit(e)} noValidate>
-      <h2>Событие</h2>
-      <div className="group">
-        <div className="row">
-          <label htmlFor="e-name">Название</label>
-          <input id="e-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} autoComplete="off" />
-        </div>
-        <div className="row" aria-invalid={placeBad}>
-          <label htmlFor="e-place">Где</label>
-          <input id="e-place" value={place} onChange={(e) => setPlace(e.target.value)} placeholder="Адрес или ссылка" autoComplete="off" />
-        </div>
-        <div className="row tall">
-          <label htmlFor="e-desc">Описание</label>
-          <textarea id="e-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={DESCRIPTION_MAX} placeholder="Что взять, как добраться, дресс-код" />
-        </div>
-      </div>
-      <h2>Когда</h2>
-      <div className="group">
-        <div className="row"><label htmlFor="e-date">Дата</label><input id="e-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-        <div className="row"><label htmlFor="e-time">Время</label><input id="e-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></div>
-      </div>
-      <h2>Гости</h2>
-      <div className="group">
-        <div className="row">
-          <label htmlFor="e-cap">Лимит мест</label>
-          <input id="e-cap" type="number" inputMode="numeric" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} placeholder="Без лимита" />
-        </div>
-        <div className="row">
-          Можно прийти с +1
-          <button type="button" className="sw" role="switch" aria-checked={plusOne} aria-label="Можно прийти с +1" onClick={() => setPlusOne(!plusOne)} />
-        </div>
-      </div>
-      <SaveBar disabled={invalid} busy={busy} />
-    </form>
-  );
 }
 
 const GUIDE_FIELDS: [keyof Guide, string][] = [
