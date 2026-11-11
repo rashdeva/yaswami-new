@@ -1,18 +1,19 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import * as z from 'zod';
+import type { EventUpdateInput } from '@yaswami/core';
 import { ADDRESS_MAX, DESCRIPTION_MAX, Event, NAME_MAX, TEMPLATES, TICKET_NAME_MAX } from '@yaswami/core';
 import type { EventData } from '../api.ts';
 import { api } from '../api.ts';
-import { kindIcon, localDate } from '../format.ts';
+import { fromWall, kindIcon, localDate, wallParts } from '../format.ts';
 import { haptic } from '../tg.ts';
 
 const isUrl = (s: string) => /^https?:\/\//i.test(s);
 
 // Форма — то, что вводит человек (дата и время раздельно, место одной строкой). Правила полей — из ядра,
 // чтобы форма и бэк не расходились; в запрос к API она превращается в onSubmit.
-const FormSchema = z
+const makeSchema = (checkFuture: boolean) => z
   .object({
     kind: Event.shape.kind,
     name: Event.shape.name,
@@ -32,7 +33,7 @@ const FormSchema = z
     if (isUrl(v.place) ? !URL.canParse(v.place) : v.place.length > ADDRESS_MAX) {
       ctx.addIssue({ code: 'custom', path: ['place'], message: isUrl(v.place) ? 'Проверьте ссылку' : `Адрес длиннее ${ADDRESS_MAX} символов` });
     }
-    if (new Date(`${v.date}T${v.time}`).getTime() <= Date.now()) {
+    if (checkFuture && new Date(`${v.date}T${v.time}`).getTime() <= Date.now()) {
       ctx.addIssue({ code: 'custom', path: ['time'], message: 'Это время уже прошло' });
     }
   });
@@ -42,23 +43,31 @@ const DAYS = [['Сегодня', 0], ['Завтра', 1], ['В субботу', 
 
 interface Props {
   onBack: (() => void) | null;
-  onCreated: (view: EventData) => void;
+  onCreated?: (view: EventData) => void;
   onKind: (kind: Event['kind']) => void;
   toast: (text: string) => void;
+  /** Режим «Редактировать → Основное»: та же форма с заполненными полями, без билетов; сохранение — через onSave. */
+  editing?: { event: EventData['event']; onSave: (input: EventUpdateInput) => Promise<void> };
 }
 
-export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
+export function CreateScreen({ onBack, onCreated, onKind, toast, editing }: Props) {
+  const event = editing?.event;
+  const [date0, time0] = event ? wallParts(event.start_at, event.timezone) : [localDate(1), '19:30'];
+  const schema = useMemo(() => makeSchema(!editing), [editing]);
   const { register, control, handleSubmit, watch, setValue, formState: { errors, isValid, isSubmitting } } = useForm({
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(schema),
     mode: 'onChange',
-    defaultValues: {
+    defaultValues: event ? {
+      kind: event.kind, name: event.name, place: event.geo_address_json?.address ?? event.meeting_url ?? '', description: event.description ?? '',
+      date: date0, time: time0, max_capacity: event.max_capacity ?? 0, allow_plus_one: event.allow_plus_one, tickets: [{ name: '', price: '' }],
+    } : {
       kind: 'f' as Event['kind'], name: '', place: '', description: '', date: localDate(1), time: '19:30',
       max_capacity: TEMPLATES.f.max_capacity ?? 0, allow_plus_one: TEMPLATES.f.allow_plus_one,
       tickets: [{ name: '', price: '' }],
     },
   });
   const { fields: tickets, append, remove } = useFieldArray({ control, name: 'tickets' });
-  const [descOpen, setDescOpen] = useState(false);
+  const [descOpen, setDescOpen] = useState(!!event?.description);
   const { kind, date, max_capacity: capacity, allow_plus_one: plusOne } = watch();
   const template = TEMPLATES[kind];
   const set = { shouldValidate: true, shouldDirty: true };
@@ -67,6 +76,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
 
   const pickKind = (next: Event['kind']) => {
     setValue('kind', next, set);
+    if (editing) return; // у готового события лимит и «+1» не сбрасываем шаблоном
     // настройки шаблона: свадьбе — лимит 60 и «+1», спорту — 10 мест
     setValue('max_capacity', TEMPLATES[next].max_capacity ?? 0, set);
     setValue('allow_plus_one', TEMPLATES[next].allow_plus_one, set);
@@ -77,6 +87,19 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
 
   const submit = handleSubmit(async (v) => {
     try {
+      if (editing) {
+        await editing.onSave({
+          kind: v.kind,
+          name: v.name,
+          description: v.description || null,
+          start_at: fromWall(v.date, v.time, editing.event.timezone),
+          geo_address_json: v.place && !isUrl(v.place) ? { address: v.place } : null,
+          meeting_url: isUrl(v.place) ? v.place : null,
+          max_capacity: v.max_capacity || null,
+          allow_plus_one: v.allow_plus_one,
+        });
+        return;
+      }
       const view = await api.createEvent({
         kind: v.kind,
         name: v.name,
@@ -90,7 +113,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
         ticket_types: v.tickets.map((t) => ({ ...(t.name && { name: t.name }), price_text: t.price || null })),
       });
       haptic.success();
-      onCreated(view);
+      onCreated?.(view);
     } catch (e) {
       haptic.error();
       toast((e as Error).message);
@@ -101,11 +124,13 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
 
   return (
     <form onSubmit={submit} noValidate>
-      <div className="top">
-        {onBack && <button type="button" className="chip" onClick={onBack}>← Назад</button>}
-        <h1>Что планируем?</h1>
-        <p>Выберите формат — остальное займёт полминуты.</p>
-      </div>
+      {!editing && (
+        <div className="top">
+          {onBack && <button type="button" className="chip" onClick={onBack}>← Назад</button>}
+          <h1>Что планируем?</h1>
+          <p>Выберите формат — остальное займёт полминуты.</p>
+        </div>
+      )}
 
       <div className="kinds" role="group" aria-label="Формат события">
         {(Object.keys(TEMPLATES) as Event['kind'][]).map((id) => (
@@ -137,23 +162,27 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
         <button type="button" className="quiet" onClick={() => { setDescOpen(true); }}>＋ Добавить описание</button>
       )}
 
-      <h2>{tickets.length > 1 ? 'Билеты' : 'Цена'}</h2>
-      {tickets.map((t, i) => (
-        <div className="group" key={t.id}>
-          {tickets.length > 1 && (
-            <div className="row" aria-invalid={!!errors.tickets?.[i]?.name}>
-              <label htmlFor={`ticket-name-${i}`}>Билет</label>
-              <input id={`ticket-name-${i}`} {...register(`tickets.${i}.name`)} placeholder="Например, Early bird" maxLength={TICKET_NAME_MAX} autoComplete="off" />
+      {!editing && (
+        <>
+          <h2>{tickets.length > 1 ? 'Билеты' : 'Цена'}</h2>
+          {tickets.map((t, i) => (
+            <div className="group" key={t.id}>
+              {tickets.length > 1 && (
+                <div className="row" aria-invalid={!!errors.tickets?.[i]?.name}>
+                  <label htmlFor={`ticket-name-${i}`}>Билет</label>
+                  <input id={`ticket-name-${i}`} {...register(`tickets.${i}.name`)} placeholder="Например, Early bird" maxLength={TICKET_NAME_MAX} autoComplete="off" />
+                </div>
+              )}
+              <div className="row">
+                <label htmlFor={`ticket-price-${i}`}>Цена</label>
+                <input id={`ticket-price-${i}`} {...register(`tickets.${i}.price`)} placeholder="Бесплатно, 1500 ₽, по донату…" maxLength={60} autoComplete="off" enterKeyHint="done" />
+              </div>
+              {tickets.length > 1 && <button type="button" className="row del" onClick={() => remove(i)}>Удалить билет</button>}
             </div>
-          )}
-          <div className="row">
-            <label htmlFor={`ticket-price-${i}`}>Цена</label>
-            <input id={`ticket-price-${i}`} {...register(`tickets.${i}.price`)} placeholder="Бесплатно, 1500 ₽, по донату…" maxLength={60} autoComplete="off" enterKeyHint="done" />
-          </div>
-          {tickets.length > 1 && <button type="button" className="row del" onClick={() => remove(i)}>Удалить билет</button>}
-        </div>
-      ))}
-      <button type="button" className="quiet" onClick={() => { append({ name: '', price: '' }); }}>＋ Добавить ещё билет</button>
+          ))}
+          <button type="button" className="quiet" onClick={() => { append({ name: '', price: '' }); }}>＋ Добавить ещё билет</button>
+        </>
+      )}
 
       <h2>Когда</h2>
       <div className="chips">
@@ -167,7 +196,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
       <div className="group">
         <div className="row" aria-invalid={!!errors.date}>
           <label htmlFor="date">Дата</label>
-          <input id="date" type="date" {...register('date')} min={localDate()} />
+          <input id="date" type="date" {...register('date')} min={editing ? undefined : localDate()} />
         </div>
         <div className="row" aria-invalid={!!errors.time}>
           <label htmlFor="time">Время</label>
@@ -192,10 +221,10 @@ export function CreateScreen({ onBack, onCreated, onKind, toast }: Props) {
             onClick={() => { setValue('allow_plus_one', !plusOne, set); }} />
         </div>
       </div>
-      <p className="note">Гостям не нужно ничего устанавливать: они открывают ссылку и отвечают в одно касание.</p>
+      {!editing && <p className="note">Гостям не нужно ничего устанавливать: они открывают ссылку и отвечают в одно касание.</p>}
 
       <div className="main"><div>
-        <button className="cta" disabled={!isValid || isSubmitting}>{isSubmitting ? 'Создаём…' : 'Создать и поделиться'}</button>
+        <button className="cta" disabled={!isValid || isSubmitting}>{isSubmitting ? (editing ? 'Сохраняем…' : 'Создаём…') : editing ? 'Сохранить' : 'Создать и поделиться'}</button>
       </div></div>
     </form>
   );

@@ -18,8 +18,8 @@ const time = (iso: string) => {
     : d.toLocaleDateString('ru', { day: 'numeric', month: 'short' });
 };
 const who = (c: Conv, m: Msg, me: number) =>
-  m.direction === 'in' ? `${c.peer_name} → боту` : `${m.author === 'bot' ? 'Бот' : m.author === `admin:${me}` ? 'Вы' : 'Админ'} → ${c.peer_name}`;
-const kind = (m: Msg) => (m.direction === 'in' ? 'user' : m.author === 'bot' ? 'bot' : 'admin');
+  m.direction === 'in' ? `${c.peer_name} → боту` : `${m.author === 'bot' ? 'Бот' : m.author === 'agent' ? 'Агент' : m.author === `admin:${me}` ? 'Вы' : 'Админ'} → ${c.peer_name}`;
+const kind = (m: Msg) => (m.direction === 'in' ? 'user' : m.author === 'bot' || m.author === 'agent' ? 'bot' : 'admin');
 
 function Reply({ onSend }: { onSend: (text: string) => Promise<void> }) {
   const [text, setText] = useState('');

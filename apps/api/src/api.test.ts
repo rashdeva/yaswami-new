@@ -107,6 +107,19 @@ test('билеты задаются при создании: цена — сво
   assert.deepEqual(many.ticket_types.map((t) => [t.name, t.price_text, t.position]), [['Early bird', '1000 ₽', 0], ['Обычный', '1500 ₽', 1]]);
 });
 
+test('«О событии»: у нового пусто, организатор дописывает, чужой не может', async () => {
+  const host = tma(1, 'Миша');
+  const { event } = await newEvent(host);
+  assert.deepEqual([event.what_happens, event.for_whom, event.guide], [[], null, null]);
+  const about = { topic: 'танцы', what_happens: ['Разминка', 'Танец в парах'], for_whom: 'Всем', beginner_friendly: true, takeaway: null, guide: { what: 'a', why: 'b', first: 'c', not_for: 'd' } };
+  const res = await call(host, 'PATCH', `/events/${event.id}`, about);
+  assert.equal(res.status, 200);
+  const saved = ((await res.json()) as EventView).event;
+  assert.deepEqual({ ...about, takeaway: saved.takeaway }, { ...about, takeaway: null });
+  assert.deepEqual([saved.topic, saved.what_happens, saved.guide], [about.topic, about.what_happens, about.guide]);
+  assert.equal((await call(tma(2, 'Дато'), 'PATCH', `/events/${event.id}`, about)).status, 403);
+});
+
 test('последнее место достаётся одному из восьми одновременных гостей', async () => {
   const { event } = await newEvent(tma(1, 'Миша'), { max_capacity: 1 });
   // Сначала вход (создаёт пользователей и прогревает соединения), чтобы ответы стартовали действительно одновременно.
@@ -666,6 +679,21 @@ test('переписка: бот пишет всё в базу, админ от�
   const back = await call(admin, 'PATCH', `/admin/conversations/${id}`, { mode: 'agent', attention: null });
   assert.deepEqual([((await back.json()) as Conversation).mode, back.status], ['agent', 200]);
   assert.deepEqual(await write('А сегодня что-нибудь есть?'), [REPLIES.no_date]);
+
+  // Те же операции через MCP — так работает Hermes. Не админу инструменты переписки не видны.
+  const mcp = async (auth: string, method: string, params?: object) =>
+    ((await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params })).json()) as { result: any }).result;
+  const toolNames = async (auth: string) => (await mcp(auth, 'tools/list')).tools.map((t: { name: string }) => t.name);
+  assert.ok(!(await toolNames(tma(71, 'Аня'))).includes('message_send'));
+  assert.ok((await toolNames(admin)).includes('message_send'));
+  const tool = async (name: string, args: object) => JSON.parse((await mcp(admin, 'tools/call', { name, arguments: args })).content[0].text);
+  assert.deepEqual((await tool('conversations_list', { waiting_only: true })).map((c: Conversation) => c.id), [id]);
+  sent.length = 0;
+  await tool('message_send', { conversation_id: id, text: 'Сегодня в 19:00 покер, записать?' });
+  assert.deepEqual(sent.map(([, b]) => b.text), ['Сегодня в 19:00 покер, записать?']);
+  const read = await tool('conversation_get', { conversation_id: id });
+  assert.deepEqual([read.conversation.mode, read.messages.at(-1).author], ['human', 'agent']);
+  assert.deepEqual(await tool('conversations_list', { waiting_only: true }), []);
 
   // Telegram не принял сообщение: оно остаётся в ленте как недоставленное, админка получает ошибку.
   const ok = bot.call;

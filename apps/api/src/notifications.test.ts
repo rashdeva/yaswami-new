@@ -16,6 +16,7 @@ const event: Event = {
   id: 'e_0123456789', user_id: 1, kind: 'o', name: 'Йога на пляже', description: null,
   start_at: new Date('2026-11-14T19:00:00+07:00'), end_at: null, timezone: 'Asia/Ho_Chi_Minh',
   geo_address_json: { address: 'Пляж Микхе' }, meeting_url: null, max_capacity: 10, allow_plus_one: false,
+  topic: null, what_happens: [], for_whom: null, beginner_friendly: null, takeaway: null, guide: null,
   status: 'published', widget_id: null, rev: 0, created_at: new Date(),
 };
 const item: CollectedEventItem = {

@@ -14,6 +14,9 @@ export const NAME_MAX = 60;
 export const ADDRESS_MAX = 80;
 export const DESCRIPTION_MAX = 300;
 export const TICKET_NAME_MAX = 30;
+export const ABOUT_STEP_MAX = 200;
+export const ABOUT_MAX = 300;
+export const GUIDE_MAX = 1000;
 export const TICKET_DESCRIPTION_MAX = 1000;
 
 const count = z.number().int().nonnegative();
@@ -32,6 +35,15 @@ export type User = z.infer<typeof User>;
 export const Address = z.object({ address: z.string().trim().min(1).max(ADDRESS_MAX) });
 export type Address = z.infer<typeof Address>;
 
+/** Гид по формату для конкретного события: на старте копия шаблона темы (TOPIC_GUIDES), дальше организатор правит под себя. */
+export const Guide = z.object({
+  what: z.string().trim().max(GUIDE_MAX),
+  why: z.string().trim().max(GUIDE_MAX),
+  first: z.string().trim().max(GUIDE_MAX),
+  not_for: z.string().trim().max(GUIDE_MAX),
+});
+export type Guide = z.infer<typeof Guide>;
+
 export const Event = z.object({
   id: z.string().min(1), // короткий slug
   user_id: User.shape.id, // организатор
@@ -45,6 +57,13 @@ export const Event = z.object({
   meeting_url: httpUrl.nullable(),
   max_capacity: z.number().int().positive().nullable(), // общий лимит мест события
   allow_plus_one: z.boolean(),
+  // «Что это мне даст»: свои у каждого события, правятся на экране «Редактировать → О событии».
+  topic: z.string().trim().max(60).nullable(),
+  what_happens: z.array(z.string().trim().min(1).max(ABOUT_STEP_MAX)).max(10), // шаги по порядку
+  for_whom: z.string().trim().max(ABOUT_MAX).nullable(),
+  beginner_friendly: z.boolean().nullable(), // null — не сказано
+  takeaway: z.string().trim().max(ABOUT_MAX).nullable(), // обещание самого организатора
+  guide: Guide.nullable(),
   status: z.enum(EVENT_STATUSES),
   widget_id: z.string().nullable(),
   rev: count,
