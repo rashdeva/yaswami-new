@@ -52,7 +52,6 @@ export function App() {
   const [events, setEvents] = useState<EventListData[] | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [kind, setKind] = useState<Event['kind']>('o');
-  const [sheet, setSheet] = useState(false);
   const [toast, setToast] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const screenRef = useRef(screen);
@@ -92,11 +91,10 @@ export function App() {
     const path = pathOf(next);
     if (path && path !== location.pathname) history.pushState(null, '', path);
     setScreen(next);
-    setSheet(false);
     scrollTo(0, 0);
   }, []);
   useEffect(() => {
-    const onPop = () => { setScreen(screenFromPath() ?? { name: 'list' }); setSheet(false); };
+    const onPop = () => { setScreen(screenFromPath() ?? { name: 'list' }); };
     addEventListener('popstate', onPop);
     return () => removeEventListener('popstate', onPop);
   }, []);
@@ -105,13 +103,11 @@ export function App() {
   const isPublic = screen?.name === 'feed' || screen?.name === 'collected';
   useEffect(() => { if (isPublic) setKind('o'); }, [isPublic]);
 
-  // Куда ведёт «назад»: шторка → закрыть, событие → свой список, создание → список или витрина. null — корень.
+  // Куда ведёт «назад»: событие → свой список, создание → список или витрина. null — корень.
   const hasEvents = !!events?.length;
   const toMine = useCallback(() => go({ name: hasEvents ? 'list' : 'create' }), [go, hasEvents]);
   const fromCreate = useCallback(() => go({ name: hasEvents ? 'list' : 'feed' }), [go, hasEvents]);
-  const back = sheet
-    ? () => setSheet(false)
-    : screen?.name === 'collected'
+  const back = screen?.name === 'collected'
       ? () => go({ name: 'feed' })
       : screen?.name === 'event'
         ? () => go({ name: 'list' })
@@ -150,7 +146,6 @@ export function App() {
       haptic.success();
       setMe((m) => m && { ...m, claimable: m.claimable.filter((c) => c.id !== item.id) });
       go({ name: 'event', id: view.event.id, initial: view });
-      setSheet(true); // сразу предлагаем отправить приглашение в чат
       void loadEvents().catch(() => {});
     } catch (e) {
       haptic.error();
@@ -229,7 +224,6 @@ export function App() {
         toast={showToast}
         onCreated={(view) => {
           go({ name: 'event', id: view.event.id, initial: view });
-          setSheet(true); // сразу предлагаем поделиться
           void loadEvents().catch(() => {});
         }}
       />
@@ -240,8 +234,6 @@ export function App() {
         key={screen.id}
         id={screen.id}
         initial={screen.initial}
-        sheet={sheet}
-        onSheet={setSheet}
         onBack={nativeBack ? null : () => go({ name: 'list' })}
         onKind={setKind}
         toast={showToast}

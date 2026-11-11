@@ -5,7 +5,7 @@ import type { EventData } from '../api.ts';
 import { api } from '../api.ts';
 import { hue, when } from '../format.ts';
 import { haptic } from '../tg.ts';
-import { ShareSheet } from './ShareSheet.tsx';
+import { shareEvent } from '../share.ts';
 
 const ANSWERS: [RsvpStatus, string][] = [['approved', 'Пойду'], ['maybe', 'Думаю'], ['declined', 'Не пойду']];
 const GUEST_LABEL = { approved: 'пойдёт', maybe: 'думает', declined: 'не пойдёт', waitlist: 'в листе ожидания' } as const;
@@ -13,15 +13,13 @@ const GUEST_LABEL = { approved: 'пойдёт', maybe: 'думает', declined:
 interface Props {
   id: string;
   initial?: EventData;
-  sheet: boolean;
-  onSheet: (open: boolean) => void;
   onBack: (() => void) | null;
   onKind: (kind: Event['kind']) => void;
   toast: (text: string) => void;
   onChanged: () => void;
 }
 
-export function EventScreen({ id, initial, sheet, onSheet, onBack, onKind, toast, onChanged }: Props) {
+export function EventScreen({ id, initial, onBack, onKind, toast, onChanged }: Props) {
   const [view, setView] = useState<EventData | null>(initial ?? null);
   const [failed, setFailed] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -154,9 +152,8 @@ export function EventScreen({ id, initial, sheet, onSheet, onBack, onKind, toast
       </div>
 
       <div className="main"><div>
-        <button className="cta" onClick={() => { onSheet(true); }}>{is_host ? 'Отправить в чат' : 'Позвать друзей'}</button>
+        <button className="cta" onClick={() => shareEvent(view.event, toast)}>{is_host ? 'Отправить в чат' : 'Позвать друзей'}</button>
       </div></div>
-      {sheet && <ShareSheet view={view} onClose={() => onSheet(false)} toast={toast} />}
     </>
   );
 }
