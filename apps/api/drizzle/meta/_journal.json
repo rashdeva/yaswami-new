@@ -134,6 +134,20 @@
       "when": 1794428891342,
       "tag": "0018_brief_sway",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794438169640,
+      "tag": "0019_strong_reavers",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794438530951,
+      "tag": "0020_chemical_scourge",
+      "breakpoints": true
     }
   ]
 }

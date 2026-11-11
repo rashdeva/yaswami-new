@@ -1,9 +1,10 @@
 // Админка переписки, экран «Лента» (docs/agents-inbox.md): сверху диалоги, которые ждут нас, ниже — живой поток
 // всех сообщений. Управление с клавиатуры; данные обновляются опросом.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { InboxConversation, InboxFeed, Message, TgAccount, Wire } from '@yaswami/core';
-import { INBOX_STAGES } from '@yaswami/core';
+import type { AdminOverview, AgentKey, InboxConversation, InboxFeed, Message, TgAccount, Wire } from '@yaswami/core';
+import { AGENTS, INBOX_STAGES } from '@yaswami/core';
 import { api, ApiError, loginUrl } from '../api.ts';
+import { Events, useModeration } from './Events.tsx';
 import '../tokens.css';
 import './admin.css';
 
@@ -19,11 +20,22 @@ const time = (iso: string) => {
     ? d.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
     : d.toLocaleDateString('ru', { day: 'numeric', month: 'short' });
 };
+/** Какой агент написал сообщение: `agent:<роль>`, у оператора — просто `agent`. */
+const agentOf = (author: string): AgentKey | null => {
+  if (!author.startsWith('agent')) return null;
+  const role = author.split(':')[1] ?? 'operator';
+  return role in AGENTS ? (role as AgentKey) : null;
+};
+/** Кто отправитель с нашей стороны: бот сам, один из агентов или человек из команды. */
+const sender = (m: Msg, me: number) => {
+  const agent = agentOf(m.author);
+  return m.author === 'bot' ? 'Бот (автоответ)' : agent ? `Агент «${AGENTS[agent].name}»` : m.author === `admin:${me}` ? 'Вы' : 'Человек из команды';
+};
 const who = (c: Conv, m: Msg, me: number, via: string) =>
-  m.direction === 'in'
-    ? `${c.peer_name} → ${via}`
-    : `${m.author === 'bot' ? 'Бот' : m.author.startsWith('agent') ? 'Агент' : m.author === `admin:${me}` ? 'Вы' : 'Админ'} → ${c.peer_name}${c.channel === 'account' ? ` · ${via}` : ''}`;
-const kind = (m: Msg) => (m.direction === 'in' ? 'user' : m.author === 'bot' || m.author.startsWith('agent') ? 'bot' : 'admin');
+  m.direction === 'in' ? `${c.peer_name} → ${via}` : `${sender(m, me)} → ${c.peer_name}${c.channel === 'account' ? ` · ${via}` : ''}`;
+/** Кто сейчас отвечает в диалоге. */
+const leads = (c: Conv) => (c.mode === 'human' ? 'ведёте вы' : c.agent ? `ведёт агент «${AGENTS[c.agent].name}»` : c.channel === 'bot' ? 'отвечает бот' : 'никто не ведёт');
+const kind = (m: Msg) => (m.direction === 'in' ? 'user' : m.author === 'bot' ? 'bot' : m.author.startsWith('agent') ? 'agent' : 'admin');
 
 const ACCOUNT_STATUS: Record<Account['status'], string> = {
   login_requested: 'Запрашиваем код у Telegram…',
@@ -123,7 +135,10 @@ export default function Admin() {
   const [problem, setProblem] = useState<string | null>(null); // код ошибки загрузки
   const [notice, setNotice] = useState('');
   // Два вида: «Люди» — список собеседников и переписка с выбранным; «Лента» — все сообщения подряд.
-  const [view, setView] = useState<'people' | 'feed'>('people');
+  const [view, setView] = useState<'people' | 'feed' | 'hosts' | 'agents' | 'events'>('people');
+  const moderation = useModeration();
+  const [agentFilter, setAgentFilter] = useState<AgentKey | 'all'>('all');
+  const [overview, setOverview] = useState<Wire<AdminOverview> | null>(null); // разделы «Организаторы» и «Агенты»
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(''); // ключ выбранной строки: c:<диалог> или m:<сообщение>
@@ -169,10 +184,12 @@ export default function Admin() {
   const needle = query.trim().toLowerCase().replace(/^@/, '');
   const people = all
     .filter(FILTERS.find(([key]) => key === filter)![2])
+    .filter((c) => agentFilter === 'all' || c.agent === agentFilter)
     .filter((c) => !needle || c.peer_name.toLowerCase().includes(needle) || c.peer_username?.toLowerCase().includes(needle));
 
   const rows = view === 'people'
     ? people.map((c) => ({ key: `c:${c.id}`, c }))
+    : view !== 'feed' ? []
     : [...pinned.map((c) => ({ key: `c:${c.id}`, c })), ...events.map(({ c, m }) => ({ key: `m:${m.id}`, c }))];
   const at = Math.max(0, rows.findIndex((r) => r.key === selected));
   const cur = rows[at];
@@ -203,6 +220,19 @@ export default function Admin() {
     void api.inboxThread(curId).then((messages) => !stale && setThread(messages), () => {});
     return () => { stale = true; };
   }, [open, curId, newest]);
+  // Разделы «Организаторы» и «Агенты» загружаются, когда открыты, и обновляются вместе с лентой.
+  const sections = view === 'hosts' || view === 'agents';
+  useEffect(() => {
+    if (sections) void api.overview().then(setOverview, () => {});
+  }, [sections, newest]);
+  const openDialog = (id: string) => {
+    setFilter('all');
+    setAgentFilter('all');
+    setQuery('');
+    setSelected(`c:${id}`);
+    setView('people');
+  };
+
   // Новое сообщение в открытой переписке — прокручиваем к нему.
   useEffect(() => { root.current?.querySelector('.ad-thread')?.scrollTo({ top: 1e9 }); }, [thread.length, curId]);
 
@@ -245,6 +275,8 @@ export default function Admin() {
     );
   }
 
+  const pendingEvents = moderation.items?.filter((e) => e.status === 'pending').length ?? 0;
+
   // Черновик агента: причина, правка текста, отправить или отклонить.
   const draftBlock = (draft: Msg) => (
     <div className="ad-draft">
@@ -274,6 +306,11 @@ export default function Admin() {
         <span className="ad-tabs">
           <button className={view === 'people' ? 'on' : ''} onClick={() => setView('people')}>Люди</button>
           <button className={view === 'feed' ? 'on' : ''} onClick={() => setView('feed')}>Лента</button>
+          <button className={view === 'hosts' ? 'on' : ''} onClick={() => setView('hosts')}>Организаторы</button>
+          <button className={view === 'agents' ? 'on' : ''} onClick={() => setView('agents')}>Агенты</button>
+          <button className={view === 'events' ? 'on' : ''} onClick={() => setView('events')}>
+            События{pendingEvents > 0 && <b className="ad-badge">{pendingEvents}</b>}
+          </button>
         </span>
         <span className="ad-pill">Ждут вас: {pinned.length}</span>
         <button className="ad-btn ghost" onClick={() => setShowAccounts(!showAccounts)}>Аккаунты: {feed.accounts.filter((a) => a.status === 'active').length}</button>
@@ -292,6 +329,13 @@ export default function Admin() {
                 <button key={key} className={filter === key ? 'on' : ''} onClick={() => setFilter(key)}>{label} {all.filter(match).length}</button>
               ))}
             </div>
+            <div className="ad-chips">
+              <span className="ad-hint">Агент:</span>
+              <button className={agentFilter === 'all' ? 'on' : ''} onClick={() => setAgentFilter('all')}>любой</button>
+              {(Object.keys(AGENTS) as AgentKey[]).map((key) => (
+                <button key={key} className={agentFilter === key ? 'on' : ''} onClick={() => setAgentFilter(key)}>{AGENTS[key].name} {all.filter((c) => c.agent === key).length}</button>
+              ))}
+            </div>
             {people.length === 0 && <p className="ad-hint">Никого нет.</p>}
             {people.map((c) => (
               <div key={c.id} className={`ad-person ${cur?.c.id === c.id ? 'sel' : ''}`} onClick={() => setSelected(`c:${c.id}`)}>
@@ -302,9 +346,9 @@ export default function Admin() {
                   <span className="ad-tags">
                     {drafts.has(c.id) && <b className="ad-tag warn">черновик</b>}
                     {c.attention && !drafts.has(c.id) && <b className="ad-tag bad">ждёт вас</b>}
-                    {c.mode === 'human' && <b className="ad-tag">ведёте вы</b>}
                   </span>
                 </div>
+                <div className="ad-hint">{leads(c)}</div>
               </div>
             ))}
           </aside>
@@ -316,7 +360,7 @@ export default function Admin() {
                   <span>
                     <strong>{cur.c.peer_name}</strong>{' '}
                     {cur.c.peer_username && <a className="ad-hint" href={`https://t.me/${cur.c.peer_username}`} target="_blank" rel="noreferrer">@{cur.c.peer_username}</a>}
-                    <div className="ad-hint">{person(cur.c)} · пишет {via(cur.c)} · {cur.c.mode === 'human' ? 'диалог ведёте вы' : 'отвечает агент'}</div>
+                    <div className="ad-hint">{person(cur.c)} · пишет {via(cur.c)} · {leads(cur.c)}</div>
                     {cur.c.attention && <div className="ad-hint warn">Ждёт вас: {cur.c.attention}</div>}
                   </span>
                   <span className="ad-inline">
@@ -331,6 +375,72 @@ export default function Admin() {
             )}
           </section>
         </div>
+      )}
+
+      {view === 'hosts' && (
+        <main>
+          <div className="ad-wide">
+            <h2>Организаторы <b className="ad-badge">{overview?.hosts.length ?? 0}</b></h2>
+            <p className="ad-hint">Профили собраны по открытым анонсам. «Записей» — сколько раз на предстоящие события организатора нажали «Записаться» у нас.</p>
+            {!overview && <p className="ad-hint">Загружаю…</p>}
+            {overview && (
+              <table className="ad-table">
+                <thead><tr><th>Организатор</th><th>О нём</th><th>Событий</th><th>Записей</th><th>В сервисе</th><th>Переписка</th></tr></thead>
+                <tbody>
+                  {[...overview.hosts].sort((a, b) => b.signups - a.signups || b.events - a.events).map((h) => (
+                    <tr key={h.telegram_id}>
+                      <td>
+                        <strong>{h.name}</strong>
+                        <div><a href={`https://t.me/${h.username}`} target="_blank" rel="noreferrer">@{h.username}</a></div>
+                        {h.channel && <div className="ad-hint">канал <a href={`https://t.me/${h.channel}`} target="_blank" rel="noreferrer">@{h.channel}</a></div>}
+                      </td>
+                      <td className="ad-hint">{h.summary ?? '—'}</td>
+                      <td>{h.events}</td>
+                      <td>{h.signups}</td>
+                      <td>{h.registered ? <b className="ad-tag ok">вошёл</b> : <span className="ad-hint">нет</span>}</td>
+                      <td>
+                        {h.conversation_id
+                          ? <button className="ad-link" onClick={() => openDialog(h.conversation_id!)}>{INBOX_STAGES[h.stage!]}</button>
+                          : <span className="ad-hint">не писали</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </main>
+      )}
+
+      {view === 'events' && <Events items={moderation.items} act={act} reload={moderation.reload} />}
+
+      {view === 'agents' && (
+        <main>
+          <div className="ad-wide">
+            <h2>Агенты</h2>
+            <p className="ad-hint">Кто что делает и кому пишет. Агенты не отправляют сообщений первыми без вас: исключение — поддержка, она отвечает тем, кто сам написал боту.</p>
+            {!overview && <p className="ad-hint">Загружаю…</p>}
+            <div className="ad-cards">
+              {overview?.agents.map((a) => (
+                <div key={a.key} className="ad-card">
+                  <div className="ad-row">
+                    <strong>{AGENTS[a.key].name}</strong>
+                    <b className={`ad-tag ${a.enabled ? 'ok' : ''}`}>{a.enabled ? 'включён' : 'выключен'}</b>
+                  </div>
+                  <div>{AGENTS[a.key].about}</div>
+                  <div className="ad-hint">Когда отправляет: {AGENTS[a.key].sends}</div>
+                  <div className="ad-stats">
+                    <span><b>{a.conversations}</b> диалогов</span>
+                    <span><b>{a.drafts}</b> черновиков ждут</span>
+                    <span><b>{a.sent_today}</b> отправлено за сутки</span>
+                    <span><b>{a.sent}</b> всего</span>
+                  </div>
+                  <button className="ad-link" onClick={() => { setFilter('all'); setQuery(''); setAgentFilter(a.key); setView('people'); }}>Показать его диалоги</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </main>
       )}
 
       {view === 'feed' && (

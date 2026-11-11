@@ -138,6 +138,24 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   popular?: boolean; // отклик заметно выше обычного для этого источника (popularIds)
 }
 
+/** Путь собранного события от разбора анонса до ленты; в ленте — только published. */
+export const COLLECTED_STATUSES = ['pending', 'approved', 'published', 'rejected'] as const;
+export type CollectedStatus = (typeof COLLECTED_STATUSES)[number];
+
+/** Собранное событие в админке модерации: любого статуса, с источником. */
+export interface AdminCollectedEvent extends CollectedEventItem {
+  status: CollectedStatus;
+  channel: string; // источник: канал или группа, откуда анонс
+}
+
+/** Отбор собранных событий в модерации: без статуса — все. */
+export const CollectedListInput = z.object({ status: z.enum(COLLECTED_STATUSES).optional().describe('Only this status; pending — waiting for a decision') });
+export type CollectedListInput = z.infer<typeof CollectedListInput>;
+
+/** Решение модератора: одобрить (дальше обработка и публикация) или отклонить (снять с публикации). */
+export const CollectedModerateInput = z.object({ status: z.enum(['approved', 'rejected']) });
+export type CollectedModerateInput = z.infer<typeof CollectedModerateInput>;
+
 /** Собранное событие в «Моих событиях»: куда человек заходил или нажимал «Записаться». */
 export interface MyCollectedItem {
   event: CollectedEventItem;

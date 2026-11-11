@@ -3,7 +3,7 @@
 import { asc, eq, gt, ilike, or } from 'drizzle-orm';
 import type { EventUpdateInput, User } from '@yaswami/core';
 import type { Db } from './db/client.ts';
-import { collectedEvents, collectedEventSignups, events, hosts, users } from './db/schema.ts';
+import { collectedEventSignups, events, hosts, users } from './db/schema.ts';
 import { eventUrl } from './notifications.ts';
 import * as s from './services.ts';
 import { verifyTicket } from './support.ts';
@@ -52,12 +52,6 @@ export const getCollectedEventSignups = async (db: Db, slug: string) => ({
     .from(collectedEventSignups).innerJoin(users, eq(users.id, collectedEventSignups.user_id))
     .where(eq(collectedEventSignups.external_id, s.collectedExternalId(slug))),
 });
-
-/** Убрать событие с витрины, например по просьбе организатора. Записи на него уходят вместе с ним. */
-export async function deleteCollectedEvent(db: Db, slug: string): Promise<void> {
-  const removed = await db.delete(collectedEvents).where(eq(collectedEvents.external_id, s.collectedExternalId(slug))).returning({ id: collectedEvents.external_id });
-  if (!removed.length) throw new s.AppError('not_found', 404);
-}
 
 /** Профили организаторов собранных событий. `user_id` появляется, когда человек вошёл в сервис. */
 export const listHosts = (db: Db) =>

@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, CollectedEvent, Conversation, Event, Guest, Guide, Message, Share, TgAccount, TicketType, User } from '@yaswami/core';
+import type { Address, CollectedEvent, Conversation, Event, Guest, Guide, Message, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -145,6 +145,13 @@ export const collectedEvents = pgTable(
     video_url: text(),
     // Когда ролик заказали: по этой отметке считается дневной лимит (генерация платная), и второй раз не заказываем.
     video_at: at('video_at'),
+    // Сколько раз ролик заказывали. Заказ живёт в памяти процесса API: перезапуск (выкладка) обрывает его,
+    // и результат теряется — такой заказ повторяем, но не больше VIDEO_TRIES раз, чтобы не рисовать по кругу.
+    video_tries: integer().notNull().default(0),
+    // Модерация (CollectedStatus в @yaswami/core): pending — ждёт решения в админке, approved — одобрено и ждёт
+    // обработки иллюстратором, published — в ленте, rejected — отклонено или снято с публикации. В ленту и на
+    // страницу события попадает только published. Отклонённое остаётся в базе: повторный анонс не создаст его заново.
+    status: text().$type<CollectedStatus>().notNull().default('pending'),
     created_at: at('created_at').notNull().defaultNow(),
     updated_at: at('updated_at').notNull().defaultNow(),
   },

@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AccountCreateInput, AppConfig, CollectedEventItem, Conversation, ConversationUpdateInput, TgAccount, EventCreateInput, EventListItem, EventUpdateInput, EventView, InboxFeed, Me, Message, MyCollectedItem, RsvpInput, VisitInput, Wire } from '@yaswami/core';
+import type { AdminCollectedEvent, AccountCreateInput, AdminOverview, AppConfig, CollectedEventItem, Conversation, ConversationUpdateInput, TgAccount, EventCreateInput, EventListItem, EventUpdateInput, EventView, InboxFeed, Me, Message, MyCollectedItem, RsvpInput, VisitInput, Wire } from '@yaswami/core';
 import { inTelegram, tg } from './tg.ts';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -62,6 +62,7 @@ export const api = {
   config: () => request<AppConfig>('GET', '/config'),
   me: () => request<Me>('GET', '/me'),
   inbox: () => request<Wire<InboxFeed>>('GET', '/admin/inbox'),
+  overview: () => request<Wire<AdminOverview>>('GET', '/admin/overview'),
   inboxThread: (id: string) => request<Wire<Message>[]>('GET', `/admin/conversations/${id}/messages`),
   inboxSend: (id: string, text: string) => request<void>('POST', `/admin/conversations/${id}/messages`, { text }),
   draftSend: (id: string, text?: string) => request<void>('POST', `/admin/messages/${id}/send`, text ? { text } : {}),
@@ -69,6 +70,9 @@ export const api = {
   accountCreate: (input: AccountCreateInput) => request<Wire<TgAccount>>('POST', '/admin/accounts', input),
   accountLogin: (id: string, secret: string) => request<void>('POST', `/admin/accounts/${id}/login`, { secret }),
   accountDelete: (id: string) => request<void>('DELETE', `/admin/accounts/${id}`),
+  adminEvents: () => request<AdminCollectedEvent[]>('GET', '/admin/collected-events'),
+  adminEventModerate: (id: string, status: 'approved' | 'rejected') => request<{ status: string }>('PATCH', `/admin/collected-events/${encodeURIComponent(id)}`, { status }),
+  adminEventDelete: (id: string) => request<void>('DELETE', `/admin/collected-events/${encodeURIComponent(id)}`),
   inboxUpdate: (id: string, input: ConversationUpdateInput) => request<Wire<Conversation>>('PATCH', `/admin/conversations/${id}`, input),
   logout: () => request<void>('POST', '/auth/logout'),
   collected: () => request<CollectedEventItem[]>('GET', '/collected-events'),

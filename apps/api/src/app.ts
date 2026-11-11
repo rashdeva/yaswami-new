@@ -4,7 +4,7 @@ import { getCookie } from 'hono/cookie';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
-import { AccountCreateInput, AccountLoginInput, AccountMessageInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, LeadInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, VisitInput } from '@yaswami/core';
+import { CollectedListInput, CollectedModerateInput, AccountCreateInput, AccountLoginInput, AccountMessageInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, LeadInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, VisitInput } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { AuthMethod } from './auth.ts';
 import { authenticate, issueToken, revokeTokens } from './auth.ts';
@@ -12,7 +12,7 @@ import type { Extract } from './bot.ts';
 import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
 import {
-  createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, listAccounts, logSent, recordAccountMessage, recordLead, rejectDraft,
+  adminOverview, createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, listAccounts, logSent, recordAccountMessage, recordLead, rejectDraft,
   requireAdmin, sendDraft, submitAccountLogin,
 } from './inbox.ts';
 import { handleMcp } from './mcp.ts';
@@ -129,6 +129,14 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await next();
     })
     .get('/admin/inbox', async (c) => c.json(await inboxFeed(db, c.var.actor)))
+    .get('/admin/overview', async (c) => c.json(await adminOverview(db)))
+    // Модерация собранных событий: в ленту выходит только одобренное (services.ts).
+    .get('/admin/collected-events', async (c) => c.json(await s.listCollectedForAdmin(db, CollectedListInput.parse(c.req.query()).status)))
+    .patch('/admin/collected-events/:id', json(CollectedModerateInput), async (c) => c.json(await s.moderateCollectedEvent(db, c.req.param('id'), c.req.valid('json'))))
+    .delete('/admin/collected-events/:id', async (c) => {
+      await s.deleteCollectedEvent(db, c.req.param('id'));
+      return c.body(null, 204);
+    })
     .get('/admin/conversations/:id/messages', async (c) => c.json(await inboxThread(db, c.req.param('id'))))
     .post('/admin/conversations/:id/messages', json(InboxSendInput), async (c) => {
       await inboxSend(db, `admin:${c.var.actor.id}`, c.req.param('id'), c.req.valid('json').text);
@@ -162,10 +170,6 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/admin/users', async (c) => c.json(await admin.searchUsers(db, UserSearchInput.parse(c.req.query()).query)))
     .get('/admin/hosts', async (c) => c.json(await admin.listHosts(db)))
     .get('/admin/collected-events/:id', async (c) => c.json(await admin.getCollectedEventSignups(db, c.req.param('id'))))
-    .delete('/admin/collected-events/:id', async (c) => {
-      await admin.deleteCollectedEvent(db, c.req.param('id'));
-      return c.body(null, 204);
-    })
     // Обложки и ролики собранных событий: работа роли-иллюстратора.
     .get('/admin/covers', async (c) => c.json(await s.listPendingCovers(db)))
     .post('/admin/covers/:id', json(CoverSetInput), async (c) => c.json(await s.setCollectedCover(db, c.req.param('id'), c.req.valid('json').image_url)))

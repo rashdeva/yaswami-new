@@ -1,7 +1,10 @@
 // Переписка (docs/agents-inbox.md): запись всего, что люди пишут боту и что бот или мы отвечаем, и операции админки.
 import { and, asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
-import type { AccountCreateInput, AccountMessageInput, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message, TgAccount, User } from '@yaswami/core';
-import { collectedPath, collectedWhen } from '@yaswami/core';
+import type {
+  AccountCreateInput, AccountMessageInput, AdminOverview, AgentKey, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message,
+  TgAccount, User,
+} from '@yaswami/core';
+import { AGENTS, collectedPath, collectedWhen } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, conversations, hosts, messages, tgAccounts, users } from './db/schema.ts';
 import { AppError, collectedSlug } from './services.ts';
@@ -237,6 +240,8 @@ async function withStages(db: Db, rows: Conversation[]): Promise<InboxConversati
       draft: sql<boolean>`coalesce(bool_or(${messages.status} = 'draft'), false)`,
       // Ответил — написал нам после нашего первого сообщения.
       replied: sql<boolean>`coalesce(max(${messages.created_at}) filter (where ${messages.direction} = 'in') > min(${messages.created_at}) filter (where ${ours}), false)`,
+      // Автор-агент: `agent:<роль>`, у оператора (пишет через MCP) — просто `agent`.
+      agent: sql<string | null>`max(${messages.author}) filter (where ${messages.author} like 'agent%')`,
     })
     .from(messages).where(inArray(messages.conversation_id, rows.map((c) => c.id))).groupBy(messages.conversation_id)).map((f) => [f.id, f]));
   return rows.map((c) => {
@@ -245,8 +250,60 @@ async function withStages(db: Db, rows: Conversation[]): Promise<InboxConversati
     // Организатор «в сервисе», когда вошёл сам; гость из чата — когда появился среди пользователей.
     const joined = organizer ? organizers.get(c.peer_id) != null : c.channel === 'account' && members.has(c.peer_id);
     const stage = joined ? 'joined' : c.channel === 'bot' ? 'bot' : f?.replied ? 'replied' : f?.contacted ? 'contacted' : f?.draft ? 'draft' : 'wrote_us';
-    return { ...c, kind: organizer ? 'organizer' : 'guest', stage };
+    return { ...c, kind: organizer ? 'organizer' : 'guest', stage, agent: agentKey(f?.agent) };
   });
+}
+
+const agentKey = (author: string | null | undefined): AgentKey | null => {
+  if (!author) return null;
+  const role = author.split(':')[1] ?? 'operator';
+  return role in AGENTS ? (role as AgentKey) : null;
+};
+
+/** Разделы «Агенты» и «Организаторы» админки: что сделал каждый агент и кто такие организаторы каталога. */
+export async function adminOverview(db: Db): Promise<AdminOverview> {
+  const ours = sql`${messages.status} in ('sent', 'queued')`;
+  const stats = await db
+    .select({
+      author: messages.author,
+      conversations: sql<number>`count(distinct ${messages.conversation_id})::int`,
+      drafts: sql<number>`(count(*) filter (where ${messages.status} = 'draft'))::int`,
+      sent: sql<number>`(count(*) filter (where ${ours}))::int`,
+      sent_today: sql<number>`(count(*) filter (where ${ours} and ${messages.created_at} > now() - interval '24 hours'))::int`,
+    })
+    .from(messages).where(sql`${messages.author} like 'agent%'`).groupBy(messages.author);
+  const enabled: Record<AgentKey, boolean> = { support: !!settings.supportUrl, hunter: !!settings.hunterUrl, host: !!settings.hostUrl, operator: true };
+  const agents = (Object.keys(AGENTS) as AgentKey[]).map((key) => {
+    const row = stats.find((r) => agentKey(r.author) === key);
+    return { key, enabled: enabled[key], conversations: row?.conversations ?? 0, drafts: row?.drafts ?? 0, sent: row?.sent ?? 0, sent_today: row?.sent_today ?? 0 };
+  });
+
+  // ponytail: до 300 организаторов одним списком; постраничная выдача и поиск на сервере — когда их станет больше.
+  const profiles = await db.select().from(hosts).orderBy(asc(hosts.name)).limit(300);
+  const activity = new Map((await db
+    .select({
+      username: collectedEvents.telegram_username,
+      events: sql<number>`count(distinct ${collectedEvents.external_id})::int`,
+      signups: sql<number>`count(${collectedEventSignups.user_id})::int`,
+    })
+    .from(collectedEvents)
+    .leftJoin(collectedEventSignups, eq(collectedEventSignups.external_id, collectedEvents.external_id))
+    .where(gt(collectedEvents.starts_at, new Date())).groupBy(collectedEvents.telegram_username)).map((r) => [r.username, r]));
+  const ids = profiles.map((h) => h.telegram_id);
+  const dialogs = ids.length
+    ? await withStages(db, await db.select().from(conversations).where(and(eq(conversations.channel, 'account'), inArray(conversations.peer_id, ids))))
+    : [];
+  return {
+    agents,
+    hosts: profiles.map((h) => {
+      const dialog = dialogs.find((c) => c.peer_id === h.telegram_id);
+      return {
+        telegram_id: h.telegram_id, name: h.name, username: h.username, channel: h.channel, summary: h.summary, registered: h.user_id != null,
+        events: activity.get(h.username)?.events ?? 0, signups: activity.get(h.username)?.signups ?? 0,
+        conversation_id: dialog?.id ?? null, stage: dialog?.stage ?? null,
+      };
+    }),
+  };
 }
 
 export async function inboxFeed(db: Db, actor: User): Promise<InboxFeed> {

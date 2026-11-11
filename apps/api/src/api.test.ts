@@ -5,7 +5,7 @@ import { after, before, test } from 'node:test';
 import { asc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
+import type { AdminOverview, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
 import { bot } from './telegram.ts';
@@ -15,7 +15,7 @@ import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
 import { collectedEvents, hosts, photos, visits, tgAccounts } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
-import { requestNextVideo } from './services.ts';
+import { listCollectedForAdmin, requestNextVideo } from './services.ts';
 import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
@@ -207,7 +207,7 @@ test('MCP: список инструментов, создание событи�
 test('собранные события: витрина без входа, запись — после входа, вход по cookie сайта', async () => {
   await db.delete(collectedEvents);
   const row = (external_id: string, starts_at: Date) => ({
-    external_id, channel: 'danangevent', starts_at, signup_url: 'https://t.me/anna_yoga?text=hi',
+    external_id, channel: 'danangevent', starts_at, signup_url: 'https://t.me/anna_yoga?text=hi', status: 'published' as const,
     announcement: { url: 'https://t.me/danangevent/1' },
     event: {
       title: 'Йога', description: 'Практика на пляже', starts_at: starts_at.toISOString(), ends_at: null, place: 'My Khe',
@@ -259,7 +259,7 @@ test('подтверждение владельцем: предлагается 
   await db.delete(collectedEvents);
   const starts_at = new Date(Date.now() + 86_400_000);
   await db.insert(collectedEvents).values({
-    external_id: 'telegram:danangevent/5#0', channel: 'danangevent', starts_at, signup_url: '',
+    external_id: 'telegram:danangevent/5#0', channel: 'danangevent', status: 'published' as const, starts_at, signup_url: '',
     announcement: { url: 'https://t.me/danangevent/5' },
     event: {
       title: 'Бачата с нуля ' + 'очень '.repeat(20), description: 'Урок для начинающих', starts_at: starts_at.toISOString(), ends_at: null,
@@ -450,7 +450,7 @@ test('сообщение боту: то же собранное событие �
   const e = extracted({ title: 'Коллажный кружок', telegram_username: 'u62' });
   const row = (n: number) => ({
     external_id: `telegram:danangevent/${n}#0`, channel: 'danangevent', announcement: { url: `https://t.me/danangevent/${n}` },
-    event: e, starts_at: new Date(e.starts_at), telegram_username: 'u62', signup_url: 'https://t.me/u62',
+    event: e, starts_at: new Date(e.starts_at), telegram_username: 'u62', signup_url: 'https://t.me/u62', status: 'published' as const,
   });
   await db.insert(collectedEvents).values([row(901), row(902)]);
   const claimed = async (n: number) => ((await (await app.request(`/collected-events/danangevent-${n}-0`)).json()) as CollectedEventItem).claimed_event_id;
@@ -526,15 +526,17 @@ test('сообщение боту: пересланный чужой анонс 
   const forward = (id: number, origin: object) => botMessage(id, ANNOUNCEMENT, { forward_origin: { date: 1794000000, ...origin } });
   const channel = { type: 'channel', chat: { id: -1001234567890, username: 'DanangEvent' }, message_id: 777 };
   const e = extracted({ title: 'Экстатик дэнс у моря', telegram_username: 'dj_kolya', price: null });
-  const item = async (slug: string) => (await (await app.request(`/collected-events/${slug}`)).json()) as CollectedEventItem;
+  // Пересланное ждёт одобрения и на витрине не видно — смотрим так, как его видит админка.
+  const item = async (slug: string) => (await listCollectedForAdmin(db)).find((x) => x.id === slug)!;
 
   sent.length = 0;
   await handleUpdate(db, async () => [e], forward(64, channel));
+  assert.equal((await app.request('/collected-events/danangevent-777-0')).status, 404, 'до одобрения страницы события нет');
   // Ключ и адрес — как у сборщика: когда он дойдёт до этой публикации, второй записи не появится.
   const added = await item('danangevent-777-0');
   assert.deepEqual([added.title, added.source_url, added.claimed_event_id], ['Экстатик дэнс у моря', 'https://t.me/DanangEvent/777', null]);
   assert.deepEqual(await (await call(tma(64, 'Аня'), 'GET', '/events')).json(), [], 'событие Ясвами не создано, лимит не тронут');
-  assert.deepEqual(sent.map(([m, b]) => [m, b.chat_id, JSON.parse(b.public_data).l]), [['sendWidget', 64, 'Добавлено на витрину']]);
+  assert.deepEqual(sent.map(([m, b]) => [m, b.chat_id, JSON.parse(b.public_data).l]), [['sendWidget', 64, 'Отправлено на проверку']]);
   assert.ok(sent[0]![1].reply_markup.inline_keyboard[0][0].url.endsWith('/e/danangevent-777-0'));
 
   // Тот же анонс от другого человека и из лички: запись дополняется, а не дублируется.
@@ -628,7 +630,7 @@ test('фото: аватар гостя и фото сообщества орг�
   // Фото сообщества кладёт сборщик; API отдаёт не больше шести, новые сверху.
   const [h] = await db.insert(hosts).values({ telegram_id: 9104, username: 'photo_host', name: 'Студия' }).returning();
   await db.insert(collectedEvents).values({
-    external_id: 'telegram:photochan/1#0', channel: 'photochan', announcement: { url: 'https://t.me/photochan/1' }, signup_url: 'https://t.me/photochan/1',
+    external_id: 'telegram:photochan/1#0', channel: 'photochan', status: 'published' as const, announcement: { url: 'https://t.me/photochan/1' }, signup_url: 'https://t.me/photochan/1',
     event: { title: 'Йога', starts_at: '2030-01-01T10:00:00+07:00' } as CollectedEvent, starts_at: new Date('2030-01-01T03:00:00Z'), telegram_username: 'photo_host',
   });
   const item = async () => (await (await app.request('/collected-events/photochan-1-0')).json()) as CollectedEventItem;
@@ -707,7 +709,7 @@ test('переписка: бот пишет всё в базу, админ от�
   await db.delete(collectedEvents);
   const starts_at = new Date(Date.now() + 86_400_000);
   await db.insert(collectedEvents).values({
-    external_id: 'telegram:danangevent/5#0', channel: 'danangevent', starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/5' },
+    external_id: 'telegram:danangevent/5#0', channel: 'danangevent', status: 'published' as const, starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/5' },
     event: { title: 'Баня', description: 'Парим', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: ['баня'], telegram_username: 'igor', whatsapp_phone: null, url: null, topic: 'баня' },
   });
   const [photo] = await db.insert(photos).values({ collected_external_id: 'telegram:danangevent/5#0', source: 'telegram:danangevent/5', data: Buffer.from([0xff, 0xd8, 1]) }).returning();
@@ -732,18 +734,45 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-5-0' }), { error: 'video_exists' });
   settings.illustratorDailyLimit = 1;
   await db.insert(collectedEvents).values({
-    external_id: 'telegram:danangevent/6#0', channel: 'danangevent', starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/6' },
+    external_id: 'telegram:danangevent/6#0', channel: 'danangevent', status: 'published' as const, starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/6' },
     event: { title: 'Йога', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'anna', whatsapp_phone: null, url: null },
   });
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-6-0' }), { error: 'video_limit' });
   assert.deepEqual(parseIllustration('cover: https://files-cdn.x.ai/a/b_1.png\nvideo: https://files-cdn.x.ai/c/d_2.mp4'),
     { cover_url: 'https://files-cdn.x.ai/a/b_1.png', video_url: 'https://files-cdn.x.ai/c/d_2.mp4' });
   assert.deepEqual(parseIllustration('cover: https://evil.example/x.png\n[[не получилось: нет фото]]'), { cover_url: null, video_url: null }, 'чужие адреса не берём');
+  // Модерация: новое событие ждёт решения и нигде не видно; одобренное выходит в ленту после обработки.
+  const moderated = { ...{ channel: 'danangevent', starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/7' } },
+    external_id: 'telegram:danangevent/7#0',
+    event: { title: 'Чай', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'tea', whatsapp_phone: null, url: null } };
+  await db.insert(collectedEvents).values(moderated);
+  const inFeed = async () => ((await (await app.request('/collected-events')).json()) as CollectedEventItem[]).some((e) => e.id === 'danangevent-7-0');
+  const adminEvents = async () => (await (await call(admin, 'GET', '/admin/collected-events')).json()) as { id: string; status: string }[];
+  assert.equal((await adminEvents())[0]!.id, 'danangevent-7-0', 'ждущие решения — сверху');
+  assert.deepEqual([await inFeed(), (await app.request('/collected-events/danangevent-7-0')).status], [false, 404]);
+  assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-7-0' }), { error: 'not_approved' });
+  assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/collected-events')).status, 403);
+  // Лимит выбран — одобренное выходит как есть, а не ждёт сутки.
+  assert.deepEqual(await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved' })).json(), { status: 'published' });
+  assert.equal(await inFeed(), true);
+  // Снять с публикации и удалить.
+  assert.deepEqual(await tool('admin_collected_events_moderate', { id: 'danangevent-7-0', status: 'rejected' }), { status: 'rejected' });
+  assert.equal(await inFeed(), false);
+  assert.equal((await call(admin, 'DELETE', '/admin/collected-events/danangevent-7-0')).status, 204);
+  assert.equal((await adminEvents()).some((e) => e.id === 'danangevent-7-0'), false);
+
   // Автообход: берёт ближайшее событие без ролика; лимит выбран — тихо пропускает.
   assert.equal(await requestNextVideo(db), null, 'лимит на сегодня выбран');
   settings.illustratorDailyLimit = 5;
   assert.equal(await requestNextVideo(db), 'danangevent-6-0');
   assert.equal(await requestNextVideo(db), null, 'событий без ролика не осталось');
+  // Заказ, оборванный перезапуском API: через 20 минут без ролика повторяем, но только один раз.
+  await new Promise((r) => setTimeout(r, 50));
+  await db.update(collectedEvents).set({ video_url: null, video_at: new Date(Date.now() - 21 * 60_000) }).where(eq(collectedEvents.external_id, 'telegram:danangevent/6#0'));
+  assert.equal(await requestNextVideo(db), 'danangevent-6-0', 'потерянный заказ повторяется');
+  await new Promise((r) => setTimeout(r, 50));
+  await db.update(collectedEvents).set({ video_url: null, video_at: new Date(Date.now() - 21 * 60_000) }).where(eq(collectedEvents.external_id, 'telegram:danangevent/6#0'));
+  assert.equal(await requestNextVideo(db), null, 'третьей попытки нет');
   await new Promise((r) => setTimeout(r, 50));
   illustrator.ask = draw;
   settings.illustratorUrl = '';
@@ -1015,7 +1044,7 @@ test('организаторы: запись на событие станови�
   const starts_at = new Date(Date.now() + 3 * 86_400_000);
   const external_id = 'telegram:hostchan/7#0';
   await db.insert(collectedEvents).values({
-    external_id, channel: 'hostchan', starts_at, signup_url: '', announcement: { url: 'https://t.me/hostchan/7' },
+    external_id, channel: 'hostchan', status: 'published' as const, starts_at, signup_url: '', announcement: { url: 'https://t.me/hostchan/7' },
     event: { title: 'Йога на рассвете', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: 'Ми Кхе', address: null, price: null, tags: [], telegram_username: 'marina_yoga', whatsapp_phone: null, url: null },
     telegram_username: 'marina_yoga',
   });
@@ -1074,6 +1103,14 @@ test('организаторы: запись на событие станови�
   assert.equal((await report('А это платно?')).status, 204);
   const reply = await drafted();
   assert.equal((await inbox()).conversations[0]!.stage, 'replied');
+  // Разделы «Агенты» и «Организаторы»: кто ведёт диалог, что агент сделал, что известно об организаторе.
+  assert.equal((await inbox()).conversations[0]!.agent, 'host');
+  assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/overview')).status, 403);
+  const overview = (await (await call(admin, 'GET', '/admin/overview')).json()) as AdminOverview;
+  assert.deepEqual(overview.agents.find((x) => x.key === 'host'), { key: 'host', enabled: true, conversations: 1, drafts: 1, sent: 1, sent_today: 1 });
+  assert.deepEqual(overview.agents.find((x) => x.key === 'hunter'), { key: 'hunter', enabled: false, conversations: 0, drafts: 0, sent: 0, sent_today: 0 });
+  const marina = overview.hosts.find((h) => h.username === 'marina_yoga')!;
+  assert.deepEqual([marina.name, marina.registered, marina.events, marina.signups, marina.stage, marina.conversation_id], ['Марина', false, 1, 1, 'replied', (await inbox()).conversations[0]!.id]);
   assert.deepEqual([reply.text, reply.meta, (await inbox()).conversations[0]!.attention], ['Да, это бесплатно.', { reason: 'Ответ организатору' }, 'Черновик ответа организатору']);
   assert.deepEqual(asked.slice(1).map((t) => [t.role, t.content]), [['assistant', 'Марина, здравствуйте. На вашу йогу записался один человек.'], ['user', 'А это платно?']]);
 
@@ -1138,7 +1175,7 @@ test('MCP для оператора: любое событие сервиса, �
   await db.execute(sql`delete from collected_events where channel = 'opchan'`);
   const starts_at = new Date(Date.now() + 86_400_000);
   await db.insert(collectedEvents).values({
-    external_id: 'telegram:opchan/1#0', channel: 'opchan', starts_at, signup_url: '', announcement: { url: 'https://t.me/opchan/1' },
+    external_id: 'telegram:opchan/1#0', channel: 'opchan', status: 'published' as const, starts_at, signup_url: '', announcement: { url: 'https://t.me/opchan/1' },
     event: { title: 'Баня', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'banya', whatsapp_phone: null, url: null },
     telegram_username: 'banya',
   });
@@ -1187,6 +1224,9 @@ test('парность: у каждого инструмента MCP есть м
     admin_events_update: 'PATCH /admin/events/:id',
     admin_users_search: 'GET /admin/users',
     admin_hosts_list: 'GET /admin/hosts',
+    admin_overview_get: 'GET /admin/overview',
+    admin_collected_events_list: 'GET /admin/collected-events',
+    admin_collected_events_moderate: 'PATCH /admin/collected-events/:id',
     admin_collected_events_get: 'GET /admin/collected-events/:id',
     admin_collected_events_delete: 'DELETE /admin/collected-events/:id',
     admin_covers_list: 'GET /admin/covers',

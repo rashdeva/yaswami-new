@@ -72,8 +72,8 @@ test('шаблоны: у каждого момента своя карточка
   assert.deepEqual(many.buttons.map((b) => b.text), ['Написать: Аня', 'Написать: Нино', 'Написать: Гия', 'Открыть событие']);
 
   const collected = templates.event_collected({ item: { ...item, place: 'Пляж Микхе', address: 'ул. Во Нгуен Зяп' } });
-  assert.equal(collected.label, 'Добавлено на витрину');
-  assert.deepEqual(collected.rows, [['🗓', 'сб, 14 ноября, 19:00'], ['📍', 'Пляж Микхе, ул. Во Нгуен Зяп']]);
+  assert.equal(collected.label, 'Отправлено на проверку');
+  assert.deepEqual(collected.rows, [['🗓', 'сб, 14 ноября, 19:00'], ['📍', 'Пляж Микхе, ул. Во Нгуен Зяп'], ['⏳', 'Появится на витрине после проверки']]);
   assert.ok(collected.buttons[0]!.url.endsWith('/e/danangevent-7-0'));
 
   // Отзывы: гостю — пять кнопок-оценок в один ряд, организатору — сводка.
