@@ -69,12 +69,12 @@ export const templates = {
     emoji: '✨', colors: ['#16a34a', '#0d9488'], label: 'Событие создано и подтверждено', title: event.name,
     rows: eventRows(event), buttons: [open(event)],
   }),
-  /** Приславшему чужой анонс: событие добавлено на витрину как собранное, организатора у него пока нет. */
+  /** Приславшему чужой анонс: событие принято как собранное и ждёт одобрения в админке; на витрине появится после него. */
   event_collected: ({ item }: { item: CollectedEventItem }): Card => {
     const where = [item.place, item.address].filter(Boolean).join(', ');
     return {
-      emoji: '📌', colors: ['#2563eb', '#0891b2'], label: 'Добавлено на витрину', title: cut(item.title, NAME_MAX),
-      rows: [['🗓', collectedWhen(item.starts_at)], ...(where ? [['📍', cut(where, ADDRESS_MAX)] as [string, string]] : [])],
+      emoji: '📌', colors: ['#2563eb', '#0891b2'], label: 'Отправлено на проверку', title: cut(item.title, NAME_MAX),
+      rows: [['🗓', collectedWhen(item.starts_at)], ...(where ? [['📍', cut(where, ADDRESS_MAX)] as [string, string]] : []), ['⏳', 'Появится на витрине после проверки']],
       buttons: [{ text: 'Открыть на сайте', url: settings.publicUrl + collectedPath(item.id) }],
     };
   },

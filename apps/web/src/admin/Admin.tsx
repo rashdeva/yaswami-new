@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AdminOverview, AgentKey, InboxConversation, InboxFeed, Message, TgAccount, Wire } from '@yaswami/core';
 import { AGENTS, INBOX_STAGES } from '@yaswami/core';
 import { api, ApiError, loginUrl } from '../api.ts';
+import { Events, useModeration } from './Events.tsx';
 import '../tokens.css';
 import './admin.css';
 
@@ -134,7 +135,8 @@ export default function Admin() {
   const [problem, setProblem] = useState<string | null>(null); // код ошибки загрузки
   const [notice, setNotice] = useState('');
   // Два вида: «Люди» — список собеседников и переписка с выбранным; «Лента» — все сообщения подряд.
-  const [view, setView] = useState<'people' | 'feed' | 'hosts' | 'agents'>('people');
+  const [view, setView] = useState<'people' | 'feed' | 'hosts' | 'agents' | 'events'>('people');
+  const moderation = useModeration();
   const [agentFilter, setAgentFilter] = useState<AgentKey | 'all'>('all');
   const [overview, setOverview] = useState<Wire<AdminOverview> | null>(null); // разделы «Организаторы» и «Агенты»
   const [filter, setFilter] = useState<Filter>('all');
@@ -273,6 +275,8 @@ export default function Admin() {
     );
   }
 
+  const pendingEvents = moderation.items?.filter((e) => e.status === 'pending').length ?? 0;
+
   // Черновик агента: причина, правка текста, отправить или отклонить.
   const draftBlock = (draft: Msg) => (
     <div className="ad-draft">
@@ -304,6 +308,9 @@ export default function Admin() {
           <button className={view === 'feed' ? 'on' : ''} onClick={() => setView('feed')}>Лента</button>
           <button className={view === 'hosts' ? 'on' : ''} onClick={() => setView('hosts')}>Организаторы</button>
           <button className={view === 'agents' ? 'on' : ''} onClick={() => setView('agents')}>Агенты</button>
+          <button className={view === 'events' ? 'on' : ''} onClick={() => setView('events')}>
+            События{pendingEvents > 0 && <b className="ad-badge">{pendingEvents}</b>}
+          </button>
         </span>
         <span className="ad-pill">Ждут вас: {pinned.length}</span>
         <button className="ad-btn ghost" onClick={() => setShowAccounts(!showAccounts)}>Аккаунты: {feed.accounts.filter((a) => a.status === 'active').length}</button>
@@ -404,6 +411,8 @@ export default function Admin() {
           </div>
         </main>
       )}
+
+      {view === 'events' && <Events items={moderation.items} act={act} reload={moderation.reload} />}
 
       {view === 'agents' && (
         <main>

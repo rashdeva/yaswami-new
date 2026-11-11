@@ -1,0 +1,1 @@
+ALTER TABLE "collected_events" ADD COLUMN "video_tries" integer DEFAULT 0 NOT NULL;
