@@ -3,6 +3,7 @@ import type { CollectedEventItem } from '@yaswami/core';
 import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES } from '@yaswami/core';
 import { api, loginUrl } from '../api.ts';
 import { openExternal } from '../tg.ts';
+import { shareLink } from '../share.ts';
 
 interface Props {
   id: string;
@@ -164,6 +165,7 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
           ) : (
             <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>
           )}
+          <button className="cta alt" onClick={() => shareLink(location.origin + collectedPath(id), `${event.title}\n${collectedWhen(event.starts_at)}, ${city}`, toast)}>Поделиться</button>
         </div></div>
       )}
     </>
