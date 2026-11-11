@@ -82,6 +82,7 @@ test('событие создаётся с типом билета по умол
   const host = tma(1, 'Миша');
   const created = await newEvent(host);
   assert.equal(created.ticket_types.length, 1);
+  assert.equal(created.host.first_name, 'Миша');
   assert.equal(created.event.start_at, '2026-11-20T15:00:00.000Z');
 
   const res = await call(tma(2, 'Дато'), 'POST', `/events/${created.event.id}/rsvp`, { approval_status: 'approved' });

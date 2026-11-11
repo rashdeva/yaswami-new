@@ -58,12 +58,18 @@ export async function getEvent(db: Db | Tx, actor: User, id: string): Promise<Ev
     .where(eq(guests.event_id, id))
     .orderBy(asc(guests.registered_at));
 
+  const [hostRow] = await db
+    .select({ first_name: users.first_name, photo_id: photos.id })
+    .from(users)
+    .leftJoin(photos, eq(photos.user_id, users.id))
+    .where(eq(users.id, event.user_id));
   const is_host = event.user_id === actor.id;
   const me = rows.find((r) => r.guest.user_id === actor.id)?.guest ?? null;
   const approved = rows.filter((r) => r.guest.approval_status === 'approved');
   return {
     event,
     ticket_types: types.filter((t) => is_host || !t.is_hidden || t.id === me?.event_ticket_type_id),
+    host: { first_name: hostRow!.first_name, user_photo_url: hostRow!.photo_id && photoUrl(hostRow!.photo_id) },
     guests: rows
       .filter((r) => is_host || r.guest.approval_status !== 'declined')
       .map(({ guest: g, user_first_name, photo_id }) => ({
@@ -129,8 +135,16 @@ export async function getCollectedEvent(db: Db, slug: string): Promise<Collected
   const shots = h
     ? await db.select({ id: photos.id, source: photos.source }).from(photos).where(eq(photos.host_id, h.id)).orderBy(desc(photos.created_at)).limit(HOST_PHOTOS)
     : [];
+  const signed = await db
+    .select({ first_name: users.first_name, photo_id: photos.id })
+    .from(collectedEventSignups)
+    .innerJoin(users, eq(users.id, collectedEventSignups.user_id))
+    .leftJoin(photos, eq(photos.user_id, collectedEventSignups.user_id))
+    .where(eq(collectedEventSignups.external_id, row.external_id))
+    .orderBy(asc(collectedEventSignups.created_at));
   return {
     ...toCollectedItem(row),
+    signups: signed.map((r) => ({ first_name: r.first_name, user_photo_url: r.photo_id && photoUrl(r.photo_id) })),
     hosts: h
       ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`,
           photo_url: `https://t.me/i/userpic/320/${h.username}.jpg`, confirmed: h.user_id !== null,
