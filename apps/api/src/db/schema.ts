@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, CollectedEvent, Conversation, Event, Guest, Message, Share, TicketType, User } from '@yaswami/core';
+import type { Address, CollectedEvent, Conversation, Event, Guest, Guide, Message, Share, TicketType, User } from '@yaswami/core';
 import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -33,6 +33,12 @@ export const events = pgTable(
     meeting_url: text(),
     max_capacity: integer(),
     allow_plus_one: boolean().notNull().default(false),
+    topic: text(),
+    what_happens: jsonb().$type<string[]>().notNull().default([]),
+    for_whom: text(),
+    beginner_friendly: boolean(),
+    takeaway: text(),
+    guide: jsonb().$type<Guide>(),
     status: text({ enum: EVENT_STATUSES }).notNull().default('draft'),
     widget_id: text(),
     rev: integer().notNull().default(0),

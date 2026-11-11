@@ -7,7 +7,7 @@ import type {
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
 import { isSameEvent, mergeEvents } from '@yaswami/extract';
-import { ADDRESS_MAX, collectedPath, collectedSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError } from '@yaswami/core';
+import { ADDRESS_MAX, collectedPath, collectedSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import type { Db, Tx } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, ticketTypes, users, visits } from './db/schema.ts';
 import { photoUrl } from './photos.ts';
@@ -158,13 +158,17 @@ export async function signUpForCollectedEvent(db: Db, actor: User, slug: string)
 /** Событие Ясвами из того, что извлёк ИИ: организатор — `actor`, один тип билета с ценой из анонса. */
 async function insertExtractedEvent(tx: Tx, actor: User, extracted: CollectedEvent): Promise<string> {
   const id = newEventId();
-  const { title, description, place, address, price } = extracted;
+  const { title, description, place, address, price, topic } = extracted;
+  const template = topic ? TOPIC_GUIDES[topic] : undefined;
   const where = [place, address].filter(Boolean).join(', ');
   await tx.insert(events).values({
     id, user_id: actor.id, kind: 'o', status: 'published', timezone: settings.timezone,
     name: title.trim().slice(0, NAME_MAX), description: description.trim().slice(0, DESCRIPTION_MAX) || null,
     start_at: new Date(extracted.starts_at), end_at: extracted.ends_at ? new Date(extracted.ends_at) : null,
     geo_address_json: where ? { address: where.slice(0, ADDRESS_MAX) } : null,
+    topic: template ? topic : null, what_happens: extracted.what_happens ?? [], for_whom: extracted.for_whom ?? null,
+    beginner_friendly: extracted.beginner_friendly ?? null, takeaway: extracted.takeaway ?? null,
+    guide: template ? { what: template.what, why: template.why, first: template.first, not_for: template.not_for } : null,
   });
   await tx.insert(ticketTypes).values({ event_id: id, name: DEFAULT_TICKET_NAME, price_text: price?.slice(0, 60) ?? null });
   return id;

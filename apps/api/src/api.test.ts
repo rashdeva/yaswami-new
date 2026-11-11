@@ -107,6 +107,19 @@ test('билеты задаются при создании: цена — сво
   assert.deepEqual(many.ticket_types.map((t) => [t.name, t.price_text, t.position]), [['Early bird', '1000 ₽', 0], ['Обычный', '1500 ₽', 1]]);
 });
 
+test('«О событии»: у нового пусто, организатор дописывает, чужой не может', async () => {
+  const host = tma(1, 'Миша');
+  const { event } = await newEvent(host);
+  assert.deepEqual([event.what_happens, event.for_whom, event.guide], [[], null, null]);
+  const about = { topic: 'танцы', what_happens: ['Разминка', 'Танец в парах'], for_whom: 'Всем', beginner_friendly: true, takeaway: null, guide: { what: 'a', why: 'b', first: 'c', not_for: 'd' } };
+  const res = await call(host, 'PATCH', `/events/${event.id}`, about);
+  assert.equal(res.status, 200);
+  const saved = ((await res.json()) as EventView).event;
+  assert.deepEqual({ ...about, takeaway: saved.takeaway }, { ...about, takeaway: null });
+  assert.deepEqual([saved.topic, saved.what_happens, saved.guide], [about.topic, about.what_happens, about.guide]);
+  assert.equal((await call(tma(2, 'Дато'), 'PATCH', `/events/${event.id}`, about)).status, 403);
+});
+
 test('последнее место достаётся одному из восьми одновременных гостей', async () => {
   const { event } = await newEvent(tma(1, 'Миша'), { max_capacity: 1 });
   // Сначала вход (создаёт пользователей и прогревает соединения), чтобы ответы стартовали действительно одновременно.
