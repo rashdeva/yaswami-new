@@ -49,6 +49,16 @@ export { RsvpInput };
 export const VisitInput = z.object({ ref: z.number().int().positive().optional() });
 export type VisitInput = z.infer<typeof VisitInput>;
 
+/** Поиск человека среди пользователей сервиса. */
+export const UserSearchInput = z.object({ query: z.string().trim().min(1).max(64).describe('Part of a first name or @username') });
+export type UserSearchInput = z.infer<typeof UserSearchInput>;
+
+/** Решение иллюстратора об обложке собранного события. */
+export const CoverSetInput = z.object({
+  image_url: z.url().optional().describe('Public URL of a generated 9:16 image (files-cdn.x.ai). Omit to keep the announcement photo as the cover.'),
+});
+export type CoverSetInput = z.infer<typeof CoverSetInput>;
+
 /** Гость, как его видят другие: только имя и фото, без username и id. */
 export interface GuestView {
   user_first_name: string;

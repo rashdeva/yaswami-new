@@ -13,6 +13,7 @@ import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts
 import { photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
+import { recordHostLead } from './inbox.ts';
 import { guestRegistered } from './rsvp-notices.ts';
 import { settings } from './settings.ts';
 
@@ -260,7 +261,10 @@ export async function getCollectedEvent(db: Db, slug: string): Promise<Collected
 /** Фиксирует, что человек собрался на событие. Повторный вызов ничего не меняет. */
 export async function signUpForCollectedEvent(db: Db, actor: User, slug: string): Promise<CollectedEventItem> {
   const item = await getCollectedEvent(db, slug);
-  await db.insert(collectedEventSignups).values({ external_id: collectedExternalId(slug), user_id: actor.id }).onConflictDoNothing();
+  const external_id = collectedExternalId(slug);
+  await db.insert(collectedEventSignups).values({ external_id, user_id: actor.id }).onConflictDoNothing();
+  // Запись — повод написать организатору: роль host готовит черновик, человек его отправляет. Ответа роли не ждём.
+  void recordHostLead(db, external_id).catch(console.error);
   return item;
 }
 

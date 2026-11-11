@@ -4,14 +4,15 @@ import { getCookie } from 'hono/cookie';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
-import { AccountCreateInput, AccountLoginInput, AccountMessageInput, ConversationUpdateInput, DraftSendInput, LeadInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, VisitInput } from '@yaswami/core';
+import { AccountCreateInput, AccountLoginInput, AccountMessageInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, LeadInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, VisitInput } from '@yaswami/core';
+import * as admin from './admin.ts';
 import type { AuthMethod } from './auth.ts';
 import { authenticate, issueToken, revokeTokens } from './auth.ts';
 import type { Extract } from './bot.ts';
 import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
 import {
-  createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, logSent, recordAccountMessage, recordHostLead, recordLead, rejectDraft,
+  createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, listAccounts, logSent, recordAccountMessage, recordLead, rejectDraft,
   requireAdmin, sendDraft, submitAccountLogin,
 } from './inbox.ts';
 import { handleMcp } from './mcp.ts';
@@ -94,12 +95,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/me', async (c) => c.json(await s.me(db, c.var.actor)))
     .get('/me/collected', async (c) => c.json(await s.myCollectedEvents(db, c.var.actor)))
     .post('/collected-events/:id/claim', async (c) => c.json(await s.claimCollectedEvent(db, c.var.actor, c.req.param('id')), 201))
-    .post('/collected-events/:id/signup', async (c) => {
-      const item = await s.signUpForCollectedEvent(db, c.var.actor, c.req.param('id'));
-      // Запись — повод написать организатору: роль host готовит черновик, человек его отправляет.
-      void recordHostLead(db, s.collectedExternalId(c.req.param('id'))).catch(console.error);
-      return c.json(item);
-    })
+    .post('/collected-events/:id/signup', async (c) => c.json(await s.signUpForCollectedEvent(db, c.var.actor, c.req.param('id'))))
     .post('/collected-events/:id/visit', json(VisitInput), async (c) => {
       await s.visitCollectedEvent(db, c.var.actor, c.req.param('id'), c.req.valid('json'));
       return c.body(null, 204);
@@ -148,6 +144,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await rejectDraft(db, c.req.param('id'));
       return c.body(null, 204);
     })
+    .get('/admin/accounts', async (c) => c.json(await listAccounts(db)))
     .post('/admin/accounts', json(AccountCreateInput), async (c) => c.json(await createAccount(db, c.req.valid('json')), 201))
     .post('/admin/accounts/:id/login', json(AccountLoginInput), async (c) => {
       await submitAccountLogin(db, c.req.param('id'), c.req.valid('json').secret);
@@ -157,6 +154,22 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await deleteAccount(db, c.req.param('id'));
       return c.body(null, 204);
     })
+
+    // Любое событие сервиса, пользователи и организаторы — то же, что у оператора в MCP (admin_*).
+    .get('/admin/events', async (c) => c.json(await admin.listAllEvents(db)))
+    .get('/admin/events/:id', async (c) => c.json(await admin.getAnyEvent(db, c.req.param('id'))))
+    .patch('/admin/events/:id', json(EventUpdateInput), async (c) => c.json(await admin.updateAnyEvent(db, c.req.param('id'), c.req.valid('json'))))
+    .get('/admin/users', async (c) => c.json(await admin.searchUsers(db, UserSearchInput.parse(c.req.query()).query)))
+    .get('/admin/hosts', async (c) => c.json(await admin.listHosts(db)))
+    .get('/admin/collected-events/:id', async (c) => c.json(await admin.getCollectedEventSignups(db, c.req.param('id'))))
+    .delete('/admin/collected-events/:id', async (c) => {
+      await admin.deleteCollectedEvent(db, c.req.param('id'));
+      return c.body(null, 204);
+    })
+    // Обложки и ролики собранных событий: работа роли-иллюстратора.
+    .get('/admin/covers', async (c) => c.json(await s.listPendingCovers(db)))
+    .post('/admin/covers/:id', json(CoverSetInput), async (c) => c.json(await s.setCollectedCover(db, c.req.param('id'), c.req.valid('json').image_url)))
+    .post('/admin/videos/:id', async (c) => c.json(await s.requestCollectedVideo(db, c.req.param('id')), 202))
 
     // Выпустить токен можно только из мини-приложения: утёкший токен не должен плодить новые.
     .post('/tokens', async (c) => {

@@ -18,7 +18,7 @@ mcp_servers:
       Authorization: "Bearer __MCP_TOKEN__"
     tools:
       # Публичный каталог и события самого собеседника (по билету от нашего API); переписка и чужие события роли не видны.
-      include: [catalog_events, person_events, person_event, person_event_create, person_event_update]
+      include: [collected_events_list, person_events_list, person_events_get, person_events_create, person_events_update]
       resources: false
       prompts: false
 
