@@ -52,15 +52,24 @@ const api = createApp({
 if (BOT_TOKEN) startFeedbackLoop(db);
 startVideoLoop(db); // без роли illustrator (ILLUSTRATOR_URL пуст) ничего не делает
 
-// Один сервер на всё: REST под /api, MCP на /mcp, остальное — собранное мини-приложение.
+// Один сервер на всё: REST под /api, MCP на /mcp, админка под /admin, остальное — собранное мини-приложение.
 const server = new Hono()
   .route('/api', api)
   .on(['GET', 'POST', 'DELETE'], ['/mcp', '/health'], (c) => api.fetch(c.req.raw));
 
+// Файлы сборки с хэшем в имени кэшируются навсегда, страница — никогда: иначе Telegram покажет старую версию.
+const cache = (path: string) => (path.endsWith('.html') ? 'no-cache' : 'public, max-age=31536000, immutable');
+
+const ADMIN = 'apps/admin/dist'; // появляется после `pnpm build:admin`; собрана с base: '/admin/'
+if (existsSync(ADMIN)) {
+  // Раньше общего обработчика мини-приложения: любой путь под /admin — файл сборки или страница админки.
+  const file = serveStatic({ root: ADMIN, rewriteRequestPath: (path) => path.replace(/^\/admin/, ''), onFound: (path, c) => c.header('Cache-Control', cache(path)) });
+  const page = serveStatic({ root: ADMIN, path: 'index.html', onFound: (_path, c) => c.header('Cache-Control', 'no-cache') });
+  server.get('/admin', page).use('/admin/*', file).get('/admin/*', page);
+}
+
 const WEB = 'apps/web/dist'; // появляется после `pnpm build:web`; в разработке фронт отдаёт Vite
 if (existsSync(WEB)) {
-  // Файлы сборки с хэшем в имени кэшируются навсегда, страница — никогда: иначе Telegram покажет старую версию.
-  const cache = (path: string) => (path.endsWith('.html') ? 'no-cache' : 'public, max-age=31536000, immutable');
   // Витрина и страница собранного события приходят с сервера уже с содержимым (pages.ts): их читают поисковики.
   const template = readFileSync(`${WEB}/index.html`, 'utf8');
   const html = (page: Page) =>
