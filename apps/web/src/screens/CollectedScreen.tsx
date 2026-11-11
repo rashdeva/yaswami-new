@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
 import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES } from '@yaswami/core';
 import { api, loginUrl } from '../api.ts';
-import { haptic, openExternal } from '../tg.ts';
+import { openExternal } from '../tg.ts';
 
 interface Props {
   id: string;
@@ -69,7 +69,6 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
   const level = event.beginner_friendly == null ? null : event.beginner_friendly ? 'Можно без опыта' : 'Нужен опыт';
 
   function signUp() {
-    haptic.tap();
     if (event!.claimed_event_id) return onOpenEvent(event!.claimed_event_id);
     if (!authed && canLogin) {
       location.href = loginUrl(`${collectedPath(id)}?signup=1`);
@@ -158,7 +157,7 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
             <button
               className="cta"
               disabled={claiming}
-              onClick={() => { haptic.tap(); setClaiming(true); void onClaim().finally(() => setClaiming(false)); }}
+              onClick={() => { setClaiming(true); void onClaim().finally(() => setClaiming(false)); }}
             >
               {claiming ? 'Минуту…' : 'Это моё событие'}
             </button>

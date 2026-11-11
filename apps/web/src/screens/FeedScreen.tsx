@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
 import { collectedDay, collectedDayKey, collectedPath, collectedTime } from '@yaswami/core';
 import { api } from '../api.ts';
-import { haptic } from '../tg.ts';
 
 interface Props {
   city: string;
@@ -58,7 +57,6 @@ export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
                 onClick={(click) => {
                   if (click.metaKey || click.ctrlKey || click.shiftKey) return; // новая вкладка — как обычная ссылка
                   click.preventDefault();
-                  haptic.tap();
                   onOpen(e);
                 }}
               >

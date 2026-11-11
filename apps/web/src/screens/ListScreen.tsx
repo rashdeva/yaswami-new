@@ -4,7 +4,6 @@ import type { Event } from '@yaswami/core';
 import { TEMPLATES } from '@yaswami/core';
 import type { EventListData } from '../api.ts';
 import { tint, when } from '../format.ts';
-import { haptic } from '../tg.ts';
 
 const MY_STATUS = { approved: 'вы идёте', maybe: 'вы думаете', declined: 'вы не идёте', waitlist: 'вы в листе ожидания' } as const;
 
@@ -43,7 +42,7 @@ export function ListScreen({ events, tabs, lead, onOpen, onNew, onKind }: Props)
             const { event } = item;
             const extra = note(item);
             return (
-              <button key={event.id} className="item" style={tint(event.kind)} onClick={() => { haptic.tap(); onOpen(event.id); }}>
+              <button key={event.id} className="item" style={tint(event.kind)} onClick={() => { onOpen(event.id); }}>
                 <i>{TEMPLATES[event.kind].emoji}</i>
                 <div>
                   <b>{event.name}</b>
@@ -62,7 +61,7 @@ export function ListScreen({ events, tabs, lead, onOpen, onNew, onKind }: Props)
       {lead}
       {section('Скоро', upcoming)}
       {section('Прошедшие', past)}
-      <div className="main"><div><button className="cta" onClick={() => { haptic.tap(); onNew(); }}>Новое событие</button></div></div>
+      <div className="main"><div><button className="cta" onClick={() => { onNew(); }}>Новое событие</button></div></div>
     </>
   );
 }

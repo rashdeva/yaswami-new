@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
 import { collectedWhen } from '@yaswami/core';
-import { haptic } from '../tg.ts';
 
 interface Props {
   items: CollectedEventItem[];
@@ -30,7 +29,6 @@ export function ClaimBanner({ items, onClaim }: Props) {
               className="chip"
               disabled={pending !== null}
               onClick={() => {
-                haptic.tap();
                 setPending(item.id);
                 void onClaim(item).finally(() => setPending(null));
               }}
