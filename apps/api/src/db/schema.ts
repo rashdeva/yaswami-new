@@ -132,6 +132,10 @@ export const collectedEvents = pgTable(
     signup_url: text().notNull(),
     // Организатор подтвердил, что событие его: из него создано настоящее событие.
     claimed_event_id: text().references(() => events.id, { onDelete: 'set null' }),
+    // Отклик на публикацию-источник: сборщик обновляет каждый проход, пока событие не прошло. null — ещё не смотрел;
+    // views у публикаций в группах нет вовсе. По ним считается «популярное» (popularIds в @yaswami/core).
+    views: integer(),
+    reactions: integer(),
     created_at: at('created_at').notNull().defaultNow(),
     updated_at: at('updated_at').notNull().defaultNow(),
   },

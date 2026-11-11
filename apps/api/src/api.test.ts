@@ -209,11 +209,13 @@ test('собранные события: витрина без входа, за�
   await db.insert(collectedEvents).values([
     row('telegram:danangevent/1#0', new Date(Date.now() + 86_400_000)),
     row('telegram:danangevent/2#0', new Date(Date.now() - 86_400_000)),
+    { ...row('telegram:danangevent/3#0', new Date(Date.now() + 2 * 86_400_000)), reactions: 12 },
   ]);
 
   // витрина: только предстоящие, контакт организатора — только внутри ссылки записи
   const items = (await (await app.request('/collected-events')).json()) as CollectedEventItem[];
-  assert.deepEqual(items.map((i) => i.id), ['danangevent-1-0']);
+  assert.deepEqual(items.map((i) => [i.id, i.popular, i.reactions]), [['danangevent-1-0', false, null], ['danangevent-3-0', true, 12]]);
+  assert.equal(((await (await app.request('/collected-events/danangevent-3-0')).json()) as CollectedEventItem).popular, true);
   // ссылка записи собирается заново: в сообщении организатору — страница события на Ясвами
   const link = new URL(items[0]!.signup_url);
   assert.equal(link.origin + link.pathname, 'https://t.me/anna_yoga');

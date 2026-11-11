@@ -90,3 +90,8 @@ assert.deepEqual(await fetchChannelPhotos(fake, 'anna', ['telegram:anna/9']), {
 }, 'только фото публикаций; известное не качаем, не-JPEG не сохраняем');
 assert.equal(await fetchChannelPhotos({ ...fake, getMessages: async () => { throw new Error('CHANNEL_PRIVATE'); } }, 'anna'), null);
 console.log('photos ok');
+
+const { toStats } = await import('./mtproto.mjs');
+assert.deepEqual(toStats({ views: 1200, reactions: { results: [{ count: 7 }, { count: 3 }] } }), { views: 1200, reactions: 10 });
+assert.deepEqual(toStats({}), { views: null, reactions: 0 }, 'публикация в группе без реакций');
+console.log('stats ok');

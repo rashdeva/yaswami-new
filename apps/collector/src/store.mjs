@@ -61,6 +61,9 @@ export function createStore(url) {
       where coalesce(ends_at, starts_at) >= now() and not (event ? 'topic')`,
     setEvent: (external_id, event) => sql`
       update collected_events set event = ${sql.json(event)}, updated_at = now() where external_id = ${external_id}`,
+    /** Отклик на публикацию-источник — всем событиям из неё (`prefix` — telegram:<канал>/<публикация>#). */
+    setStats: (prefix, { views, reactions }) => sql`
+      update collected_events set views = ${views}, reactions = ${reactions} where starts_with(external_id, ${prefix})`,
     end: () => sql.end(),
   };
 }

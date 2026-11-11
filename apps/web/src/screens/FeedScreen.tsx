@@ -13,6 +13,9 @@ interface Props {
   onOpen: (event: CollectedEventItem) => void;
 }
 
+/** Значение фильтра «Популярное»: стоит в одном ряду с темами, но темой не является. */
+const POPULAR = '🔥';
+
 /** Витрина: все предстоящие события города. Открыта без входа. */
 export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
   const [items, setItems] = useState<CollectedEventItem[] | null>(initial ?? null);
@@ -32,7 +35,7 @@ export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
   const topics = Object.keys(TOPIC_GUIDES).filter((t) => items?.some((e) => e.topic === t));
   const days: CollectedEventItem[][] = [];
   for (const item of items ?? []) {
-    if (topic && item.topic !== topic) continue;
+    if (topic && (topic === POPULAR ? !item.popular : item.topic !== topic)) continue;
     const last = days.at(-1);
     if (last && collectedDayKey(last[0]!.starts_at) === collectedDayKey(item.starts_at)) last.push(item);
     else days.push([item]);
@@ -45,9 +48,12 @@ export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
         <h1>События</h1>
         <p>📍 {city}</p>
       </div>
-      {topics.length > 1 && (
+      {(topics.length > 1 || items?.some((e) => e.popular)) && (
         <div className="chips">
           <button className="chip" aria-pressed={!topic} onClick={() => setTopic(null)}>Все</button>
+          {items?.some((e) => e.popular) && (
+            <button className="chip" aria-pressed={topic === POPULAR} onClick={() => setTopic(topic === POPULAR ? null : POPULAR)}><span className="hot" />Популярное</button>
+          )}
           {topics.map((t) => (
             <button key={t} className="chip" aria-pressed={topic === t} onClick={() => setTopic(topic === t ? null : t)}>
               <img src={topicIcon(t)} alt="" />{t[0]!.toUpperCase() + t.slice(1)}
@@ -78,6 +84,7 @@ export function FeedScreen({ city, initial, tabs, lead, onOpen }: Props) {
                 <div>
                   <b>{e.title}</b>
                   <small>{[collectedTime(e.starts_at), e.place, e.price].filter(Boolean).join(' · ') || 'подробности у организатора'}</small>
+                  {e.popular && <span className="badge sm hot">Популярное</span>}
                   {e.beginner_friendly && <span className="badge sm">Можно без опыта</span>}
                 </div>
               </a>

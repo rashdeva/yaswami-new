@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createExtractor, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
-import { connect, fetchChatAnnouncements } from './mtproto.mjs';
+import { connect, fetchChatAnnouncements, fetchStats } from './mtproto.mjs';
 import { createStore } from './store.mjs';
 import { fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
@@ -58,6 +58,19 @@ async function refreshPhotos() {
   }
 }
 
+// Отклик на публикации предстоящих событий: в момент сбора публикации минуты от роду, просмотры и реакции
+// набегают потом. Один запрос на источник за проход.
+async function refreshStats() {
+  const posts = (await store.upcoming()).flatMap((r) => /^telegram:(.+)\/(\d+)#/.exec(r.external_id)?.slice(1, 3) ?? [])
+    .reduce((byChat, [chat, number]) => byChat.set(chat, (byChat.get(chat) ?? new Set()).add(Number(number))), new Map());
+  for (const [chat, numbers] of posts) {
+    // Источник недоступен (событие прислали боту из чужого канала) — пропускаем, остальные обновляем.
+    const stats = await fetchStats(userbot, chat, [...numbers]).catch((e) => console.error(`отклик ${chat}: ${e.message}`));
+    for (const [number, s] of stats ?? []) await store.setStats(`telegram:${chat}/${number}#`, s);
+    await sleep(2000);
+  }
+}
+
 const cursors = await store.cursors();
 // Railway проверяет /health при деплое (общий railway.json); отвечаем, когда БД уже доступна.
 if (env.PORT) createServer((_, res) => res.end('ok')).listen(env.PORT);
@@ -101,6 +114,7 @@ do {
     await pollChannel(channel, known).catch((e) => console.error(`${channel}: ${e.message}`));
     await sleep(2000); // не частим с запросами к Telegram
   }
+  await refreshStats().catch((e) => console.error(`отклик: ${e.message}`));
   await profileHosts().catch((e) => console.error(`профили: ${e.message}`));
   await refreshPhotos().catch((e) => console.error(`фото: ${e.message}`));
   if (pollMinutes) await sleep(pollMinutes * 60_000);
