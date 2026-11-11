@@ -12,6 +12,7 @@ agents/
     skills/         скиллы роли (SKILL.md)
   support/          роль: отвечает людям, которые пишут боту «Я с вами» (профиль support)
   hunter/           роль: пишет черновики ответов на вопросы «куда сходить» в чатах (профиль hunter)
+  host/             роль: пишет черновики сообщений организаторам (профиль host)
   illustrator/      роль: рисует обложку в фирменном стиле и ролик-историю с неё через Grok Imagine (профиль illustrator)
 ```
 
@@ -38,6 +39,7 @@ railway up agents --path-as-root --service hermes
 | `API_SERVER_ENABLED`, `API_SERVER_HOST`, `API_SERVER_KEY` | HTTP-вход Hermes: `true`, `::` и ключ роли `operator`; ключ не короче 16 символов, иначе вход молча не включается |
 | `SUPPORT_API_KEY` | ключ роли `support`; тот же ключ — в `SUPPORT_KEY` сервиса `api` |
 | `HUNTER_API_KEY` | ключ роли `hunter`; тот же ключ — в `HUNTER_KEY` сервиса `api` |
+| `HOST_API_KEY` | ключ роли `host`; тот же ключ — в `HOST_KEY` сервиса `api`. Не задан — роль не ставится |
 | `ILLUSTRATOR_API_KEY` | ключ роли `illustrator`; тот же ключ — в `ILLUSTRATOR_KEY` сервиса `api`. Не задан — роль не ставится |
 
 ## Вход в модель

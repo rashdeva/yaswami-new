@@ -1,11 +1,12 @@
 // Переписка (docs/agents-inbox.md): запись всего, что люди пишут боту и что бот или мы отвечаем, и операции админки.
-import { and, asc, desc, eq, gt } from 'drizzle-orm';
-import type { AccountCreateInput, AccountMessageInput, Conversation, ConversationUpdateInput, InboxFeed, LeadInput, Message, TgAccount, User } from '@yaswami/core';
+import { and, asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import type { AccountCreateInput, AccountMessageInput, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message, TgAccount, User } from '@yaswami/core';
+import { collectedPath, collectedWhen } from '@yaswami/core';
 import type { Db } from './db/client.ts';
-import { conversations, messages, tgAccounts, users } from './db/schema.ts';
-import { AppError } from './services.ts';
+import { collectedEvents, collectedEventSignups, conversations, hosts, messages, tgAccounts, users } from './db/schema.ts';
+import { AppError, collectedSlug } from './services.ts';
 import { settings } from './settings.ts';
-import { hunter } from './support.ts';
+import { host, hunter } from './support.ts';
 import type { SupportTurn } from './support.ts';
 import type { BotResult, Incoming } from './telegram.ts';
 import { bot } from './telegram.ts';
@@ -52,10 +53,88 @@ export async function recordAccountMessage(db: Db, input: AccountMessageInput): 
     return;
   }
   const reason = 'Написал на аккаунт';
-  await alertAdmins(await record(db, peer, { direction: 'in', author: 'user', text: input.text, status: 'received' }, reason), reason);
+  const conversation = await record(db, peer, { direction: 'in', author: 'user', text: input.text, status: 'received' }, reason);
+  await alertAdmins(conversation, reason);
+  // Диалог начала роль host и мы его не забирали — она готовит черновик ответа. Сборщика ответом модели не задерживаем.
+  if (settings.hostUrl && conversation.mode === 'agent') {
+    const [started] = await db.select({ id: messages.id }).from(messages)
+      .where(and(eq(messages.conversation_id, conversation.id), eq(messages.author, 'agent:host'))).limit(1);
+    if (started) void draftHostReply(db, conversation).catch(console.error);
+  }
 }
 
 const CONTACT_AGAIN_DAYS = 7;
+
+/** Этому человеку мы уже писали на днях или его черновик ещё ждёт — второй раз первыми не лезем. */
+async function contactedRecently(db: Db, peerId: number): Promise<boolean> {
+  const [known] = await db.select().from(conversations).where(and(eq(conversations.channel, 'account'), eq(conversations.peer_id, peerId)));
+  if (!known) return false;
+  const since = new Date(Date.now() - CONTACT_AGAIN_DAYS * 86_400_000);
+  const [recent] = await db.select({ id: messages.id }).from(messages)
+    .where(and(eq(messages.conversation_id, known.id), eq(messages.direction, 'out'), gt(messages.created_at, since))).limit(1);
+  return !!recent;
+}
+
+/** Что сервис знает об организаторе: его события в каталоге и сколько человек нажали на них «Записаться». */
+async function hostFacts(db: Db, username: string): Promise<string> {
+  const rows = await db
+    .select({ external_id: collectedEvents.external_id, event: collectedEvents.event, claimed: collectedEvents.claimed_event_id, signups: count(collectedEventSignups.user_id) })
+    .from(collectedEvents)
+    .leftJoin(collectedEventSignups, eq(collectedEventSignups.external_id, collectedEvents.external_id))
+    .where(and(eq(collectedEvents.telegram_username, username), gt(collectedEvents.starts_at, new Date())))
+    .groupBy(collectedEvents.external_id)
+    .orderBy(asc(collectedEvents.starts_at))
+    .limit(10);
+  const app = bot.username ? `https://t.me/${bot.username}/${bot.appName}` : settings.publicUrl;
+  return [
+    'Данные сервиса об организаторе. События собраны из его открытых анонсов; «записались» — столько человек нажали «Записаться» в «Я с вами» (это интерес, места подтверждает он сам).',
+    ...rows.map((r) => `- «${r.event.title}», ${collectedWhen(r.event.starts_at)} — записались: ${r.signups}${r.claimed ? ', событие уже подтверждено им' : ''}. Страница: ${settings.publicUrl}${collectedPath(collectedSlug(r.external_id))}`),
+    `Как подтвердить событие: открыть приложение ${app}, там появится вопрос «Это ваше событие?» — нажать «Это моё». После этого гости отвечают «Пойду» в один тап, а организатор видит список, кто придёт, и может отправить приглашение в любой чат. Это бесплатно.`,
+  ].join('\n');
+}
+
+/**
+ * На событие организатора нажали «Записаться» — повод написать ему первым. Роль host пишет сообщение, оно ложится
+ * черновиком в «Ждут вас»; отправляет человек, в личку с нашего аккаунта. Организатору, который уже подтвердил
+ * событие, и тому, кому писали на днях, не пишем.
+ */
+export async function recordHostLead(db: Db, externalId: string): Promise<void> {
+  if (!settings.hostUrl) return;
+  const [event] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, externalId));
+  if (!event?.telegram_username || event.claimed_event_id) return;
+  // Профиль организатора собирает сборщик: без него не знаем, кому писать.
+  const [profile] = await db.select().from(hosts).where(eq(hosts.username, event.telegram_username));
+  if (!profile || (await contactedRecently(db, profile.telegram_id))) return;
+
+  const reply = await host.ask([
+    { role: 'system', content: await hostFacts(db, profile.username) },
+    { role: 'user', content: `Напиши первое сообщение организатору ${profile.name} (@${profile.username}). Повод: на его событие «${event.event.title}» через «Я с вами» записались люди.` },
+  ]);
+  if (!reply?.text) return;
+
+  const reason = 'Черновик организатору';
+  const account = await activeAccount(db);
+  const conversation = await record(
+    db, { id: profile.telegram_id, name: profile.name, username: profile.username, account_id: account?.id ?? null },
+    { direction: 'out', author: 'agent:host', text: reply.text, status: 'draft', meta: { reason: `На «${event.event.title}» через нас записались` } }, reason,
+  );
+  await alertAdmins(conversation, reason);
+}
+
+/** Организатор ответил на наше сообщение: роль host готовит черновик ответа. Прежний неотправленный черновик заменяется. */
+async function draftHostReply(db: Db, conversation: Conversation): Promise<void> {
+  const history = await supportHistory(db, conversation.id);
+  const reply = await host.ask([{ role: 'system', content: await hostFacts(db, conversation.peer_username ?? '') }, ...history]);
+  if (!reply) return;
+  await db.delete(messages).where(and(eq(messages.conversation_id, conversation.id), eq(messages.status, 'draft')));
+  if (reply.text) {
+    await db.insert(messages).values({
+      conversation_id: conversation.id, direction: 'out', author: 'agent:host', text: reply.text, status: 'draft',
+      meta: { reason: reply.human ? `Ответ организатору; роль просит человека: ${reply.human}` : 'Ответ организатору' },
+    });
+  }
+  await setAttention(db, conversation.id, reply.human ?? 'Черновик ответа организатору');
+}
 
 /**
  * Сборщик нашёл в чате вопрос «куда сходить». Роль hunter подбирает событие и пишет ответ — он ложится черновиком
@@ -64,14 +143,7 @@ const CONTACT_AGAIN_DAYS = 7;
 export async function recordLead(db: Db, lead: LeadInput): Promise<void> {
   if (!settings.hunterUrl) return;
   if (settings.hunterUserIds.length && !settings.hunterUserIds.includes(lead.author.id)) return;
-  // Этому человеку мы уже писали на днях или его черновик ещё ждёт — второй раз не лезем.
-  const [known] = await db.select().from(conversations).where(and(eq(conversations.channel, 'account'), eq(conversations.peer_id, lead.author.id)));
-  if (known) {
-    const since = new Date(Date.now() - CONTACT_AGAIN_DAYS * 86_400_000);
-    const [recent] = await db.select({ id: messages.id }).from(messages)
-      .where(and(eq(messages.conversation_id, known.id), eq(messages.direction, 'out'), gt(messages.created_at, since))).limit(1);
-    if (recent) return;
-  }
+  if (await contactedRecently(db, lead.author.id)) return;
   // Отвечать будем с аккаунта. Его ещё нет — черновик всё равно показываем: аккаунт подберётся при отправке.
   const account = await activeAccount(db);
 
@@ -143,7 +215,7 @@ export async function alertAdmins(conversation: Conversation, reason: string): P
 /** Последние сообщения диалога в виде, который понимает роль поддержки: человек — user, всё наше — assistant. */
 export async function supportHistory(db: Db, id: string): Promise<SupportTurn[]> {
   const rows = await db.select().from(messages).where(eq(messages.conversation_id, id)).orderBy(desc(messages.created_at)).limit(20);
-  return rows.reverse().filter((m) => m.status !== 'failed').map((m) => ({ role: m.direction === 'in' ? 'user' : 'assistant', content: m.text }));
+  return rows.reverse().filter((m) => m.status !== 'failed' && m.status !== 'draft').map((m) => ({ role: m.direction === 'in' ? 'user' : 'assistant', content: m.text }));
 }
 
 export const isAdmin = (actor: User) => settings.adminIds.includes(actor.id);
@@ -151,10 +223,36 @@ export function requireAdmin(actor: User) {
   if (!isAdmin(actor)) throw new AppError('forbidden', 403);
 }
 
+/** Кто собеседник и на каком он шаге: по профилям организаторов, пользователям сервиса и самой переписке. */
+async function withStages(db: Db, rows: Conversation[]): Promise<InboxConversation[]> {
+  if (!rows.length) return [];
+  const peers = rows.map((c) => c.peer_id);
+  const organizers = new Map((await db.select({ id: hosts.telegram_id, user_id: hosts.user_id }).from(hosts).where(inArray(hosts.telegram_id, peers))).map((h) => [h.id, h.user_id]));
+  const members = new Set((await db.select({ id: users.id }).from(users).where(inArray(users.id, peers))).map((u) => u.id));
+  const ours = sql`${messages.direction} = 'out' and ${messages.status} in ('sent', 'queued')`;
+  const facts = new Map((await db
+    .select({
+      id: messages.conversation_id,
+      contacted: sql<boolean>`coalesce(bool_or(${ours}), false)`,
+      draft: sql<boolean>`coalesce(bool_or(${messages.status} = 'draft'), false)`,
+      // Ответил — написал нам после нашего первого сообщения.
+      replied: sql<boolean>`coalesce(max(${messages.created_at}) filter (where ${messages.direction} = 'in') > min(${messages.created_at}) filter (where ${ours}), false)`,
+    })
+    .from(messages).where(inArray(messages.conversation_id, rows.map((c) => c.id))).groupBy(messages.conversation_id)).map((f) => [f.id, f]));
+  return rows.map((c) => {
+    const f = facts.get(c.id);
+    const organizer = organizers.has(c.peer_id);
+    // Организатор «в сервисе», когда вошёл сам; гость из чата — когда появился среди пользователей.
+    const joined = organizer ? organizers.get(c.peer_id) != null : c.channel === 'account' && members.has(c.peer_id);
+    const stage = joined ? 'joined' : c.channel === 'bot' ? 'bot' : f?.replied ? 'replied' : f?.contacted ? 'contacted' : f?.draft ? 'draft' : 'wrote_us';
+    return { ...c, kind: organizer ? 'organizer' : 'guest', stage };
+  });
+}
+
 export async function inboxFeed(db: Db, actor: User): Promise<InboxFeed> {
   return {
     me: actor.id,
-    conversations: await db.select().from(conversations).orderBy(desc(conversations.last_message_at)).limit(FEED_LIMIT),
+    conversations: await withStages(db, await db.select().from(conversations).orderBy(desc(conversations.last_message_at)).limit(FEED_LIMIT)),
     messages: await db.select().from(messages).orderBy(desc(messages.created_at)).limit(FEED_LIMIT),
     accounts: await listAccounts(db),
   };

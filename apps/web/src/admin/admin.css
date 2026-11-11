@@ -59,3 +59,27 @@ html.admin #app { height: 100%; max-width: none; min-height: 0; padding: 0; }
 .ad-tag.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: #166534; }
 .ad-hint.warn { color: #c2410c; }
 .ad-link { align-self: flex-start; background: none; border: 0; padding: 0; font: inherit; font-size: 12.5px; color: var(--hint); text-decoration: underline; cursor: pointer; }
+
+/* вид «Люди»: список собеседников и переписка с выбранным */
+.ad-tabs { display: inline-flex; background: var(--line); border-radius: 999px; padding: 2px; }
+.ad-tabs button { border: 0; background: none; font: inherit; color: inherit; padding: 5px 14px; border-radius: 999px; cursor: pointer; }
+.ad-tabs button.on { background: var(--mat); font-weight: 600; box-shadow: var(--shadow); }
+.ad-over { padding: 14px 20px 0; max-width: 800px; }
+.ad-people { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(260px, 340px) 1fr; }
+.ad-list { overflow: auto; padding: 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.ad-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
+.ad-chips button { border: 0; background: var(--line); font: inherit; font-size: 12.5px; color: inherit; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+.ad-chips button.on { background: var(--btn); color: var(--btn-text); }
+.ad-person { padding: 10px; border-radius: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
+.ad-clip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.45em; }
+.ad-tags { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.ad-tag.warn { background: #ffedd5; color: #9a3412; }
+.ad-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.ad-pane > header { padding: 12px 16px; border-bottom: 1px solid var(--line); align-items: flex-start; }
+.ad-pane .ad-thread { flex: 1; }
+.ad-pane .ad-reply { padding: 12px 16px; margin: 0; border-top: 1px solid var(--line); }
+.ad-pane .ad-draft { padding: 12px 16px; border-top: 1px solid var(--line); }
+.ad-draft { display: flex; flex-direction: column; gap: 8px; }
+.ad-empty { margin: auto; }
+.ad a { color: var(--btn); }
+@media (max-width: 700px) { .ad-people { grid-template-columns: 1fr; grid-template-rows: 40% 60%; } .ad-list { border-right: 0; border-bottom: 1px solid var(--line); } }

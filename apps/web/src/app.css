@@ -24,7 +24,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .row input:focus-visible, .row textarea:focus-visible { outline: 0; }
 
 /* материал и стекло */
-.group, .stat, .kind, .chip, .step button, .cta.alt, .sheet > div, .bubble, .rsvp button {
+.group, .stat, .kind, .chip, .step button, .cta.alt, .bubble, .rsvp button {
   background: var(--mat); border: .5px solid var(--stroke);
   -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%);
   box-shadow: inset 0 1px 0 var(--shine), var(--shadow);
@@ -160,11 +160,6 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 .item b { display: block; overflow-wrap: anywhere; }
 .item small { display: block; color: var(--hint); font-size: 14px; }
 
-.sheet { position: fixed; inset: 0; background: rgba(0, 0, 0, .28); display: flex; align-items: flex-end; justify-content: center; z-index: 5; animation: fade .2s; }
-.sheet > div { width: calc(100% - 16px); max-width: 414px; margin-bottom: calc(8px + var(--inset-bottom, env(safe-area-inset-bottom))); border-radius: 38px; padding: 26px 18px 18px; animation: rise .32s var(--spring); }
-.sheet > div::before { content: ''; display: block; width: 36px; height: 5px; border-radius: 99px; background: var(--hint); opacity: .5; margin: -14px auto 14px; }
-.sheet h3 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
-.sheet p { margin: 0 0 16px; color: var(--hint); font-size: 15px; }
 .bubble { border-radius: 20px 20px 20px 6px; overflow: hidden; max-width: 320px; margin: 0 auto 18px; font-size: 15px; }
 .bubble .hero { margin: 0; border-radius: 0; padding: 14px 14px 12px; box-shadow: none; }
 .bubble .hero .emo { font-size: 28px; margin: 0; }
@@ -190,9 +185,7 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 /* Широкое окно (Telegram Desktop, браузер): шторка — по центру как диалог */
 @media (min-width: 700px) {
   #app { padding-top: 20px; }
-  .sheet { align-items: center; }
-  .sheet > div { max-width: 440px; margin-bottom: 0; padding-top: 22px; }
-  .sheet > div::before { display: none; }
+  .chips { flex-wrap: wrap; overflow-x: visible; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
@@ -245,3 +238,16 @@ a.item { text-decoration: none; color: inherit; }
 .group details[open] summary::after { content: '–'; }
 .group details p { margin: 0; padding: 0 18px 15px; }
 h2.cap::first-letter { text-transform: uppercase; }
+.pad .lead { display: block; margin-bottom: 8px; font-size: 12px; color: var(--hint); }
+.pad .cta { margin-top: 12px; }
+.plain { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+button.cover { width: 100%; padding: 0; border: 0; font: inherit; text-align: left; cursor: pointer; }
+/* шторка vaul: тянется вниз, закрывается свайпом */
+.drawer-overlay { position: fixed; inset: 0; z-index: 5; background: rgba(0, 0, 0, .28); }
+.drawer { position: fixed; z-index: 6; left: 0; right: 0; bottom: 0; max-width: 440px; margin: 0 auto; max-height: 85vh; overflow-y: auto; padding: 14px 18px calc(18px + var(--inset-bottom, env(safe-area-inset-bottom))); border-radius: 28px 28px 0 0; background: var(--bg); color: var(--text); outline: none; }
+.drawer-handle { width: 36px; height: 5px; border-radius: 99px; background: var(--hint); opacity: .5; margin: 0 auto 14px; }
+.drawer .lead { display: block; margin-bottom: 10px; font-size: 12px; color: var(--hint); }
+.drawer p { margin: 0 0 12px; }
+.drawer .who { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 17px; }
+.drawer .who .ava { width: 48px; height: 48px; object-fit: cover; border-radius: 50%; }
+.drawer .cta { margin-top: 12px; }

@@ -1,0 +1,19 @@
+# Роль host: пишет организаторам, к которым через нас записались, и отвечает на их сообщения (docs/agents-inbox.md).
+# Всё нужное приходит в запросе от нашего API; инструментов и памяти у роли нет. Отправляет текст не она —
+# черновик утверждает человек в админке.
+_config_version: 53 # формат конфига Hermes 0.23; без метки Hermes считает файл древним и ругается при старте
+model:
+  default: grok-4.6
+  provider: xai-oauth
+  base_url: https://api.x.ai/v1
+
+platform_toolsets:
+  api_server: [skills]
+  cli: [skills]
+
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+
+skills:
+  write_approval: true

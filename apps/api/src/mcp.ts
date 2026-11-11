@@ -5,9 +5,9 @@ import * as z from 'zod';
 import type { User } from '@yaswami/core';
 import { collectedPath, EventCreateInput, EventUpdateInput, RsvpInput, TEMPLATES, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
 import type { Db } from './db/client.ts';
-import { eq } from 'drizzle-orm';
-import { users } from './db/schema.ts';
-import { conversationById, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin, rejectDraft, sendDraft } from './inbox.ts';
+import { asc, eq, gt, ilike, or } from 'drizzle-orm';
+import { collectedEvents, collectedEventSignups, events, hosts, users } from './db/schema.ts';
+import { conversationById, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin, listAccounts, rejectDraft, sendDraft } from './inbox.ts';
 import { eventUrl } from './notifications.ts';
 import { verifyTicket } from './support.ts';
 import * as s from './services.ts';
@@ -21,23 +21,35 @@ const KINDS = `Event kind is a visual template: ${Object.entries(TEMPLATES).map(
 function buildServer(db: Db, actor: User) {
   const server = new McpServer({ name: 'yaswami', version: '0.1.0' });
 
+  // Админ (оператор в командном чате) может выполнить любой «пользовательский» инструмент от имени другого человека:
+  // так он управляет чем угодно в сервисе. Гостю параметр недоступен; роль поддержки эти инструменты не получает вовсе.
+  const admin = isAdmin(actor);
+  const AS_USER = { as_user_id: z.number().int().optional().describe('Admin only: act on behalf of this user (Telegram id, see admin_users_find or host_id in admin_events_list). Omit to act as yourself.') };
+  const userById = async (id: number): Promise<User> => {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    if (!user) throw new s.AppError('user_not_found', 404);
+    return user;
+  };
+
   // Ошибка правил (нет мест, нет прав) — это ответ инструмента, а не сбой протокола: модель должна её прочитать.
+  // `asUser` — инструмент действует от имени человека: `run` получает его вторым аргументом (для не-админа это он сам).
   const tool = <Shape extends z.ZodRawShape>(
     name: string,
-    config: { title: string; description: string; shape: Shape; readOnly?: boolean; destructive?: boolean },
-    run: (args: z.infer<z.ZodObject<Shape>>) => Promise<unknown>,
+    config: { title: string; description: string; shape: Shape; readOnly?: boolean; destructive?: boolean; asUser?: boolean },
+    run: (args: z.infer<z.ZodObject<Shape>>, me: User) => Promise<unknown>,
   ) =>
     server.registerTool(
       name,
       {
         title: config.title,
         description: config.description,
-        inputSchema: config.shape,
+        inputSchema: config.asUser && admin ? { ...config.shape, ...AS_USER } : config.shape,
         annotations: { readOnlyHint: !!config.readOnly, destructiveHint: !!config.destructive, openWorldHint: false },
       },
-      (async (args: z.infer<z.ZodObject<Shape>>) => {
+      (async ({ as_user_id, ...args }: z.infer<z.ZodObject<Shape>> & { as_user_id?: number }) => {
         try {
-          return { content: [{ type: 'text' as const, text: JSON.stringify((await run(args)) ?? { ok: true }) }] };
+          const me = config.asUser && admin && as_user_id !== undefined ? await userById(as_user_id) : actor;
+          return { content: [{ type: 'text' as const, text: JSON.stringify((await run(args as z.infer<z.ZodObject<Shape>>, me)) ?? { ok: true }) }] };
         } catch (e) {
           if (!(e instanceof s.AppError)) throw e;
           return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: e.code }) }] };
@@ -54,44 +66,54 @@ function buildServer(db: Db, actor: User) {
   })));
 
   tool('events_list', {
-    title: 'List my events', readOnly: true, shape: {},
+    title: 'List my events', readOnly: true, asUser: true, shape: {},
     description: 'Events the user hosts or has responded to, ordered by start time. Start here to get event ids.',
-  }, () => s.listEvents(db, actor));
+  }, (_a, me) => s.listEvents(db, me));
 
   tool('event_get', {
-    title: 'Get event', readOnly: true, shape: { event_id },
+    title: 'Get event', readOnly: true, asUser: true, shape: { event_id },
     description: 'One event with its ticket types, guest list (first names only), counts and the user\'s own response.',
-  }, (a) => s.getEvent(db, actor, a.event_id));
+  }, (a, me) => s.getEvent(db, me, a.event_id));
 
   tool('event_create', {
-    title: 'Create event', shape: EventCreateInput.shape,
+    title: 'Create event', asUser: true, shape: EventCreateInput.shape,
     description: `Create an event hosted by the user. Field names follow the Luma API (name, start_at, timezone, max_capacity). A default free ticket type is created with it. ${KINDS}`,
-  }, (a) => s.createEvent(db, actor, a));
+  }, (a, me) => s.createEvent(db, me, a));
 
   tool('event_update', {
-    title: 'Update event', shape: { event_id, ...EventUpdateInput.shape },
+    title: 'Update event', asUser: true, shape: { event_id, ...EventUpdateInput.shape },
     description: 'Change fields of an event the user hosts. Only passed fields change. Set status to "cancelled" to cancel.',
-  }, ({ event_id: id, ...input }) => s.updateEvent(db, actor, id, input));
+  }, ({ event_id: id, ...input }, me) => s.updateEvent(db, me, id, input));
 
   tool('event_rsvp', {
-    title: 'Respond to event', shape: { event_id, ...RsvpInput.shape },
+    title: 'Respond to event', asUser: true, shape: { event_id, ...RsvpInput.shape },
     description: 'Set the user\'s own response: approved (going), maybe or declined. Pass event_ticket_type_id when the event has several visible ticket types. Errors: full, ticket_required, closed.',
-  }, ({ event_id: id, ...input }) => s.rsvpEvent(db, actor, id, input));
+  }, ({ event_id: id, ...input }, me) => s.rsvpEvent(db, me, id, input));
 
   tool('ticket_type_create', {
-    title: 'Add ticket type', shape: { event_id, ...TicketTypeCreateInput.shape },
+    title: 'Add ticket type', asUser: true, shape: { event_id, ...TicketTypeCreateInput.shape },
     description: 'Add a free ticket type to an event the user hosts. max_capacity limits seats of this type; price_text is a label only, no payment is taken.',
-  }, ({ event_id: id, ...input }) => s.createTicketType(db, actor, id, input));
+  }, ({ event_id: id, ...input }, me) => s.createTicketType(db, me, id, input));
 
   tool('ticket_type_update', {
-    title: 'Update ticket type', shape: { event_ticket_type_id, ...TicketTypeUpdateInput.shape },
+    title: 'Update ticket type', asUser: true, shape: { event_ticket_type_id, ...TicketTypeUpdateInput.shape },
     description: 'Change a ticket type of an event the user hosts. The last visible ticket type cannot be hidden.',
-  }, ({ event_ticket_type_id: id, ...input }) => s.updateTicketType(db, actor, id, input));
+  }, ({ event_ticket_type_id: id, ...input }, me) => s.updateTicketType(db, me, id, input));
 
   tool('ticket_type_delete', {
-    title: 'Delete ticket type', destructive: true, shape: { event_ticket_type_id },
+    title: 'Delete ticket type', destructive: true, asUser: true, shape: { event_ticket_type_id },
     description: 'Delete a ticket type. Fails if guests hold it or if it is the last (or last visible) type of the event.',
-  }, (a) => s.deleteTicketType(db, actor, a.event_ticket_type_id));
+  }, (a, me) => s.deleteTicketType(db, me, a.event_ticket_type_id));
+
+  tool('contacts_list', {
+    title: 'List my audience', readOnly: true, asUser: true, shape: {},
+    description: 'People from the host\'s audience: those who opened or answered the user\'s events, with how many of them they attend.',
+  }, (_a, me) => s.listContacts(db, me));
+
+  tool('my_catalog_events', {
+    title: 'Catalogue events I opened', readOnly: true, asUser: true, shape: {},
+    description: 'Catalogue events the user opened or pressed "sign up" on (`signed_up`). Signing up there is interest only: the organizer confirms the seat.',
+  }, (_a, me) => s.myCollectedEvents(db, me));
 
   // Переписка с людьми (docs/agents-inbox.md) — только тем, кому открыта админка: через эти инструменты работает Hermes.
   if (isAdmin(actor)) {
@@ -141,6 +163,66 @@ function buildServer(db: Db, actor: User) {
       title: 'Update event of the person', shape: { ticket, event_id, ...EventUpdateInput.shape },
       description: 'Change an event the person hosts; only passed fields change. status "cancelled" cancels it. Error forbidden: the person is not the host.',
     }, async ({ ticket: t, event_id: id, ...input }) => s.updateEvent(db, await person(t), id, input));
+
+    // Любое событие сервиса — для оператора в командном чате. Действуем от имени организатора события:
+    // правила те же, что у него в приложении, но без проверки «это моё событие».
+    const hostOf = async (id: string): Promise<User> => {
+      const [row] = await db.select({ host: users }).from(events).innerJoin(users, eq(users.id, events.user_id)).where(eq(events.id, id));
+      if (!row) throw new s.AppError('not_found', 404);
+      return row.host;
+    };
+    tool('admin_events_list', {
+      title: 'All upcoming events', readOnly: true, shape: {},
+      description: 'Every upcoming event created in the service (any host), by start time, with the host\'s name. For the public catalogue collected from announcements use catalog_events.',
+    }, async () => (await db
+      .select({ event: events, host_id: users.id, host_name: users.first_name, host_username: users.username })
+      .from(events).innerJoin(users, eq(users.id, events.user_id))
+      .where(gt(events.start_at, new Date())).orderBy(asc(events.start_at)).limit(200))
+      .map((r) => ({ ...r, url: eventUrl(r.event.id) })));
+
+    tool('admin_event_get', {
+      title: 'Any event with guests', readOnly: true, shape: { event_id },
+      description: 'Any event as its host sees it: ticket types, the full guest list including who declined, counts.',
+    }, async (a) => ({ ...(await s.getEvent(db, await hostOf(a.event_id), a.event_id)), url: eventUrl(a.event_id) }));
+
+    tool('admin_event_update', {
+      title: 'Update any event', shape: { event_id, ...EventUpdateInput.shape },
+      description: 'Change any event on behalf of the team; only passed fields change. status "cancelled" cancels it and guests see that. Only on an explicit instruction from the team.',
+    }, async ({ event_id: id, ...input }) => s.updateEvent(db, await hostOf(id), id, input));
+
+    tool('admin_users_find', {
+      title: 'Find user', readOnly: true, shape: { query: z.string().trim().min(1).max(64).describe('Part of a first name or @username') },
+      description: 'Find people who have used the service, by name or username. Returns their Telegram id — pass it as as_user_id to act on their behalf.',
+    }, (a) => db.select().from(users).where(or(ilike(users.first_name, `%${a.query}%`), ilike(users.username, `%${a.query.replace(/^@/, '')}%`))).limit(20));
+
+    const catalog_event_id = z.string().describe('Catalogue event id — the last part of its page url, e.g. danangevent-16434-0');
+    tool('admin_catalog_event', {
+      title: 'Catalogue event with sign-ups', readOnly: true, shape: { catalog_event_id },
+      description: 'One catalogue event (collected from an announcement) with its organizer profile and the people who pressed "sign up" in the service.',
+    }, async (a) => ({
+      ...(await s.getCollectedEvent(db, a.catalog_event_id)),
+      signups: await db.select({ id: users.id, first_name: users.first_name, username: users.username, at: collectedEventSignups.created_at })
+        .from(collectedEventSignups).innerJoin(users, eq(users.id, collectedEventSignups.user_id))
+        .where(eq(collectedEventSignups.external_id, s.collectedExternalId(a.catalog_event_id))),
+    }));
+
+    tool('admin_catalog_event_delete', {
+      title: 'Remove catalogue event', destructive: true, shape: { catalog_event_id },
+      description: 'Remove an event from the public catalogue, e.g. when its organizer asks for it. Its sign-ups go with it. Only on an explicit instruction from the team.',
+    }, async (a) => {
+      const removed = await db.delete(collectedEvents).where(eq(collectedEvents.external_id, s.collectedExternalId(a.catalog_event_id))).returning({ id: collectedEvents.external_id });
+      if (!removed.length) throw new s.AppError('not_found', 404);
+    });
+
+    tool('admin_hosts_list', {
+      title: 'Organizer profiles', readOnly: true, shape: {},
+      description: 'Organizers of catalogue events, profiled from their public Telegram. `user_id` is set once the person has signed in to the service.',
+    }, () => db.select({ telegram_id: hosts.telegram_id, username: hosts.username, name: hosts.name, channel: hosts.channel, summary: hosts.summary, user_id: hosts.user_id }).from(hosts).orderBy(asc(hosts.name)).limit(200));
+
+    tool('accounts_list', {
+      title: 'Our Telegram accounts', readOnly: true, shape: {},
+      description: 'Telegram accounts the team writes to people from, with their state (active, logging in, error). Read only: accounts are added in the admin panel.',
+    }, () => listAccounts(db));
 
     const message_id = z.uuid().describe('Id of a message with status "draft" from conversation_get');
     tool('draft_send', {

@@ -49,7 +49,7 @@ const pathOf = (s: Screen) => (s.name === 'feed' ? '/' : s.name === 'collected' 
 
 export function App() {
   // Открыли по ссылке на событие — сразу оно; иначе экран берётся из адреса или выбирается после загрузки списка.
-  const [screen, setScreen] = useState<Screen | null>(startParam ? { name: 'event', id: startParam } : screenFromPath);
+  const [screen, setScreen] = useState<Screen | null>(startParam?.startsWith('c_') ? { name: 'collected', id: startParam.slice(2) } : startParam ? { name: 'event', id: startParam } : screenFromPath);
   const [me, setMe] = useState<Me | null | undefined>(undefined); // undefined — ещё выясняем
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [events, setEvents] = useState<EventListData[] | null>(null);
@@ -71,7 +71,7 @@ export function App() {
     // Собранные события — «куда заходил»: их сбой не должен ронять список своих.
     const [list, seen] = await Promise.all([api.events(), api.myCollected().catch(() => [])]);
     setEvents(list);
-    setCollected(seen);
+    setCollected(seen.filter((c) => c.signed_up)); // просто заходили — не показываем
     return { length: list.length + seen.length };
   }, []);
 
