@@ -29,9 +29,6 @@ const cursors = await store.cursors();
 // Railway проверяет /health при деплое (общий railway.json); отвечаем, когда БД уже доступна.
 if (env.PORT) createServer((_, res) => res.end('ok')).listen(env.PORT);
 
-// Сбой дозаполнения (лимит ИИ) не должен останавливать сбор: повторим при следующем запуске.
-await backfillTopics({ store, extract, pause: () => sleep(llmPauseMs) }).catch((e) => console.error('дозаполнение:', e.message));
-
 async function pollChannel(channel, known) {
   const fresh = (await fetchChatAnnouncements(userbot, channel, cursors[channel] ?? 0))
     .sort((a, b) => a.number - b.number);
@@ -60,6 +57,8 @@ async function pollChannel(channel, known) {
 }
 
 do {
+  // Сбой дозаполнения (ИИ перегружен, лимит) не должен останавливать сбор: остаток доберём следующим проходом.
+  await backfillTopics({ store, extract, pause: () => sleep(llmPauseMs) }).catch((e) => console.error('дозаполнение:', e.message));
   const known = await store.upcoming();
   for (const channel of channels) {
     await pollChannel(channel, known).catch((e) => console.error(`${channel}: ${e.message}`));
