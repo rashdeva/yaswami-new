@@ -1,0 +1,16 @@
+{
+  "name": "@yaswami/collector",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/main.mjs",
+    "login": "node --env-file-if-exists=.env src/login.mjs",
+    "chats": "node --env-file-if-exists=.env src/chats.mjs",
+    "test": "node src/test.mjs"
+  },
+  "dependencies": {
+    "@google/genai": "^3.0.0",
+    "postgres": "^3.4",
+    "telegram": "^2.26.22"
+  }
+}

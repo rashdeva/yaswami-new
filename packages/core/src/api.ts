@@ -60,3 +60,25 @@ export interface EventListItem {
   is_host: boolean;
   my_status: Guest['status'] | null;
 }
+
+/** Событие, собранное из Telegram-канала (apps/collector): хозяина в Ясвами у него ещё нет, данные извлечены ИИ. */
+export interface CollectedEvent {
+  title: string;
+  description: string;
+  starts_at: string; // ISO 8601 с offset часового пояса города
+  ends_at: string | null;
+  place: string | null;
+  address: string | null;
+  price: string | null;
+  tags: string[];
+  telegram_username: string | null;
+  whatsapp_phone: string | null;
+  url: string | null;
+}
+
+/** Карточка собранного события для витрины. */
+export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {
+  id: string;
+  signup_url: string; // куда ведёт «Записаться»: к организатору, а не в Ясвами
+  source_url: string; // публикация, из которой взято событие
+}

@@ -5,11 +5,12 @@ import { after, before, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { EventView } from '@yaswami/core';
+import type { CollectedEventItem, EventView } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
+import { collectedEvents } from './db/schema.ts';
 
 const BOT_TOKEN = '123456:test-token';
 const url = new URL(process.env.DATABASE_URL ?? 'postgres://yaswami:yaswami@localhost:5432/yaswami');
@@ -159,4 +160,30 @@ test('MCP: список инструментов, создание событи�
 
   const invalid = await rpc('tools/call', { name: 'event_create', arguments: { kind: 'zzz', title: 'x' } });
   assert.equal(invalid.isError, true);
+});
+
+test('собранные события: без входа видны только предстоящие, контакты — только в ссылке записи', async () => {
+  await db.delete(collectedEvents);
+  const row = (external_id: string, starts_at: Date) => ({
+    external_id, channel: 'danangevent', starts_at, signup_url: 'https://t.me/anna_yoga?text=hi',
+    announcement: { url: 'https://t.me/danangevent/1' },
+    event: {
+      title: 'Йога', description: 'Практика на пляже', starts_at: starts_at.toISOString(), ends_at: null, place: 'My Khe',
+      address: null, price: '100k', tags: ['йога'], telegram_username: 'anna_yoga', whatsapp_phone: null, url: null,
+    },
+  });
+  await db.insert(collectedEvents).values([
+    row('telegram:danangevent/1#0', new Date(Date.now() + 86_400_000)),
+    row('telegram:danangevent/2#0', new Date(Date.now() - 86_400_000)),
+  ]);
+
+  const res = await app.request('/collected-events');
+  assert.equal(res.status, 200);
+  const items = (await res.json()) as CollectedEventItem[];
+  assert.deepEqual(items.map((i) => i.id), ['telegram:danangevent/1#0']);
+  assert.deepEqual(
+    { title: items[0]!.title, signup_url: items[0]!.signup_url, source_url: items[0]!.source_url },
+    { title: 'Йога', signup_url: 'https://t.me/anna_yoga?text=hi', source_url: 'https://t.me/danangevent/1' },
+  );
+  assert.equal('telegram_username' in items[0]!, false);
 });

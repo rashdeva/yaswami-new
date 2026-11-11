@@ -1,8 +1,8 @@
 // Таблицы Postgres. Источник правды — схемы в @yaswami/core; блок в конце файла роняет typecheck,
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, check, index, integer, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import type { Event, Guest, Share, TicketType, User } from '@yaswami/core';
+import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import type { CollectedEvent, Event, Guest, Share, TicketType, User } from '@yaswami/core';
 import { EVENT_KINDS, EVENT_STATUSES, GUEST_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -104,6 +104,32 @@ export const apiTokens = pgTable(
   },
   (t) => [index('api_tokens_user_idx').on(t.user_id)],
 );
+
+// События, собранные из Telegram-каналов (apps/collector). Это ещё не события Ясвами: хозяина нет,
+// данные извлечены ИИ. Пишет сюда только сборщик; форма `event` и `announcement` — в apps/collector/README.md.
+export const collectedEvents = pgTable(
+  'collected_events',
+  {
+    external_id: text().primaryKey(), // telegram:<канал>/<публикация>#<номер события в ней>
+    channel: text().notNull(),
+    announcement: jsonb().$type<{ url: string }>().notNull(),
+    event: jsonb().$type<CollectedEvent>().notNull(),
+    starts_at: at('starts_at').notNull(),
+    ends_at: at('ends_at'),
+    // Контакт для записи. По нему вошедшему организатору предлагают подтвердить событие.
+    telegram_username: text(),
+    signup_url: text().notNull(),
+    created_at: at('created_at').notNull().defaultNow(),
+    updated_at: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('collected_events_starts_idx').on(t.starts_at), index('collected_events_username_idx').on(t.telegram_username)],
+);
+
+// Номер последней разобранной публикации по каждому источнику сборщика.
+export const collectorCursors = pgTable('collector_cursors', {
+  channel: text().primaryKey(),
+  last_number: integer().notNull(),
+});
 
 // Сверка с ядром: типы должны совпадать в обе стороны.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
