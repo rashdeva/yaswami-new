@@ -9,4 +9,8 @@ export const settings = {
   timezone: process.env.TIMEZONE ?? 'Asia/Ho_Chi_Minh',
   /** Сколько событий организатор создаёт бесплатно; дальше — по подписке (её пока нет). */
   freeEventsLimit: Number(process.env.FREE_EVENTS_LIMIT ?? 10),
+  /** Сколько ждать перед уведомлением о записи: за это время гость может передумать, а записи — собраться в сводку. */
+  notifyDelayMs: Number(process.env.NOTIFY_DELAY_MS ?? 20_000),
+  /** Сколько анонсов в минуту один человек может прислать боту на разбор: ИИ ограничен по запросам. */
+  botMessagesPerMinute: Number(process.env.BOT_MESSAGES_PER_MINUTE ?? 5),
 };

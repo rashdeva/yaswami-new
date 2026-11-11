@@ -39,6 +39,7 @@ after(() => db.$client.end());
 // Всё, что бот «отправил» за тест. Настоящих запросов к Telegram нет.
 const sent: [method: string, body: any][] = [];
 bot.call = async (method, body) => (sent.push([method, body]), { ok: true });
+Object.assign(bot.pace, { globalMs: 0, chatMs: 0 });
 
 function initData(id: number, first_name: string, authDate = Math.floor(Date.now() / 1000)) {
   const params = new URLSearchParams({ auth_date: String(authDate), user: JSON.stringify({ id, first_name, username: `u${id}` }) });
@@ -388,6 +389,12 @@ test('сообщение боту: отказы и лимит бесплатны
   console.error = error;
   assert.deepEqual(await (await call(tma(61, 'Аня'), 'GET', '/events')).json(), [], 'ни один отказ события не создал');
 
+  // Не больше нескольких разборов в минуту от одного человека: ИИ ограничен по запросам.
+  const perMinute = settings.botMessagesPerMinute;
+  settings.botMessagesPerMinute = 4; // четыре разбора выше уже были
+  assert.deepEqual(await reply(never, ANNOUNCEMENT), [REPLIES.too_often]);
+  settings.botMessagesPerMinute = perMinute + 100;
+
   // Расписание: каждое событие отдельно, пока хватает лимита; остальное — понятный отказ.
   const limit = settings.freeEventsLimit;
   settings.freeEventsLimit = 2;
@@ -417,37 +424,62 @@ test('сообщение боту: то же собранное событие �
   assert.equal(await claimed(902), null, 'подтверждается одна запись');
 });
 
-test('RSVP: уведомления гостю и организатору; сбой Telegram запись не ломает', async () => {
+test('RSVP: одно подтверждение гостю, сводка организатору, клики туда-сюда не спамят', async () => {
   const { event } = await newEvent(tma(70, 'Миша'), { max_capacity: 5 });
-  const rsvp = async (id: number, approval_status: string) => {
+  const rsvp = async (id: number, approval_status: string) =>
+    assert.equal((await call(tma(id, `G${id}`), 'POST', `/events/${event.id}/rsvp`, { approval_status })).status, 200);
+  const labels = () => sent.map(([m, b]) => [m, b.chat_id, JSON.parse(b.public_data).l]);
+  // Уведомления уходят после паузы; здесь она короткая, и тест ждёт, пока очередь опустеет.
+  const delay = settings.notifyDelayMs;
+  settings.notifyDelayMs = 150;
+  const settle = () => new Promise((r) => setTimeout(r, 400));
+  try {
+    // Прокликал «пойду → думаю → не пойду» и ушёл: никому ничего не приходит.
     sent.length = 0;
-    const res = await call(tma(id, `G${id}`), 'POST', `/events/${event.id}/rsvp`, { approval_status });
-    assert.equal(res.status, 200);
-    return sent.map(([m, b]) => [m, b.chat_id, JSON.parse(b.public_data).l]);
-  };
-  assert.deepEqual(await rsvp(71, 'approved'), [['sendWidget', 71, 'Вы записаны'], ['sendWidget', 70, 'Новая запись']]);
-  const toHost = sent[1]![1];
-  assert.deepEqual(JSON.parse(toHost.public_data).m.at(-1), ['👥', 'Записано: 1 из 5']);
-  assert.deepEqual(toHost.reply_markup.inline_keyboard[0][0], { text: 'Написать: G71', url: 'https://t.me/u71' });
+    for (const status of ['approved', 'maybe', 'declined']) await rsvp(74, status);
+    await settle();
+    assert.deepEqual(labels(), []);
 
-  assert.deepEqual(await rsvp(71, 'approved'), [], 'повторный ответ');
-  assert.deepEqual(await rsvp(72, 'maybe'), [], '«думаю» — не запись');
-  assert.deepEqual(await rsvp(71, 'declined'), []);
-  assert.deepEqual((await rsvp(71, 'approved')).length, 2, 'записался снова');
-  assert.deepEqual(await rsvp(70, 'approved'), [['sendWidget', 70, 'Вы записаны']], 'организатор сам себе гость');
+    // Трое записались почти одновременно, один сразу передумал: гостям — по подтверждению, организатору — одна сводка.
+    for (const id of [71, 72, 75]) await rsvp(id, 'approved');
+    await rsvp(72, 'declined');
+    await rsvp(71, 'declined');
+    await rsvp(71, 'approved');
+    await settle();
+    assert.deepEqual(labels().sort(), [['sendWidget', 70, 'Новые записи'], ['sendWidget', 71, 'Вы записаны'], ['sendWidget', 75, 'Вы записаны']]);
+    const toHost = sent.find(([, b]) => b.chat_id === 70)![1];
+    assert.equal(JSON.parse(toHost.public_data).t, 'G71 и G75 придут');
+    assert.deepEqual(JSON.parse(toHost.public_data).m.at(-1), ['👥', 'Записано: 2 из 5']);
+    assert.deepEqual(toHost.reply_markup.inline_keyboard[0][0], { text: 'Написать: G71', url: 'https://t.me/u71' });
 
+    // Отписался и записался снова: гостю второе подтверждение за сутки не приходит, организатор узнаёт.
+    sent.length = 0;
+    await rsvp(71, 'declined');
+    await rsvp(71, 'approved');
+    await rsvp(72, 'maybe');
+    await rsvp(70, 'approved'); // организатор сам себе гость — сводки себе не получает
+    await settle();
+    await settle(); // окно второй сводки вдвое длиннее
+    assert.deepEqual(labels().sort(), [['sendWidget', 70, 'Вы записаны'], ['sendWidget', 70, 'Новая запись']]);
+  } finally {
+    settings.notifyDelayMs = delay;
+  }
+
+  // Telegram недоступен — запись всё равно проходит.
   const stub = bot.call;
   const error = console.error;
   console.error = () => {};
   bot.call = async () => { throw new Error('telegram is down'); };
+  settings.notifyDelayMs = 0;
   try {
     const res = await call(tma(73, 'Нино'), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved' });
     assert.equal(res.status, 200);
     assert.equal(((await res.json()) as EventView).me?.approval_status, 'approved');
-    await new Promise((r) => setImmediate(r)); // даём уведомлениям упасть, пока console.error заглушён
+    await new Promise((r) => setTimeout(r, 100)); // даём уведомлениям упасть, пока console.error заглушён
   } finally {
     bot.call = stub;
     console.error = error;
+    settings.notifyDelayMs = delay;
   }
 });
 

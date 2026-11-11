@@ -19,6 +19,8 @@ export interface Card {
 // По символам, а не по UTF-16: не режем эмодзи пополам.
 const cut = (s: string, n: number) => ([...s].length <= n ? s : [...s].slice(0, n - 1).join('') + '…');
 const GUEST_NAME_MAX = 32;
+const GUEST_NAME_SHORT = 16; // в сводке из нескольких имён
+const WRITE_BUTTONS_MAX = 3;
 
 /** Ссылка на событие: мини-приложение в Telegram, а пока имя бота неизвестно — сайт. */
 export const eventUrl = (id: string) =>
@@ -51,14 +53,19 @@ export const templates = {
       buttons: [{ text: 'Открыть на сайте', url: settings.publicUrl + collectedPath(item.id) }],
     };
   },
-  /** Организатору: на событие записался гость. `going` — сколько мест уже занято. */
-  guest_registered: ({ event, guest, going }: { event: Event; guest: Pick<User, 'first_name' | 'username'>; going: number }): Card => {
-    const name = cut(guest.first_name, GUEST_NAME_MAX);
+  /** Организатору: сводка — кто записался с прошлого уведомления. `going` — сколько мест уже занято. */
+  guest_registered: ({ event, guests, going }: { event: Event; guests: Pick<User, 'first_name' | 'username'>[]; going: number }): Card => {
+    const names = guests.map((g) => cut(g.first_name, guests.length > 1 ? GUEST_NAME_SHORT : GUEST_NAME_MAX));
+    const who = names.length > 2 ? `${names[0]}, ${names[1]} и ещё ${names.length - 2}` : names.join(' и ');
     return {
-      emoji: '🙌', colors: ['#f59e0b', '#ea580c'], label: 'Новая запись', title: `${name} придёт`,
+      emoji: '🙌', colors: ['#f59e0b', '#ea580c'], label: names.length > 1 ? 'Новые записи' : 'Новая запись',
+      title: `${who} ${names.length > 1 ? 'придут' : 'придёт'}`,
       rows: [['🎟', event.name], ['🗓', when(event)], ['👥', `Записано: ${going}${event.max_capacity ? ` из ${event.max_capacity}` : ''}`]],
       // Без username написать человеку по ссылке нельзя: tg://user?id=… Telegram отклоняет, если закрыта приватность.
-      buttons: [...(guest.username ? [{ text: `Написать: ${name}`, url: `https://t.me/${guest.username}` }] : []), open(event)],
+      buttons: [
+        ...guests.flatMap((g, i) => (g.username ? [{ text: `Написать: ${names[i]}`, url: `https://t.me/${g.username}` }] : [])).slice(0, WRITE_BUTTONS_MAX),
+        open(event),
+      ],
     };
   },
   /** Гостю: запись принята. */
@@ -90,9 +97,10 @@ export function toWidget(card: Card) {
 export async function notify<K extends Moment>(chatId: number, moment: K, payload: MomentPayload<K>): Promise<void> {
   try {
     const { caption, reply_markup, ...widget } = toWidget((templates[moment] as (p: MomentPayload<K>) => Card)(payload));
-    let sent = await bot.call('sendWidget', { chat_id: chatId, caption, reply_markup, ...widget });
+    let sent = await bot.send('sendWidget', { chat_id: chatId, caption, reply_markup, ...widget });
     // Виджет не прошёл (метод недоступен, старый сервер) — то же самое обычным сообщением с кнопками.
-    if (!sent.ok) sent = await bot.call('sendMessage', { chat_id: chatId, text: caption, reply_markup });
+    // 403 (человек не открывал или заблокировал бота) и 429 (лимит) вторым сообщением не лечатся.
+    if (!sent.ok && sent.error_code !== 403 && sent.error_code !== 429) sent = await bot.send('sendMessage', { chat_id: chatId, text: caption, reply_markup });
     if (!sent.ok) console.error(`notify ${moment} → ${chatId}: ${sent.description}`);
   } catch (e) {
     console.error(`notify ${moment} → ${chatId}:`, e);
