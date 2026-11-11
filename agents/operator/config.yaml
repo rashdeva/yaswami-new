@@ -1,5 +1,6 @@
 # Роль operator: наш собеседник в командном чате Telegram (docs/agents-inbox.md).
 # Файл кладётся на том Hermes при каждом старте контейнера (agents/init.sh) — правки делаем здесь, а не на сервере.
+_config_version: 53 # формат конфига Hermes 0.23; без метки Hermes считает файл древним и ругается при старте
 model:
   default: grok-4.6
   provider: xai-oauth # вход по подписке SuperGrok / X Premium+: hermes auth add xai-oauth --no-browser
