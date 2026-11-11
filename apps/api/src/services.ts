@@ -135,16 +135,10 @@ export async function getCollectedEvent(db: Db, slug: string): Promise<Collected
   const shots = h
     ? await db.select({ id: photos.id, source: photos.source }).from(photos).where(eq(photos.host_id, h.id)).orderBy(desc(photos.created_at)).limit(HOST_PHOTOS)
     : [];
-  const signed = await db
-    .select({ first_name: users.first_name, photo_id: photos.id })
-    .from(collectedEventSignups)
-    .innerJoin(users, eq(users.id, collectedEventSignups.user_id))
-    .leftJoin(photos, eq(photos.user_id, collectedEventSignups.user_id))
-    .where(eq(collectedEventSignups.external_id, row.external_id))
-    .orderBy(asc(collectedEventSignups.created_at));
+  const [{ n: signups_count }] = await db.select({ n: count() }).from(collectedEventSignups).where(eq(collectedEventSignups.external_id, row.external_id)) as [{ n: number }];
   return {
     ...toCollectedItem(row),
-    signups: signed.map((r) => ({ first_name: r.first_name, user_photo_url: r.photo_id && photoUrl(r.photo_id) })),
+    signups_count,
     hosts: h
       ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`,
           photo_url: `https://t.me/i/userpic/320/${h.username}.jpg`, confirmed: h.user_id !== null,

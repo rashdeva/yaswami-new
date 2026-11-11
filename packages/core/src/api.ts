@@ -114,7 +114,7 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   source_url: string; // публикация, из которой взято событие
   claimed_event_id: Event['id'] | null; // организатор подтвердил событие: запись идёт через событие Ясвами
   hosts?: CollectedHost[]; // как hosts у события в Luma; только в ответе на одно событие, в списках его нет
-  signups?: { first_name: string; user_photo_url: string | null }[]; // кто нажал «Записаться» в Ясвами; только в ответе на одно событие
+  signups_count?: number; // сколько человек нажали «Записаться» в Ясвами (это интерес, не подтверждённое место); только в ответе на одно событие
 }
 
 /**

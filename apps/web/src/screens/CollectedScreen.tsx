@@ -157,8 +157,7 @@ export function CollectedScreen({ id, city, initial, authed, canLogin, signedUp,
       <h2>Участники</h2>
       <div className="group">
         {host && <GuestRow name={host.name} photo={host.photo_url} label="организатор" />}
-        {event.signups?.map((g, i) => <GuestRow key={i} name={g.first_name} photo={g.user_photo_url} label="записался" />)}
-        {!event.signups?.length && <div className="guest empty">Пока никто не записался. Будьте первым.</div>}
+        {!!event.signups_count && <div className="guest empty">Интересуются: {event.signups_count}. Записывает организатор.</div>}
       </div>
       {event.tags.length > 0 && <div className="tags">{event.tags.map((t) => <span key={t}>{t}</span>)}</div>}
 
