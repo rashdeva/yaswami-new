@@ -11,7 +11,7 @@ import type { Extract } from './bot.ts';
 import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
 import {
-  createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, logSent, recordAccountMessage, recordLead, rejectDraft,
+  createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, logSent, recordAccountMessage, recordHostLead, recordLead, rejectDraft,
   requireAdmin, sendDraft, submitAccountLogin,
 } from './inbox.ts';
 import { handleMcp } from './mcp.ts';
@@ -94,7 +94,12 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/me', async (c) => c.json(await s.me(db, c.var.actor)))
     .get('/me/collected', async (c) => c.json(await s.myCollectedEvents(db, c.var.actor)))
     .post('/collected-events/:id/claim', async (c) => c.json(await s.claimCollectedEvent(db, c.var.actor, c.req.param('id')), 201))
-    .post('/collected-events/:id/signup', async (c) => c.json(await s.signUpForCollectedEvent(db, c.var.actor, c.req.param('id'))))
+    .post('/collected-events/:id/signup', async (c) => {
+      const item = await s.signUpForCollectedEvent(db, c.var.actor, c.req.param('id'));
+      // Запись — повод написать организатору: роль host готовит черновик, человек его отправляет.
+      void recordHostLead(db, s.collectedExternalId(c.req.param('id'))).catch(console.error);
+      return c.json(item);
+    })
     .post('/collected-events/:id/visit', json(VisitInput), async (c) => {
       await s.visitCollectedEvent(db, c.var.actor, c.req.param('id'), c.req.valid('json'));
       return c.body(null, 204);

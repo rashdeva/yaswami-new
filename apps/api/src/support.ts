@@ -67,8 +67,17 @@ export const support = {
   },
 };
 
-// Так роль hunter отказывается отвечать (agents/hunter/SOUL.md): подходящего события нет или вопрос не про то.
+// Так роли hunter и host отказываются писать (agents/*/SOUL.md): повода нет или сообщение не по делу.
 const SKIP_MARK = /\[\[пропустить/i;
+
+/** Роль host (agents/host): пишет организаторам событий. Тесты подменяют `ask`. */
+export const host = {
+  /** null — роль недоступна или решила не писать. В ответе может быть пометка «позвать человека». */
+  async ask(history: SupportTurn[]): Promise<SupportReply | null> {
+    const content = await askRole(settings.hostUrl, settings.hostKey, history);
+    return content === null || SKIP_MARK.test(content) ? null : parseSupportReply(content);
+  },
+};
 
 /** Роль hunter (agents/hunter): по вопросу из чата пишет короткий ответ с событием. Тесты подменяют `ask`. */
 export const hunter = {

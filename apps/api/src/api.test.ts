@@ -19,8 +19,8 @@ import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
 
-import { hunter, illustrator, parseSupportReply, support, verifyTicket } from './support.ts';
-import { recordLead } from './inbox.ts';
+import { host, hunter, illustrator, parseSupportReply, support, verifyTicket } from './support.ts';
+import { recordHostLead, recordLead } from './inbox.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
 
@@ -990,4 +990,113 @@ test('охотник: вопрос из чата становится черно
 
   hunter.ask = ask;
   Object.assign(settings, { hunterUrl: '', hunterUserIds: [], collectorSecret: '' });
+});
+
+test('организаторы: запись на событие становится черновиком сообщения, ответ организатора — черновиком ответа', async () => {
+  await db.execute(sql`truncate conversations, tg_accounts cascade`);
+  await db.execute(sql`delete from collected_events where channel = 'hostchan'`);
+  await db.execute(sql`delete from hosts where username = 'marina_yoga'`);
+  settings.adminIds = [70];
+  settings.collectorSecret = 'collector-secret';
+  const admin = tma(70, 'Админ');
+  const inbox = async () => (await (await call(admin, 'GET', '/admin/inbox')).json()) as InboxFeed;
+  const starts_at = new Date(Date.now() + 3 * 86_400_000);
+  const external_id = 'telegram:hostchan/7#0';
+  await db.insert(collectedEvents).values({
+    external_id, channel: 'hostchan', starts_at, signup_url: '', announcement: { url: 'https://t.me/hostchan/7' },
+    event: { title: 'Йога на рассвете', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: 'Ми Кхе', address: null, price: null, tags: [], telegram_username: 'marina_yoga', whatsapp_phone: null, url: null },
+    telegram_username: 'marina_yoga',
+  });
+  const ask = host.ask;
+  let asked: Parameters<typeof host.ask>[0] = [];
+  host.ask = async (history) => ((asked = history), parseSupportReply('Марина, здравствуйте. На вашу йогу записался один человек.'));
+
+  // Гость записывается; роль выключена — ничего не происходит.
+  assert.equal((await call(tma(71, 'Аня'), 'POST', '/collected-events/hostchan-7-0/signup')).status, 200);
+  await recordHostLead(db, external_id);
+  assert.equal((await inbox()).conversations.length, 0);
+
+  // Роль включена, но профиль организатора сборщик ещё не собрал — писать некому.
+  settings.hostUrl = 'http://host.test';
+  await recordHostLead(db, external_id);
+  assert.equal((await inbox()).conversations.length, 0);
+
+  await db.insert(hosts).values({ telegram_id: 9300, username: 'marina_yoga', name: 'Марина' });
+  sent.length = 0;
+  await recordHostLead(db, external_id);
+  assert.match(asked[0]!.content, /«Йога на рассвете»[^\n]*записались: 1\. Страница: \S+\/e\/hostchan-7-0[\s\S]*«Это моё»/);
+  assert.match(asked[1]!.content, /Марина \(@marina_yoga\)/);
+  let feed = await inbox();
+  assert.deepEqual(feed.conversations.map((c) => [c.channel, c.peer_id, c.peer_name, c.attention]), [['account', 9300, 'Марина', 'Черновик организатору']]);
+  const draft = feed.messages[0]!;
+  assert.deepEqual([draft.status, draft.author, draft.meta], ['draft', 'agent:host', { reason: 'На «Йога на рассвете» через нас записались' }]);
+  assert.deepEqual(sent.map(([, b]) => b.chat_id), [70], 'оповещение нам, организатору пока ничего');
+
+  // Вторая запись на то же событие, пока черновик ждёт, — второго черновика нет.
+  await recordHostLead(db, external_id);
+  assert.equal((await inbox()).messages.length, 1);
+
+  // Отправляем: сообщение уходит в личку (без адреса в чате), диалог остаётся за ролью.
+  const [account] = await db.insert(tgAccounts).values({ label: 'Аня', phone: '+84900000019', status: 'active' }).returning();
+  assert.equal((await call(admin, 'POST', `/admin/messages/${draft.id}/send`, {})).status, 204);
+  feed = await inbox();
+  assert.deepEqual([feed.messages[0]!.status, feed.messages[0]!.meta?.reply_to, feed.conversations[0]!.mode, feed.conversations[0]!.account_id], ['queued', undefined, 'agent', account!.id]);
+
+  // Организатор отвечает на аккаунт — роль готовит черновик ответа, видя всю переписку.
+  const report = (text: string) =>
+    app.request('/internal/account-message', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-collector-secret': 'collector-secret' },
+      body: JSON.stringify({ account_id: account!.id, peer: { id: 9300, name: 'Марина', username: 'marina_yoga' }, direction: 'in', text }),
+    });
+  const drafted = async () => {
+    for (let i = 0; i < 50; i++) {
+      const found = (await inbox()).messages.find((m) => m.status === 'draft');
+      if (found) return found;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return assert.fail('черновик ответа не появился');
+  };
+  host.ask = async (history) => ((asked = history), parseSupportReply('Да, это бесплатно.'));
+  assert.equal((await report('А это платно?')).status, 204);
+  const reply = await drafted();
+  assert.deepEqual([reply.text, reply.meta, (await inbox()).conversations[0]!.attention], ['Да, это бесплатно.', { reason: 'Ответ организатору' }, 'Черновик ответа организатору']);
+  assert.deepEqual(asked.slice(1).map((t) => [t.role, t.content]), [['assistant', 'Марина, здравствуйте. На вашу йогу записался один человек.'], ['user', 'А это платно?']]);
+
+  // Новое сообщение заменяет неотправленный черновик; роль зовёт человека — причина видна в «Ждут вас».
+  host.ask = async () => parseSupportReply('Передал вопрос команде.\n[[человек: просит убрать событие]]');
+  await report('Уберите моё событие из каталога');
+  for (let i = 0; i < 50 && (await inbox()).conversations[0]!.attention !== 'просит убрать событие'; i++) await new Promise((r) => setTimeout(r, 20));
+  feed = await inbox();
+  assert.deepEqual([feed.conversations[0]!.attention, feed.messages.filter((m) => m.status === 'draft').map((m) => m.text)], ['просит убрать событие', ['Передал вопрос команде.']]);
+
+  // Мы забрали диалог себе — роль больше не отвечает.
+  await call(admin, 'PATCH', `/admin/conversations/${feed.conversations[0]!.id}`, { mode: 'human' });
+  host.ask = async () => assert.fail('диалог ведём мы');
+  await report('Вы тут?');
+
+  // Событие уже подтверждено организатором — писать незачем.
+  await db.execute(sql`truncate conversations cascade`);
+  await db.update(collectedEvents).set({ claimed_event_id: (await newEvent(tma(70, 'Админ'))).event.id }).where(eq(collectedEvents.external_id, external_id));
+  await recordHostLead(db, external_id);
+  assert.equal((await inbox()).conversations.length, 0);
+
+  host.ask = ask;
+  Object.assign(settings, { hostUrl: '', collectorSecret: '' });
+});
+
+test('MCP для оператора: любое событие сервиса, от имени его организатора', async () => {
+  settings.adminIds = [70];
+  const mcp = async (auth: string, method: string, params?: object) =>
+    ((await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params })).json()) as { result: any }).result;
+  const tool = async (auth: string, name: string, args: object) => JSON.parse((await mcp(auth, 'tools/call', { name, arguments: args })).content[0].text);
+  const admin = tma(70, 'Админ');
+  const { event } = await newEvent(tma(81, 'Олег'), { name: 'Покер у Олега', start_at: new Date(Date.now() + 86_400_000).toISOString() });
+  assert.equal((await call(tma(82, 'Даша'), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'declined' })).status, 200);
+
+  assert.ok(!(await mcp(tma(82, 'Даша'), 'tools/list')).tools.some((t: { name: string }) => t.name.startsWith('admin_')), 'не админу их не видно');
+  assert.ok((await tool(admin, 'admin_events_list', {})).some((e: any) => e.event.id === event.id && e.host_name === 'Олег'));
+  // Админ видит чужое событие глазами организатора — в том числе отказавшихся — и может его изменить.
+  assert.deepEqual((await tool(admin, 'admin_event_get', { event_id: event.id })).guest_counts, { approved: 0, maybe: 0, declined: 1 });
+  assert.equal((await tool(admin, 'admin_event_update', { event_id: event.id, name: 'Покер в пятницу' })).event.name, 'Покер в пятницу');
+  assert.deepEqual(await tool(admin, 'admin_event_get', { event_id: 'e_nope' }), { error: 'not_found' });
 });

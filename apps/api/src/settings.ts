@@ -33,6 +33,12 @@ export const settings = {
   illustratorUrl: (process.env.ILLUSTRATOR_URL ?? '').replace(/\/$/, ''),
   illustratorKey: process.env.ILLUSTRATOR_KEY ?? '',
   illustratorDailyLimit: Number(process.env.ILLUSTRATOR_DAILY_LIMIT ?? 3),
+  /**
+   * Роль host в Hermes: пишет организаторам, к которым через нас записались, и отвечает на их сообщения —
+   * всегда черновиками (inbox.ts, recordHostLead). Пусто — выключено.
+   */
+  hostUrl: (process.env.HOST_URL ?? '').replace(/\/$/, ''),
+  hostKey: process.env.HOST_KEY ?? '',
   /** Общий со сборщиком секрет: им он подписывает сообщения с аккаунтов Telegram. Пусто — приём закрыт. */
   collectorSecret: process.env.COLLECTOR_SECRET ?? '',
   /** Telegram id тех, кому открыта админка переписки (/admin), через запятую. */
