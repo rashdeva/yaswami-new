@@ -3,7 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import * as z from 'zod';
 import type { User } from '@yaswami/core';
-import { CollectedListInput, collectedPath, CoverSetInput, EventCreateInput, EventUpdateInput, RsvpInput, TEMPLATES, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput } from '@yaswami/core';
+import { CollectedListInput, collectedPath, CollectedUpdateInput, CoverSetInput, EventCreateInput, EventUpdateInput, RsvpInput, TEMPLATES, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Db } from './db/client.ts';
 import { adminOverview, conversationById, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin, listAccounts, rejectDraft, sendDraft } from './inbox.ts';
@@ -256,10 +256,10 @@ function buildServer(db: Db, actor: User) {
     }, async (a) => (await s.listCollectedForAdmin(db, a.status))
       .map(({ id, title, starts_at, place, price, topic, status, channel, source_url }) => ({ id, title, starts_at, place, price, topic: topic ?? null, status, channel, source_url })));
 
-    tool('admin_collected_events_moderate', {
-      title: 'Approve or reject a catalog event', shape: { id: z.string().describe('Event id from admin_collected_events_list'), status: z.enum(['approved', 'rejected']) },
-      description: 'approved: the event gets its cover and video made and then appears in the public catalogue. rejected: it is hidden everywhere (also takes a published event down). Call it only when someone from the team told you the decision for this very event.',
-    }, (a) => s.moderateCollectedEvent(db, a.id, { status: a.status }));
+    tool('admin_collected_events_update', {
+      title: 'Edit, approve or reject a catalog event', shape: { id: z.string().describe('Event id from admin_collected_events_list'), ...CollectedUpdateInput.shape },
+      description: 'Fix fields the extraction got wrong; only passed fields change. status approved: the event gets its cover and video made and then appears in the public catalogue. status rejected: it is hidden everywhere (also takes a published event down). Decide status only when someone from the team told you the decision for this very event. Errors: not_found.',
+    }, ({ id, ...input }) => s.updateCollectedEvent(db, id, input));
 
         tool('admin_videos_request', {
       title: 'Order a promo video for a catalog event', shape: { id: z.string().describe('Catalog event id: the last part of its link, as in collected_events_list') },

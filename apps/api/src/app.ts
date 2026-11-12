@@ -4,7 +4,7 @@ import { getCookie } from 'hono/cookie';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
-import { CollectedListInput, CollectedModerateInput, AccountCreateInput, AccountLoginInput, AccountMessageInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, LeadInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, VisitInput } from '@yaswami/core';
+import { CollectedListInput, CollectedUpdateInput, AccountCreateInput, AccountLoginInput, AccountMessageInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, LeadInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, VisitInput } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { AuthMethod } from './auth.ts';
 import { authenticate, issueToken, revokeTokens } from './auth.ts';
@@ -132,7 +132,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/admin/overview', async (c) => c.json(await adminOverview(db)))
     // Модерация собранных событий: в ленту выходит только одобренное (services.ts).
     .get('/admin/collected-events', async (c) => c.json(await s.listCollectedForAdmin(db, CollectedListInput.parse(c.req.query()).status)))
-    .patch('/admin/collected-events/:id', json(CollectedModerateInput), async (c) => c.json(await s.moderateCollectedEvent(db, c.req.param('id'), c.req.valid('json'))))
+    .patch('/admin/collected-events/:id', json(CollectedUpdateInput), async (c) => c.json(await s.updateCollectedEvent(db, c.req.param('id'), c.req.valid('json'))))
     .delete('/admin/collected-events/:id', async (c) => {
       await s.deleteCollectedEvent(db, c.req.param('id'));
       return c.body(null, 204);

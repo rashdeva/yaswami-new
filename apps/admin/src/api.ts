@@ -1,5 +1,5 @@
 // Клиент API админки: единственное место, где есть fetch. Формы запросов и ответов — из @yaswami/core.
-import type { AccountCreateInput, AdminCollectedEvent, AdminOverview, CollectedModerateInput, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, Message, TgAccount, Wire } from '@yaswami/core';
+import type { AccountCreateInput, AdminCollectedEvent, AdminOverview, CollectedUpdateInput, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, Message, TgAccount, Wire } from '@yaswami/core';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
 // Вход — cookie сайта; в разработке вместо неё токен админа из .env.
@@ -64,7 +64,7 @@ export const api = {
   accountCreate: (input: AccountCreateInput) => request<Account>('POST', '/admin/accounts', input),
   accountLogin: (account: string, secret: string) => request<void>('POST', `/admin/accounts/${id(account)}/login`, { secret }),
   accountDelete: (account: string) => request<void>('DELETE', `/admin/accounts/${id(account)}`),
-  adminEvents: () => request<AdminCollectedEvent[]>('GET', '/admin/collected-events'),
-  adminEventModerate: (event: string, status: CollectedModerateInput['status']) => request<{ status: string }>('PATCH', `/admin/collected-events/${id(event)}`, { status }),
+  adminEvents: () => request<Wire<AdminCollectedEvent>[]>('GET', '/admin/collected-events'),
+  adminEventUpdate: (event: string, input: CollectedUpdateInput) => request<Wire<AdminCollectedEvent>>('PATCH', `/admin/collected-events/${id(event)}`, input),
   adminEventDelete: (event: string) => request<void>('DELETE', `/admin/collected-events/${id(event)}`),
 };

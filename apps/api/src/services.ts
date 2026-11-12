@@ -2,7 +2,7 @@
 import { randomBytes } from 'node:crypto';
 import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import type {
-  AdminCollectedEvent, CollectedModerateInput, CollectedStatus,
+  AdminCollectedEvent, CollectedStatus, CollectedUpdateInput,
   CollectedEventItem, Contact, MyCollectedItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
 } from '@yaswami/core';
@@ -266,27 +266,37 @@ export function startVideoLoop(db: Db, everyMs = 15 * 60_000): void {
 }
 
 /** Все собранные события для админки модерации: ждущие решения сверху, дальше по дате; прошедшие не показываем. */
+const toAdminItem = (r: CollectedRow): AdminCollectedEvent => ({
+  ...toCollectedItem(r), status: r.status, channel: r.channel, source_text: r.announcement.text ?? null,
+  telegram_username: r.event.telegram_username, whatsapp_phone: r.event.whatsapp_phone, url: r.event.url,
+});
+
 export async function listCollectedForAdmin(db: Db, status?: CollectedStatus): Promise<AdminCollectedEvent[]> {
   const rows = await collectedWithCover(db).where(and(upcomingCollected, status ? eq(collectedEvents.status, status) : undefined))
     .orderBy(sql`${collectedEvents.status} <> 'pending'`, asc(collectedEvents.starts_at)).limit(500);
-  return rows.map((r) => ({ ...toCollectedItem(r), status: r.status, channel: r.channel }));
+  return rows.map(toAdminItem);
 }
 
 /**
- * Решение модератора. approved: событие встаёт в очередь обработки и выйдет в ленту, когда она закончится
- * (уже обработанное — сразу). rejected: не выводится нигде; так же снимается с публикации опубликованное.
+ * Правка модератора: переданные поля заменяют то, что извлёк ИИ, и вместе с ними — колонки для выборок.
+ * Решение: approved — событие встаёт в очередь обработки и выйдет в ленту, когда она закончится (уже обработанное —
+ * сразу); rejected — не выводится нигде, так же снимается с публикации опубликованное.
  */
-export async function moderateCollectedEvent(db: Db, slug: string, { status }: CollectedModerateInput): Promise<{ status: CollectedStatus }> {
-  const [row] = await db.update(collectedEvents).set({ status, updated_at: new Date() })
-    .where(eq(collectedEvents.external_id, collectedExternalId(slug))).returning({ status: collectedEvents.status });
-  if (!row) throw new AppError('not_found', 404);
-  if (status === 'approved') {
-    // Не ждём шага очереди: обработанное публикуется сразу, необработанному заказываем обложку и ролик.
-    await requestNextVideo(db);
-    const [now] = await db.select({ status: collectedEvents.status }).from(collectedEvents).where(eq(collectedEvents.external_id, collectedExternalId(slug)));
-    return { status: now!.status };
-  }
-  return row;
+export async function updateCollectedEvent(db: Db, slug: string, { status, ...fields }: CollectedUpdateInput): Promise<AdminCollectedEvent> {
+  const external_id = collectedExternalId(slug);
+  const [found] = await db.select({ event: collectedEvents.event }).from(collectedEvents).where(eq(collectedEvents.external_id, external_id));
+  if (!found) throw new AppError('not_found', 404);
+  const event = { ...found.event, ...fields };
+  // Контакт храним как сборщик: без @, в нижнем регистре — по нему находится профиль организатора (hosts.username).
+  event.telegram_username = event.telegram_username?.replace(/^@/, '').toLowerCase() ?? null;
+  await db.update(collectedEvents).set({
+    event, starts_at: new Date(event.starts_at), ends_at: event.ends_at ? new Date(event.ends_at) : null,
+    telegram_username: event.telegram_username, ...(status && { status }), updated_at: new Date(),
+  }).where(eq(collectedEvents.external_id, external_id));
+  // Не ждём шага очереди: обработанное публикуется сразу, необработанному заказываем обложку и ролик.
+  if (status === 'approved') await requestNextVideo(db);
+  const [row] = await collectedWithCover(db).where(eq(collectedEvents.external_id, external_id));
+  return toAdminItem(row!);
 }
 
 /** Удалить собранное событие совсем. Повторный анонс создаст его заново — чтобы этого не было, отклоняй, а не удаляй. */
