@@ -4,7 +4,7 @@ import { getCookie } from 'hono/cookie';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
-import { CollectedListInput, CollectedUpdateInput, AccountCreateInput, AccountLoginInput, AccountMessageInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, LeadInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, VisitInput } from '@yaswami/core';
+import { CollectedListInput, CollectedUpdateInput, SourceCreateInput, SourceUpdateInput, AccountCreateInput, AccountLoginInput, AccountMessageInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, LeadInput, EventCreateInput, EventUpdateInput, InboxSendInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, VisitInput } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { AuthMethod } from './auth.ts';
 import { authenticate, issueToken, revokeTokens } from './auth.ts';
@@ -173,6 +173,9 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .patch('/admin/events/:id', json(EventUpdateInput), async (c) => c.json(await admin.updateAnyEvent(db, c.req.param('id'), c.req.valid('json'))))
     .get('/admin/users', async (c) => c.json(await admin.searchUsers(db, UserSearchInput.parse(c.req.query()).query)))
     .get('/admin/hosts', async (c) => c.json(await admin.listHosts(db)))
+    .get('/admin/sources', async (c) => c.json(await admin.listSources(db)))
+    .post('/admin/sources', json(SourceCreateInput), async (c) => c.json(await admin.createSource(db, c.req.valid('json')), 201))
+    .patch('/admin/sources/:channel', json(SourceUpdateInput), async (c) => c.json(await admin.updateSource(db, c.req.param('channel'), c.req.valid('json'))))
     .get('/admin/collected-events/:id', async (c) => c.json(await admin.getCollectedEventSignups(db, c.req.param('id'))))
     // Обложки и ролики собранных событий: работа роли-иллюстратора.
     .get('/admin/covers', async (c) => c.json(await s.listPendingCovers(db)))

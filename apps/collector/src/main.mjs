@@ -4,14 +4,14 @@ import { createExtractor, createSummarizer, isSameEvent, looksLikeEvent, mergeEv
 import { signupUrl } from './signup.mjs';
 import { connect, downloadCover, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { createStore } from './store.mjs';
-import { fetchChannelPhotos, fetchProfile } from './host.mjs';
+import { contactFor, fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
 import { createSender } from './sender.mjs';
 import { fetchLeads } from './lead.mjs';
 
 const env = process.env;
+// Источники живут в таблице sources (раздел «Источники» в админке); CHANNELS при старте только дополняет её.
 const channels = (env.CHANNELS ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
-if (!channels.length) throw new Error('CHANNELS пуст: укажи каналы и группы через запятую');
 if (!env.TG_SESSION) throw new Error('TG_SESSION пуст: выполни pnpm --filter @yaswami/collector login');
 if (!env.DATABASE_URL) throw new Error('DATABASE_URL пуст');
 const userbot = connect({ apiId: env.TG_API_ID, apiHash: env.TG_API_HASH, session: env.TG_SESSION });
@@ -136,8 +136,14 @@ if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
 } else console.log('Аккаунты для переписки выключены: нужны ACCOUNTS_KEY, API_URL и COLLECTOR_SECRET');
 
 const cursors = await store.cursors();
+await store.addSources(channels);
 
-async function pollChannel(channel, known) {
+// Канал организатора — тоже источник: у него свои события. Каждый новый канал при первом чтении ищется по username
+// (флудоопасно) и отдаёт до 100 публикаций в ИИ, поэтому добавляем по несколько за проход.
+// ponytail: при перезапуске GramJS заново ищет все источники; если их станут сотни — хранить сущности в сессии.
+const ADOPT_PER_PASS = Number(env.ADOPT_PER_PASS ?? 5);
+
+async function pollChannel({ channel, host_username }, known) {
   const fresh = (await fetchChatAnnouncements(userbot, channel, cursors[channel] ?? 0))
     .sort((a, b) => a.number - b.number);
   for (const announcement of fresh) {
@@ -146,8 +152,7 @@ async function pollChannel(channel, known) {
     if (candidate) await sleep(llmPauseMs); // бесплатный уровень Gemini считает запросы в минуту
     for (const [i, event] of events.entries()) {
       if (new Date(event.ends_at ?? event.starts_at) < Date.now()) continue; // уже прошло
-      // Канал-источник — не организатор: ИИ иногда подставляет его, когда в посте контакта нет.
-      if (event.telegram_username?.replace(/^@/, '').toLowerCase() === channel.toLowerCase()) event.telegram_username = null;
+      event.telegram_username = contactFor(event, channel, host_username);
       const same = known.find((k) => isSameEvent(k.event, event));
       // Событие без контакта не берём: записаться некуда. Появится контакт в другом посте — склеится или создастся там.
       if (!same && !event.telegram_username && !event.whatsapp_phone) continue;
@@ -171,9 +176,11 @@ async function pollChannel(channel, known) {
 do {
   // Сбой дозаполнения (ИИ перегружен, лимит) не должен останавливать сбор: остаток доберём следующим проходом.
   await backfillTopics({ store, extract, pause: () => sleep(llmPauseMs) }).catch((e) => console.error('дозаполнение:', e.message));
+  const adopted = await store.adoptHostChannels(ADOPT_PER_PASS).catch((e) => console.error('источники:', e.message));
+  if (adopted?.length) console.log(`новые источники от организаторов: ${adopted.map((c) => `@${c}`).join(', ')}`);
   const known = await store.upcoming();
-  for (const channel of channels) {
-    await pollChannel(channel, known).catch((e) => console.error(`${channel}: ${e.message}`));
+  for (const source of await store.sources()) {
+    await pollChannel(source, known).catch((e) => console.error(`${source.channel}: ${e.message}`));
     await sleep(2000); // не частим с запросами к Telegram
   }
   for (const chat of env.API_URL && env.COLLECTOR_SECRET ? leadChats : []) {

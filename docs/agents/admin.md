@@ -1,6 +1,6 @@
 # Админка (`apps/admin`)
 
-Страница команды на `/admin`: переписка, агенты, организаторы, модерация собранных событий, наши аккаунты Telegram. Что она делает и зачем — `docs/agents-inbox.md`.
+Страница команды на `/admin`: переписка, агенты, организаторы, модерация собранных событий, источники анонсов, наши аккаунты Telegram. Что она делает и зачем — `docs/agents-inbox.md`.
 
 React 19 + Vite, отдельное приложение (`@yaswami/admin`) на том же домене. Адреса — TanStack Router (`basepath: '/admin'`), данные с сервера — TanStack Query; другого менеджера состояния нет. Оформление — shadcn/ui на Tailwind v4. Правило то же, что во фронте: **компонент рисует, хук знает, функция считает.**
 
@@ -24,7 +24,7 @@ src/
   index.css         тема shadcn (переменные, светлая и тёмная) и свои анимации
 ```
 
-Маршруты: `/admin` — «Люди» (`?c=<диалог>&agent=<роль>`), `/admin/feed`, `/admin/hosts`, `/admin/agents`, `/admin/events`, `/admin/accounts`.
+Маршруты: `/admin` — «Люди» (`?c=<диалог>&agent=<роль>`), `/admin/feed`, `/admin/hosts`, `/admin/agents`, `/admin/events`, `/admin/sources`, `/admin/accounts`.
 
 ## Правила
 

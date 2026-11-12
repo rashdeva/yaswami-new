@@ -5,7 +5,7 @@ import { after, before, test } from 'node:test';
 import { asc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminCollectedEvent, AdminOverview, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
+import type { AdminCollectedEvent, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
 import { bot } from './telegram.ts';
@@ -13,7 +13,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { collectedEvents, hosts, photos, visits, tgAccounts } from './db/schema.ts';
+import { collectedEvents, hosts, photos, sources, visits, tgAccounts } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
 import { listCollectedForAdmin, requestNextVideo } from './services.ts';
 import { settings } from './settings.ts';
@@ -1210,6 +1210,35 @@ test('MCP для оператора: любое событие сервиса, �
 
 // Правило «операция = сервис + REST + MCP» (docs/agents/api.md). Добавил инструмент или маршрут — допиши строку сюда:
 // пару или исключение с причиной в docs/agents/api.md.
+test('источники: команда добавляет и выключает, канал организатора виден со ссылкой на него', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const tool = async (name: string, args: object) =>
+    JSON.parse(((await (await call(admin, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })).json()) as { result: any }).result.content[0].text);
+  await db.delete(sources);
+  assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/sources')).status, 403);
+  // Ссылка t.me сводится к username; тот же канал в другом регистре — уже есть.
+  const res = await call(admin, 'POST', '/admin/sources', { channel: 'https://t.me/Danang_Yoga' });
+  assert.equal(res.status, 201);
+  assert.deepEqual(((await res.json()) as AdminSource).channel, 'Danang_Yoga');
+  assert.deepEqual(await tool('admin_sources_create', { channel: '@danang_yoga' }), { error: 'source_exists' });
+  assert.equal((await call(admin, 'POST', '/admin/sources', { channel: 'not a channel' })).status, 400);
+  // Канал организатора добавляет сборщик (apps/collector): здесь — строкой, как он.
+  const [h] = await db.insert(hosts).values({ telegram_id: 9400, username: 'lena_tea', name: 'Лена', channel: 'lena_tea_club' }).returning();
+  await db.insert(sources).values({ channel: 'lena_tea_club', host_id: h!.id });
+  const at = new Date(Date.now() + 86_400_000);
+  await db.insert(collectedEvents).values({
+    external_id: 'telegram:lena_tea_club/1#0', channel: 'lena_tea_club', starts_at: at, signup_url: '', announcement: { url: 'https://t.me/lena_tea_club/1' },
+    event: { title: 'Чай', description: '', starts_at: at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'lena_tea', whatsapp_phone: null, url: null },
+  });
+  const list = (await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[];
+  assert.deepEqual(list.map((x) => [x.channel, x.host?.username ?? null, x.events_count, x.enabled]), [['lena_tea_club', 'lena_tea', 1, true], ['Danang_Yoga', null, 0, true]]);
+  // Выключить: канал оказался чужим.
+  assert.equal(((await tool('admin_sources_update', { channel: 'LENA_TEA_CLUB', enabled: false })) as AdminSource).enabled, false);
+  assert.equal(((await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[])[0]!.enabled, false);
+  assert.equal((await call(admin, 'PATCH', '/admin/sources/nobody_here', { enabled: true })).status, 404);
+});
+
 test('парность: у каждого инструмента MCP есть маршрут REST и наоборот', async () => {
   const PAIRS: Record<string, string> = {
     collected_events_list: 'GET /collected-events',
@@ -1241,6 +1270,9 @@ test('парность: у каждого инструмента MCP есть м
     admin_hosts_list: 'GET /admin/hosts',
     admin_overview_get: 'GET /admin/overview',
     admin_collected_events_list: 'GET /admin/collected-events',
+    admin_sources_list: 'GET /admin/sources',
+    admin_sources_create: 'POST /admin/sources',
+    admin_sources_update: 'PATCH /admin/sources/:channel',
     admin_collected_events_update: 'PATCH /admin/collected-events/:id',
     admin_collected_events_get: 'GET /admin/collected-events/:id',
     admin_collected_events_delete: 'DELETE /admin/collected-events/:id',

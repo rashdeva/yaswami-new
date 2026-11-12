@@ -176,6 +176,27 @@ export const CollectedUpdateInput = z.object({
 });
 export type CollectedUpdateInput = z.infer<typeof CollectedUpdateInput>;
 
+/**
+ * Source: канал или группа Telegram, откуда сборщик берёт анонсы. Источники добавляет команда, а каналы организаторов —
+ * сборщик сам, по их профилю. В Luma такого нет.
+ */
+export interface AdminSource {
+  channel: string; // username без @ или id закрытого чата (-100…)
+  enabled: boolean; // выключенный сборщик не читает
+  host: { name: string; username: string } | null; // организатор, из профиля которого взят канал; null — добавила команда
+  events_count: number; // сколько собранных событий из него пришло за всё время
+  created_at: Date;
+}
+
+/** Добавить источник: username канала, @username, ссылка t.me/… или id закрытого чата. */
+export const SourceCreateInput = z.object({
+  channel: z.string().trim().regex(/^(?:https?:\/\/)?(?:t\.me\/|@)?\w{4,32}\/?$|^-100\d+$/).describe('Channel username, @username, t.me link or -100… id of a private chat'),
+});
+export type SourceCreateInput = z.infer<typeof SourceCreateInput>;
+
+export const SourceUpdateInput = z.object({ enabled: z.boolean().describe('false — stop reading this source') });
+export type SourceUpdateInput = z.infer<typeof SourceUpdateInput>;
+
 /** Собранное событие в «Моих событиях»: куда человек заходил или нажимал «Записаться». */
 export interface MyCollectedItem {
   event: CollectedEventItem;
