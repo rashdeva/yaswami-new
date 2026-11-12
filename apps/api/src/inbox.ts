@@ -152,6 +152,8 @@ export async function recordLead(db: Db, lead: LeadInput): Promise<void> {
 
   const before = lead.context.length ? `Перед этим в чате писали:\n${lead.context.map((t) => `- ${t}`).join('\n')}\n\n` : '';
   const text = await hunter.ask(`Чат: ${lead.chat}\n\n${before}Вопрос (${lead.author.name}):\n${lead.text}`);
+  // В журнал — чтобы было видно, что охотник делает с найденными вопросами (сам текст вопроса не пишем).
+  console.log(`охотник: ${lead.url} — ${text ? 'черновик' : 'пропустил или роль недоступна'}`);
   if (!text) return;
 
   const reason = 'Черновик ответа в чат';

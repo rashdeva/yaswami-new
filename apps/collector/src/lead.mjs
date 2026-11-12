@@ -14,8 +14,12 @@ const ASKS = new RegExp([
   "what'?s\\s+(on|happening)", 'where\\s+to\\s+go', 'any\\s+(events|parties|meetups)', 'things\\s+to\\s+do',
 ].join('|'), 'i');
 
+// Вопрос про конкретный вид досуга: знак вопроса и слово о событии или занятии («где сегодня квиз?», «кто идёт на концерт?»).
+const ACTIVITY = /мероприят|вечеринк|тусовк|тусич|концерт|фестивал|квиз|настолк|покер|мафи[яюи]|йог|танц|бачат|сальс|кизомб|нетворкинг|митап|лекци|мастер[- ]класс|экскурси|party|event|meetup|quiz/i;
+
 /** Похоже ли сообщение на вопрос «куда сходить»: короткое и с характерными словами. */
-export const looksLikeLead = (text) => text.length >= 8 && text.length <= 300 && ASKS.test(text);
+export const looksLikeLead = (text) =>
+  text.length >= 8 && text.length <= 300 && (ASKS.test(text) || (text.includes('?') && ACTIVITY.test(text)));
 
 const MAX_AGE_MS = 2 * 3600e3; // отвечать на вопрос двухчасовой давности поздно
 const CONTEXT = 3;
@@ -40,9 +44,9 @@ export function pickLeads(chat, messages, now = Date.now()) {
   });
 }
 
-/** Новые сообщения чата после `afterNumber`: номер последнего и найденные вопросы. */
+/** Новые сообщения чата после `afterNumber`: номер последнего, сколько их прочитано и найденные вопросы. */
 export async function fetchLeads(client, chat, afterNumber) {
   if (!client.connected) await client.connect();
   const messages = (await client.getMessages(/^-?\d+$/.test(chat) ? Number(chat) : chat, { limit: 100, minId: afterNumber })).reverse();
-  return { last: messages.at(-1)?.id ?? afterNumber, leads: pickLeads(chat, messages) };
+  return { last: messages.at(-1)?.id ?? afterNumber, read: messages.length, leads: pickLeads(chat, messages) };
 }
