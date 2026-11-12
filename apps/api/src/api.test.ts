@@ -8,6 +8,7 @@ import postgres from 'postgres';
 import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
+import { collectedWhen } from '@yaswami/core';
 import { bot } from './telegram.ts';
 import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
@@ -855,6 +856,23 @@ test('переписка: бот пишет всё в базу, админ от�
   sent.length = 0;
   await handleUpdate(db, async () => [], botMessage(71, 'Что будет в пятницу 20 ноября в 19:00?'));
   assert.deepEqual(sent.filter(([m]) => m === 'sendMessage').map(([, b]) => b.text), ['В пятницу покер в 19:00.']);
+  // Событие роль показывает пометкой: человек получает текст без неё и карточку с кнопкой в мини-приложение;
+  // неизвестный id пропускается, а не превращается в битую карточку.
+  const starts = new Date(Date.now() + 86_400_000);
+  await db.insert(collectedEvents).values({
+    external_id: 'telegram:cardchan/1#0', channel: 'cardchan', status: 'published' as const, starts_at: starts, signup_url: '',
+    announcement: { url: 'https://t.me/cardchan/1' },
+    event: { title: 'Вечер в баньке', description: '', starts_at: starts.toISOString(), ends_at: null, place: 'Банька', address: null, price: '450k', tags: [], telegram_username: null, whatsapp_phone: null, url: null },
+  });
+  support.ask = async () => parseSupportReply('Привет! Вот что есть сегодня:\n[[событие: cardchan-1-0]]\n[[событие: nope-1-0]]');
+  bot.username = 'yaswami_bot';
+  try {
+    assert.deepEqual(await write('Куда сходить?'), ['Привет! Вот что есть сегодня:', `Вечер в баньке\n🗓 ${collectedWhen(starts.toISOString())}\n📍 Банька\n💸 450k`]);
+    const card = sent.filter(([m]) => m === 'sendMessage').at(-1)![1];
+    assert.equal(card.reply_markup.inline_keyboard[0][0].url, 'https://t.me/yaswami_bot/app?startapp=c_cardchan-1-0', 'кнопка открывает мини-приложение');
+  } finally {
+    bot.username = null;
+  }
   // Модель роли отказала: Hermes отвечает 200 с текстом ошибки — человеку уходит прежний отказ бота, а не эта ошибка.
   support.ask = ask;
   const realFetch = globalThis.fetch;
@@ -877,7 +895,7 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual(await write('Алло?'), [REPLIES.no_date]);
   support.ask = ask;
   settings.supportUrl = '';
-  assert.deepEqual(parseSupportReply('Привет!\n[[человек:]]'), { text: 'Привет!', human: 'Просит человека' });
+  assert.deepEqual(parseSupportReply('Привет!\n[[человек:]]'), { text: 'Привет!', human: 'Просит человека', events: [] });
 
   // Telegram не принял сообщение: оно остаётся в ленте как недоставленное, админка получает ошибку.
   const ok = bot.call;

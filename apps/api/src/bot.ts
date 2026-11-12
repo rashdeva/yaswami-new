@@ -2,14 +2,15 @@
 // что и сборщик каналов (@yaswami/extract), и отвечает виджетом. Свой анонс становится событием отправителя,
 // пересланный чужой — собранным событием на витрине, без хозяина.
 import type { CollectedEvent, User } from '@yaswami/core';
+import { collectedWhen } from '@yaswami/core';
 import type { Announcement } from '@yaswami/extract';
 import { looksLikeEvent } from '@yaswami/extract';
 import { upsertUser } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
-import { notify } from './notifications.ts';
-import { addCollectedEvent, AppError, createEventFromAnnouncement, getEvent, listEvents, myCollectedEvents } from './services.ts';
+import { collectedUrl, notify } from './notifications.ts';
+import { addCollectedEvent, AppError, createEventFromAnnouncement, getCollectedEvent, getEvent, listEvents, myCollectedEvents } from './services.ts';
 import { settings } from './settings.ts';
 import { issueTicket, support } from './support.ts';
 import type { SupportTurn } from './support.ts';
@@ -80,6 +81,26 @@ async function supportContext(db: Db, actor: User): Promise<SupportTurn> {
   };
 }
 
+/**
+ * Карточка события каталога под ответом поддержки: обложка, когда, где, цена и кнопка, которая открывает событие
+ * в мини-приложении. Ссылку и картинку собираем сами, а не берём из текста роли: так они всегда настоящие.
+ * Нет такого события (роль ошиблась id, событие сняли) — карточку пропускаем.
+ */
+async function sendEventCard(db: Db, chatId: number, id: string): Promise<void> {
+  const event = await getCollectedEvent(db, id).catch(() => null);
+  if (!event) return;
+  const caption = [
+    event.title,
+    `🗓 ${collectedWhen(event.starts_at)}`,
+    ...(event.place ? [`📍 ${event.place}`] : []),
+    ...(event.price ? [`💸 ${event.price}`] : []),
+  ].join('\n');
+  const reply_markup = { inline_keyboard: [[{ text: 'Открыть событие', url: collectedUrl(event.id) }]] };
+  const photo = event.cover_url && (await bot.send('sendPhoto', { chat_id: chatId, photo: event.cover_url, caption, reply_markup }, 'agent:support'));
+  // Обложки нет или Telegram её не забрал — та же карточка текстом.
+  if (!photo || !photo.ok) await bot.send('sendMessage', { chat_id: chatId, text: caption, reply_markup }, 'agent:support');
+}
+
 /** Обрабатывает одно обновление вебхука. `extract` нет — на сервере не задан GEMINI_API_KEY. */
 export async function handleUpdate(db: Db, extract: Extract | undefined, update: unknown): Promise<void> {
   if (await handleFeedbackCallback(db, update)) return; // оценка события кнопкой под карточкой
@@ -116,6 +137,7 @@ export async function handleUpdate(db: Db, extract: Extract | undefined, update:
     const reply = await support.ask([await supportContext(db, actor), ...(await supportHistory(db, conversation.id))]);
     if (!reply) return say(refusal);
     if (reply.text) await bot.send('sendMessage', { chat_id: m.chatId, text: reply.text }, 'agent:support');
+    for (const id of reply.events ?? []) await sendEventCard(db, m.chatId, id);
     if (reply.human) await callHuman(reply.human);
   };
   if (!looksLikeEvent(m.text)) return answer(REPLIES.no_date);

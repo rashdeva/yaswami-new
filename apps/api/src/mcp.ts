@@ -5,7 +5,7 @@ import * as z from 'zod';
 import type { User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminGuestUpdateInput,
-  CollectedListInput, collectedPath, CollectedUpdateInput, CoverSetInput, EventCreateInput, EventUpdateInput, HostUpdateInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TEMPLATES,
+  CollectedListInput, CollectedUpdateInput, CoverSetInput, EventCreateInput, EventUpdateInput, HostUpdateInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TEMPLATES,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
@@ -15,9 +15,8 @@ import {
   adminOverview, conversationById, createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin, listAccounts, rejectDraft, sendDraft,
   updateAccount, updateDraft,
 } from './inbox.ts';
-import { eventUrl } from './notifications.ts';
+import { collectedUrl, eventUrl } from './notifications.ts';
 import * as s from './services.ts';
-import { settings } from './settings.ts';
 
 const event_id = z.string().describe('Event id, e.g. e_2a9c41b7d0');
 const event_ticket_type_id = z.string().describe('Ticket type id (uuid)');
@@ -66,10 +65,10 @@ function buildServer(db: Db, actor: User) {
 
   tool('collected_events_list', {
     title: 'Upcoming events in the city', readOnly: true, shape: {},
-    description: 'Public catalogue: upcoming events of the city collected from organizers\' announcements, ordered by start time. `url` is the event page where a person reads details and signs up. Use it to answer "where to go" and "what is on".',
+    description: 'Public catalogue: upcoming events of the city collected from organizers\' announcements, ordered by start time. `url` opens the event in the Telegram mini app, where a person reads details and signs up; `id` names the event for an event card. Use it to answer "where to go" and "what is on".',
   }, async () => (await s.listCollectedEvents(db)).map((e) => ({
-    title: e.title, starts_at: e.starts_at, place: e.place, price: e.price, tags: e.tags, for_whom: e.for_whom ?? null,
-    url: settings.publicUrl + collectedPath(e.id),
+    id: e.id, title: e.title, starts_at: e.starts_at, place: e.place, price: e.price, tags: e.tags, for_whom: e.for_whom ?? null,
+    url: collectedUrl(e.id),
   })));
 
   tool('events_list', {
