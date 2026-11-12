@@ -61,13 +61,20 @@ export const statusText = (m: Msg, clock = false) =>
   m.status === 'failed' ? 'не доставлено' : m.status === 'queued' ? 'отправляется' : m.status === 'draft' ? 'черновик, не отправлено'
     : clock ? new Date(m.created_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }) : time(m.created_at);
 
-export type Filter = 'all' | 'waiting' | 'organizer' | 'guest';
+/** Скрытые диалоги видны только под фильтром «Скрытые»: вернуть руками. */
+const shown = (c: Conv) => !c.hidden_at;
+
+export type Filter = 'all' | 'waiting' | 'organizer' | 'guest' | 'hidden';
 export const FILTERS: [Filter, string, (c: Conv) => boolean][] = [
-  ['all', 'Все', () => true],
-  ['waiting', 'Ждут вас', (c) => !!c.attention],
-  ['organizer', 'Организаторы', (c) => c.kind === 'organizer'],
-  ['guest', 'Гости', (c) => c.kind === 'guest'],
+  ['all', 'Все', shown],
+  ['waiting', 'Ждут вас', (c) => shown(c) && !!c.attention],
+  ['organizer', 'Организаторы', (c) => shown(c) && c.kind === 'organizer'],
+  ['guest', 'Гости', (c) => shown(c) && c.kind === 'guest'],
+  ['hidden', 'Скрытые', (c) => !shown(c)],
 ];
+
+/** Лента без скрытых диалогов: их сообщения в «Ленту» не идут. */
+export const visible = (feed: Feed): Feed => ({ ...feed, conversations: feed.conversations.filter(shown) });
 
 /** Список «Людей»: фильтр, агент и поиск по имени или @username. */
 export function filterPeople(all: Conv[], by: { filter: Filter; agent?: AgentKey; query: string }) {

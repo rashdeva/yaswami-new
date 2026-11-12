@@ -27,7 +27,10 @@ const dbNow = sql`now()`;
 /** Собеседник. `account_id` — он пишет на наш аккаунт Telegram, а не боту. */
 interface Peer { id: number; name?: string; username?: string | null; account_id?: string | null }
 
-/** Дописывает сообщение в диалог с человеком; диалога ещё нет — заводит. `attention` не передан — не меняется. */
+/**
+ * Дописывает сообщение в диалог с человеком; диалога ещё нет — заводит. `attention` не передан — не меняется.
+ * Входящее снимает скрытие: человек написал снова — диалог возвращается в список.
+ */
 async function record(db: Db, peer: Peer, message: Pick<Message, 'direction' | 'author' | 'text' | 'status'> & { meta?: Message['meta'] }, attention?: string | null): Promise<Conversation> {
   const profile = peer.name ? { peer_name: peer.name, peer_username: peer.username ?? null } : {};
   const [conversation] = await db
@@ -40,7 +43,10 @@ async function record(db: Db, peer: Peer, message: Pick<Message, 'direction' | '
     .onConflictDoUpdate({
       target: [conversations.channel, conversations.peer_id],
       // Человек написал на другой наш аккаунт — дальше отвечаем с него.
-      set: { last_message_at: dbNow, ...profile, ...(peer.account_id ? { account_id: peer.account_id } : {}), ...(attention === undefined ? {} : { attention }) },
+      set: {
+        last_message_at: dbNow, ...profile, ...(peer.account_id ? { account_id: peer.account_id } : {}), ...(attention === undefined ? {} : { attention }),
+        ...(message.direction === 'in' ? { hidden_at: null } : {}),
+      },
     })
     .returning();
   await db.insert(messages).values({ conversation_id: conversation!.id, ...message });
@@ -432,9 +438,12 @@ export const inboxSend = (db: Db, ctx: Ctx, id: string, text: string) =>
     if (!result.ok) throw new AppError('not_delivered', 409);
   });
 
+/** Режим, «готово» и скрытие диалога. Скрытый больше не ждёт нас: отвечать ему мы не собираемся. */
 export const inboxUpdate = (db: Db, ctx: Ctx, id: string, input: ConversationUpdateInput): Promise<Conversation> =>
   audited(db, ctx, { action: 'admin_conversations_update', entity: 'conversation', id, input }, async (db) => {
     await conversationById(db, id);
-    const [conversation] = await db.update(conversations).set(input).where(eq(conversations.id, id)).returning();
+    const { is_hidden, ...rest } = input;
+    const hide = is_hidden === undefined ? {} : is_hidden ? { hidden_at: dbNow, attention: null } : { hidden_at: null };
+    const [conversation] = await db.update(conversations).set({ ...rest, ...hide }).where(eq(conversations.id, id)).returning();
     return conversation!;
   });

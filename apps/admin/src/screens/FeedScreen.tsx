@@ -12,11 +12,11 @@ import { Marker, MarkerContent } from '@/components/ui/marker';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { isFresh, useConversationActions, useFeed, useThread } from '@/hooks/useInbox';
 import { useInboxKeys } from '@/hooks/useInboxKeys';
-import { draftsOf, eventsOf, feedRows, initials, person, pick, time, via, who } from '@/lib/inbox';
+import { draftsOf, eventsOf, feedRows, initials, person, pick, time, via, visible, who } from '@/lib/inbox';
 
 
 export function FeedScreen() {
-  const feed = useFeed();
+  const feed = visible(useFeed());
   const [selected, setSelected] = useState(''); // ключ строки: c:<диалог> или m:<сообщение>
   const [drawer, setDrawer] = useState(false);
   const [edited, setEdited] = useState<Record<string, string>>({}); // наши правки черновиков: id сообщения → текст

@@ -13,6 +13,11 @@ export interface Conversation {
   mode: 'agent' | 'human';
   /** Почему диалог ждёт нас; null — не ждёт. */
   attention: string | null;
+  /**
+   * Мы скрыли диалог из админки: человеку отвечать не собираемся (спам, случайный). Следующее его сообщение снимает
+   * скрытие. В Luma переписки нет; имя поля во входе — `is_hidden`, как у типов билетов Luma.
+   */
+  hidden_at: Date | null;
   last_message_at: Date;
 }
 
@@ -171,5 +176,6 @@ export type InboxSendInput = z.infer<typeof InboxSendInput>;
 export const DraftUpdateInput = InboxSendInput;
 export type DraftUpdateInput = InboxSendInput;
 
-export const ConversationUpdateInput = z.object({ mode: z.enum(['agent', 'human']).optional(), attention: z.null().optional() });
+/** `is_hidden: true` — скрыть диалог и снять «ждёт вас», `false` — вернуть в список. */
+export const ConversationUpdateInput = z.object({ mode: z.enum(['agent', 'human']).optional(), attention: z.null().optional(), is_hidden: z.boolean().optional() });
 export type ConversationUpdateInput = z.infer<typeof ConversationUpdateInput>;

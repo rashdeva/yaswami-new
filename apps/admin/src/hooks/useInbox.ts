@@ -53,5 +53,7 @@ export function useConversationActions() {
     /** Взять диалог на себя или вернуть агенту; отметка «ждёт вас» снимается. */
     toggleMode: useAct((c: Conv) => api.inboxUpdate(c.id, { mode: c.mode === 'agent' ? 'human' : 'agent', attention: null }), { undo: undoConv }),
     done: useAct((c: Conv) => api.inboxUpdate(c.id, { attention: null }), { undo: undoConv }),
+    /** Скрыть диалог, которому не отвечаем, или вернуть скрытый; скрытый вернётся и сам, когда человек напишет. */
+    toggleHidden: useAct((c: Conv) => api.inboxUpdate(c.id, { is_hidden: !c.hidden_at }), { undo: undoConv }),
   };
 }

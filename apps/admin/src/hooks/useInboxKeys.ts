@@ -1,4 +1,4 @@
-// Горячие клавиши переписки: выбор строки, ответ, черновик, режим, «готово». Одни и те же в «Людях» и «Ленте».
+// Горячие клавиши переписки: выбор строки, ответ, черновик, режим, «готово», скрыть. Одни и те же в «Людях» и «Ленте».
 import { useEffect } from 'react';
 import type { Conv, Msg } from '../api.ts';
 import { useConversationActions } from './useInbox.ts';
@@ -20,7 +20,7 @@ interface Options {
 }
 
 export function useInboxKeys({ rows, at, onSelect, draft, draftText, scope, onToggleThread, onEscape }: Options) {
-  const { sendDraft, rejectDraft, toggleMode, done } = useConversationActions();
+  const { sendDraft, rejectDraft, toggleMode, done, toggleHidden } = useConversationActions();
   const cur = rows[at];
 
   useEffect(() => {
@@ -41,6 +41,7 @@ export function useInboxKeys({ rows, at, onSelect, draft, draftText, scope, onTo
       else if (e.key === 'Enter' || key === 'r' || key === 'к') focus(`${scope} [data-reply]`);
       else if (key === 't' || key === 'е') toggleMode(cur.c);
       else if (key === 'd' || key === 'в') done(cur.c);
+      else if (key === 'h' || key === 'р') toggleHidden(cur.c);
       else if ((key === 'o' || key === 'щ') && onToggleThread) onToggleThread();
       else if (e.key === '/') focus('[data-search]');
       else return;

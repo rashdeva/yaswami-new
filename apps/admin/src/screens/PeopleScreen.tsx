@@ -1,7 +1,7 @@
 // «Люди»: слева собеседники с фильтрами и поиском, справа переписка с выбранным.
 import type { AgentKey } from '@yaswami/core';
 import { AGENTS } from '@yaswami/core';
-import { BotIcon, CheckIcon, CircleAlertIcon, HandIcon } from 'lucide-react';
+import { BotIcon, CheckIcon, CircleAlertIcon, EyeIcon, EyeOffIcon, HandIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Draft } from '@/components/Draft';
 import { TelegramLink } from '@/components/EntityLink';
@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Kbd } from '@/components/ui/kbd';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useConversationActions, useFeed, useThread } from '@/hooks/useInbox';
 import { useInboxKeys } from '@/hooks/useInboxKeys';
@@ -35,7 +36,7 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [edited, setEdited] = useState<Record<string, string>>({}); // наши правки черновиков: id сообщения → текст
-  const { send, sendDraft, saveDraft, rejectDraft, toggleMode, done } = useConversationActions();
+  const { send, sendDraft, saveDraft, rejectDraft, toggleMode, done, toggleHidden } = useConversationActions();
 
   const all = feed.conversations;
   const people = filterPeople(all, { filter, agent, query });
@@ -55,12 +56,19 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
           <Search data-search kbd="/" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Имя или @username" />
           <div className="flex items-center gap-2">
             <ToggleGroup type="single" variant="outline" size="sm" spacing={0} value={filter} onValueChange={(v) => v && setFilter(v as Filter)} className="min-w-0 flex-1 overflow-x-auto">
-              {FILTERS.map(([key, label, match]) => (
+              {FILTERS.filter(([key]) => key !== 'hidden').map(([key, label, match]) => (
                 <ToggleGroupItem key={key} value={key} className="grow">
                   {label}<span className="text-muted-foreground tabular-nums">{all.filter(match).length}</span>
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
+            {/* Скрытые — отдельно: смотрят редко, только чтобы вернуть диалог руками. */}
+            <Toggle
+              variant="outline" size="sm" aria-label="Скрытые" title="Скрытые"
+              pressed={filter === 'hidden'} onPressedChange={(on) => setFilter(on ? 'hidden' : 'all')}
+            >
+              <EyeOffIcon /><span className="text-muted-foreground tabular-nums">{all.filter((p) => p.hidden_at).length}</span>
+            </Toggle>
           </div>
           <Select value={agent ?? 'any'} onValueChange={(v) => onAgent(v === 'any' ? undefined : (v as AgentKey))}>
             <SelectTrigger size="sm" className="w-full"><BotIcon className="text-muted-foreground" /><SelectValue /></SelectTrigger>
@@ -119,9 +127,15 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
                 <Button size="sm" variant="outline" onClick={() => toggleMode(c)}>
                   {c.mode === 'agent' ? <><HandIcon />Взять на себя</> : <><BotIcon />Вернуть агенту</>} <Kbd className="hidden xl:inline-flex">T</Kbd>
                 </Button>
+                <Button size="sm" variant="ghost" onClick={() => toggleHidden(c)}>
+                  {c.hidden_at ? <><EyeIcon />Вернуть в список</> : <><EyeOffIcon />Скрыть</>} <Kbd className="hidden xl:inline-flex">H</Kbd>
+                </Button>
               </div>
               {c.attention && (
                 <Alert><CircleAlertIcon /><AlertDescription>Ждёт вас: {c.attention}</AlertDescription></Alert>
+              )}
+              {c.hidden_at && (
+                <Alert><EyeOffIcon /><AlertDescription>Скрыт {time(c.hidden_at)}: вернётся в список, когда человек напишет снова.</AlertDescription></Alert>
               )}
             </header>
             <Thread conversation={c} messages={thread} me={feed.me} through={via(c, feed.accounts)} />
