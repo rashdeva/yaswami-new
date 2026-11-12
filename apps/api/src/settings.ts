@@ -4,6 +4,8 @@ const { PORT = '3000', RAILWAY_PUBLIC_DOMAIN } = process.env;
 export const settings = {
   /** Адрес сайта без косой черты в конце: ссылки в разметке, в сообщении организатору, возврат после входа. */
   publicUrl: (process.env.PUBLIC_URL ?? (RAILWAY_PUBLIC_DOMAIN ? `https://${RAILWAY_PUBLIC_DOMAIN}` : `http://localhost:${PORT}`)).replace(/\/$/, ''),
+  /** Токен командного бота Hermes (тот же, что TELEGRAM_BOT_TOKEN сервиса hermes): через него идут оповещения «ждёт человека». Пусто — их шлёт бот «Я с вами». */
+  teamBotToken: process.env.TEAM_BOT_TOKEN ?? '',
   /** Город витрины и его часовой пояс; пока он один. */
   city: process.env.CITY ?? 'Дананг',
   timezone: process.env.TIMEZONE ?? 'Asia/Ho_Chi_Minh',

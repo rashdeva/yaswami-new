@@ -693,6 +693,7 @@ test('переписка: бот пишет всё в базу, админ от�
   // Пока диалог наш, бот молчит, а новое сообщение снова ждёт нас.
   assert.deepEqual(await write('Спасибо, жду'), []);
   assert.deepEqual(sent.map(([, b]) => [b.chat_id, b.text.split('\n')[0]]), [[70, 'Аня (@u71) ждёт человека: Ответил вам']], 'нам пришло оповещение');
+  assert.match(sent[0]![1].text, /\/admin\/\?c=[0-9a-f-]{36}$/, 'ссылка ведёт прямо в диалог');
   assert.equal((await inbox()).conversations[0]!.attention, 'Ответил вам');
   const thread = (await (await call(admin, 'GET', `/admin/conversations/${id}/messages`)).json()) as Message[];
   assert.deepEqual(thread.map((m) => m.text).slice(-2), ['Привет! Сейчас помогу.', 'Спасибо, жду']);
