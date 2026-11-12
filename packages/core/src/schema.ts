@@ -12,7 +12,8 @@ export const SHARE_KINDS = ['widget', 'inline_message'] as const;
 
 export const NAME_MAX = 60;
 export const ADDRESS_MAX = 80;
-export const DESCRIPTION_MAX = 300;
+// Живой анонс в каналах Дананга — 600–1500 знаков (agents/support/skills/my-events); 300 хватало только на «что взять».
+export const DESCRIPTION_MAX = 2000;
 export const TICKET_NAME_MAX = 30;
 export const ABOUT_STEP_MAX = 200;
 export const ABOUT_MAX = 300;

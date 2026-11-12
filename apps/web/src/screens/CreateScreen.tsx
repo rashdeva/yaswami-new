@@ -156,7 +156,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast, editing }: Prop
         <div className="group">
           <div className="row tall">
             <label htmlFor="description">Описание</label>
-            <textarea id="description" {...register('description')} rows={2} maxLength={DESCRIPTION_MAX} placeholder="Что взять, как добраться, дресс-код" autoFocus />
+            <textarea id="description" {...register('description')} rows={5} maxLength={DESCRIPTION_MAX} placeholder="Что взять, как добраться, дресс-код" autoFocus />
           </div>
         </div>
       ) : (
