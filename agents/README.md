@@ -41,11 +41,11 @@ railway up agents --path-as-root --service hermes
 | `HUNTER_API_KEY` | ключ роли `hunter`; тот же ключ — в `HUNTER_KEY` сервиса `api` |
 | `HOST_API_KEY` | ключ роли `host`; тот же ключ — в `HOST_KEY` сервиса `api`. Не задан — роль не ставится |
 | `ILLUSTRATOR_API_KEY` | ключ роли `illustrator`; тот же ключ — в `ILLUSTRATOR_KEY` сервиса `api`. Не задан — роль не ставится |
-| `GEMINI_API_KEY` | запасная модель: когда Grok отказывает (кончилась подписка, сбой xAI), `operator`, `support`, `hunter` и `host` отвечают через Gemini; тот же ключ, что у сервиса `api`. Иллюстратору запасной нет — картинки и ролики делает только Grok Imagine |
+| `OPENAI_API_KEY` | ключ OpenAI API (platform.openai.com): на нём работают `operator`, `support`, `hunter` и `host` (`gpt-5.4`); init.sh кладёт его в `.env` каждого профиля — переменные контейнера профилям не видны. Когда OpenAI отказывает, роли пробуют Grok по подписке |
 
 ## Вход в модель
 
-Один раз на каждый профиль, по подписке Grok (хранится на томе):
+Основная модель — OpenAI по ключу `OPENAI_API_KEY`, входить никуда не нужно. Grok — запасная для `operator`, `support`, `hunter`, `host` и единственная для `illustrator`; вход в него один раз на каждый профиль, по подписке (хранится на томе):
 
 ```bash
 railway ssh --service hermes -- hermes auth add xai-oauth --no-browser
