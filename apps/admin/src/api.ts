@@ -3,8 +3,9 @@ import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
   AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventView, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource,
   AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, EventUpdateInput, EventView, Host, HostUpdateInput, InboxConversation,
-  InboxFeed, Message, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
+  InboxFeed, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
+import { sseEvents } from '@yaswami/core';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
 // Вход — cookie сайта; в разработке вместо неё токен админа из .env.
@@ -63,12 +64,14 @@ export class ApiError extends Error {
   }
 }
 
+const auth: Record<string, string> = devToken ? { authorization: `Bearer ${devToken}` } : {};
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await fetch(BASE + path, {
       method,
-      headers: { ...(devToken ? { authorization: `Bearer ${devToken}` } : {}), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      headers: { ...auth, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
@@ -102,6 +105,15 @@ export const api = {
 
   // Переписка
   inbox: () => request<Feed>('GET', '/admin/inbox'),
+  /**
+   * Переписка в реальном времени: `on` на каждое событие, пока поток открыт; оборвался — промис завершается.
+   * fetch, а не EventSource: в разработке вход — заголовок, а EventSource заголовков не шлёт.
+   */
+  live: async (on: (e: SseEvent) => void, signal: AbortSignal) => {
+    const res = await fetch(`${BASE}/admin/live`, { headers: auth, signal });
+    if (!res.ok || !res.body) throw new ApiError(res.status === 401 ? 'unauthorized' : 'internal');
+    for await (const e of sseEvents(res.body)) on(e);
+  },
   inboxThread: (conversation: string) => request<Msg[]>('GET', `/admin/conversations/${id(conversation)}/messages`),
   inboxSend: (conversation: string, text: string) => request<void>('POST', `/admin/conversations/${id(conversation)}/messages`, { text }),
   inboxUpdate: (conversation: string, input: ConversationUpdateInput) => request<Wire<Conversation>>('PATCH', `/admin/conversations/${id(conversation)}`, input),

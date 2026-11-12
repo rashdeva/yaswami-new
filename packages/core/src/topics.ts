@@ -100,5 +100,8 @@ export const TOPIC_GUIDES: Record<string, TopicGuide> = {
 /** Событие не подходит ни под один Topic: гида у него нет. */
 export const OTHER_TOPIC = 'другое';
 
-/** Иконка Topic. У «другого» и у событий, собранных до появления поля, — общая. */
-export const topicIcon = (topic?: string) => `/topics/${(topic && TOPIC_GUIDES[topic]?.slug) || 'other'}.png`;
+/** Короткое имя Topic латиницей: файл иконки и ключ цвета темы (`data-topic` в apps/web/src/tokens.css). У «другого» и у событий, собранных до появления поля, — `other`. */
+export const topicSlug = (topic?: string | null) => (topic && TOPIC_GUIDES[topic]?.slug) || 'other';
+
+/** Иконка Topic. */
+export const topicIcon = (topic?: string | null) => `/topics/${topicSlug(topic)}.png`;

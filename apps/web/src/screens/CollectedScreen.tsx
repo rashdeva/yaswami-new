@@ -1,7 +1,7 @@
 import { Drawer } from 'vaul';
 import { useEffect, useState } from 'react';
 import type { CollectedHost } from '@yaswami/core';
-import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
+import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES, topicIcon, topicSlug } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { startLogin } from '../api.ts';
 import { useCollectedEvent } from '../hooks/useCollectedEvent.ts';
@@ -54,6 +54,7 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
   const where = [event.place, event.address].filter(Boolean).join(', ');
   // Гид по Topic пишет редакция; у «другого» и у событий, собранных до появления поля, его нет.
   const guide = event.topic ? TOPIC_GUIDES[event.topic] : undefined;
+  const cover = !!(event.cover_url || event.video_url);
 
   function signUp() {
     track('signup_clicked', { collected_event_id: id, authed });
@@ -70,15 +71,17 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
 
   return (
     <>
-      <div className={`hero${onBack ? '' : ' nb'}${event.cover_url || event.video_url ? ' cov' : ''}`}>
+      <div className={`hero${onBack ? '' : ' nb'}${cover ? ' cov' : ''}`} data-topic={topicSlug(event.topic)}>
         {/* Ролик без звука и по кругу: название и время поверх пишет сама шапка, в ролике текста нет. */}
         {event.video_url
           ? <video className="bg" src={event.video_url} poster={event.cover_url ?? undefined} autoPlay muted loop playsInline />
           : event.cover_url && <img className="bg" src={event.cover_url} alt="" />}
-        {(event.cover_url || event.video_url) && <img className="mark" src="/mark.svg" alt="" />}
+        {cover && <img className="mark" src="/mark.svg" alt="" />}
         {onBack && <button className="back" onClick={onBack}>← Все события</button>}
-        {!event.cover_url && !event.video_url && <img className="emo" src={topicIcon(event.topic)} alt="" />}
-        <small>{past ? 'Событие прошло' : [city, guide && event.topic].filter(Boolean).join(' · ')}</small>
+        {!cover && <img className="emo" src={topicIcon(event.topic)} alt="" />}
+        {/* На обложке тему несёт плашка в её цвете; без обложки её показывает иконка и цвет шапки. */}
+        {cover && guide && <span className="cat"><img src={topicIcon(event.topic)} alt="" />{event.topic![0]!.toUpperCase() + event.topic!.slice(1)}</span>}
+        <small>{past ? 'Событие прошло' : [city, guide && !cover && event.topic].filter(Boolean).join(' · ')}</small>
         <h1>{event.title}</h1>
         {(event.popular || event.tags.length > 0) && (
           <div className="tags">

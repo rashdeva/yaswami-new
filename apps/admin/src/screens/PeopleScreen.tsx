@@ -1,7 +1,7 @@
 // «Люди»: слева собеседники с фильтрами и поиском, справа переписка с выбранным.
 import type { AgentKey } from '@yaswami/core';
 import { AGENTS } from '@yaswami/core';
-import { BotIcon, CheckIcon, CircleAlertIcon, EyeIcon, EyeOffIcon, HandIcon } from 'lucide-react';
+import { BotIcon, CheckIcon, CircleAlertIcon, EyeIcon, EyeOffIcon, HandIcon, PencilLineIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Draft } from '@/components/Draft';
 import { TelegramLink } from '@/components/EntityLink';
@@ -20,8 +20,9 @@ import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useConversationActions, useFeed, useThread } from '@/hooks/useInbox';
 import { useInboxKeys } from '@/hooks/useInboxKeys';
+import { useTyping } from '@/hooks/useLive';
 import type { Filter } from '@/lib/inbox';
-import { draftsOf, FILTERS, filterPeople, initials, lastOf, leads, person, pick, time, via } from '@/lib/inbox';
+import { draftsOf, FILTERS, filterPeople, initials, lastOf, leads, person, pick, time, typingText, via } from '@/lib/inbox';
 
 interface Props {
   /** Диалог из адреса; нет или не попал под фильтр — выбран первый в списке. */
@@ -47,6 +48,7 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
   const drafts = draftsOf(feed);
   const last = lastOf(feed);
   const draft = c && drafts.get(c.id);
+  const typing = useTyping();
   useInboxKeys({ rows, at, onSelect, draft, draftText: draft && edited[draft.id], scope: '[data-pane]' });
 
   return (
@@ -95,7 +97,12 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
                       </Avatar>
                     </ItemMedia>
                     <ItemContent className="min-w-0 gap-0.5">
-                      <ItemTitle>{p.peer_name}{drafts.has(p.id) && <Badge variant="secondary">черновик</Badge>}</ItemTitle>
+                      <ItemTitle>
+                        {p.peer_name}{drafts.has(p.id) && <Badge variant="secondary">черновик</Badge>}
+                        {typing.filter((t) => t.conversation_id === p.id).map((t) => (
+                          <Badge key={t.who} variant="outline" title={typingText(t)}>{t.who === 'agent' ? <BotIcon /> : <PencilLineIcon />}{t.who === 'agent' ? 'пишет' : 'печатает'}</Badge>
+                        ))}
+                      </ItemTitle>
                       <ItemDescription className="line-clamp-1">{lastMsg?.direction === 'out' && 'Мы: '}{lastMsg?.text ?? drafts.get(p.id)?.text}</ItemDescription>
                       <ItemDescription className="line-clamp-1">{person(p)} · {leads(p)}</ItemDescription>
                     </ItemContent>
@@ -138,7 +145,7 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
                 <Alert><EyeOffIcon /><AlertDescription>Скрыт {time(c.hidden_at)}: вернётся в список, когда человек напишет снова.</AlertDescription></Alert>
               )}
             </header>
-            <Thread conversation={c} messages={thread} me={feed.me} through={via(c, feed.accounts)} />
+            <Thread conversation={c} messages={thread} me={feed.me} through={via(c, feed.accounts)} typing={typing.filter((t) => t.conversation_id === c.id)} />
             <div className="flex flex-col gap-2 px-4 pt-1 pb-4">
               {draft && (
                 <Draft

@@ -89,7 +89,7 @@ async function refreshPosts() {
   }
 }
 
-// Сообщение в API от имени сборщика: личное сообщение на аккаунте или вопрос из чата.
+// Сообщение в API от имени сборщика: личное сообщение на аккаунте, «печатает» или вопрос из чата.
 const toApi = async (path, body) => {
   const res = await fetch(`${env.API_URL}/internal/${path}`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-collector-secret': env.COLLECTOR_SECRET },
@@ -126,6 +126,7 @@ if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
   const sender = createSender({
     store, apiId: env.TG_API_ID, apiHash: env.TG_API_HASH, key: env.ACCOUNTS_KEY,
     report: (message) => toApi('account-message', message),
+    reportTyping: (typing) => toApi('account-typing', typing),
   });
   (async () => {
     for (;;) {
