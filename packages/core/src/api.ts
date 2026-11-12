@@ -73,6 +73,7 @@ export interface GuestView {
 export interface EventView {
   event: Event;
   cover_url: string | null; // в Luma — event.cover_url; у нас картинка хранится отдельно от строки события, поэтому рядом с ним
+  cover_pending: boolean; // в Luma нет: обложку сейчас рисует иллюстратор, через минуту-другую появится cover_url
   ticket_types: TicketType[];
   host: { first_name: string; user_photo_url: string | null };
   guests: GuestView[]; // отказавшихся видит только организатор

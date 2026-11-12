@@ -129,11 +129,12 @@ test('обложка события: без своей рисует иллюст
   try {
     const host = tma(3, 'Лена');
     const created = await newEvent(host);
-    assert.equal(created.cover_url, null, 'событие создаётся сразу, обложка — потом');
+    assert.deepEqual([created.cover_url, created.cover_pending], [null, true], 'событие создаётся сразу, обложка рисуется');
     await done;
     assert.match(task, /^Сделай только обложку/);
     const view = (await (await call(host, 'GET', `/events/${created.event.id}`)).json()) as EventView;
     assert.match(view.cover_url ?? '', /\/api\/photos\//);
+    assert.equal(view.cover_pending, false);
     assert.equal((await app.request(new URL(view.cover_url!).pathname.replace(/^\/api/, ''))).status, 200, 'картинка отдаётся');
   } finally {
     illustrator.ask = draw;
