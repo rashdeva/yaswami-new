@@ -1,7 +1,7 @@
 // Аналитика действий — PostHog: клики и переходы он ловит сам (autocapture), записи сессий включаются в его настройках проекта.
 // Здесь — запуск, привязка к пользователю и именованные действия для воронок. В разработке ничего не отправляется.
 import posthog from 'posthog-js';
-import { inTelegram, startParam, startRef, tg } from './tg.ts';
+import { inTelegram, startParam, startRef, startTag, tg } from './tg.ts';
 
 // Ключ проекта публичный по замыслу PostHog (он виден в любом браузере), поэтому лежит в коде: сборка в Docker переменных VITE_* не получает.
 const KEY = 'phc_xveQ5LMXvEFu669ULn5VyuCUVaCmtsyw5feni58hxPrt';
@@ -41,8 +41,11 @@ export function initAnalytics() {
   posthog.init(KEY, { api_host: 'https://us.i.posthog.com', defaults: '2025-05-24', person_profiles: 'identified_only' });
   // Источник — на каждом действии, чтобы любую воронку можно было разрезать; tg_platform — ios, android, tdesktop…
   posthog.register({ source, tg_platform: tg?.platform });
+  // Метка из ссылки в мини-приложение (`?startapp=…-s<метка>`) — тот же `utm_source`, что PostHog сам берёт из адреса сайта:
+  // воронку можно разбить по источнику одинаково для сайта и Telegram. До конца сессии, чтобы следующий заход без метки её не унаследовал.
+  if (startTag) posthog.register_for_session({ utm_source: startTag });
   // С чем открыли: ссылка на собранное событие (c_<id>), на событие Ясвами или просто приложение; ref — кто позвал.
-  track('app_opened', { start: !startParam ? 'none' : startParam.startsWith('c_') ? 'collected_event' : 'event', ref: startRef });
+  track('app_opened', { start: !startParam ? 'none' : startParam.startsWith('c_') ? 'collected_event' : 'event', ref: startRef, tag: startTag });
 }
 
 /** Привязывает действия к пользователю: id в PostHog — Telegram id, тот же, что в админке. `null` — не вошёл. */
@@ -54,7 +57,7 @@ export function identify(user: { id: number; first_name: string; username: strin
   posthog.identify(
     String(user.id),
     { name: user.first_name, username: user.username, features: user.features, source, admin_url: `${location.origin}/admin/users/${user.id}` },
-    { first_source: source },
+    { first_source: source, ...(startTag ? { first_utm_source: startTag } : {}) },
   );
   mark((s) => {
     if (!s.getItem(LOGIN_MARK)) return;
