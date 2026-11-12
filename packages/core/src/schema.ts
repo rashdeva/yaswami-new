@@ -23,12 +23,23 @@ export const TICKET_DESCRIPTION_MAX = 1000;
 const count = z.number().int().nonnegative();
 const httpUrl = z.url({ protocol: /^https?$/ }); // только http(s): ссылка попадает в интерфейс
 
+/**
+ * Возможность — то, что открыто не всем: её включают человеку лично (админка, поле `features`) или сразу всем
+ * (FEATURES_ON на сервере). Правило проверяет сервис, интерфейс только прячет лишнее. В Luma такого нет.
+ * Новая возможность — новое имя здесь; эксперименты с текстами и видом экранов — не сюда, а во флаги PostHog.
+ */
+export const Feature = z.enum([
+  'event_create', // создавать события Ясвами: приложение, бот, агенты
+]);
+export type Feature = z.infer<typeof Feature>;
+
 export const User = z.object({
   id: z.number().int().positive(), // telegram id
   first_name: z.string().min(1),
   username: z.string().nullable(),
   lang: z.string(),
   timezone: z.string(),
+  features: z.array(Feature), // включённое лично этому человеку; в Luma такого нет
 });
 export type User = z.infer<typeof User>;
 

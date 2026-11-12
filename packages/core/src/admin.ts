@@ -3,7 +3,7 @@ import * as z from 'zod';
 import type { AdminCollectedEvent, EventView } from './api.ts';
 import { dateTime, EventCreateInput, timeZone } from './api.ts';
 import type { Event, Guest, User } from './schema.ts';
-import { RsvpStatus, User as UserSchema } from './schema.ts';
+import { Feature, RsvpStatus, User as UserSchema } from './schema.ts';
 
 const text = (max: number) => z.string().trim().max(max);
 // Сервис сам убирает @ и приводит к нижнему регистру (normalUsername): преобразование в схеме не описать в JSON Schema для MCP.
@@ -142,6 +142,7 @@ export const UserUpdateInput = z
     username: username.nullable(),
     lang: text(10).min(2),
     timezone: timeZone,
+    features: z.array(Feature).transform((f) => [...new Set(f)]).describe('Features enabled for this person, the whole list: event_create lets them create events'),
   })
   .partial();
 export type UserUpdateInput = z.infer<typeof UserUpdateInput>;

@@ -4,6 +4,7 @@ import { createContext, useContext, useState } from 'react';
 import type { CollectedEventItem, Event } from '@yaswami/core';
 import { startLogin } from './api.ts';
 import { tint } from './format.ts';
+import { useFeature } from './hooks/useFeature.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
 import { useSession } from './hooks/useSession.ts';
 import { useTelegramBack } from './hooks/useTelegramBack.ts';
@@ -66,6 +67,7 @@ export function AppTabs({ current }: { current: 'feed' | 'mine' }) {
   const navigate = useNavigate();
   const { me, authed, canLogin, logout } = useSession();
   const { hasEvents } = useMyEvents();
+  const canCreate = useFeature('event_create');
   const { toast } = useShell();
   return (
     <Tabs
@@ -73,7 +75,7 @@ export function AppTabs({ current }: { current: 'feed' | 'mine' }) {
       me={me ?? null}
       canLogin={canLogin}
       onFeed={() => void navigate({ to: '/' })}
-      onMine={() => (authed ? void navigate({ to: hasEvents ? '/my' : '/new' }) : startLogin('/my'))}
+      onMine={() => (authed ? void navigate({ to: hasEvents || !canCreate ? '/my' : '/new' }) : startLogin('/my'))}
       onLogin={() => startLogin(location.pathname)}
       onLogout={() => void logout().catch((e: Error) => toast(e.message))}
     />

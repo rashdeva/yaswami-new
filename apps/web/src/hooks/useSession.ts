@@ -18,7 +18,10 @@ export function useSession() {
   // Аналитика узнаёт, чьи это действия; после выхода — снова аноним.
   const known = me !== undefined;
   const { id, first_name, username } = me?.user ?? {};
-  useEffect(() => { if (known) identify(id && first_name ? { id, first_name, username: username ?? null } : null); }, [known, id, first_name, username]);
+  const features = me?.features.join(',') ?? '';
+  useEffect(() => {
+    if (known) identify(id && first_name ? { id, first_name, username: username ?? null, features: features ? features.split(',') : [] } : null);
+  }, [known, id, first_name, username, features]);
 
   // Организатор подтверждает собранное событие: оно становится его событием Ясвами и открывается сразу.
   // Сначала переход, потом правка `me`: иначе страница, с которой уходим, успеет перерисоваться без кнопки.
@@ -30,7 +33,8 @@ export function useSession() {
     },
     onSuccess: (_, id) => {
       track('event_claimed', { collected_event_id: id });
-      client.setQueryData<Me | null>(keys.me, (m) => m && { ...m, claimable: m.claimable.filter((c) => c.id !== id) });
+      // Подтвердивший становится организатором: сервер открыл ему создание событий.
+      client.setQueryData<Me | null>(keys.me, (m) => m && { ...m, features: [...new Set([...m.features, 'event_create' as const])], claimable: m.claimable.filter((c) => c.id !== id) });
       void client.invalidateQueries({ queryKey: keys.mine });
       void client.invalidateQueries({ queryKey: keys.collectedEvent(id) });
     },
@@ -51,6 +55,8 @@ export function useSession() {
   return {
     me,
     authed: !!me,
+    /** Возможности, открытые человеку; экраны спрашивают через `useFeature`. */
+    features: me?.features ?? [],
     city: config?.city ?? 'Дананг',
     // Войти на сайте можно, когда сервер это умеет, а человек открыл страницу не из Telegram.
     canLogin: !!config?.web_login && !hasCredentials,

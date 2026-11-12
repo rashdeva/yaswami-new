@@ -25,7 +25,8 @@ interface Props {
   lead?: ReactNode;
   onOpen: (id: string) => void;
   onOpenCollected: (event: CollectedEventItem) => void;
-  onNew: () => void;
+  /** Создать событие; null — человеку создание не открыто, кнопки нет. */
+  onNew: (() => void) | null;
   onKind: (kind: Event['kind']) => void;
 }
 
@@ -77,7 +78,8 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
         return <section key={collectedDayKey(list[0]!.wall)}><h2 className={label === 'Сегодня' ? 'cap today' : 'cap'}>{label}</h2>{grid(list)}</section>;
       })}
       {past.length > 0 && <section><h2>Прошедшие</h2>{grid(past)}</section>}
-      <div className="main"><div><button className="cta" onClick={() => { onNew(); }}>Новое событие</button></div></div>
+      {rows.length === 0 && <div className="state"><b>🗓</b><p>Здесь появятся события, на которые вы записались.</p></div>}
+      {onNew && <div className="main"><div><button className="cta" onClick={onNew}>Новое событие</button></div></div>}
     </>
   );
 }

@@ -26,6 +26,7 @@ export const REPLIES = {
   past: 'Похоже, это событие уже прошло. Пришлите анонс предстоящего события.',
   too_often: 'Слишком много сообщений подряд. Подождите минуту и пришлите анонс ещё раз.',
   unavailable: 'Сейчас не получилось разобрать сообщение. Попробуйте ещё раз через минуту.',
+  not_host: 'Создавать события пока могут только организаторы. Если вы проводите события — напишите об этом сюда, мы откроем вам создание.',
   limit: (left: number) =>
     `Бесплатно можно создать ${settings.freeEventsLimit} событий, лимит исчерпан.${left > 1 ? ` Не добавлено событий: ${left}.` : ''}`,
 };
@@ -172,6 +173,7 @@ export async function handleUpdate(db: Db, extract: Extract | undefined, update:
       await notify(m.chatId, 'event_created', { event });
     } catch (e) {
       if (e instanceof AppError && e.code === 'events_limit') return say(REPLIES.limit(upcoming.length - i));
+      if (e instanceof AppError && e.code === 'feature_off') return say(REPLIES.not_host);
       throw e;
     }
   }

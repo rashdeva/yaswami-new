@@ -83,7 +83,7 @@ function buildServer(db: Db, actor: User) {
 
   tool('events_create', {
     title: 'Create event', asUser: true, shape: EventCreateInput.shape,
-    description: `Create an event hosted by the user. Field names follow the Luma API (name, start_at, timezone, max_capacity). A default free ticket type is created with it. ${KINDS}`,
+    description: `Create an event hosted by the user. Field names follow the Luma API (name, start_at, timezone, max_capacity). A default free ticket type is created with it. ${KINDS} Errors: feature_off — creating events is not enabled for this user (the team enables it per person); events_limit — the free limit is used up.`,
   }, (a, me, db) => s.createEvent(db, me, a));
 
   tool('events_update', {
@@ -211,7 +211,7 @@ function buildServer(db: Db, actor: User) {
 
     tool('person_events_create', {
       title: 'Create event for the person', shape: { ticket, ...EventCreateInput.shape },
-      description: `Create an event hosted by the person. Ask for what is missing (what, when, where) before calling. ${KINDS} Error events_limit: the free limit is used up.`,
+      description: `Create an event hosted by the person. Ask for what is missing (what, when, where) before calling. ${KINDS} Errors: events_limit — the free limit is used up; feature_off — creating events is not enabled for this person: say that only hosts can create events for now and the team can enable it.`,
     }, async ({ ticket: t, ...input }) => {
       const view = await s.createEvent(db, await person(t), input);
       return { ...view, url: eventUrl(view.event.id) };

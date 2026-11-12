@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
 import { EntityLink, PostHogLink, TelegramLink } from '@/components/EntityLink';
-import { SaveBar, saveDirty, TextField } from '@/components/Fields';
+import { SaveBar, saveDirty, SwitchListField, TextField } from '@/components/Fields';
 import { History } from '@/components/History';
 import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
@@ -15,10 +15,10 @@ import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item';
 import { useContacts, useUser, useUserActions } from '@/hooks/useUsers';
-import { APPROVAL_LABELS, EVENT_STATUS_LABELS } from '@/lib/catalog';
+import { APPROVAL_LABELS, EVENT_STATUS_LABELS, FEATURE_LABELS } from '@/lib/catalog';
 import { wallParts } from '@/lib/form';
 
-const values = (u: User): Input => ({ first_name: u.first_name, username: u.username, lang: u.lang, timezone: u.timezone });
+const values = (u: User): Input => ({ first_name: u.first_name, username: u.username, lang: u.lang, timezone: u.timezone, features: u.features });
 
 export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => void }) {
   const { data, error } = useUser(id);
@@ -62,6 +62,7 @@ export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => voi
               <TextField form={form} name="lang" label="Язык" hint="ru, en…" />
               <TextField form={form} name="timezone" label="Часовой пояс" hint="IANA, например Asia/Tbilisi" />
             </div>
+            <SwitchListField form={form} name="features" label="Возможности" hint="Что открыто этому человеку сверх обычного. Открытое сразу всем задаётся на сервере (FEATURES_ON)." options={Object.entries(FEATURE_LABELS)} />
           </FieldGroup>
           <SaveBar form={form} />
         </form>

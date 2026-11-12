@@ -38,8 +38,11 @@ export async function listAllEvents(db: Db, { after, before, query }: AdminEvent
 export const getAnyEvent = async (db: Db, id: string): Promise<AdminEventView> => ({ ...(await s.getEvent(db, await hostOf(db, id), id)), url: eventUrl(id) });
 
 export const createAnyEvent = (db: Db, ctx: Ctx, { user_id, ...input }: AdminEventCreateInput): Promise<EventView> =>
-  audited(db, ctx, { action: 'admin_events_create', entity: 'event', id: (v) => v.event.id, input: { user_id, ...input } }, async (tx) =>
-    s.createEvent(tx, await userById(tx, user_id), input));
+  audited(db, ctx, { action: 'admin_events_create', entity: 'event', id: (v) => v.event.id, input: { user_id, ...input } }, async (tx) => {
+    // Команда создаёт событие за человека сознательно: возможность `event_create` ему для этого не нужна (и не выдаётся).
+    const user = await userById(tx, user_id);
+    return s.createEvent(tx, { ...user, features: [...user.features, 'event_create'] }, input);
+  });
 
 export const updateAnyEvent = (db: Db, ctx: Ctx, id: string, input: EventUpdateInput): Promise<EventView> =>
   audited(db, ctx, { action: 'admin_events_update', entity: 'event', id, input }, async (tx) => s.updateEvent(tx, await hostOf(tx, id), id, input));

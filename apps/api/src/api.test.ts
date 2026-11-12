@@ -57,6 +57,8 @@ const sent: [method: string, body: any][] = [];
 let lastMessageId = 5000;
 bot.call = async (method, body) => (sent.push([method, body]), { ok: true, result: { message_id: ++lastMessageId } });
 Object.assign(bot.pace, { globalMs: 0, chatMs: 0 });
+// В тестах создание событий открыто всем, как было до возможностей; сам запрет проверяет тест «возможность event_create».
+settings.featuresOn = ['event_create'];
 
 function initData(id: number, first_name: string, authDate = Math.floor(Date.now() / 1000)) {
   const params = new URLSearchParams({ auth_date: String(authDate), user: JSON.stringify({ id, first_name, username: `u${id}` }) });
@@ -277,7 +279,7 @@ test('собранные события: витрина без входа, за�
   const guest = tma(20, 'Оля');
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
-  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: 20, first_name: 'Оля', username: 'u20' }, collected_signups: ['danangevent-1-0'], claimable: [] });
+  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: 20, first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [] });
 
   // «Мои события»: куда записывался и куда только заходил
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-2-0/visit', {})).status, 204);
@@ -332,6 +334,47 @@ test('подтверждение владельцем: предлагается 
   assert.equal(item.claimed_event_id, view.event.id);
   assert.equal((await call(owner, 'POST', '/collected-events/danangevent-5-0/claim')).status, 409);
   assert.deepEqual(((await (await call(owner, 'GET', '/me')).json()) as Me).claimable, []);
+  // подтвердивший — организатор: создание событий открыто ему лично, даже когда оно закрыто для всех
+  settings.featuresOn = [];
+  try {
+    assert.deepEqual(((await (await call(owner, 'GET', '/me')).json()) as Me).features, ['event_create']);
+    assert.deepEqual(((await (await call(stranger, 'GET', '/me')).json()) as Me).features, []);
+    await newEvent(owner);
+  } finally {
+    settings.featuresOn = ['event_create'];
+  }
+});
+
+test('возможность event_create: без неё события не создать ни в приложении, ни через бота; открывает команда', async () => {
+  settings.adminIds = [70];
+  settings.featuresOn = [];
+  try {
+    const user = tma(45, 'Гость');
+    const admin = tma(70, 'Админ');
+    const body = { kind: 's', name: 'Своё', start_at: '2026-11-20T19:00:00+04:00', timezone: 'Asia/Tbilisi' };
+    const features = async () => ((await (await call(user, 'GET', '/me')).json()) as Me).features;
+
+    const res = await call(user, 'POST', '/events', body);
+    assert.equal(res.status, 403);
+    assert.deepEqual(await res.json(), { error: 'feature_off' });
+    assert.deepEqual(await features(), []);
+    sent.length = 0;
+    await handleUpdate(db, async () => [extracted()], botMessage(45, ANNOUNCEMENT));
+    assert.deepEqual(sent.map(([m, b]) => (m === 'sendMessage' ? b.text : m)), [REPLIES.not_host]);
+
+    // команда создаёт событие за человека — можно, возможность при этом ему не выдаётся
+    assert.equal((await call(admin, 'POST', '/admin/events', { ...body, user_id: 45 })).status, 201);
+    assert.deepEqual(await features(), []);
+
+    // команда открывает создание лично; повтор в списке схлопывается
+    const updated = (await (await call(admin, 'PATCH', '/admin/users/45', { features: ['event_create', 'event_create'] })).json()) as { features: string[] };
+    assert.deepEqual(updated.features, ['event_create']);
+    assert.deepEqual(await features(), ['event_create']);
+    await newEvent(user);
+    assert.equal((await call(admin, 'PATCH', '/admin/users/45', { features: ['fly'] })).status, 400);
+  } finally {
+    settings.featuresOn = ['event_create'];
+  }
 });
 
 test('лимит бесплатных событий: сверх него создать нельзя, подтверждённые тоже считаются', async () => {
