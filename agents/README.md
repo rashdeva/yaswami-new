@@ -41,18 +41,21 @@ railway up agents --path-as-root --service hermes
 | `HUNTER_API_KEY` | ключ роли `hunter`; тот же ключ — в `HUNTER_KEY` сервиса `api` |
 | `HOST_API_KEY` | ключ роли `host`; тот же ключ — в `HOST_KEY` сервиса `api`. Не задан — роль не ставится |
 | `ILLUSTRATOR_API_KEY` | ключ роли `illustrator`; тот же ключ — в `ILLUSTRATOR_KEY` сервиса `api`. Не задан — роль не ставится |
-| `GEMINI_API_KEY` | запасная модель: когда Grok отказывает (кончилась подписка, сбой xAI), `operator`, `support`, `hunter` и `host` отвечают через Gemini; тот же ключ, что у сервиса `api`. Иллюстратору запасной нет — картинки и ролики делает только Grok Imagine |
 
 ## Вход в модель
 
-Один раз на каждый профиль, по подписке Grok (хранится на томе):
+Хранится на томе. Основная модель — ChatGPT по подписке (`openai-codex`) у `operator`, `support`, `hunter` и `host`; запасная у них и единственная у `illustrator` — Grok по подписке (`xai-oauth`).
+
+В ChatGPT входим **один раз, в основной профиль**: профиль без своего входа берёт его оттуда. Свой вход в профиле ломает всё — OpenAI держит одну живую сессию на аккаунт и при новом входе отзывает прежнюю.
 
 ```bash
-railway ssh --service hermes -- hermes auth add xai-oauth --no-browser
+railway ssh --service hermes -- hermes auth add openai-codex --no-browser
 ```
 
+Grok, наоборот, входит в каждый профиль отдельно:
+
 ```bash
-railway ssh --service hermes -- hermes -p support auth add xai-oauth --no-browser
+railway ssh --service hermes -- hermes -p illustrator auth add xai-oauth --no-browser
 ```
 
 Команда печатает адрес и код; код подтверждается в браузере под аккаунтом с подпиской.

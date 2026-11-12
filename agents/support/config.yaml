@@ -3,13 +3,13 @@
 # её ответ отправляет наш API (apps/api/src/support.ts).
 _config_version: 53 # формат конфига Hermes 0.23; без метки Hermes считает файл древним и ругается при старте
 model:
-  default: grok-4.6
-  provider: xai-oauth # свой вход: hermes -p support auth add xai-oauth --no-browser
-  base_url: https://api.x.ai/v1
-# Когда Grok отказывает (кончилась подписка, сбой xAI), роль отвечает через Gemini по ключу GEMINI_API_KEY.
+  default: gpt-6-sol
+  provider: openai-codex # вход по подписке ChatGPT — общий, из основного профиля (agents/README.md)
+# Когда ChatGPT отказывает (лимит подписки) — Grok по подписке, если она жива. Gemini не берём: бесплатного лимита хватает на пару ответов.
 fallback_providers:
-  - provider: gemini
-    model: gemini-3.5-flash
+  - provider: xai-oauth
+    model: grok-4.6
+    base_url: https://api.x.ai/v1
 
 platform_toolsets:
   api_server: [mcp-yaswami, skills]
