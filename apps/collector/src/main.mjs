@@ -103,10 +103,11 @@ const leadChats = (env.LEAD_CHATS ?? '').split(',').map((c) => c.trim().replace(
 
 async function pollLeads(chat) {
   const key = `lead:${chat}`; // отметка в той же таблице, что у каналов с анонсами
-  const { last, leads } = await fetchLeads(userbot, chat, cursors[key] ?? 0);
+  const { last, read, leads } = await fetchLeads(userbot, chat, cursors[key] ?? 0);
   for (const lead of leads) await toApi('lead', lead);
   if (last !== cursors[key]) await store.saveCursor(key, (cursors[key] = last));
-  if (leads.length) console.log(`${chat}: вопросов «куда сходить» — ${leads.length}`);
+  // Каждый проход — в журнал: иначе не отличить «вопросов нет» от «чат не читается».
+  console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}`);
 }
 
 // Railway проверяет /health при деплое (общий railway.json) и гасит старый контейнер, только когда новый ответил.
