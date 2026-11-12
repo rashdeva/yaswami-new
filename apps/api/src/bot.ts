@@ -9,6 +9,7 @@ import { upsertUser } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
+import { writing } from './live.ts';
 import { collectedUrl, notify } from './notifications.ts';
 import { addCollectedEvent, AppError, createEventFromAnnouncement, getCollectedEvent, getEvent, listEvents, myCollectedEvents } from './services.ts';
 import { settings } from './settings.ts';
@@ -102,6 +103,43 @@ async function sendEventCard(db: Db, chatId: number, id: string): Promise<void> 
   if (!photo || !photo.ok) await bot.send('sendMessage', { chat_id: chatId, text: caption, reply_markup }, 'agent:support');
 }
 
+/** Чаще обновлять живой ответ не стоит: Telegram ограничивает sendMessageDraft так же, как «печатает». */
+const DRAFT_MS = 1000;
+/** Живой ответ у человека держится ~30 с: пока роль думает дольше (ходит в инструменты), показываем его заново. */
+const DRAFT_KEEP_MS = 20_000;
+
+/**
+ * Живой ответ (CONTEXT.md): ответ роли появляется у человека по мере того, как она его пишет (sendMessageDraft,
+ * Bot API 9.5): сначала «Думаю…», потом текст. Он временный — готовый ответ после `run` всё равно уходит обычным сообщением и заменяет его.
+ * Текст показываем не сразу, а через DRAFT_MS: при сбое Hermes присылает текст ошибки одним куском перед признаком
+ * сбоя, и за эту задержку мы узнаём о сбое раньше, чем покажем ошибку человеку.
+ */
+async function withDraft<T>(chatId: number, draftId: number, run: (show: (text: string) => void) => Promise<T>): Promise<T> {
+  let text = '';
+  let timer: NodeJS.Timeout | undefined;
+  let inflight: Promise<unknown> = Promise.resolve();
+  const call = (body: object): Promise<boolean> =>
+    (inflight = bot.call('sendMessageDraft', { chat_id: chatId, draft_id: draftId, ...body }).then((r) => r.ok, () => false));
+  const push = () => {
+    timer = undefined;
+    void call({ text: text.slice(0, 4096) });
+  };
+  // Пустой текст — «Думаю…»; Telegram его не принял — хотя бы «печатает».
+  void call({ text: '' }).then((ok) => ok || void bot.call('sendChatAction', { chat_id: chatId, action: 'typing' }));
+  const keep = setInterval(push, DRAFT_KEEP_MS);
+  try {
+    return await run((next) => {
+      text = next;
+      timer ??= setTimeout(push, DRAFT_MS);
+    });
+  } finally {
+    clearTimeout(timer);
+    clearInterval(keep);
+    // Живой ответ, долетевший после готового сообщения, показался бы снова поверх него.
+    await inflight;
+  }
+}
+
 /** Обрабатывает одно обновление вебхука. `extract` нет — на сервере не задан GEMINI_API_KEY. */
 export async function handleUpdate(db: Db, extract: Extract | undefined, update: unknown): Promise<void> {
   if (await handleFeedbackCallback(db, update)) return; // оценка события кнопкой под карточкой
@@ -134,8 +172,10 @@ export async function handleUpdate(db: Db, extract: Extract | undefined, update:
   const answer = async (refusal: string, limited = tooOften(m.from.id)) => {
     const allowed = !settings.supportUserIds.length || settings.supportUserIds.includes(m.from.id);
     if (!settings.supportUrl || !allowed || limited) return say(refusal);
-    void bot.call('sendChatAction', { chat_id: m.chatId, action: 'typing' });
-    const reply = await support.ask([await supportContext(db, actor), ...(await supportHistory(db, conversation.id))]);
+    const history = [await supportContext(db, actor), ...(await supportHistory(db, conversation.id))];
+    // Ответ пишется у человека на глазах (живой ответ) и у нас в админке (live.ts).
+    const reply = await writing(conversation.id, 'support', (live) =>
+      withDraft(m.chatId, m.messageId, (draft) => support.ask(history, (text) => (live(text), draft(text)))));
     if (!reply) return say(refusal);
     if (reply.text) await bot.send('sendMessage', { chat_id: m.chatId, text: reply.text }, 'agent:support');
     for (const id of reply.events ?? []) await sendEventCard(db, m.chatId, id);

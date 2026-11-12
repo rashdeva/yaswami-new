@@ -130,6 +130,8 @@ console.log('cover ok');
   };
   const fail = (errorMessage) => Object.assign(new Error(errorMessage), { errorMessage });
   let handler;
+  let typingHandler;
+  const typing = [];
   const sentTo = [];
   const client = {
     session: { save: () => 'SESSION' },
@@ -137,12 +139,12 @@ console.log('cover ok');
     sendCode: async () => ({ phoneCodeHash: 'hash' }),
     invoke: async (request) => { throw fail(request.phoneCode === '11111' ? 'SESSION_PASSWORD_NEEDED' : 'PHONE_CODE_INVALID'); },
     signInWithPassword: async (_api, { password }) => { if ((await password()) !== 'верный') throw fail('PASSWORD_HASH_INVALID'); },
-    addEventHandler: (fn) => { handler = fn; },
+    addEventHandler: (fn, builder) => { if (builder?.constructor?.name === 'Raw') typingHandler = fn; else handler = fn; },
     getDialogs: async () => [],
     sendMessage: async (peer, { message }) => { if (peer === 42) throw fail('PEER_ID_INVALID'); sentTo.push([peer, message]); return { id: 900 }; },
     disconnect: async () => {},
   };
-  const sender = createSender({ store, apiId: '1', apiHash: 'h', key, report: async (m) => void reported.push(m), connectClient: () => client, log: () => {} });
+  const sender = createSender({ store, apiId: '1', apiHash: 'h', key, report: async (m) => void reported.push(m), reportTyping: async (t) => void typing.push(t), connectClient: () => client, log: () => {} });
 
   await sender.tick();
   assert.equal(account.status, 'login_code', 'код запрошен');
@@ -167,6 +169,12 @@ console.log('cover ok');
   await handler({ isPrivate: false, message: { id: 2, out: false, message: 'в группе', getChat: async () => user } });
   await handler({ isPrivate: true, message: { id: 3, out: false, message: 'я бот', getChat: async () => ({ ...user, bot: true }) } });
   assert.deepEqual(reported, [{ account_id: 'a1', peer: { id: 42, name: 'Тим', username: 'tim' }, direction: 'in', text: 'Привет' }]);
+
+  // «Печатает» уходит в API не чаще раза в несколько секунд; «перестал печатать» — нет.
+  await typingHandler({ userId: 42n, action: { className: 'SendMessageTypingAction' } });
+  await typingHandler({ userId: 42n, action: { className: 'SendMessageTypingAction' } });
+  await typingHandler({ userId: 43n, action: { className: 'SendMessageCancelAction' } });
+  assert.deepEqual(typing, [{ account_id: 'a1', peer_id: 42 }]);
 
   // Очередь: по id не вышло — отправляем по username; своё отправленное в API не возвращаем.
   queue.push({ id: 'm1', text: 'Здравствуйте!', account_id: 'a1', peer_id: '42', peer_username: 'tim', status: 'queued' });

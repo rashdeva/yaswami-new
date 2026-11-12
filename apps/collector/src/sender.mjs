@@ -4,10 +4,12 @@
 // и отправляет то, что API положил в очередь. Что отвечать и кому — решает не он.
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import telegram from 'telegram';
-import { NewMessage } from 'telegram/events/index.js';
+import { NewMessage, Raw } from 'telegram/events/index.js';
 import { connect } from './mtproto.mjs';
 
 const NO_TEXT = '[сообщение без текста]';
+// Telegram повторяет «печатает» каждые ~5 с; API держит отметку 6 с, поэтому чаще раза в 4 с сообщать незачем.
+const TYPING_EVERY_MS = 4000;
 
 /** Сессия аккаунта — полный доступ к нему: в базе лежит только зашифрованной (AES-256-GCM, ключ — у сборщика). */
 export function seal(key, text) {
@@ -26,10 +28,10 @@ export function unseal(key, sealed) {
 const code = (e) => e?.errorMessage ?? e?.message ?? String(e);
 
 /**
- * `store` — запросы к базе (store.mjs), `report` — сообщить API о личном сообщении, `connectClient` — клиент MTProto
- * (тесты подставляют свой). `tick()` делает один проход: шаги входа, подключение аккаунтов, отправка очереди.
+ * `store` — запросы к базе (store.mjs), `report` — сообщить API о личном сообщении, `reportTyping` — что собеседник
+ * набирает сообщение, `connectClient` — клиент MTProto (тесты подставляют свой). `tick()` делает один проход: шаги входа, подключение аккаунтов, отправка очереди.
  */
-export function createSender({ store, apiId, apiHash, key, report, connectClient = connect, log = console.log }) {
+export function createSender({ store, apiId, apiHash, key, report, reportTyping = async () => {}, connectClient = connect, log = console.log }) {
   const clients = new Map(); // id аккаунта → подключённый клиент
   const logins = new Map(); // id аккаунта → { client, phoneCodeHash }: вход между шагами живёт только в памяти
   const sentIds = new Map(); // id аккаунта → номера сообщений, отправленных нами: о них в API не сообщаем
@@ -51,6 +53,16 @@ export function createSender({ store, apiId, apiHash, key, report, connectClient
         log(`аккаунт ${account.label}: сообщение не передано в API: ${code(e)}`);
       }
     }, new NewMessage({}));
+    // Собеседник набирает сообщение — админка покажет «печатает». Боту Telegram такого не присылает, аккаунту — да.
+    const typingSent = new Map(); // id собеседника → когда сообщили в API
+    client.addEventHandler(async (update) => {
+      if (update.action?.className === 'SendMessageCancelAction') return;
+      const peer = Number(update.userId);
+      if (Date.now() - (typingSent.get(peer) ?? 0) < TYPING_EVERY_MS) return;
+      if (typingSent.size > 10_000) typingSent.clear();
+      typingSent.set(peer, Date.now());
+      await reportTyping({ account_id: account.id, peer_id: peer }).catch((e) => log(`аккаунт ${account.label}: «печатает» не передано в API: ${code(e)}`));
+    }, new Raw({ types: [telegram.Api.UpdateUserTyping] }));
     clients.set(account.id, client);
     sentIds.set(account.id, new Set());
   }

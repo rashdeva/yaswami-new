@@ -5,7 +5,8 @@ import type { Conv } from '../api.ts';
 import { keys } from './keys.ts';
 import { useAct } from './useAct.ts';
 
-// ponytail: опрос раз в 4 секунды; когда диалогов станет много — отдавать только новое или перейти на SSE.
+// Опрос раз в 4 с — запасной путь: обычно ленту сразу перечитывает поток /admin/live (useLive.ts).
+// ponytail: лента приходит целиком; когда диалогов станет много — отдавать только новое.
 const POLL_MS = 4000;
 
 let seen: Set<string> | null = null; // сообщения первой загрузки: остальные «Лента» подсвечивает

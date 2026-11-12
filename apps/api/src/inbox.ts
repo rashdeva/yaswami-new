@@ -1,7 +1,7 @@
 // Переписка (docs/agents-inbox.md): запись всего, что люди пишут боту и что бот или мы отвечаем, и операции админки.
 import { and, asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type {
-  AccountCreateInput, AccountMessageInput, AccountUpdateInput, AdminOverview, AgentKey, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message,
+  AccountCreateInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminOverview, AgentKey, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message,
   TgAccount, User,
 } from '@yaswami/core';
 import { AGENTS, collectedPath, collectedWhen } from '@yaswami/core';
@@ -9,6 +9,7 @@ import type { Ctx } from './audit.ts';
 import { audited } from './audit.ts';
 import type { Db } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, conversations, hosts, messages, tgAccounts, users } from './db/schema.ts';
+import { live, USER_TYPING_MS, writing } from './live.ts';
 import { AppError, collectedSlug } from './services.ts';
 import { settings } from './settings.ts';
 import { host, hunter } from './support.ts';
@@ -50,6 +51,8 @@ async function record(db: Db, peer: Peer, message: Pick<Message, 'direction' | '
     })
     .returning();
   await db.insert(messages).values({ conversation_id: conversation!.id, ...message });
+  if (message.direction === 'in') live.stop(conversation!.id, 'user'); // дописал и отправил
+  live.changed();
   return conversation!;
 }
 
@@ -76,6 +79,16 @@ export async function recordAccountMessage(db: Db, input: AccountMessageInput): 
       .where(and(eq(messages.conversation_id, conversation.id), eq(messages.author, 'agent:host'))).limit(1);
     if (started) void draftHostReply(db, conversation).catch(console.error);
   }
+}
+
+/**
+ * Человек набирает сообщение на наш аккаунт — о нём сообщает сборщик. Диалога ещё нет — показывать негде:
+ * первое сообщение заведёт его само.
+ */
+export async function recordAccountTyping(db: Db, input: AccountTypingInput): Promise<void> {
+  const [conversation] = await db.select({ id: conversations.id }).from(conversations)
+    .where(and(eq(conversations.channel, 'account'), eq(conversations.peer_id, input.peer_id)));
+  if (conversation) live.start({ conversation_id: conversation.id, who: 'user', agent: null, text: null }, USER_TYPING_MS);
 }
 
 const CONTACT_AGAIN_DAYS = 7;
@@ -154,7 +167,8 @@ export async function dropHostPitch(db: Db, telegramId: number): Promise<void> {
 /** Организатор ответил на наше сообщение: роль host готовит черновик ответа. Прежний неотправленный черновик заменяется. */
 async function draftHostReply(db: Db, conversation: Conversation): Promise<void> {
   const history = await supportHistory(db, conversation.id);
-  const reply = await host.ask([{ role: 'system', content: await hostFacts(db, conversation.peer_username ?? '') }, ...history]);
+  const facts = await hostFacts(db, conversation.peer_username ?? '');
+  const reply = await writing(conversation.id, 'host', (onText) => host.ask([{ role: 'system', content: facts }, ...history], onText));
   if (!reply) return;
   await db.delete(messages).where(and(eq(messages.conversation_id, conversation.id), eq(messages.status, 'draft')));
   if (reply.text) {
@@ -190,6 +204,7 @@ export async function recordLead(db: Db, lead: LeadInput): Promise<void> {
     conversation_id: conversation.id, direction: 'out', author: 'agent:hunter', text, status: 'draft',
     meta: { reason: `Вопрос в чате ${lead.chat}`, source_url: lead.url, reply_to: { chat: lead.chat, message_id: lead.message_id } },
   });
+  live.changed();
   await alertAdmins(conversation, reason);
 }
 
@@ -234,7 +249,10 @@ export const rejectDraft = (db: Db, ctx: Ctx, id: string) =>
     await db.update(conversations).set({ attention: null }).where(eq(conversations.id, draft.conversation_id));
   });
 
-export const setAttention = (db: Db, id: string, attention: string | null) => db.update(conversations).set({ attention }).where(eq(conversations.id, id));
+export async function setAttention(db: Db, id: string, attention: string | null): Promise<void> {
+  await db.update(conversations).set({ attention }).where(eq(conversations.id, id));
+  live.changed();
+}
 
 /** Запись исходящего: её вызывает `bot.send` на каждое сообщение бота человеку — ответ, уведомление, наше из админки. */
 export const logSent = (db: Db) => async (method: string, body: { chat_id: number; text?: unknown; caption?: unknown }, result: BotResult, author: string) => {
