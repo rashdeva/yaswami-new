@@ -1,4 +1,6 @@
 // Тонкая обёртка над Telegram.WebApp: только то, чем пользуемся. В обычном браузере объекта нет — всё молча пропускается.
+import { parseStart } from './start.ts';
+
 interface Inset { top: number; bottom: number; left: number; right: number }
 interface WebApp {
   initData: string;
@@ -32,12 +34,12 @@ export const inTelegram = !!tg?.initData;
 const isMobile = ['android', 'ios'].includes((tg as { platform?: string } | undefined)?.platform ?? '');
 export const nativeBack = inTelegram && !!tg?.isVersionAtLeast('6.1');
 /** Событие, с которым открыли приложение: t.me/<бот>/<приложение>?startapp=<id>. В браузере — ?startapp=<id>. */
-const rawStart = tg?.initDataUnsafe.start_param ?? new URLSearchParams(location.search).get('startapp') ?? undefined;
-// Хвост `-r<id>` — кто позвал: его дописывает «Позвать друзей» (format.ts, eventLink).
-const startMatch = /^(.*?)(?:-r(\d+))?$/.exec(rawStart ?? '');
-export const startParam = startMatch?.[1] || undefined;
+const start = parseStart(tg?.initDataUnsafe.start_param ?? new URLSearchParams(location.search).get('startapp') ?? undefined);
+export const startParam = start.param;
 /** id пользователя, по чьей ссылке открыли приложение. */
-export const startRef = startMatch?.[2] ? Number(startMatch[2]) : undefined;
+export const startRef = start.ref;
+/** Метка источника из ссылки (`-s<метка>`): откуда человек пришёл — пост, реклама, партнёр. */
+export const startTag = start.tag;
 
 const safely = (fn: () => void) => {
   try {
