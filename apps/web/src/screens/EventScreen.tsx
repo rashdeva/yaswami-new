@@ -76,9 +76,12 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
 
   return (
     <>
-      <div className={`hero${onBack ? '' : ' nb'}`}>
+      {/* Обложка та же, что у событий каталога (CollectedScreen): картинка фоном, знак сервиса, текст поверх. */}
+      <div className={`hero${onBack ? '' : ' nb'}${view.cover_url ? ' cov' : ''}`}>
+        {view.cover_url && <img className="bg" src={view.cover_url} alt="" />}
+        {view.cover_url && <img className="mark" src="/mark.svg" alt="" />}
         {onBack && <button className="back" onClick={onBack}>← Мои события</button>}
-        <img className="emo" src={kindIcon(event.kind)} alt="" />
+        {!view.cover_url && <img className="emo" src={kindIcon(event.kind)} alt="" />}
         <small>{event.status === 'cancelled' ? 'Отменено' : event.status === 'draft' ? 'Черновик' : template.label}</small>
         <h1>{event.name}</h1>
       </div>

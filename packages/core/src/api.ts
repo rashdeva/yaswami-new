@@ -72,6 +72,7 @@ export interface GuestView {
 /** Событие целиком для одного зрителя. Скрытые типы билетов видит организатор и тот, кому тип назначен. */
 export interface EventView {
   event: Event;
+  cover_url: string | null; // в Luma — event.cover_url; у нас картинка хранится отдельно от строки события, поэтому рядом с ним
   ticket_types: TicketType[];
   host: { first_name: string; user_photo_url: string | null };
   guests: GuestView[]; // отказавшихся видит только организатор

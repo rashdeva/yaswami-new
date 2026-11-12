@@ -115,6 +115,32 @@ test('событие создаётся с типом билета по умол
   assert.deepEqual(list.map((e) => [e.my_approval_status, e.is_host]), [['approved', false]]);
 });
 
+test('обложка события: без своей рисует иллюстратор, картинка из ответа роли сохраняется у события', async () => {
+  // PNG 1×1: так Hermes отдаёт нарисованное ChatGPT — data URL вместо MEDIA:<путь>.
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  assert.equal(parseIllustration(`cover: ![image](data:image/png;base64,${png})`).cover_url, `data:image/png;base64,${png}`);
+
+  const draw = illustrator.ask;
+  let task = '';
+  let drawn!: () => void;
+  const done = new Promise<void>((resolve) => (drawn = resolve));
+  settings.illustratorUrl = 'http://illustrator.test';
+  illustrator.ask = async (t) => ((task = t), setTimeout(drawn, 50), { cover_url: `data:image/png;base64,${png}`, video_url: null });
+  try {
+    const host = tma(3, 'Лена');
+    const created = await newEvent(host);
+    assert.equal(created.cover_url, null, 'событие создаётся сразу, обложка — потом');
+    await done;
+    assert.match(task, /^Сделай только обложку/);
+    const view = (await (await call(host, 'GET', `/events/${created.event.id}`)).json()) as EventView;
+    assert.match(view.cover_url ?? '', /\/api\/photos\//);
+    assert.equal((await app.request(new URL(view.cover_url!).pathname.replace(/^\/api/, ''))).status, 200, 'картинка отдаётся');
+  } finally {
+    illustrator.ask = draw;
+    settings.illustratorUrl = '';
+  }
+});
+
 test('билеты задаются при создании: цена — свободный текст, имя по умолчанию, порядок сохраняется', async () => {
   const host = tma(1, 'Миша');
   const one = await newEvent(host, { ticket_types: [{ price_text: 'по донату' }] });

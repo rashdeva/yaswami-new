@@ -1,21 +1,22 @@
-# Роль illustrator: по данным события рисует обложку в фирменном стиле и ролик-историю с неё через Grok Imagine
+# Роль illustrator: по данным события рисует обложку в фирменном стиле (ChatGPT, gpt-image) и ролик-историю с неё (Grok Imagine)
 # (docs/agents-inbox.md).
 # Ей показывают текст посторонних людей (название и описание события), поэтому у неё нет ни нашего MCP, ни памяти,
 # ни терминала: всё, что она может, — нарисовать картинку и ролик и ответить ссылками. Их сохраняет наш API (support.ts).
 _config_version: 53 # формат конфига Hermes 0.23; без метки Hermes считает файл древним и ругается при старте
 model:
-  default: grok-4.6
-  provider: xai-oauth # свой вход: hermes -p illustrator auth add xai-oauth --no-browser
-  base_url: https://api.x.ai/v1
+  default: gpt-6-sol
+  provider: openai-codex # вход по подписке ChatGPT — общий, из основного профиля (agents/README.md)
 
 platform_toolsets:
   # vision — чтобы посмотреть на фото анонса и решить, есть ли на нём что сохранять
   api_server: [skills, vision, image_gen, video_gen]
   cli: [skills, vision, image_gen, video_gen]
 
-# Тот же вход по подписке, что и у модели. Картинка и ролик остаются в хранилище xAI, роль получает публичные ссылки.
+# Картинку рисует ChatGPT по той же подписке, что и модель; файл остаётся в контейнере, а в ответе API Hermes
+# заменяет MEDIA:<путь> на саму картинку (data URL), её сохраняет наш API. Ролик — Grok Imagine по своему входу
+# (hermes -p illustrator auth add xai-oauth --no-browser); кончилась подписка Grok — роликов нет, обложки есть.
 image_gen:
-  provider: xai
+  provider: openai-codex
 video_gen:
   provider: xai
 

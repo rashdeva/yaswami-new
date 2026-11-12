@@ -194,13 +194,15 @@ export const photos = pgTable(
     host_id: uuid().references(() => hosts.id, { onDelete: 'cascade' }),
     // Обложка собранного события, одна на событие: фото анонса или картинка, нарисованная иллюстратором.
     collected_external_id: text().unique().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
+    // Обложка события «Я с вами», одна на событие: нарисованная иллюстратором, когда организатор свою не дал.
+    event_id: text().unique().references(() => events.id, { onDelete: 'cascade' }),
     source: text().notNull(), // откуда взято: адрес аватара или telegram:<канал>/<публикация>; по нему не качаем повторно
     data: bytea().notNull(),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex('photos_host_source_idx').on(t.host_id, t.source),
-    check('photos_owner_check', sql`num_nonnulls(${t.user_id}, ${t.host_id}, ${t.collected_external_id}) = 1`),
+    check('photos_owner_check', sql`num_nonnulls(${t.user_id}, ${t.host_id}, ${t.collected_external_id}, ${t.event_id}) = 1`),
   ],
 );
 
