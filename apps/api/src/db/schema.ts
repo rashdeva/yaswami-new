@@ -284,6 +284,8 @@ export const tgAccounts = pgTable('tg_accounts', {
   phone: text().notNull().unique(),
   status: text().$type<TgAccount['status']>().notNull().default('login_requested'),
   last_error: text(),
+  // Сколько первых сообщений за сутки (диалоги, где человек нам ещё не писал). Ответы не считаются (docs/agents-inbox.md).
+  daily_limit: integer().notNull().default(20),
   created_at: at('created_at').notNull().defaultNow(),
   session: text(),
   login: jsonb().$type<{ secret?: string }>(),

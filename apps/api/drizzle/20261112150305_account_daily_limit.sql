@@ -1,0 +1,1 @@
+ALTER TABLE "tg_accounts" ADD COLUMN "daily_limit" integer DEFAULT 20 NOT NULL;

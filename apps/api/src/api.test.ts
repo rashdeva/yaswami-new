@@ -1051,7 +1051,7 @@ test('аккаунты Telegram: вход по шагам из админки, �
   assert.equal((await call(admin, 'POST', `/admin/accounts/${account.id}/login`, { secret: '12345' })).status, 204);
   const [row] = await db.select().from(tgAccounts);
   assert.deepEqual(row!.login, { secret: '12345' });
-  assert.deepEqual(Object.keys((await inbox()).accounts[0]!).sort(), ['created_at', 'id', 'label', 'last_error', 'phone', 'status']);
+  assert.deepEqual(Object.keys((await inbox()).accounts[0]!).sort(), ['cold_today', 'created_at', 'daily_limit', 'id', 'label', 'last_error', 'phone', 'status']);
 
   // Сборщик сообщает о личном сообщении на аккаунте: без секрета — отказ.
   const report = (body: object, secret?: string) =>
@@ -1106,6 +1106,36 @@ test('аккаунты Telegram: вход по шагам из админки, �
   assert.equal((await call(admin, 'DELETE', `/admin/accounts/${account.id}`)).status, 204);
   assert.equal((await call(admin, 'POST', `/admin/conversations/${id}/messages`, { text: 'Вы тут?' })).status, 409);
   settings.collectorSecret = '';
+});
+
+test('лимит аккаунта: первых сообщений за сутки не больше daily_limit, ответы без лимита', async () => {
+  await db.execute(sql`truncate conversations, tg_accounts cascade`);
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const [account] = await db.insert(tgAccounts).values({ label: 'Аня', phone: '+84900000031', status: 'active' }).returning();
+  assert.equal(account!.daily_limit, 20, 'по умолчанию');
+  assert.equal((await call(admin, 'PATCH', `/admin/accounts/${account!.id}`, { daily_limit: -1 })).status, 400);
+  const patched = (await (await call(admin, 'PATCH', `/admin/accounts/${account!.id}`, { daily_limit: 1 })).json()) as TgAccount;
+  assert.deepEqual([patched.label, patched.daily_limit, patched.cold_today], ['Аня', 1, 0]);
+
+  const dialog = async (peer_id: number) =>
+    (await db.insert(conversations).values({ channel: 'account', account_id: account!.id, peer_id, peer_name: `Человек ${peer_id}` }).returning())[0]!.id;
+  const send = (id: string, text: string) => call(admin, 'POST', `/admin/conversations/${id}/messages`, { text });
+  const [first, second, wrote] = [await dialog(601), await dialog(602), await dialog(603)];
+  await db.insert(messages).values({ conversation_id: wrote, direction: 'in', author: 'user', text: 'Привет, что за сервис?', status: 'received' });
+
+  assert.equal((await send(first, 'Здравствуйте!')).status, 204);
+  const blocked = await send(second, 'Здравствуйте!');
+  assert.deepEqual([blocked.status, ((await blocked.json()) as { error: string }).error], [409, 'daily_limit']);
+  assert.equal((await send(first, 'Напомню о себе')).status, 409, 'повтор без ответа — тоже первое сообщение');
+  assert.equal((await send(wrote, 'Это каталог событий')).status, 204, 'человек написал сам — отвечаем без лимита');
+  assert.equal((await send(wrote, 'И ещё')).status, 204);
+  const [listed] = (await (await call(admin, 'GET', '/admin/inbox')).json() as InboxFeed).accounts;
+  assert.deepEqual([listed!.cold_today, listed!.daily_limit], [1, 1]);
+
+  // Человек ответил на первое сообщение — дальше с ним без лимита.
+  await db.insert(messages).values({ conversation_id: first, direction: 'in', author: 'user', text: 'Да?', status: 'received' });
+  assert.equal((await send(first, 'Рассказываю')).status, 204);
 });
 
 test('отзывы: запрос после события, оценка кнопкой, текст ответом, сводка организатору', async () => {

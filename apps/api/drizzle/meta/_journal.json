@@ -197,6 +197,13 @@
       "when": 1794479533149,
       "tag": "20261112103213_user_features",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794495785162,
+      "tag": "20261112150305_account_daily_limit",
+      "breakpoints": true
     }
   ]
 }

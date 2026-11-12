@@ -131,6 +131,13 @@ export interface TgAccount {
   /** login_requested — ждём, пока сборщик запросит код; login_code / login_password — ждём ввода в админке. */
   status: 'login_requested' | 'login_code' | 'login_password' | 'active' | 'error';
   last_error: string | null;
+  /**
+   * Лимит первых сообщений за 24 часа: в диалоги, где человек нам ещё не писал. Ответы тем, кто написал сам, не
+   * ограничены — Telegram ограничивает аккаунты именно за холодные сообщения. В Luma такого нет.
+   */
+  daily_limit: number;
+  /** Сколько первых сообщений ушло за последние 24 часа (с очередью). */
+  cold_today: number;
   created_at: Date;
 }
 
@@ -138,7 +145,7 @@ export const AccountCreateInput = z.object({ label: z.string().trim().min(1).max
 export type AccountCreateInput = z.infer<typeof AccountCreateInput>;
 
 /** Подпись аккаунта в админке; номер и вход не меняются. */
-export const AccountUpdateInput = AccountCreateInput.pick({ label: true });
+export const AccountUpdateInput = AccountCreateInput.pick({ label: true }).extend({ daily_limit: z.number().int().min(0).max(200) }).partial();
 export type AccountUpdateInput = z.infer<typeof AccountUpdateInput>;
 
 /** Шаг входа: код из Telegram или пароль двухэтапной проверки — что именно, определяет `status` аккаунта. */

@@ -22,7 +22,7 @@ const feed: Wire<InboxFeed> = {
     msg('m2', 'gone'),
     msg('m1', 'a'),
   ],
-  accounts: [{ id: 'acc', label: 'Рабочий', phone: '+100', status: 'active', last_error: null, created_at: '2026-01-01T00:00:00Z' }],
+  accounts: [{ id: 'acc', label: 'Рабочий', phone: '+100', status: 'active', last_error: null, daily_limit: 20, cold_today: 0, created_at: '2026-01-01T00:00:00Z' }],
 };
 
 test('автор сообщения: агент, бот, мы', () => {

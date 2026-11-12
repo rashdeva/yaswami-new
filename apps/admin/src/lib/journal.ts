@@ -26,7 +26,7 @@ export const ACTIONS: Record<string, string> = {
   admin_sources_create: 'Добавлен источник',
   admin_sources_update: 'Включён или выключен источник',
   admin_accounts_create: 'Добавлен аккаунт Telegram',
-  admin_accounts_update: 'Переименован аккаунт',
+  admin_accounts_update: 'Изменён аккаунт',
   admin_accounts_delete: 'Удалён аккаунт Telegram',
   admin_accounts_login: 'Шаг входа в аккаунт',
   admin_conversations_update: 'Изменён диалог',
