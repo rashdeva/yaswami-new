@@ -256,3 +256,22 @@ button.cover { width: 100%; padding: 0; border: 0; font: inherit; text-align: le
 .drawer .who { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 17px; }
 .drawer .who .ava { width: 48px; height: 48px; object-fit: cover; border-radius: 50%; }
 .drawer .cta { margin-top: 12px; }
+
+/* лента списком: время — первая колонка, сегодняшний день выделен цветом */
+.feed { margin: 0 16px; }
+.ev { display: grid; grid-template-columns: 48px minmax(0, 1fr) 56px; gap: 12px; align-items: start; padding: 12px 0; border: 0; border-top: .5px solid var(--line); background: none; width: 100%; text-align: left; color: inherit; text-decoration: none; cursor: pointer; transition: opacity .15s; }
+.ev:first-child { border-top: 0; }
+.ev:active { opacity: .6; }
+.ev time { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ev b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-weight: 600; }
+.ev small { display: block; margin-top: 2px; color: var(--hint); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev .th { width: 56px; height: 56px; border-radius: 14px; object-fit: cover; }
+.ev .th.ico { object-fit: contain; padding: 6px; background: color-mix(in srgb, var(--a) 12%, transparent); }
+h2.today { color: var(--btn); }
+/* Ряд чипов прокручивается и режет всё, что вылезает за его край: размытие стекла и длинная тень --shadow
+   рисовали под рядом светлую полосу. Здесь чип без размытия и с короткой тенью. */
+.chips .chip { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--mat); box-shadow: inset 0 1px 0 var(--shine), 0 1px 3px rgba(0, 0, 0, .08); }
+.chips .chip[aria-pressed='true'] { background: var(--text); }
+/* шапка ленты: заголовок и город в одну строку — меньше места до событий */
+.top .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.top .head p { margin: 0; }

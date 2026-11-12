@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import type { CollectedEventItem, Event } from '@yaswami/core';
-import { collectedDay, collectedDayKey, collectedIsPast, collectedTime, topicIcon } from '@yaswami/core';
+import { collectedDayKey, collectedIsPast, collectedTime, topicIcon } from '@yaswami/core';
 import type { MyCollectedItem } from '@yaswami/core';
 import type { EventListData } from '../api.ts';
-import { kindIcon, wallParts } from '../format.ts';
-import { Cover } from '../components/Cover.tsx';
+import { dayLabel, kindIcon, wallParts } from '../format.ts';
+import { EventRow } from '../components/EventRow.tsx';
 
 const MY_STATUS = { approved: 'вы идёте', maybe: 'вы думаете', declined: 'вы не идёте', waitlist: 'вы в листе ожидания' } as const;
 
@@ -55,8 +55,8 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
 
   // Как в витрине: по дням, ближайшие первыми. Прошедшие — отдельным блоком в конце.
   const grid = (items: Row[]) => (
-    <div className="covers">
-      {items.map((r) => <Cover key={r.key} cover_url={r.cover} icon={r.icon} meta={[collectedTime(r.wall), r.note].filter(Boolean).join(' · ')} title={r.title} onOpen={r.open} />)}
+    <div className="feed">
+      {items.map((r) => <EventRow key={r.key} time={collectedTime(r.wall)} title={r.title} sub={r.note} cover_url={r.cover} icon={r.icon} onOpen={r.open} />)}
     </div>
   );
   const days: Row[][] = [];
@@ -70,7 +70,10 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
     <>
       <div className="top">{tabs}<h1>Мои события</h1></div>
       {lead}
-      {days.map((list) => <section key={collectedDayKey(list[0]!.wall)}><h2>{collectedDay(list[0]!.wall)}</h2>{grid(list)}</section>)}
+      {days.map((list) => {
+        const label = dayLabel(list[0]!.wall);
+        return <section key={collectedDayKey(list[0]!.wall)}><h2 className={label === 'Сегодня' ? 'cap today' : 'cap'}>{label}</h2>{grid(list)}</section>;
+      })}
       {past.length > 0 && <section><h2>Прошедшие</h2>{grid(past)}</section>}
       <div className="main"><div><button className="cta" onClick={() => { onNew(); }}>Новое событие</button></div></div>
     </>
