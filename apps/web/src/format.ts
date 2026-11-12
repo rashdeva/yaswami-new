@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { AppConfig, Event } from '@yaswami/core';
-import { collectedPath, TEMPLATES } from '@yaswami/core';
+import { collectedDay, collectedDayKey, collectedPath, TEMPLATES } from '@yaswami/core';
 
 /** «пт, 20 ноября, 19:00» — во времени самого события, а не устройства. */
 export function when(startAt: string, timezone: string): string {
@@ -59,4 +59,10 @@ export function fromWall(date: string, time: string, timeZone: string): string {
   const [d, t] = wallParts(new Date(guess).toISOString(), timeZone);
   // ponytail: поправка по смещению в момент guess; в сам час перевода часов может промахнуться на час
   return new Date(guess - (Date.parse(`${d}T${t}:00Z`) - guess)).toISOString();
+}
+
+/** Заголовок дня в ленте: «Сегодня», «Завтра» или «пятница, 14 ноября». Сегодня — по дате устройства. */
+export function dayLabel(wall: string): string {
+  const key = collectedDayKey(wall);
+  return key === localDate() ? 'Сегодня' : key === localDate(1) ? 'Завтра' : collectedDay(wall);
 }

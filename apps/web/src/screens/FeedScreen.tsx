@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
-import { collectedDay, collectedDayKey, collectedPath, collectedTime, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
+import { collectedDayKey, collectedPath, collectedTime, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
 import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
-import { Cover } from '../components/Cover.tsx';
+import { EventRow } from '../components/EventRow.tsx';
+import { dayLabel } from '../format.ts';
 
 interface Props {
   city: string;
@@ -40,8 +41,10 @@ export function FeedScreen({ city, tabs, lead, onOpen }: Props) {
     <>
       <div className="top">
         {tabs}
-        <h1>События</h1>
-        <p>📍 {city}</p>
+        <div className="head">
+          <h1>События</h1>
+          <p>📍 {city}</p>
+        </div>
       </div>
       {(topics.length > 1 || items?.some((e) => e.popular)) && (
         <div className="chips">
@@ -60,26 +63,29 @@ export function FeedScreen({ city, tabs, lead, onOpen }: Props) {
       {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}
       {!items && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
       {items?.length === 0 && <div className="state"><b>🌿</b><p>Пока ничего не запланировано. Загляните позже.</p></div>}
-      {days.map((list) => (
-        <section key={collectedDayKey(list[0]!.starts_at)}>
-          <h2>{collectedDay(list[0]!.starts_at)}</h2>
-          <div className="covers">
-            {list.map((e) => (
-              <Cover
-                key={e.id}
-                href={collectedPath(e.id)}
-                cover_url={e.cover_url}
-                icon={topicIcon(e.topic)}
-                popular={e.popular}
-                meta={[collectedTime(e.starts_at), e.price].filter(Boolean).join(' · ') || 'подробности у организатора'}
-                title={e.title}
-                extra={e.beginner_friendly ? 'можно без опыта' : undefined}
-                onOpen={() => onOpen(e)}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+      {days.map((list) => {
+        const label = dayLabel(list[0]!.starts_at);
+        return (
+          <section key={collectedDayKey(list[0]!.starts_at)}>
+            <h2 className={label === 'Сегодня' ? 'cap today' : 'cap'}>{label}</h2>
+            <div className="feed">
+              {list.map((e) => (
+                <EventRow
+                  key={e.id}
+                  href={collectedPath(e.id)}
+                  time={collectedTime(e.starts_at)}
+                  title={e.title}
+                  sub={[e.place, e.price, e.beginner_friendly && 'можно без опыта'].filter(Boolean).join(' · ')}
+                  cover_url={e.cover_url}
+                  icon={topicIcon(e.topic)}
+                  popular={e.popular}
+                  onOpen={() => onOpen(e)}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </>
   );
 }
