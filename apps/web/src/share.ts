@@ -1,4 +1,5 @@
 import { TEMPLATES } from '@yaswami/core';
+import { track } from './analytics.ts';
 import type { EventData } from './api.ts';
 import { eventLink, when } from './format.ts';
 import { inTelegram, tg } from './tg.ts';
@@ -13,6 +14,7 @@ ${when(event.start_at, event.timezone)}`, toast);
 export function shareLink(link: string, text: string, toast: (text: string) => void) {
   // ponytail: пока в чат уходит ссылка на событие. Сообщение с кнопками ответа прямо в чате —
   // когда у бота появится шаринг (savePreparedInlineMessage + shareMessage).
+  track('link_shared', { link });
   if (inTelegram) tg!.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
   else if (navigator.share) void navigator.share({ text, url: link }).catch(() => {});
   else navigator.clipboard.writeText(link).then(() => toast('Ссылка скопирована'), () => toast('Не получилось скопировать'));

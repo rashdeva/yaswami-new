@@ -2,7 +2,7 @@
 import { Outlet, useLocation, useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { createContext, useContext, useState } from 'react';
 import type { CollectedEventItem, Event } from '@yaswami/core';
-import { loginUrl } from './api.ts';
+import { startLogin } from './api.ts';
 import { tint } from './format.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
 import { useSession } from './hooks/useSession.ts';
@@ -73,8 +73,8 @@ export function AppTabs({ current }: { current: 'feed' | 'mine' }) {
       me={me ?? null}
       canLogin={canLogin}
       onFeed={() => void navigate({ to: '/' })}
-      onMine={() => (authed ? void navigate({ to: hasEvents ? '/my' : '/new' }) : void (location.href = loginUrl('/my')))}
-      onLogin={() => void (location.href = loginUrl(location.pathname))}
+      onMine={() => (authed ? void navigate({ to: hasEvents ? '/my' : '/new' }) : startLogin('/my'))}
+      onLogin={() => startLogin(location.pathname)}
       onLogout={() => void logout().catch((e: Error) => toast(e.message))}
     />
   );

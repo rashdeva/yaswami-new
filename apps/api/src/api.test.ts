@@ -277,7 +277,7 @@ test('собранные события: витрина без входа, за�
   const guest = tma(20, 'Оля');
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
-  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: 20, first_name: 'Оля' }, collected_signups: ['danangevent-1-0'], claimable: [] });
+  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: 20, first_name: 'Оля', username: 'u20' }, collected_signups: ['danangevent-1-0'], claimable: [] });
 
   // «Мои события»: куда записывался и куда только заходил
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-2-0/visit', {})).status, 204);

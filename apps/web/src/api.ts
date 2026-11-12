@@ -1,5 +1,6 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
 import type { AppConfig, CollectedEventItem, EventCreateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, RsvpInput, VisitInput, Wire } from '@yaswami/core';
+import { track } from './analytics.ts';
 import { inTelegram, tg } from './tg.ts';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -9,8 +10,11 @@ const authorization = inTelegram ? `tma ${tg!.initData}` : devToken ? `Bearer ${
 /** Вход известен сразу: открыты в Telegram или задан токен разработчика. Иначе — только cookie сайта, если она есть. */
 export const hasCredentials = authorization !== null;
 
-/** Адрес входа на сайте через Telegram; после входа человек вернётся на `back`. */
-export const loginUrl = (back: string) => `${BASE}/auth/telegram/login?return=${encodeURIComponent(back)}`;
+/** Уводит на вход через Telegram; после входа человек вернётся на `back`. */
+export function startLogin(back: string) {
+  track('login_started', { back });
+  location.href = `${BASE}/auth/telegram/login?return=${encodeURIComponent(back)}`;
+}
 
 const MESSAGES: Record<string, string> = {
   full: 'Свободных мест больше нет',

@@ -2,9 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef } from 'react';
 import type { CollectedEventItem, Me } from '@yaswami/core';
+import { track } from '../analytics.ts';
 import { api } from '../api.ts';
 import { served } from '../served.ts';
 import { keys } from './keys.ts';
+import { useViewed } from './useViewed.ts';
 import type { MyEvents } from './useMyEvents.ts';
 
 /** Собранное событие: карточка, отметка о заходе и запись («Записаться»). `authed` — человек вошёл: заход и запись можно зафиксировать. */
@@ -24,10 +26,12 @@ export function useCollectedEvent(id: string, authed: boolean, toast: (text: str
 
   // Заход вошедшего человека: по ним организатор потом увидит свою аудиторию. Анонимных не считаем.
   useEffect(() => { if (authed) void api.visitCollected(id).catch(() => {}); }, [id, authed]);
+  useViewed('collected_event_viewed', id);
 
   const signUp = useMutation({
     mutationFn: () => api.signUp(id),
     onSuccess: () => {
+      track('collected_signed_up', { collected_event_id: id });
       client.setQueryData<Me | null>(keys.me, (m) => (m && !m.collected_signups.includes(id) ? { ...m, collected_signups: [...m.collected_signups, id] } : m));
       void client.invalidateQueries({ queryKey: keys.collectedEvent(id) });
       void client.invalidateQueries({ queryKey: keys.mine });

@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { track } from '../analytics.ts';
+import { useViewed } from '../hooks/useViewed.ts';
 import { useEffect, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
 import { collectedBadges, collectedDayKey, collectedPath, collectedTime, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
@@ -20,7 +22,12 @@ const POPULAR = '🔥';
 /** Витрина: все предстоящие события города. Открыта без входа. */
 export function FeedScreen({ city, tabs, lead, onOpen }: Props) {
   const { items, failed } = useCollectedFeed();
-  const [topic, setTopic] = useState<string | null>(null);
+  const [topic, pickTopic] = useState<string | null>(null);
+  const setTopic = (next: string | null) => {
+    if (next) track('feed_filtered', { topic: next });
+    pickTopic(next);
+  };
+  useViewed('feed_viewed');
 
   useEffect(() => {
     document.title = `События в городе ${city} — Я с вами`;

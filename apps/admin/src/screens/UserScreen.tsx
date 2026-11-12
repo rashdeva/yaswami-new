@@ -6,7 +6,7 @@ import { KeyRoundIcon, Trash2Icon } from 'lucide-react';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
-import { EntityLink, TelegramLink } from '@/components/EntityLink';
+import { EntityLink, PostHogLink, TelegramLink } from '@/components/EntityLink';
 import { SaveBar, saveDirty, TextField } from '@/components/Fields';
 import { History } from '@/components/History';
 import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
@@ -33,7 +33,7 @@ export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => voi
   return (
     <Page
       title={u.first_name}
-      description={<>{u.username && <><TelegramLink username={u.username} /> · </>}Telegram id {u.id}</>}
+      description={<>{u.username && <><TelegramLink username={u.username} /> · </>}Telegram id {u.id} · <PostHogLink userId={u.id} /></>}
       actions={
         <>
           <Confirm
