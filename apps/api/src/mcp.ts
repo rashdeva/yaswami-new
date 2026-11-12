@@ -308,6 +308,11 @@ function buildServer(db: Db, actor: User) {
       description: `Remove an event from the catalogue completely, with its cover and sign-ups. A repeated announcement creates it again — to keep it out, set status rejected instead. ${ONLY_TEAM}`,
     }, (a) => admin.deleteCollectedEvent(db, ctx, a.collected_event_id));
 
+    tool('admin_collected_events_redo', {
+      title: 'Redo cover and video of a catalog event', destructive: true, shape: { collected_event_id },
+      description: `Throw away the current cover and video and have them made again: the announcement photo comes back with the next collector pass, the illustrator redraws in about 20-30 minutes (this costs money). Undo works only until the queue picks the event up. ${ONLY_TEAM} Errors: not_found.`,
+    }, async (a) => { await admin.redoCollectedCover(db, ctx, a.collected_event_id); });
+
     // Обложки и ролики: через эти инструменты работает роль-иллюстратор (agents/).
     tool('admin_covers_list', {
       title: 'Events waiting for a cover check', readOnly: true, shape: {},

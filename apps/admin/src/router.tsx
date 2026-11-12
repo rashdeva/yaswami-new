@@ -122,7 +122,7 @@ const catalog = createRoute({
   path: '/catalog',
   component: CatalogPage,
   validateSearch: (s: Record<string, unknown>): { status?: CatalogFilter; q?: string } => ({
-    status: oneOf<CatalogFilter>(s.status, [...COLLECTED_STATUSES, 'covers'] as (CollectedStatus | 'covers')[]),
+    status: oneOf<CatalogFilter>(s.status, [...COLLECTED_STATUSES, 'covers', 'queue'] as (CollectedStatus | 'covers' | 'queue')[]),
     q: str(s.q),
   }),
 });

@@ -1,11 +1,11 @@
 // Тесты на настоящем Postgres (нужен `pnpm db:up`). Работают в отдельной базе yaswami_test, рабочую не трогают.
 import assert from 'node:assert/strict';
 import { createHmac, generateKeyPairSync, sign } from 'node:crypto';
-import { after, before, test } from 'node:test';
+import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminAction, AdminActionList, AdminGuest, AdminOverview, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
+import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
 import { bot } from './telegram.ts';
@@ -754,9 +754,31 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual([await inFeed(), (await app.request('/collected-events/danangevent-7-0')).status], [false, 404]);
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-7-0' }), { error: 'not_approved' });
   assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/collected-events')).status, 403);
-  // Лимит выбран — одобренное выходит как есть, а не ждёт сутки.
-  assert.equal(((await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved' })).json()) as { status: string }).status, 'published');
+  // Правка без решения: событие остаётся ждать, поля и колонки для выборок меняются, контакт — как у сборщика.
+  assert.equal((await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { title: '' })).status, 400);
+  const later = new Date(starts_at.getTime() + 3600_000).toISOString().replace('Z', '+00:00');
+  const edited = (await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { title: 'Чайная церемония', place: null, starts_at: later, telegram_username: '@TeaMaster' })).json()) as AdminCollectedEvent;
+  assert.deepEqual([edited.status, edited.title, edited.telegram_username, edited.description, edited.starts_at], ['pending', 'Чайная церемония', 'teamaster', '', later]);
+  const [stored] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
+  assert.deepEqual([stored!.telegram_username, stored!.starts_at.toISOString()], ['teamaster', new Date(later).toISOString()]);
+  // Лимит выбран — одобренное выходит как есть, а не ждёт сутки. Правка и решение — одним запросом.
+  assert.equal(((await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved', price: '200 000 ₫' })).json()) as AdminCollectedEvent).status, 'published');
   assert.equal(await inFeed(), true);
+  assert.equal(((await (await app.request('/collected-events/danangevent-7-0')).json()) as CollectedEventItem).price, '200 000 ₫');
+  // Перерисовать: обложка удалена, обработка сброшена; очередь возьмёт событие только через 20 минут.
+  await db.update(collectedEvents).set({ video_url: 'https://files-cdn.x.ai/a/old.mp4', video_tries: 1 }).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
+  await db.insert(photos).values({ collected_external_id: 'telegram:danangevent/7#0', source: 'x', data: Buffer.from([0xff, 0xd8]) });
+  assert.equal((await call(admin, 'POST', '/admin/collected-events/danangevent-7-0/redo')).status, 204);
+  const redone = (await adminEvents()).find((e) => e.id === 'danangevent-7-0') as unknown as CollectedEventItem;
+  assert.deepEqual([redone.video_url, redone.cover_url], [null, null]);
+  assert.equal(await requestNextVideo(db), null, 'до возврата фото анонса очередь его не берёт');
+  // Пока очередь не взяла событие, перерисовку можно отменить: обложка и ролик возвращаются.
+  const redoAction = (await lastAction())!;
+  assert.deepEqual([redoAction.action, redoAction.undoable], ['admin_collected_events_redo', true]);
+  assert.equal((await call(admin, 'POST', `/admin/actions/${redoAction.id}/undo`)).status, 201);
+  const restored = (await adminEvents()).find((e) => e.id === 'danangevent-7-0') as unknown as CollectedEventItem;
+  assert.equal(restored.video_url, 'https://files-cdn.x.ai/a/old.mp4');
+  assert.ok(restored.cover_url);
   // Снять с публикации и удалить.
   assert.equal((await tool('admin_collected_events_update', { collected_event_id: 'danangevent-7-0', status: 'rejected' })).status, 'rejected');
   assert.equal(await inFeed(), false);
@@ -1082,7 +1104,14 @@ test('организаторы: запись на событие станови�
 
   // Отправляем: сообщение уходит в личку (без адреса в чате), диалог остаётся за ролью.
   const [account] = await db.insert(tgAccounts).values({ label: 'Аня', phone: '+84900000019', status: 'active' }).returning();
-  assert.equal((await call(admin, 'POST', `/admin/messages/${draft.id}/send`, {})).status, 204);
+  // Часы API на секунду впереди часов базы (в проде это разные машины): время сообщений всё равно ставит база,
+  // иначе ответ организатора ниже окажется «раньше» нашего сообщения.
+  mock.timers.enable({ apis: ['Date'], now: Date.now() + 1000 });
+  try {
+    assert.equal((await call(admin, 'POST', `/admin/messages/${draft.id}/send`, {})).status, 204);
+  } finally {
+    mock.timers.reset();
+  }
   feed = await inbox();
   assert.deepEqual([feed.messages[0]!.status, feed.messages[0]!.meta?.reply_to, feed.conversations[0]!.mode, feed.conversations[0]!.account_id], ['queued', undefined, 'agent', account!.id]);
   assert.equal(feed.conversations[0]!.stage, 'contacted');
@@ -1127,6 +1156,19 @@ test('организаторы: запись на событие станови�
   await call(admin, 'PATCH', `/admin/conversations/${feed.conversations[0]!.id}`, { mode: 'human' });
   host.ask = async () => assert.fail('диалог ведём мы');
   await report('Вы тут?');
+
+  // Организатор вошёл в сервис — агент своего добился: неотправленное предложение пропадает, новых не будет.
+  await db.execute(sql`truncate conversations cascade`);
+  host.ask = async () => parseSupportReply('Марина, здравствуйте. На вашу йогу записался один человек.');
+  await recordHostLead(db, external_id);
+  assert.equal((await inbox()).messages.filter((m) => m.status === 'draft').length, 1);
+  assert.equal((await call(tma(9300, 'Марина'), 'GET', '/me')).status, 200); // вход организатора
+  feed = await inbox();
+  assert.deepEqual([feed.messages.filter((m) => m.status === 'draft').length, feed.conversations[0]!.attention], [0, null]);
+  await db.execute(sql`truncate conversations cascade`);
+  await recordHostLead(db, external_id);
+  assert.equal((await inbox()).conversations.length, 0, 'вошедшему не пишем');
+  await db.update(hosts).set({ user_id: null }).where(eq(hosts.telegram_id, 9300));
 
   // Событие уже подтверждено организатором — писать незачем.
   await db.execute(sql`truncate conversations cascade`);
@@ -1226,6 +1268,7 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_collected_events_get: 'GET /admin/collected-events/:id',
   admin_collected_events_update: 'PATCH /admin/collected-events/:id',
   admin_collected_events_delete: 'DELETE /admin/collected-events/:id',
+  admin_collected_events_redo: 'POST /admin/collected-events/:id/redo',
   admin_covers_list: 'GET /admin/covers',
   admin_covers_set: 'POST /admin/covers/:id',
   admin_videos_request: 'POST /admin/videos/:id',
@@ -1344,6 +1387,7 @@ const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
   admin_events_feedback_delete: (w) => ({ args: { event_id: w.eventId, user_id: w.guestId }, params: { id: w.eventId, user_id: w.guestId }, entity_id: w.eventId }),
   admin_collected_events_update: (w) => ({ args: { collected_event_id: w.slug, title: 'Баня на углях' }, params: { id: w.slug }, body: { title: 'Баня на углях' }, entity_id: w.slug }),
   admin_collected_events_delete: (w) => ({ args: { collected_event_id: w.slug }, params: { id: w.slug }, entity_id: w.slug }),
+  admin_collected_events_redo: (w) => ({ args: { collected_event_id: w.slug }, params: { id: w.slug }, entity_id: w.slug }),
   admin_covers_set: (w) => ({ args: { id: w.slug }, params: { id: w.slug }, body: {}, entity_id: w.slug }),
   admin_videos_request: (w) => ({ args: { id: w.slug }, params: { id: w.slug }, entity_id: w.slug }),
   admin_hosts_update: (w) => ({ args: { host_id: w.profileId, name: 'Игорь' }, params: { id: w.profileId }, body: { name: 'Игорь' }, entity_id: w.profileId }),

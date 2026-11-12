@@ -1,7 +1,7 @@
 // Карточка собранного события: модерация, поля анонса, обложка, ролик, записавшиеся, история.
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { AdminCollectedEventView, CollectedUpdateInput as Input, Wire } from '@yaswami/core';
-import { CollectedUpdateInput, collectedPath, OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
+import { CollectedUpdateInput, collectedPath } from '@yaswami/core';
 import { ExternalLinkIcon, Trash2Icon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -15,19 +15,19 @@ import { Button } from '@/components/ui/button';
 import { FieldGroup, FieldLegend, FieldSet } from '@/components/ui/field';
 import { Input as TextInput } from '@/components/ui/input';
 import { useCatalogActions, useCollectedEvent } from '@/hooks/useCollectedEvents';
-import { COLLECTED_LABELS, contactOf } from '@/lib/catalog';
+import { COLLECTED_LABELS, topicOptions } from '@/lib/catalog';
 import { offsetOf } from '@/lib/form';
 
-/** Значения формы из события. Контакты для записи сервер не отдаёт — видно только то, что в ссылке «Записаться». */
+/** Значения формы из события. */
 const values = (e: Wire<AdminCollectedEventView>): Input => ({
   title: e.title, description: e.description, starts_at: e.starts_at, ends_at: e.ends_at, place: e.place, address: e.address, price: e.price, tags: e.tags,
-  ...contactOf(e), topic: e.topic, what_happens: e.what_happens ?? [], for_whom: e.for_whom ?? null, beginner_friendly: e.beginner_friendly ?? null,
+  telegram_username: e.telegram_username, whatsapp_phone: e.whatsapp_phone, url: e.url, topic: e.topic, what_happens: e.what_happens ?? [], for_whom: e.for_whom ?? null, beginner_friendly: e.beginner_friendly ?? null,
   takeaway: e.takeaway ?? null,
 });
 
 export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: () => void }) {
   const { data: e, error } = useCollectedEvent(id);
-  const { update, remove, setCover, requestVideo } = useCatalogActions();
+  const { update, remove, setCover, requestVideo, redo } = useCatalogActions();
   const initial = useMemo(() => e && values(e), [e]);
   const form = useForm({ resolver: zodResolver(CollectedUpdateInput), values: initial, resetOptions: { keepDirtyValues: true } });
   const [imageUrl, setImageUrl] = useState('');
@@ -35,7 +35,6 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
   if (error) return <Page title="Событие каталога"><Failed error={error} /></Page>;
   if (!e) return <Page title="Событие каталога"><Loading rows={8} /></Page>;
   const zone = offsetOf(e.starts_at);
-  const topics = [...new Set([...Object.keys(TOPIC_GUIDES), OTHER_TOPIC, ...(e.topic ? [e.topic] : [])])].map((t) => [t, t] as const);
   const moderate = (status: 'approved' | 'rejected') => update({ id, input: { status } });
 
   return (
@@ -73,13 +72,12 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
               <TextField form={form} name="place" label="Место" nullable />
               <TextField form={form} name="address" label="Адрес" nullable />
               <TextField form={form} name="price" label="Цена" nullable />
-              <SelectField form={form} name="topic" label="Тема" options={topics} />
+              <SelectField form={form} name="topic" label="Тема" options={topicOptions(e.topic)} />
             </div>
             <AreaField form={form} name="description" label="Описание" rows={6} />
             <ListField form={form} name="tags" label="Теги" by="comma" hint="Через запятую" />
             <FieldSet>
               <FieldLegend variant="label">Запись</FieldLegend>
-              <p className="text-xs text-muted-foreground">Сервер не отдаёт контакты — показано то, что видно в ссылке «Записаться». Пустое поле не трогается, пока его не заполнить.</p>
               <div className="grid gap-4 md:grid-cols-3">
                 <TextField form={form} name="telegram_username" label="Telegram организатора" nullable placeholder="username без @" />
                 <TextField form={form} name="whatsapp_phone" label="WhatsApp" nullable />
@@ -119,7 +117,18 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
 
         <Section title="Ролик">
           {e.video_url
-            ? <video className="aspect-9/16 w-40 rounded-lg bg-muted" src={e.video_url} controls preload="metadata" />
+            ? (
+              <div className="flex flex-col items-start gap-2 text-sm">
+                <video className="aspect-9/16 w-40 rounded-lg bg-muted" src={e.video_url} controls preload="metadata" />
+                <Confirm
+                  title="Перерисовать обложку и ролик?" action="Перерисовать"
+                  description="Нарисованная обложка и ролик удалятся, иллюстратор сделает новые минут через 20–30 — это стоит денег. Пока он не взялся, действие можно отменить в «Журнале»."
+                  onConfirm={() => redo(id)}
+                >
+                  <Button size="sm" variant="outline">Перерисовать обложку и ролик</Button>
+                </Confirm>
+              </div>
+            )
             : (
               <div className="flex flex-col items-start gap-2 text-sm">
                 <p className="text-muted-foreground">Ролика нет. Его делает иллюстратор после одобрения.</p>

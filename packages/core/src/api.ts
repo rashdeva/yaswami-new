@@ -142,19 +142,18 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
 export const COLLECTED_STATUSES = ['pending', 'approved', 'published', 'rejected'] as const;
 export type CollectedStatus = (typeof COLLECTED_STATUSES)[number];
 
-/** Собранное событие в админке модерации: любого статуса, с источником. */
-export interface AdminCollectedEvent extends CollectedEventItem {
+/** Собранное событие в админке модерации: любого статуса, с источником и контактами, которые витрина прячет. */
+export interface AdminCollectedEvent extends CollectedEventItem, Pick<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {
   status: CollectedStatus;
   channel: string; // источник: канал или группа, откуда анонс
+  source_text: string | null; // текст публикации-источника: с ним модератор сверяет, что извлёк ИИ
 }
 
 /** Отбор собранных событий в модерации: без статуса — все. */
 export const CollectedListInput = z.object({ status: z.enum(COLLECTED_STATUSES).optional().describe('Only this status; pending — waiting for a decision') });
 export type CollectedListInput = z.infer<typeof CollectedListInput>;
 
-/** Решение модератора: одобрить (дальше обработка и публикация) или отклонить (снять с публикации). */
-export const CollectedModerateInput = z.object({ status: z.enum(['approved', 'rejected']) });
-export type CollectedModerateInput = z.infer<typeof CollectedModerateInput>;
+// Правка и решение модератора — CollectedUpdateInput в admin.ts.
 
 /** Собранное событие в «Моих событиях»: куда человек заходил или нажимал «Записаться». */
 export interface MyCollectedItem {

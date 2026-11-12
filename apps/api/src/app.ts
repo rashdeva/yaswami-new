@@ -199,6 +199,10 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/admin/collected-events', async (c) => c.json(await s.listCollectedForAdmin(db, CollectedListInput.parse(c.req.query()).status)))
     .get('/admin/collected-events/:id', async (c) => c.json(await admin.getCollectedEventSignups(db, c.req.param('id'))))
     .patch('/admin/collected-events/:id', json(CollectedUpdateInput), async (c) => c.json(await admin.updateCollectedEvent(db, ctx(c), c.req.param('id'), c.req.valid('json'))))
+    .post('/admin/collected-events/:id/redo', async (c) => {
+      await admin.redoCollectedCover(db, ctx(c), c.req.param('id'));
+      return c.body(null, 204);
+    })
     .delete('/admin/collected-events/:id', async (c) => {
       await admin.deleteCollectedEvent(db, ctx(c), c.req.param('id'));
       return c.body(null, 204);

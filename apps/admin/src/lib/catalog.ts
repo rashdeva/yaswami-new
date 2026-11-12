@@ -1,5 +1,6 @@
 // Чистые функции каталога: подписи статусов, контакт для записи из ссылки «Записаться», события организатора.
 import type { AdminCollectedEvent, CollectedStatus, Guest } from '@yaswami/core';
+import { OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
 
 export const COLLECTED_LABELS: Record<CollectedStatus, string> = {
   pending: 'Ждёт решения',
@@ -35,3 +36,8 @@ export const matchCollected = (e: Pick<AdminCollectedEvent, 'title' | 'place' | 
   const q = query.trim().toLowerCase();
   return !q || [e.title, e.place, e.channel].some((s) => s?.toLowerCase().includes(q));
 };
+
+/** Темы для выбора: справочник и «другое»; тема события, которой нет в справочнике, тоже остаётся в списке. */
+export const topicOptions = (current?: string | null) =>
+  [...new Set([...Object.keys(TOPIC_GUIDES), OTHER_TOPIC, ...(current ? [current] : [])])]
+    .map((t) => [t, TOPIC_GUIDES[t] ? `${TOPIC_GUIDES[t].emoji} ${t}` : t] as const);

@@ -133,6 +133,7 @@ export const api = {
   collectedEvent: (event: string) => request<Wire<AdminCollectedEventView>>('GET', `/admin/collected-events/${id(event)}`),
   collectedUpdate: (event: string, input: CollectedUpdateInput) => request<AdminCollectedEvent>('PATCH', `/admin/collected-events/${id(event)}`, input),
   collectedDelete: (event: string) => request<void>('DELETE', `/admin/collected-events/${id(event)}`),
+  collectedRedo: (event: string) => request<void>('POST', `/admin/collected-events/${id(event)}/redo`),
   covers: () => request<Cover[]>('GET', '/admin/covers'),
   coverSet: (event: string, image_url?: string) => request<{ cover_url: string | null }>('POST', `/admin/covers/${id(event)}`, image_url ? { image_url } : {}),
   videoRequest: (event: string) => request<unknown>('POST', `/admin/videos/${id(event)}`),

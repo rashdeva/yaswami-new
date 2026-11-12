@@ -267,7 +267,11 @@ export function startVideoLoop(db: Db, everyMs = 15 * 60_000): void {
   void tick();
 }
 
-const toAdminItem = (r: CollectedRow): AdminCollectedEvent => ({ ...toCollectedItem(r), status: r.status, channel: r.channel });
+/** Собранное событие для команды: с источником, его текстом и контактами, которые витрина прячет. */
+export const toAdminItem = (r: CollectedRow): AdminCollectedEvent => ({
+  ...toCollectedItem(r), status: r.status, channel: r.channel, source_text: r.announcement.text ?? null,
+  telegram_username: r.event.telegram_username, whatsapp_phone: r.event.whatsapp_phone, url: r.event.url,
+});
 
 /** Все собранные события для админки модерации: ждущие решения сверху, дальше по дате; прошедшие не показываем. */
 export async function listCollectedForAdmin(db: Db, status?: CollectedStatus): Promise<AdminCollectedEvent[]> {
@@ -296,6 +300,21 @@ export async function updateCollectedEvent(db: Db, slug: string, { status, ...fi
   if (status === 'approved') await requestNextVideo(db);
   const [row] = await collectedWithCover(db).where(eq(collectedEvents.external_id, external_id));
   return toAdminItem(row!);
+}
+
+/**
+ * Перерисовать обложку и ролик: удаляем нарисованную обложку (сборщик заново возьмёт фото анонса) и сбрасываем
+ * обработку. video_at = сейчас: очередь возьмёт событие через VIDEO_STALE_MS, когда фото уже вернётся.
+ */
+export async function redoCollectedCover(db: Db, slug: string): Promise<void> {
+  const external_id = collectedExternalId(slug);
+  await db.transaction(async (tx) => {
+    const [row] = await tx.update(collectedEvents)
+      .set({ video_url: null, video_tries: 0, video_at: new Date(), cover_checked_at: null })
+      .where(eq(collectedEvents.external_id, external_id)).returning({ id: collectedEvents.external_id });
+    if (!row) throw new AppError('not_found', 404);
+    await tx.delete(photos).where(eq(photos.collected_external_id, external_id));
+  });
 }
 
 /** Удалить собранное событие совсем. Повторный анонс создаст его заново — чтобы этого не было, отклоняй, а не удаляй. */

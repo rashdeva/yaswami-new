@@ -14,6 +14,7 @@ export const ACTIONS: Record<string, string> = {
   admin_events_feedback_delete: 'Удалён отзыв',
   admin_collected_events_update: 'Изменено событие каталога',
   admin_collected_events_delete: 'Удалено событие каталога',
+  admin_collected_events_redo: 'Перерисовка обложки и ролика',
   admin_covers_set: 'Решение по обложке',
   admin_videos_request: 'Заказан ролик',
   admin_hosts_update: 'Изменён организатор',

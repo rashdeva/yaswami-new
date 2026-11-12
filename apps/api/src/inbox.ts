@@ -19,6 +19,10 @@ import { bot } from './telegram.ts';
 const NO_TEXT = '[сообщение без текста]';
 // ponytail: лента без страниц — последние 200 диалогов и сообщений; подгрузка старого — когда этого станет мало.
 const FEED_LIMIT = 200;
+// Время сообщений и диалогов ставит только база: входящие получают его по умолчанию (now()), и если исходящим ставить
+// время из JS, часы API и базы расходятся на миллисекунды — ответ, пришедший позже, оказывается «раньше» нашего
+// сообщения, и стадия «ответил» не наступает.
+const dbNow = sql`now()`;
 
 /** Собеседник. `account_id` — он пишет на наш аккаунт Telegram, а не боту. */
 interface Peer { id: number; name?: string; username?: string | null; account_id?: string | null }
@@ -36,7 +40,7 @@ async function record(db: Db, peer: Peer, message: Pick<Message, 'direction' | '
     .onConflictDoUpdate({
       target: [conversations.channel, conversations.peer_id],
       // Человек написал на другой наш аккаунт — дальше отвечаем с него.
-      set: { last_message_at: new Date(), ...profile, ...(peer.account_id ? { account_id: peer.account_id } : {}), ...(attention === undefined ? {} : { attention }) },
+      set: { last_message_at: dbNow, ...profile, ...(peer.account_id ? { account_id: peer.account_id } : {}), ...(attention === undefined ? {} : { attention }) },
     })
     .returning();
   await db.insert(messages).values({ conversation_id: conversation!.id, ...message });
@@ -91,7 +95,10 @@ async function hostFacts(db: Db, username: string): Promise<string> {
     .orderBy(asc(collectedEvents.starts_at))
     .limit(10);
   const app = bot.username ? `https://t.me/${bot.username}/${bot.appName}` : settings.publicUrl;
+  const [profile] = await db.select({ user_id: hosts.user_id }).from(hosts).where(eq(hosts.username, username));
   return [
+    // Цель роли — чтобы организатор вошёл в сервис. Вошёл — продавать больше нечего, только отвечать.
+    ...(profile?.user_id ? ['Организатор уже вошёл в «Я с вами». Ничего не предлагай и не уговаривай: только отвечай на его вопросы.'] : []),
     'Данные сервиса об организаторе. События собраны из его открытых анонсов; «записались» — столько человек нажали «Записаться» в «Я с вами» (это интерес, места подтверждает он сам).',
     ...rows.map((r) => `- «${r.event.title}», ${collectedWhen(r.event.starts_at)} — записались: ${r.signups}${r.claimed ? ', событие уже подтверждено им' : ''}. Страница: ${settings.publicUrl}${collectedPath(collectedSlug(r.external_id))}`),
     `Как подтвердить событие: открыть приложение ${app}, там появится вопрос «Это ваше событие?» — нажать «Это моё». После этого гости отвечают «Пойду» в один тап, а организатор видит список, кто придёт, и может отправить приглашение в любой чат. Это бесплатно.`,
@@ -100,8 +107,8 @@ async function hostFacts(db: Db, username: string): Promise<string> {
 
 /**
  * На событие организатора нажали «Записаться» — повод написать ему первым. Роль host пишет сообщение, оно ложится
- * черновиком в «Ждут вас»; отправляет человек, в личку с нашего аккаунта. Организатору, который уже подтвердил
- * событие, и тому, кому писали на днях, не пишем.
+ * черновиком в «Ждут вас»; отправляет человек, в личку с нашего аккаунта. Цель — чтобы организатор вошёл в сервис:
+ * вошедшему, подтвердившему это событие и тому, кому писали на днях, не пишем.
  */
 export async function recordHostLead(db: Db, externalId: string): Promise<void> {
   if (!settings.hostUrl) return;
@@ -109,7 +116,7 @@ export async function recordHostLead(db: Db, externalId: string): Promise<void> 
   if (!event?.telegram_username || event.claimed_event_id) return;
   // Профиль организатора собирает сборщик: без него не знаем, кому писать.
   const [profile] = await db.select().from(hosts).where(eq(hosts.username, event.telegram_username));
-  if (!profile || (await contactedRecently(db, profile.telegram_id))) return;
+  if (!profile || profile.user_id || (await contactedRecently(db, profile.telegram_id))) return;
 
   const reply = await host.ask([
     { role: 'system', content: await hostFacts(db, profile.username) },
@@ -124,6 +131,18 @@ export async function recordHostLead(db: Db, externalId: string): Promise<void> 
     { direction: 'out', author: 'agent:host', text: reply.text, status: 'draft', meta: { reason: `На «${event.event.title}» через нас записались` } }, reason,
   );
   await alertAdmins(conversation, reason);
+}
+
+/**
+ * Организатор вошёл в сервис: неотправленные черновики роли host с предложением войти больше не нужны.
+ * Зовётся при входе (auth.ts); сам диалог остаётся, на вопросы роль по-прежнему отвечает.
+ */
+export async function dropHostPitch(db: Db, telegramId: number): Promise<void> {
+  const dialogs = db.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.channel, 'account'), eq(conversations.peer_id, telegramId)));
+  const dropped = await db.delete(messages)
+    .where(and(inArray(messages.conversation_id, dialogs), eq(messages.author, 'agent:host'), eq(messages.status, 'draft')))
+    .returning({ conversation_id: messages.conversation_id });
+  for (const { conversation_id } of dropped) await setAttention(db, conversation_id, null);
 }
 
 /** Организатор ответил на наше сообщение: роль host готовит черновик ответа. Прежний неотправленный черновик заменяется. */
@@ -154,6 +173,8 @@ export async function recordLead(db: Db, lead: LeadInput): Promise<void> {
 
   const before = lead.context.length ? `Перед этим в чате писали:\n${lead.context.map((t) => `- ${t}`).join('\n')}\n\n` : '';
   const text = await hunter.ask(`Чат: ${lead.chat}\n\n${before}Вопрос (${lead.author.name}):\n${lead.text}`);
+  // В журнал — чтобы было видно, что охотник делает с найденными вопросами (сам текст вопроса не пишем).
+  console.log(`охотник: ${lead.url} — ${text ? 'черновик' : 'пропустил или роль недоступна'}`);
   if (!text) return;
 
   const reason = 'Черновик ответа в чат';
@@ -187,8 +208,8 @@ export const sendDraft = (db: Db, ctx: Ctx, id: string, text?: string) =>
       if (!account) throw new AppError('no_account', 409);
       await db.update(conversations).set({ account_id: account.id }).where(eq(conversations.id, conversation.id));
     }
-    await db.update(messages).set({ status: 'queued', created_at: new Date(), ...(text ? { text } : {}) }).where(eq(messages.id, id));
-    await db.update(conversations).set({ attention: null, last_message_at: new Date() }).where(eq(conversations.id, draft.conversation_id));
+    await db.update(messages).set({ status: 'queued', created_at: dbNow, ...(text ? { text } : {}) }).where(eq(messages.id, id));
+    await db.update(conversations).set({ attention: null, last_message_at: dbNow }).where(eq(conversations.id, draft.conversation_id));
   });
 
 /** Поправить текст черновика, не отправляя его. */
@@ -392,7 +413,7 @@ export const inboxSend = (db: Db, ctx: Ctx, id: string, text: string) =>
       // С аккаунта отправляет сборщик: кладём сообщение в очередь, он заберёт его в течение нескольких секунд.
       if (!conversation.account_id) throw new AppError('account_gone', 409);
       await db.insert(messages).values({ conversation_id: id, direction: 'out', author, text, status: 'queued' });
-      await db.update(conversations).set({ mode: 'human', attention: null, last_message_at: new Date() }).where(eq(conversations.id, id));
+      await db.update(conversations).set({ mode: 'human', attention: null, last_message_at: dbNow }).where(eq(conversations.id, id));
       return;
     }
     const result = await bot.send('sendMessage', { chat_id: conversation.peer_id, text }, author);

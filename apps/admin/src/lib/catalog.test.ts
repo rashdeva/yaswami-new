@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { contactOf, hostEvents, matchCollected } from './catalog.ts';
+import { contactOf, hostEvents, matchCollected, topicOptions } from './catalog.ts';
 
 const source = 'https://t.me/chan/5';
 
@@ -27,4 +27,11 @@ test('поиск по каталогу', () => {
   assert.ok(matchCollected(e, ' ваке '));
   assert.ok(matchCollected(e, ''));
   assert.ok(!matchCollected(e, 'бег'));
+});
+
+test('темы: справочник, «другое» и своя тема события', () => {
+  const plain = topicOptions(null).map(([t]) => t);
+  assert.ok(plain.includes('другое'));
+  assert.deepEqual(topicOptions('другое').length, plain.length, 'тема из справочника не повторяется');
+  assert.deepEqual(topicOptions('шахматы').at(-1), ['шахматы', 'шахматы']);
 });

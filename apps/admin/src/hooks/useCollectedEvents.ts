@@ -1,5 +1,6 @@
-// Каталог: собранные события любого статуса, одно событие с записавшимися, обложки и правки команды.
+// Каталог: собранные события любого статуса, одно событие с записавшимися, обложки, правки команды и очередь «По одному».
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import type { AdminCollectedEventView, CollectedUpdateInput, Wire } from '@yaswami/core';
 import { api } from '../api.ts';
 import { keys } from './keys.ts';
@@ -27,5 +28,27 @@ export function useCatalogActions() {
     setCover: useAct(({ id, image_url }: { id: string; image_url?: string }) => api.coverSet(id, image_url), { undo }),
     /** Заказ ролика стоит денег и не отменяется. */
     requestVideo: useAct(api.videoRequest),
+    /** Перерисовать обложку и ролик: отменяется, пока очередь не взяла событие. */
+    redo: useAct(api.collectedRedo, { undo }),
+  };
+}
+
+/**
+ * Очередь «ждут решения» по одному: решённое и пропущенное сразу уходит с экрана, не дожидаясь перечитывания списка.
+ * Не получилось — событие возвращается в очередь (ошибку покажет useAct). Пропущенное вернётся после перезагрузки.
+ */
+export function useModerationQueue() {
+  const items = useCollectedEvents().data;
+  const { update } = useCatalogActions();
+  const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
+  const mark = (id: string, on: boolean) => setGone((s) => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; });
+  const queue = items?.filter((e) => e.status === 'pending' && !gone.has(e.id));
+  return {
+    current: queue?.[0], left: queue?.length,
+    decide: (id: string, input: CollectedUpdateInput) => {
+      mark(id, true);
+      update({ id, input }, { onError: () => mark(id, false) });
+    },
+    skip: (id: string) => mark(id, true),
   };
 }
