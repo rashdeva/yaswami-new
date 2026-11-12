@@ -1,6 +1,6 @@
-// Тесты на настоящем Postgres (нужен `pnpm db:up`). Работают в отдельной базе yaswami_test, рабочую не трогают.
+// Тесты на настоящем Postgres (нужен `pnpm db:up`). Работают в отдельной базе yaswami_test_<checkout>, рабочую не трогают.
 import assert from 'node:assert/strict';
-import { createHmac, generateKeyPairSync, sign } from 'node:crypto';
+import { createHash, createHmac, generateKeyPairSync, sign } from 'node:crypto';
 import { after, before, mock, test } from 'node:test';
 import { asc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
@@ -30,12 +30,18 @@ const url = new URL(process.env.DATABASE_URL ?? 'postgres://yaswami:yaswami@loca
 let db: Db;
 let app: ReturnType<typeof createApp>;
 
+// Postgres на машине один на все git worktree, а тесты чистят и наполняют свою базу: у каждого checkout она своя,
+// иначе две сессии, запустившие тесты одновременно, ломают друг другу данные. Имя — по пути checkout (корень репозитория
+// от этого файла), так что оно не зависит от того, откуда запущены тесты.
+// ponytail: базы удалённых worktree остаются на сервере; мешать они не мешают, чистить — `drop database` руками.
+const TEST_DB = `yaswami_test_${createHash('sha256').update(new URL('../../..', import.meta.url).pathname).digest('hex').slice(0, 8)}`;
+
 before(async () => {
   const admin = postgres(url.href, { max: 1 });
-  const [found] = await admin`select 1 from pg_database where datname = 'yaswami_test'`;
-  if (!found) await admin`create database yaswami_test`;
+  const [found] = await admin`select 1 from pg_database where datname = ${TEST_DB}`;
+  if (!found) await admin`create database ${admin(TEST_DB)}`;
   await admin.end();
-  url.pathname = '/yaswami_test';
+  url.pathname = `/${TEST_DB}`;
   db = createDb(url.href);
   await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
   await db.execute(sql`truncate users cascade`);
