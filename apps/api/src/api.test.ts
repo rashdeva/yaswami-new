@@ -1,7 +1,7 @@
 // Тесты на настоящем Postgres (нужен `pnpm db:up`). Работают в отдельной базе yaswami_test, рабочую не трогают.
 import assert from 'node:assert/strict';
 import { createHmac, generateKeyPairSync, sign } from 'node:crypto';
-import { after, before, test } from 'node:test';
+import { after, before, mock, test } from 'node:test';
 import { asc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
@@ -1095,7 +1095,14 @@ test('организаторы: запись на событие станови�
 
   // Отправляем: сообщение уходит в личку (без адреса в чате), диалог остаётся за ролью.
   const [account] = await db.insert(tgAccounts).values({ label: 'Аня', phone: '+84900000019', status: 'active' }).returning();
-  assert.equal((await call(admin, 'POST', `/admin/messages/${draft.id}/send`, {})).status, 204);
+  // Часы API на секунду впереди часов базы (в проде это разные машины): время сообщений всё равно ставит база,
+  // иначе ответ организатора ниже окажется «раньше» нашего сообщения.
+  mock.timers.enable({ apis: ['Date'], now: Date.now() + 1000 });
+  try {
+    assert.equal((await call(admin, 'POST', `/admin/messages/${draft.id}/send`, {})).status, 204);
+  } finally {
+    mock.timers.reset();
+  }
   feed = await inbox();
   assert.deepEqual([feed.messages[0]!.status, feed.messages[0]!.meta?.reply_to, feed.conversations[0]!.mode, feed.conversations[0]!.account_id], ['queued', undefined, 'agent', account!.id]);
   assert.equal(feed.conversations[0]!.stage, 'contacted');
