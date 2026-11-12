@@ -34,7 +34,9 @@ install_profile() {
   home="$DATA/profiles/$1"
   [ -d "$home" ] || s6-setuidgid hermes hermes profile create "$1"
   install_role "$1" "$home"
-  (umask 077; printf 'API_SERVER_ENABLED=true\nAPI_SERVER_KEY=%s\n' "$2" > "$home/.env")
+  # Профиль читает ключи только из своего .env, переменные контейнера ему не видны: ключ запасной модели — тоже сюда.
+  (umask 077; printf 'API_SERVER_ENABLED=true\nAPI_SERVER_KEY=%s\n' "$2" > "$home/.env"
+   if [ -n "${GEMINI_API_KEY:-}" ]; then printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY" >> "$home/.env"; fi)
   chown hermes:hermes "$home/.env"
 }
 install_profile support "$SUPPORT_API_KEY"
