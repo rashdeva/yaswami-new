@@ -1,10 +1,11 @@
 // «Организаторы»: профили, собранные по открытым анонсам, и на каком шаге переписка с каждым.
 import { INBOX_STAGES } from '@yaswami/core';
-import { EntityLink } from '@/components/EntityLink';
-import { Failed, Loading, Nothing, Page } from '@/components/Page';
+import { EntityLink, TelegramLink } from '@/components/EntityLink';
+import { Failed, Hint, Loading, Nothing, Page } from '@/components/Page';
+import { Search } from '@/components/Search';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Item, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useHosts } from '@/hooks/useHosts';
 import { useOverview } from '@/hooks/useOverview';
@@ -26,9 +27,8 @@ export function HostsScreen({ query, onQuery, onOpen }: Props) {
     .sort((a, b) => (b.s?.signups ?? 0) - (a.s?.signups ?? 0) || (b.s?.events ?? 0) - (a.s?.events ?? 0));
 
   return (
-    <Page title={<>Организаторы <Badge>{hosts?.length ?? '…'}</Badge></>}>
-      <p className="text-xs text-muted-foreground">Профили собраны по открытым анонсам. «Записей» — сколько раз на предстоящие события организатора нажали «Записаться» у нас.</p>
-      <Input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Имя, @username или канал" />
+    <Page title={<>Организаторы <Badge>{hosts?.length ?? '…'}</Badge></>} description="Профили собраны по открытым анонсам. «Записей» — сколько раз на предстоящие события организатора нажали «Записаться» у нас.">
+      <Search value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Имя, @username или канал" />
       {!hosts && !error && <Loading />}
       {error && <Failed error={error} />}
       {hosts && rows.length === 0 && <Nothing title="Никого не нашлось" />}
@@ -41,20 +41,24 @@ export function HostsScreen({ query, onQuery, onOpen }: Props) {
             {rows.map(({ h, s }) => (
               <TableRow key={h.id}>
                 <TableCell className="align-top">
-                  <strong><EntityLink entity="host" id={h.id}>{h.name}</EntityLink></strong>
-                  <div><a className="text-xs underline" href={`https://t.me/${h.username}`} target="_blank" rel="noreferrer">@{h.username}</a></div>
-                  {h.channel && <div className="text-xs text-muted-foreground">канал <a className="underline" href={`https://t.me/${h.channel}`} target="_blank" rel="noreferrer">@{h.channel}</a></div>}
+                  <Item size="xs" className="p-0">
+                    <ItemContent>
+                      <ItemTitle><EntityLink entity="host" id={h.id}>{h.name}</EntityLink></ItemTitle>
+                      <ItemDescription><TelegramLink username={h.username} /></ItemDescription>
+                      {h.channel && <ItemDescription>канал <TelegramLink username={h.channel} /></ItemDescription>}
+                    </ItemContent>
+                  </Item>
                 </TableCell>
-                <TableCell className="max-w-md align-top text-xs whitespace-normal text-muted-foreground">{h.summary ?? '—'}</TableCell>
+                <TableCell className="max-w-md align-top whitespace-normal"><Hint>{h.summary ?? '—'}</Hint></TableCell>
                 <TableCell>{s?.events ?? 0}</TableCell>
                 <TableCell>{s?.signups ?? 0}</TableCell>
                 <TableCell>
-                  {h.user_id ? <Badge variant="outline"><EntityLink entity="user" id={h.user_id}>вошёл</EntityLink></Badge> : <span className="text-xs text-muted-foreground">нет</span>}
+                  {h.user_id ? <Badge variant="outline"><EntityLink entity="user" id={h.user_id}>вошёл</EntityLink></Badge> : <Hint>нет</Hint>}
                 </TableCell>
                 <TableCell>
                   {s?.conversation_id
-                    ? <Button variant="link" size="sm" className="px-0" onClick={() => onOpen(s.conversation_id!)}>{INBOX_STAGES[s.stage!]}</Button>
-                    : <span className="text-xs text-muted-foreground">не писали</span>}
+                    ? <Button variant="outline" size="xs" onClick={() => onOpen(s.conversation_id!)}>{INBOX_STAGES[s.stage!]}</Button>
+                    : <Hint>не писали</Hint>}
                 </TableCell>
               </TableRow>
             ))}

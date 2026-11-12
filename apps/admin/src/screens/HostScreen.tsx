@@ -6,13 +6,15 @@ import { MessagesSquareIcon, Trash2Icon } from 'lucide-react';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
-import { EntityLink } from '@/components/EntityLink';
+import { EntityLink, ExternalLink, TelegramLink } from '@/components/EntityLink';
 import { AreaField, SaveBar, saveDirty, TextField } from '@/components/Fields';
 import { History } from '@/components/History';
-import { Failed, Loading, Page, Section } from '@/components/Page';
+import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
+import { AspectRatio } from '@/components/ui/aspect-ratio';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item';
 import { useCollectedEvents } from '@/hooks/useCollectedEvents';
 import { useHost, useHostActions } from '@/hooks/useHosts';
 import { useOverview } from '@/hooks/useOverview';
@@ -36,6 +38,11 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
   return (
     <Page
       title={h.name}
+      description={<>
+        <TelegramLink username={h.username} /> · Telegram id {h.telegram_id}
+        {h.user_id ? <> · в сервисе: <EntityLink entity="user" id={h.user_id}>карточка пользователя</EntityLink></> : ' · в сервис не входил'}
+        {row && ` · предстоящих событий ${row.events}, записей ${row.signups}`}
+      </>}
       actions={
         <>
           {row?.conversation_id && <Button size="sm" variant="outline" onClick={() => onOpen(row.conversation_id!)}><MessagesSquareIcon />Диалог · {INBOX_STAGES[row.stage!]}</Button>}
@@ -45,12 +52,6 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
         </>
       }
     >
-      <p className="text-sm text-muted-foreground">
-        <a className="underline" href={`https://t.me/${h.username}`} target="_blank" rel="noreferrer">@{h.username}</a> · Telegram id {h.telegram_id}
-        {h.user_id ? <> · в сервисе: <EntityLink entity="user" id={h.user_id}>карточка пользователя</EntityLink></> : ' · в сервис не входил'}
-        {row && ` · предстоящих событий ${row.events}, записей ${row.signups}`}
-      </p>
-
       <Section title="Профиль">
         <form onSubmit={saveDirty(form, update)} className="flex flex-col gap-4">
           <FieldGroup>
@@ -67,23 +68,27 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
       </Section>
 
       <Section title={<>События в каталоге <Badge variant="secondary">{events.length}</Badge></>}>
-        {events.length === 0 && <p className="text-xs text-muted-foreground">Не нашлось: события связываются с организатором по контакту для записи или по каналу.</p>}
-        <ul className="flex flex-col gap-1 text-sm">
+        {events.length === 0 && <Hint>Не нашлось: события связываются с организатором по контакту для записи или по каналу.</Hint>}
+        <ItemGroup className="gap-1">
           {events.map((e) => (
-            <li key={e.id} className="flex flex-wrap items-center gap-2">
-              <EntityLink entity="collected_event" id={e.id}>{e.title}</EntityLink>
-              <span className="text-xs text-muted-foreground">{collectedWhen(e.starts_at)}</span>
-              <Badge variant="secondary">{COLLECTED_LABELS[e.status]}</Badge>
-            </li>
+            <Item key={e.id} size="xs" variant="muted">
+              <ItemContent>
+                <ItemTitle><EntityLink entity="collected_event" id={e.id}>{e.title}</EntityLink></ItemTitle>
+                <ItemDescription>{collectedWhen(e.starts_at)}</ItemDescription>
+              </ItemContent>
+              <ItemActions><Badge variant="secondary">{COLLECTED_LABELS[e.status]}</Badge></ItemActions>
+            </Item>
           ))}
-        </ul>
+        </ItemGroup>
       </Section>
 
       {h.photos.length > 0 && (
         <Section title="Фото сообщества">
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
             {h.photos.map((p) => (
-              <a key={p.url} href={p.source_url} target="_blank" rel="noreferrer"><img className="size-24 rounded-md bg-muted object-cover" src={p.url} alt="" loading="lazy" /></a>
+              <ExternalLink key={p.url} href={p.source_url}>
+                <AspectRatio ratio={1} className="overflow-hidden rounded-md bg-muted"><img className="size-full object-cover" src={p.url} alt="" loading="lazy" /></AspectRatio>
+              </ExternalLink>
             ))}
           </div>
         </Section>

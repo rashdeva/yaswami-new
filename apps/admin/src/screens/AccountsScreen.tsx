@@ -1,10 +1,11 @@
 // «Аккаунты»: аккаунты Telegram, с которых мы пишем людям, — добавить, пройти вход по шагам, переименовать, удалить.
-import { PencilIcon } from 'lucide-react';
+import { CircleAlertIcon, PencilIcon } from 'lucide-react';
 import { useState } from 'react';
 import type { Account } from '@/api';
 import { Confirm } from '@/components/Confirm';
 import { History } from '@/components/History';
-import { Nothing, Page } from '@/components/Page';
+import { Hint, Nothing, Page } from '@/components/Page';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,7 +24,7 @@ const LOGIN_STEP: Partial<Record<Account['status'], string>> = {
 function Label({ a, onRename }: { a: Account; onRename: (label: string) => void }) {
   const [text, setText] = useState<string | null>(null);
   if (text === null) {
-    return <span className="inline-flex items-center gap-1">{a.label}<Button size="icon-xs" variant="ghost" aria-label="Переименовать" onClick={() => setText(a.label)}><PencilIcon /></Button></span>;
+    return <span className="flex items-center gap-1">{a.label}<Button size="icon-xs" variant="ghost" aria-label="Переименовать" onClick={() => setText(a.label)}><PencilIcon /></Button></span>;
   }
   return (
     <form className="flex gap-2" onSubmit={(e) => (e.preventDefault(), text.trim() && text.trim() !== a.label && onRename(text.trim()), setText(null))}>
@@ -50,14 +51,14 @@ export function AccountsScreen() {
               <CardTitle><Label a={a} onRename={(l) => rename({ id: a.id, label: l })} /></CardTitle>
               <CardDescription>{a.phone}</CardDescription>
               <CardAction>
-                {a.status === 'active' ? <Badge variant="outline" className="border-green-600/40 text-green-700 dark:text-green-400">На связи</Badge>
+                {a.status === 'active' ? <Badge>На связи</Badge>
                   : a.status === 'error' ? <Badge variant="destructive">Ошибка входа</Badge>
                   : <Badge variant="secondary">Идёт вход</Badge>}
               </CardAction>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              {LOGIN_STEP[a.status] && <p className="text-xs text-muted-foreground">{LOGIN_STEP[a.status]}</p>}
-              {a.last_error && <p className="text-xs text-amber-700 dark:text-amber-400">{a.last_error}</p>}
+              {LOGIN_STEP[a.status] && <Hint>{LOGIN_STEP[a.status]}</Hint>}
+              {a.last_error && <Alert variant="destructive"><CircleAlertIcon /><AlertDescription>{a.last_error}</AlertDescription></Alert>}
               {(a.status === 'login_code' || a.status === 'login_password') && (
                 <form
                   className="flex gap-2"
@@ -83,9 +84,9 @@ export function AccountsScreen() {
                     description="Сессия Telegram удалится — это не отменить, войти придётся заново с кодом. Переписка останется, но писать в неё будет не с чего."
                     onConfirm={() => remove(a.id)}
                   >
-                    <Button variant="link" size="sm" className="px-0 text-destructive">Удалить</Button>
+                    <Button variant="destructive" size="sm">Удалить</Button>
                   </Confirm>
-                  <CollapsibleTrigger asChild><Button variant="link" size="sm" className="ml-auto px-0">История</Button></CollapsibleTrigger>
+                  <CollapsibleTrigger asChild><Button variant="ghost" size="sm" className="ml-auto">История</Button></CollapsibleTrigger>
                 </div>
                 <CollapsibleContent className="mt-2"><History entity="account" id={a.id} /></CollapsibleContent>
               </Collapsible>

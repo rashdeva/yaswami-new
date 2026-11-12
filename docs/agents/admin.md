@@ -18,8 +18,8 @@ src/
   hooks/keys.ts     все ключи запросов
   hooks/useAct.ts   действие админа: тост при ошибке, тост «Отменить» после отменяемого, после — перечитать данные; useUndo
   screens/          раздел или карточка = композиция: данные из хуков, разметка из components/; про адреса не знает
-  components/       свои составные части: Page/Section/Loading/Nothing, Fields (поля форм), Confirm, History,
-                    EntityLink (ссылки на карточки), UserPicker, EventFields; чат: Thread, Reply, Draft
+  components/       свои составные части: Page/Section/Hint/Loading/Nothing, Fields (поля форм), Confirm, History,
+                    EntityLink (все ссылки), Search, Cover, UserPicker, EventFields; чат: Thread, Reply, Draft
   components/ui/    компоненты shadcn — ставит CLI, руками не правятся
   lib/              чистые функции без React, CSS и import.meta.env: переписка, журнал (подписи, разница снимков), каталог, формы
   index.css         тема shadcn (переменные, светлая и тёмная) и свои анимации
@@ -50,12 +50,18 @@ src/
 - **Типы запросов и ответов — из `@yaswami/core`**, по сети — `Wire<T>`. Новая операция админки — строка в `api.ts` с тем же именем, что у сервиса, и хук в `hooks/`.
 - **Текст ошибки для человека** — в `MESSAGES` в `api.ts`, по коду ошибки бэка.
 - **Чистая функция — в `lib/`, с тестом рядом** (`*.test.ts`, `node:test`). Файлы `lib/` запускает Node напрямую: импорты относительные, с расширением `.ts`, без алиаса `@/`.
-- **Разметка — из компонентов shadcn** и классов Tailwind; цвета — только переменные темы (`bg-muted`, `text-muted-foreground`, `border`…). Своего CSS нет, кроме анимаций в `index.css`.
+- **Разметка — только компоненты shadcn; `className` — только раскладка.** Есть компонент — сырой тег не пишем: список строк — `item`, ключ-значение — `table`, вкладки и отбор — `tabs`/`toggle-group`, предупреждение — `alert`, состояние — варианты `badge`, картинка с пропорцией — `aspect-ratio`, прокрутка — `scroll-area`, клавиша — `kbd`, разделитель в ленте — `marker`. В экранах классы задают только раскладку: `flex`, `grid`, `gap`, `col-span`, ширину и высоту, `truncate`, `overflow`. Размер шрифта, цвет и толщина — в компонентах shadcn или в наших обёртках, по одному месту на вид:
+  - `Page` (`title`, `description`) и `Section` (`description` — `CardDescription`) — заголовки и пояснения;
+  - `Hint` — мелкая подсказка или «пусто» внутри блока;
+  - `EntityLink`, `ActionLink`, `ExternalLink`, `TelegramLink` — все ссылки;
+  - `Search` — поле поиска, `Cover` — обложка 9:16.
+
+  Цвета — только переменные темы и варианты компонентов, без `green-600`, `amber-…` и произвольных значений вида `text-[11px]`. Своего CSS нет, кроме палитры и анимаций в `index.css`.
 - **Адрес — в `router.tsx`.** Экран получает выбранное, фильтры и обработчики через props; фильтры и поиск живут в search params, переходы после действия (создали → карточка, удалили → список) делает страница. Ссылки на карточки сущностей — `components/EntityLink.tsx` (через `entityLink` в `lib/journal.ts`): второе и последнее место, где известны адреса.
 - **Формы — react-hook-form + `zodResolver` со схемой из core.** Значения формы — в форме API (null, ISO, массивы); поля из `components/Fields.tsx` переводят их для ввода и обратно. Сохранение — `saveDirty(form, hook.update)`: шлём только изменённые поля, ошибки `invalid_input` встают у полей (`showIssues`).
 - **Удаление, неотменяемое и платное (заказ ролика, перерисовка обложки и ролика) — через `Confirm`** (AlertDialog): в тексте сказать, что случится; у отменяемого удаления — `UNDO_HINT` («можно отменить в журнале»). `alert()`/`confirm()` не используются.
 - **Пустое и загрузка:** `Loading` (скелетон), `Nothing` (пустое состояние), `Failed` (ошибка карточки) из `components/Page.tsx`; списки — таблицы shadcn.
-- **Переписка — компоненты чата shadcn**: `message-scroller`, `message`, `bubble` (`components/Thread.tsx`).
+- **Переписка — компоненты чата shadcn**: `message-scroller`, `message`, `bubble`, дни разделяет `marker` (`components/Thread.tsx`); поле ответа и черновик — `input-group` (`Reply.tsx`, `Draft.tsx`); список людей — `item` с `avatar`, фильтры — `toggle-group`; клавиши в подсказках — `kbd`.
 - **Клавиши** — `hooks/useInboxKeys.ts`; поле находят по `data-reply`, `data-draft`, `data-search`, выбранную строку — по `data-selected`.
 
 ## Журнал и отмена в интерфейсе
@@ -72,7 +78,7 @@ src/
 1. Методы в `api.ts` (тем же именем, что у операции), тексты новых ошибок — в `MESSAGES`.
 2. Ключи в `hooks/keys.ts`, хук `hooks/useXxx.ts`: `useXxx(id)` на `useQuery`, `useXxxActions(id)` на `useAct` с `undo` для отменяемых.
 3. Экраны `screens/XxxsScreen.tsx` (список: таблица, поиск из props) и `screens/XxxScreen.tsx` (карточка: `Section` с формой, `Confirm` на удаление, `History`).
-4. Маршруты и страницы в `router.tsx`, пункт меню в `NAV` в `App.tsx`, ссылка в `entityLink` и подписи в `lib/journal.ts` (с тестом).
+4. Маршруты и страницы в `router.tsx`, пункт меню в нужную группу `NAV` в `App.tsx`, ссылка в `entityLink` и подписи в `lib/journal.ts` (с тестом).
 
 ## Компонент shadcn
 

@@ -30,7 +30,7 @@ export function useInboxKeys({ rows, at, onSelect, draft, draftText, scope, onTo
       const typing = (e.target as HTMLElement).closest<HTMLElement>('input, textarea');
       if (e.key === 'Escape') return typing ? typing.blur() : onEscape?.();
       // В черновике Enter — перенос строки, отправка — Cmd/Ctrl+Enter.
-      if (typing?.tagName === 'TEXTAREA' && draft && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) return sendDraft({ id: draft.id, text: draftText });
+      if (typing?.matches('[data-draft]') && draft && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) return sendDraft({ id: draft.id, text: draftText });
       if (typing || !cur || e.metaKey || e.ctrlKey || e.altKey) return;
       const key = e.key.toLowerCase(); // вторая буква — та же клавиша в русской раскладке
       if (e.key === 'ArrowDown' || key === 'j') onSelect(rows[Math.min(at + 1, rows.length - 1)]!.key);

@@ -1,9 +1,11 @@
 // Строка журнала и блок «История» в карточке сущности: последние действия команды над ней, с отменой.
 import type { AdminActionEntry, AdminEntity, Wire } from '@yaswami/core';
+import { Fragment } from 'react';
 import { ActionLink } from '@/components/EntityLink';
-import { Loading, Section } from '@/components/Page';
+import { Hint, Loading, Section } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemSeparator, ItemTitle } from '@/components/ui/item';
 import { useHistory } from '@/hooks/useActions';
 import { useUndo } from '@/hooks/useAct';
 import { useUserName } from '@/hooks/useUsers';
@@ -14,14 +16,14 @@ export const when = (iso: string) => new Date(iso).toLocaleString('ru', { day: '
 /** Кто из команды и через что: админка или агент через MCP (тогда — владелец токена). */
 export function Actor({ id, via }: { id: number; via: 'admin' | 'mcp' }) {
   const name = useUserName(id);
-  return <span className="inline-flex items-center gap-1">{name}{via === 'mcp' && <Badge variant="secondary">MCP</Badge>}</span>;
+  return <>{name}{via === 'mcp' && <> <Badge variant="secondary">MCP</Badge></>}</>;
 }
 
 /** Состояние строки: отменено, это отмена, не отменяется. */
 export function ActionState({ a }: { a: Wire<AdminActionEntry> }) {
   if (a.undone_by) return <Badge variant="outline"><ActionLink id={a.undone_by}>отменено</ActionLink></Badge>;
   if (a.undo_of) return <Badge variant="secondary"><ActionLink id={a.undo_of}>отмена действия</ActionLink></Badge>;
-  if (!a.undoable) return <Badge variant="outline" className="text-muted-foreground">не отменяется</Badge>;
+  if (!a.undoable) return <Badge variant="outline">не отменяется</Badge>;
   return null;
 }
 
@@ -37,20 +39,23 @@ export function History({ entity, id }: { entity: AdminEntity; id: string | numb
   return (
     <Section title="История">
       {!data && !error && <Loading rows={2} />}
-      {error && <p className="text-xs text-muted-foreground">{error.message}</p>}
-      {data?.entries.length === 0 && <p className="text-xs text-muted-foreground">Команда ещё ничего здесь не меняла.</p>}
-      <ul className="flex flex-col divide-y text-sm">
-        {data?.entries.map((a) => (
-          <li key={a.id} className="flex flex-wrap items-center gap-2 py-1.5">
-            <span className="w-28 shrink-0 text-xs text-muted-foreground">{when(a.created_at)}</span>
-            <ActionLink id={a.id}>{actionLabel(a.action)}</ActionLink>
-            <span className="text-xs text-muted-foreground"><Actor id={a.actor_id} via={a.via} /></span>
-            <ActionState a={a} />
-            <span className="ml-auto"><UndoButton a={a} size="xs" /></span>
-          </li>
+      {error && <Hint>{error.message}</Hint>}
+      {data?.entries.length === 0 && <Hint>Команда ещё ничего здесь не меняла.</Hint>}
+      <ItemGroup className="gap-0">
+        {data?.entries.map((a, i) => (
+          <Fragment key={a.id}>
+            {i > 0 && <ItemSeparator />}
+            <Item size="xs" className="px-0">
+              <ItemContent>
+                <ItemTitle><ActionLink id={a.id}>{actionLabel(a.action)}</ActionLink><ActionState a={a} /></ItemTitle>
+                <ItemDescription>{when(a.created_at)} · <Actor id={a.actor_id} via={a.via} /></ItemDescription>
+              </ItemContent>
+              <ItemActions><UndoButton a={a} size="xs" /></ItemActions>
+            </Item>
+          </Fragment>
         ))}
-      </ul>
-      {data?.has_more && <p className="pt-2 text-xs text-muted-foreground">Показаны последние {data.entries.length}; остальное — в «Журнале».</p>}
+      </ItemGroup>
+      {data?.has_more && <Hint>Показаны последние {data.entries.length}; остальное — в «Журнале».</Hint>}
     </Section>
   );
 }
