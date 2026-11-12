@@ -44,7 +44,7 @@ Vertical short promo video for a flower arranging workshop, edited as a fast sto
 - `aspect_ratio`: `9:16`;
 - `resolution`: `720p`;
 - `duration`: `10`;
-- `image_url`: ссылка на обложку из ответа `image_generate`.
+- `image_url`: ссылка на обложку из ответа `image_generate`; если в задании «обложка уже готова» — `photo_url`.
 
 ## 4. Ответь
 
