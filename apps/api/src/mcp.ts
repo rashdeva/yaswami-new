@@ -5,7 +5,7 @@ import * as z from 'zod';
 import type { User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminGuestUpdateInput,
-  CollectedListInput, collectedPath, CollectedUpdateInput, CoverSetInput, EventCreateInput, EventUpdateInput, HostUpdateInput, RsvpInput, TEMPLATES,
+  CollectedListInput, collectedPath, CollectedUpdateInput, CoverSetInput, EventCreateInput, EventUpdateInput, HostUpdateInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TEMPLATES,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
@@ -349,6 +349,22 @@ function buildServer(db: Db, actor: User) {
       title: 'Delete organizer profile', destructive: true, shape: { host_id },
       description: `Delete an organizer profile with its photos, e.g. when the person asks for it. The collector may profile them again from new announcements. ${ONLY_TEAM}`,
     }, (a) => admin.deleteHost(db, ctx, a.host_id));
+
+    // --- Источники сборщика (admin/sources.ts)
+    tool('admin_sources_list', {
+      title: 'Announcement sources', readOnly: true, shape: {},
+      description: 'Telegram channels and groups the collector reads announcements from, newest first. `host` — the organizer whose profile the channel came from (the collector adds organizers\' channels by itself); null — added by the team. Disabled sources are not read.',
+    }, () => admin.listSources(db));
+
+    tool('admin_sources_create', {
+      title: 'Add announcement source', shape: SourceCreateInput.shape,
+      description: `Start reading announcements from a public Telegram channel or group; the collector picks it up on its next pass. ${ONLY_TEAM} Errors: source_exists.`,
+    }, (a) => admin.createSource(db, ctx, a));
+
+    tool('admin_sources_update', {
+      title: 'Enable or disable announcement source', shape: { channel: z.string().describe('Channel from admin_sources_list'), ...SourceUpdateInput.shape },
+      description: `Stop or resume reading a source, e.g. when an organizer's channel turns out to be someone else's or not about events. ${ONLY_TEAM} Errors: not_found.`,
+    }, ({ channel, ...input }) => admin.updateSource(db, ctx, channel, input));
 
     // --- Пользователи и аудитория (admin/users.ts)
     tool('admin_users_search', {

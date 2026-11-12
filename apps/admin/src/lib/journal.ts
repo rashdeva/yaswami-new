@@ -23,6 +23,8 @@ export const ACTIONS: Record<string, string> = {
   admin_users_delete: 'Удалён пользователь',
   admin_users_tokens_revoke: 'Отозваны токены',
   admin_contacts_remove: 'Убран контакт',
+  admin_sources_create: 'Добавлен источник',
+  admin_sources_update: 'Включён или выключен источник',
   admin_accounts_create: 'Добавлен аккаунт Telegram',
   admin_accounts_update: 'Переименован аккаунт',
   admin_accounts_delete: 'Удалён аккаунт Telegram',
@@ -47,13 +49,14 @@ export const ENTITIES: Record<AdminEntity, string> = {
   conversation: 'Диалог',
   message: 'Сообщение',
   contact: 'Контакт',
+  source: 'Источник',
 };
 
 /** Куда ведёт сущность в админке; null — своей карточки нет (сообщение, контакт). */
 export type EntityLink =
   | { to: '/events/$id' | '/catalog/$id' | '/hosts/$id' | '/users/$id'; params: { id: string } }
   | { to: '/'; search: { c: string } }
-  | { to: '/accounts' }
+  | { to: '/accounts' | '/sources' }
   | null;
 
 export function entityLink(entity: AdminEntity, id: string): EntityLink {
@@ -64,6 +67,7 @@ export function entityLink(entity: AdminEntity, id: string): EntityLink {
     case 'user': return { to: '/users/$id', params: { id } };
     case 'conversation': return { to: '/', search: { c: id } };
     case 'account': return { to: '/accounts' };
+    case 'source': return { to: '/sources' };
     default: return null;
   }
 }

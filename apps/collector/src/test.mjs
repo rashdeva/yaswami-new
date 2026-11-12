@@ -66,7 +66,13 @@ assert.equal(saved['a#1'].topic, 'другое', 'не найденное при
 assert.equal('b#0' in saved, false, 'анонс, на котором ИИ упал, не помечается и не мешает остальным');
 console.log('backfill ok');
 
-const { channelFromBio, fetchChannelPhotos, pickThumb } = await import('./host.mjs');
+const { channelFromBio, contactFor, fetchChannelPhotos, pickThumb } = await import('./host.mjs');
+const noContact = { telegram_username: null, whatsapp_phone: null };
+assert.equal(contactFor({ ...noContact, telegram_username: '@Anna' }, 'yoga_news', null), '@Anna');
+assert.equal(contactFor({ ...noContact, telegram_username: '@Yoga_News' }, 'yoga_news', null), null, 'канал-источник — не контакт');
+assert.equal(contactFor({ ...noContact, telegram_username: 'yoga_news' }, 'yoga_news', 'anna'), 'anna', 'в канале организатора контакт — он сам');
+assert.equal(contactFor({ ...noContact, whatsapp_phone: '+84 90' }, 'yoga_news', 'anna'), null, 'есть WhatsApp — организатора не подставляем');
+assert.equal(contactFor(noContact, 'tea_house', 'Tea_House'), null, 'организатор — сама площадка');
 assert.equal(channelFromBio('Веду йогу. Канал: t.me/anna_yoga_life, запись @anna_yoga', 'anna_yoga'), 'anna_yoga_life');
 assert.equal(channelFromBio('Запись @Anna_Yoga, почта anna@gmail.com, t.me/joinchat/abc, @yoga_bot', 'anna_yoga'), null, 'сам контакт, почта, приглашение, бот');
 assert.equal(channelFromBio(null, 'anna_yoga'), null);

@@ -1,11 +1,11 @@
-// Тесты на настоящем Postgres (нужен `pnpm db:up`). Работают в отдельной базе yaswami_test, рабочую не трогают.
+// Тесты на настоящем Postgres (нужен `pnpm db:up`). Работают в отдельной базе yaswami_test_<checkout>, рабочую не трогают.
 import assert from 'node:assert/strict';
-import { createHmac, generateKeyPairSync, sign } from 'node:crypto';
+import { createHash, createHmac, generateKeyPairSync, sign } from 'node:crypto';
 import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
+import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
 import { bot } from './telegram.ts';
@@ -13,7 +13,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, collectedEvents, contacts, conversations, guests, hosts, messages, photos, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, collectedEvents, contacts, conversations, guests, hosts, messages, photos, sources, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { saveUserPhoto } from './photos.ts';
@@ -32,12 +32,18 @@ const url = new URL(process.env.DATABASE_URL ?? 'postgres://yaswami:yaswami@loca
 let db: Db;
 let app: ReturnType<typeof createApp>;
 
+// Postgres на машине один на все git worktree, а тесты чистят и наполняют свою базу: у каждого checkout она своя,
+// иначе две сессии, запустившие тесты одновременно, ломают друг другу данные. Имя — по пути checkout (корень репозитория
+// от этого файла), так что оно не зависит от того, откуда запущены тесты.
+// ponytail: базы удалённых worktree остаются на сервере; мешать они не мешают, чистить — `drop database` руками.
+const TEST_DB = `yaswami_test_${createHash('sha256').update(new URL('../../..', import.meta.url).pathname).digest('hex').slice(0, 8)}`;
+
 before(async () => {
   const admin = postgres(url.href, { max: 1 });
-  const [found] = await admin`select 1 from pg_database where datname = 'yaswami_test'`;
-  if (!found) await admin`create database yaswami_test`;
+  const [found] = await admin`select 1 from pg_database where datname = ${TEST_DB}`;
+  if (!found) await admin`create database ${admin(TEST_DB)}`;
   await admin.end();
-  url.pathname = '/yaswami_test';
+  url.pathname = `/${TEST_DB}`;
   db = createDb(url.href);
   await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
   await db.execute(sql`truncate users, admin_actions, collected_events, hosts, tg_accounts, conversations cascade`);
@@ -1269,6 +1275,9 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_collected_events_update: 'PATCH /admin/collected-events/:id',
   admin_collected_events_delete: 'DELETE /admin/collected-events/:id',
   admin_collected_events_redo: 'POST /admin/collected-events/:id/redo',
+  admin_sources_list: 'GET /admin/sources',
+  admin_sources_create: 'POST /admin/sources',
+  admin_sources_update: 'PATCH /admin/sources/:channel',
   admin_covers_list: 'GET /admin/covers',
   admin_covers_set: 'POST /admin/covers/:id',
   admin_videos_request: 'POST /admin/videos/:id',
@@ -1290,6 +1299,40 @@ const ADMIN_PAIRS: Record<string, string> = {
 
 // Правило «операция = сервис + REST + MCP» (docs/agents/api.md). Добавил инструмент или маршрут — допиши строку сюда:
 // пару или исключение с причиной в docs/agents/api.md.
+test('источники: команда добавляет и выключает, канал организатора виден со ссылкой на него', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const tool = async (name: string, args: object) =>
+    JSON.parse(((await (await call(admin, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })).json()) as { result: any }).result.content[0].text);
+  await db.delete(sources);
+  assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/sources')).status, 403);
+  // Ссылка t.me сводится к username; тот же канал в другом регистре — уже есть.
+  const res = await call(admin, 'POST', '/admin/sources', { channel: 'https://t.me/Danang_Yoga' });
+  assert.equal(res.status, 201);
+  assert.deepEqual(((await res.json()) as AdminSource).channel, 'Danang_Yoga');
+  assert.deepEqual(await tool('admin_sources_create', { channel: '@danang_yoga' }), { error: 'source_exists' });
+  assert.equal((await call(admin, 'POST', '/admin/sources', { channel: 'not a channel' })).status, 400);
+  // Канал организатора добавляет сборщик (apps/collector): здесь — строкой, как он.
+  const [h] = await db.insert(hosts).values({ telegram_id: 9400, username: 'lena_tea', name: 'Лена', channel: 'lena_tea_club' }).returning();
+  await db.insert(sources).values({ channel: 'lena_tea_club', host_id: h!.id });
+  const at = new Date(Date.now() + 86_400_000);
+  await db.insert(collectedEvents).values({
+    external_id: 'telegram:lena_tea_club/1#0', channel: 'lena_tea_club', starts_at: at, signup_url: '', announcement: { url: 'https://t.me/lena_tea_club/1' },
+    event: { title: 'Чай', description: '', starts_at: at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'lena_tea', whatsapp_phone: null, url: null },
+  });
+  const list = (await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[];
+  assert.deepEqual(list.map((x) => [x.channel, x.host?.username ?? null, x.events_count, x.enabled]), [['lena_tea_club', 'lena_tea', 1, true], ['Danang_Yoga', null, 0, true]]);
+  // Выключить: канал оказался чужим.
+  assert.equal(((await tool('admin_sources_update', { channel: 'LENA_TEA_CLUB', enabled: false })) as AdminSource).enabled, false);
+  assert.equal(((await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[])[0]!.enabled, false);
+  // Через журнал: строка — по каналу так, как он записан, и выключение отменяется.
+  const off = (await lastAction())!;
+  assert.deepEqual([off.action, off.entity, off.entity_id], ['admin_sources_update', 'source', 'lena_tea_club']);
+  assert.equal((await call(admin, 'POST', `/admin/actions/${off.id}/undo`)).status, 201);
+  assert.equal(((await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[])[0]!.enabled, true);
+  assert.equal((await call(admin, 'PATCH', '/admin/sources/nobody_here', { enabled: true })).status, 404);
+});
+
 test('парность: у каждого инструмента MCP есть маршрут REST и наоборот', async () => {
   const PAIRS: Record<string, string> = {
     collected_events_list: 'GET /collected-events',
@@ -1358,11 +1401,13 @@ async function world() {
   });
   const [profile] = await db.insert(hosts).values({ telegram_id: base + 5, username: `host${n}`, name: 'Орг' }).returning();
   const [account] = await db.insert(tgAccounts).values({ label: 'Основной', phone: `+7900${base}` }).returning();
+  const source = `auditsrc${n}`;
+  await db.insert(sources).values({ channel: source });
   const [conversation] = await db.insert(conversations).values({ channel: 'bot', peer_id: guestId, peer_name: 'Гость' }).returning();
   const [draft] = await db.insert(messages).values({ conversation_id: conversation!.id, direction: 'out', author: 'agent:host', text: 'Привет', status: 'draft' }).returning();
   return {
     n, hostId, guestId, otherId, eventId, t1: t1!.id, t2: t2!.id, slug: `auditchan-${n}-0`, profileId: profile!.id, accountId: account!.id,
-    conversationId: conversation!.id, draftId: draft!.id, contactId: contact!.id,
+    conversationId: conversation!.id, draftId: draft!.id, contactId: contact!.id, source,
   };
 }
 type World = Awaited<ReturnType<typeof world>>;
@@ -1395,6 +1440,8 @@ const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
   admin_users_update: (w) => ({ args: { user_id: w.otherId, first_name: 'Иван' }, params: { id: w.otherId }, body: { first_name: 'Иван' }, entity_id: String(w.otherId) }),
   admin_users_delete: (w) => ({ args: { user_id: w.guestId }, params: { id: w.guestId }, entity_id: String(w.guestId) }),
   admin_users_tokens_revoke: (w) => ({ args: { user_id: w.otherId }, params: { id: w.otherId }, entity_id: String(w.otherId) }),
+  admin_sources_create: (w) => ({ args: { channel: `@newsrc${w.n}` }, body: { channel: `t.me/newsrc${w.n}` }, entity_id: (r) => r.channel }),
+  admin_sources_update: (w) => ({ args: { channel: w.source.toUpperCase(), enabled: false }, params: { channel: w.source }, body: { enabled: false }, entity_id: w.source }),
   admin_contacts_remove: (w) => ({ args: { contact_id: w.contactId }, params: { id: w.contactId }, entity_id: w.contactId }),
   admin_accounts_create: (w) => {
     const input = { label: 'Второй', phone: `+7911${w.hostId}` };

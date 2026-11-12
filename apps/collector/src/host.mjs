@@ -13,6 +13,17 @@ export function channelFromBio(bio, username) {
   return null;
 }
 
+/**
+ * Telegram-контакт события из источника `channel`. Сам канал — не контакт: ИИ иногда подставляет его, когда в посте
+ * контакта нет. В канале организатора (`host` — его username) пишут «пишите в личку» без ника: тогда контакт — он сам.
+ * Если организатор и есть этот канал (площадка), подставлять нечего: записаться в канал нельзя.
+ */
+export function contactFor(event, channel, host) {
+  const isChannel = (u) => u.replace(/^@/, '').toLowerCase() === channel.toLowerCase();
+  if (event.telegram_username && !isChannel(event.telegram_username)) return event.telegram_username;
+  return !event.whatsapp_phone && host && !isChannel(host) ? host : null;
+}
+
 // FLOOD_WAIT пробрасываем — повторим на следующем проходе. Остальное (нет такого username, это канал, а не человек)
 // считаем ответом «не человек».
 const orNull = (e) => { if (e.seconds) throw e; return null; };

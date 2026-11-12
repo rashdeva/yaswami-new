@@ -10,6 +10,7 @@ import type { Db } from './db/client.ts';
 export * from './admin/events.ts';
 export * from './admin/catalog.ts';
 export * from './admin/users.ts';
+export * from './admin/sources.ts';
 export { getAdminAction, listAdminActions, undoAdminAction } from './audit.ts';
 
 /**

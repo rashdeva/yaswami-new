@@ -7,7 +7,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  EventUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, RsvpInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
+  EventUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -217,6 +217,10 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await admin.deleteHost(db, ctx(c), c.req.param('id'));
       return c.body(null, 204);
     })
+    // Источники сборщика (admin/sources.ts).
+    .get('/admin/sources', async (c) => c.json(await admin.listSources(db)))
+    .post('/admin/sources', json(SourceCreateInput), async (c) => c.json(await admin.createSource(db, ctx(c), c.req.valid('json')), 201))
+    .patch('/admin/sources/:channel', json(SourceUpdateInput), async (c) => c.json(await admin.updateSource(db, ctx(c), c.req.param('channel'), c.req.valid('json'))))
 
     // Пользователи и аудитория организаторов.
     .get('/admin/users', async (c) => c.json(await admin.searchUsers(db, UserSearchInput.parse(c.req.query()).query)))

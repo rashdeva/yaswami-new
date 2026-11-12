@@ -1,7 +1,7 @@
 // Клиент API админки: единственное место, где есть fetch. Формы запросов и ответов — из @yaswami/core.
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
-  AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventView, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview,
+  AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventView, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource,
   AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, EventUpdateInput, EventView, Host, HostUpdateInput, InboxConversation,
   InboxFeed, Message, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
@@ -24,6 +24,7 @@ const MESSAGES: Record<string, string> = {
   account_gone: 'Аккаунт, с которого шла переписка, удалён',
   no_account: 'Отправлять не с чего: добавьте аккаунт Telegram в «Аккаунты»',
   not_draft: 'Черновик уже отправлен или отклонён',
+  source_exists: 'Этот канал уже есть в источниках',
   not_delivered: 'Telegram не доставил сообщение: человек не открывал бота или заблокировал его',
   changed_since: 'Отменить нельзя: с тех пор запись меняли, отмена затёрла бы ту правку',
   already_undone: 'Это действие уже отменено',
@@ -157,4 +158,9 @@ export const api = {
   actions: (input: AdminActionListInput) => request<Wire<AdminActionList>>('GET', `/admin/actions${qs(input)}`),
   action: (action: string) => request<Wire<AdminAction>>('GET', `/admin/actions/${id(action)}`),
   actionUndo: (action: string) => request<Wire<AdminAction>>('POST', `/admin/actions/${id(action)}/undo`),
+
+  // Источники сборщика
+  sources: () => request<Wire<AdminSource>[]>('GET', '/admin/sources'),
+  sourceCreate: (channel: string) => request<Wire<AdminSource>>('POST', '/admin/sources', { channel }),
+  sourceUpdate: (channel: string, enabled: boolean) => request<Wire<AdminSource>>('PATCH', `/admin/sources/${id(channel)}`, { enabled }),
 };

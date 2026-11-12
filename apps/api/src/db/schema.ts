@@ -251,6 +251,22 @@ export const visits = pgTable(
   ],
 );
 
+// Source: канал или группа, откуда сборщик берёт анонсы. Пишут сюда сборщик (CHANNELS при старте, каналы организаторов
+// каждый проход) и команда из админки. В Luma такого нет.
+export const sources = pgTable(
+  'sources',
+  {
+    channel: text().primaryKey(), // как в collected_events.channel и collector_cursors: username без @ или id закрытого чата (-100…)
+    // Организатор, из профиля которого взят канал; null — источник добавила команда.
+    host_id: uuid().references(() => hosts.id, { onDelete: 'set null' }),
+    // Выключенный источник сборщик не читает. Строку не удаляем: иначе канал организатора добавился бы снова.
+    enabled: boolean().notNull().default(true),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  // Username в Telegram не различает регистр: @Tea и @tea — один канал.
+  (t) => [uniqueIndex('sources_channel_lower_idx').on(sql`lower(${t.channel})`)],
+);
+
 // Номер последней разобранной публикации по каждому источнику сборщика.
 export const collectorCursors = pgTable('collector_cursors', {
   channel: text().primaryKey(),

@@ -21,4 +21,5 @@ export const keys = {
   contacts: (hostUser: number) => ['contacts', hostUser],
   actions: (filter: Omit<AdminActionListInput, 'pagination_cursor'>) => ['actions', filter],
   action: (id: string) => ['action', id],
+  sources: ['sources'],
 } as const;
