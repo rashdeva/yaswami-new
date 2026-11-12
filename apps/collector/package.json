@@ -6,6 +6,8 @@
     "start": "node --env-file-if-exists=.env src/main.mjs",
     "login": "node --env-file-if-exists=.env src/login.mjs",
     "chats": "node --env-file-if-exists=.env src/chats.mjs",
+    "scout": "node --env-file-if-exists=.env src/scout.mjs",
+    "find-sources": "node --env-file-if-exists=.env src/find-sources.mjs",
     "test": "node src/test.mjs"
   },
   "dependencies": {

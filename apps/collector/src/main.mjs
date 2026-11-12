@@ -12,7 +12,7 @@ import { fetchLeads } from './lead.mjs';
 const env = process.env;
 // Источники живут в таблице sources (раздел «Источники» в админке); CHANNELS при старте только дополняет её.
 const channels = (env.CHANNELS ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
-if (!env.TG_SESSION) throw new Error('TG_SESSION пуст: выполни pnpm --filter @yaswami/collector login');
+if (!env.TG_SESSION) throw new Error('TG_SESSION пуст: выполни pnpm --filter @yaswami/collector run login');
 if (!env.DATABASE_URL) throw new Error('DATABASE_URL пуст');
 const userbot = connect({ apiId: env.TG_API_ID, apiHash: env.TG_API_HASH, session: env.TG_SESSION });
 const store = createStore(env.DATABASE_URL);
