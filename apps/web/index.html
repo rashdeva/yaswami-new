@@ -4,10 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <title>Я с вами</title>
-    <!-- Серверный HTML нужен поисковикам и медленной сети. Внутри Telegram (он кладёт tgWebAppData в hash) он только мигает без стилей — прячем до старта приложения. -->
+    <!-- Серверный HTML нужен поисковикам и медленной сети. Внутри Telegram он только мигает без стилей — прячем до старта приложения.
+         Смотрим initData, а не hash: приложение убирает tgWebAppData из адреса, и после перезагрузки hash пуст,
+         а скрипт Telegram берёт данные входа из sessionStorage. -->
     <style>html.tg #app > main { display: none; }</style>
-    <script>if (location.hash.includes('tgWebAppData')) document.documentElement.className = 'tg';</script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>if (window.Telegram?.WebApp?.initData) document.documentElement.className = 'tg';</script>
   </head>
   <body>
     <div id="app"></div>
