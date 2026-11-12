@@ -50,6 +50,31 @@ export function popularIds<T extends { channel: string; views: number | null; re
   return popular;
 }
 
+/**
+ * Пометка на карточке ленты: почему стоит открыть именно это событие, как на Booking. Наше: в Luma такого нет.
+ * Просмотры и реакции наружу не показываем — они только поднимают событие пометкой «Популярное».
+ */
+export interface CollectedBadge {
+  kind: 'soon' | 'hot' | 'free';
+  label: string;
+}
+
+/** Пометки карточки, самые срочные первыми; не больше двух, чтобы карточка не превращалась в ёлку. */
+export function collectedBadges(
+  e: Pick<CollectedEventItem, 'starts_at' | 'ends_at' | 'price' | 'popular'>, now = Date.now(),
+): CollectedBadge[] {
+  const badges: CollectedBadge[] = [];
+  // Без времени в анонсе (00:00) не знаем, когда начало, — «скоро» не ставим.
+  const minutes = (new Date(e.starts_at).getTime() - now) / 60e3;
+  if (collectedTime(e.starts_at) && !collectedIsPast(e, now)) {
+    if (minutes <= 0) badges.push({ kind: 'soon', label: 'Уже идёт' });
+    else if (minutes <= 180) badges.push({ kind: 'soon', label: minutes < 60 ? `Через ${Math.ceil(minutes)} мин` : `Через ${Math.round(minutes / 60)} ч` });
+  }
+  if (e.popular) badges.push({ kind: 'hot', label: 'Популярное' });
+  if (/бесплатн|free/i.test(e.price ?? '')) badges.push({ kind: 'free', label: 'Бесплатно' });
+  return badges.slice(0, 2);
+}
+
 /** Адрес страницы события на сайте. */
 export const collectedPath = (id: string) => `/e/${encodeURIComponent(id)}`;
 

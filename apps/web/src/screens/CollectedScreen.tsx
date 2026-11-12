@@ -89,9 +89,6 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
         <div><span>🗓</span><span>{collectedWhen(event.starts_at)}</span></div>
         {where && <div><span>📍</span><span>{where}</span></div>}
         {event.price && <div><span>🎟</span><span>{event.price}</span></div>}
-        {(!!event.views || !!event.reactions) && (
-          <div><span>👀</span><span>{[event.views && `${event.views.toLocaleString('ru')} просмотров`, event.reactions && `реакций: ${event.reactions}`].filter(Boolean).join(' · ')} у анонса</span></div>
-        )}
       </div></div>
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
       <About topic={event.topic} what_happens={event.what_happens} for_whom={event.for_whom} beginner_friendly={event.beginner_friendly}

@@ -135,8 +135,6 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   signups_count?: number; // сколько человек нажали «Записаться» в Ясвами (это интерес, не подтверждённое место); только в ответе на одно событие
   cover_url?: string | null; // обложка 9:16: фото анонса или нарисованная; нет — показываем иконку темы
   video_url?: string | null; // ролик-история 9:16 о событии; название и время накладывает страница, в самом ролике текста нет
-  views?: number | null; // просмотры публикации-источника; у публикаций в группах их нет
-  reactions?: number | null; // сколько реакций под публикацией-источником
   popular?: boolean; // отклик заметно выше обычного для этого источника (popularIds)
 }
 
@@ -149,6 +147,9 @@ export interface AdminCollectedEvent extends CollectedEventItem, Pick<CollectedE
   status: CollectedStatus;
   channel: string; // источник: канал или группа, откуда анонс
   source_text: string | null; // текст публикации-источника: с ним модератор сверяет, что извлёк ИИ
+  // Отклик на публикацию-источник — только для команды: в витрине из него получается лишь пометка «Популярное».
+  views: number | null; // просмотры; у публикаций в группах их нет
+  reactions: number | null; // сколько реакций под публикацией
 }
 
 /** Отбор собранных событий в модерации: без статуса — все. */

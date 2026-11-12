@@ -1,3 +1,5 @@
+import type { CollectedBadge } from '@yaswami/core';
+
 /** Строка ленты: время слева, название и подробности, квадратное превью справа. Одна в витрине и в «моих событиях».
  *  Карточка 9:16 (`Cover`) лежит рядом — пока не используется. */
 export interface EventRowProps {
@@ -9,20 +11,21 @@ export interface EventRowProps {
   /** Обложка, обрезанная в квадрат; нет — иконка темы. */
   cover_url?: string | null;
   icon: string;
-  popular?: boolean;
+  /** Пометки под названием: «Скоро», «Популярное», «Бесплатно». */
+  badges?: CollectedBadge[];
   /** Есть адрес — строка настоящая ссылка (Cmd/Ctrl-клик открывает вкладку). */
   href?: string;
   onOpen: () => void;
 }
 
-export function EventRow({ time, title, sub, cover_url, icon, popular, href, onOpen }: EventRowProps) {
+export function EventRow({ time, title, sub, cover_url, icon, badges, href, onOpen }: EventRowProps) {
   const body = (
     <>
       <time>{time || '—'}</time>
       <div>
         <b>{title}</b>
         {sub && <small>{sub}</small>}
-        {popular && <span className="badge sm hot">Популярное</span>}
+        {badges?.map((b) => <span key={b.kind} className={`badge sm ${b.kind}`}>{b.label}</span>)}
       </div>
       {cover_url ? <img className="th" src={cover_url} alt="" loading="lazy" /> : <img className="th ico" src={icon} alt="" loading="lazy" />}
     </>
