@@ -101,7 +101,8 @@ export const hunter = {
 };
 
 // Обложку и ролик роль кладёт в хранилище xAI и отвечает ссылками на них; другие адреса не принимаем.
-const COVER_URL = /https:\/\/files-cdn\.x\.ai\/[\w\-/.]+\.(?:png|jpe?g)/;
+// Обложка: ссылка xAI (Grok Imagine) или картинка прямо в ответе — так Hermes отдаёт нарисованное ChatGPT (MEDIA: → data URL).
+const COVER_URL = /https:\/\/files-cdn\.x\.ai\/[\w\-/.]+\.(?:png|jpe?g)|data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=]+/;
 const VIDEO_URL = /https:\/\/files-cdn\.x\.ai\/[\w\-/.]+\.mp4/;
 
 export interface Illustration { cover_url: string | null; video_url: string | null }

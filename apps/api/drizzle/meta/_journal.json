@@ -176,6 +176,13 @@
       "when": 1794474075344,
       "tag": "0024_conversations_hidden_at",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794477274575,
+      "tag": "20261112095434_event_covers",
+      "breakpoints": true
     }
   ]
 }

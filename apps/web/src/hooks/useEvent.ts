@@ -19,7 +19,11 @@ function useEventChanged() {
 export function useEvent(id: string) {
   const onSuccess = useEventChanged();
   // Ответы других гостей подтягиваем, когда человек возвращается в приложение.
-  const { data, error, refetch } = useQuery({ queryKey: keys.event(id), queryFn: () => api.event(id), refetchOnWindowFocus: true });
+  // Пока иллюстратор рисует обложку, перечитываем событие: картинка появится сама, без перезахода.
+  const { data, error, refetch } = useQuery({
+    queryKey: keys.event(id), queryFn: () => api.event(id), refetchOnWindowFocus: true,
+    refetchInterval: (query) => (query.state.data?.cover_pending ? 5000 : false),
+  });
   const rsvp = useMutation({ mutationFn: (input: RsvpInput) => api.rsvp(id, input), onSuccess });
   const update = useMutation({ mutationFn: (input: EventUpdateInput) => api.updateEvent(id, input), onSuccess });
   return { view: data ?? null, failed: error, reload: refetch, rsvp: rsvp.mutateAsync, update: update.mutateAsync };
