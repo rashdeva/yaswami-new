@@ -1,6 +1,6 @@
 // Тесты на настоящем Postgres (нужен `pnpm db:up`). Работают в отдельной базе yaswami_test_<checkout>, рабочую не трогают.
 import assert from 'node:assert/strict';
-import { createHash, createHmac, generateKeyPairSync, sign } from 'node:crypto';
+import { createDecipheriv, createHash, createHmac, generateKeyPairSync, sign } from 'node:crypto';
 import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
@@ -18,7 +18,7 @@ import { adminActions, collectedEvents, contacts, conversations, guests, hosts, 
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { saveUserPhoto } from './photos.ts';
-import { listCollectedForAdmin, requestNextVideo } from './services.ts';
+import { listCollectedForAdmin, requestNextCover, requestNextVideo } from './services.ts';
 import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
@@ -59,6 +59,8 @@ bot.call = async (method, body) => (sent.push([method, body]), { ok: true, resul
 Object.assign(bot.pace, { globalMs: 0, chatMs: 0 });
 // В тестах создание событий открыто всем, как было до возможностей; сам запрет проверяет тест «возможность event_create».
 settings.featuresOn = ['event_create'];
+// Лимит запросов в минуту тестам мешал бы: один «пользователь» делает их сотни. Сам лимит проверяет тест «безопасность».
+settings.requestsPerMinute = Infinity;
 
 function initData(id: number, first_name: string, authDate = Math.floor(Date.now() / 1000)) {
   const params = new URLSearchParams({ auth_date: String(authDate), user: JSON.stringify({ id, first_name, username: `u${id}` }) });
@@ -127,7 +129,7 @@ test('обложка события: без своей рисует иллюст
   let drawn!: () => void;
   const done = new Promise<void>((resolve) => (drawn = resolve));
   settings.illustratorUrl = 'http://illustrator.test';
-  illustrator.ask = async (t) => ((task = t), setTimeout(drawn, 50), { cover_url: `data:image/png;base64,${png}`, video_url: null });
+  illustrator.ask = async (t) => ((task = t), setTimeout(drawn, 50), { cover_url: `data:image/png;base64,${png}`, video_url: null, keep: false });
   try {
     const host = tma(3, 'Лена');
     const created = await newEvent(host);
@@ -410,7 +412,7 @@ test('вход с сайта: выключен без Client Secret, возвр�
   assert.equal((await web.request('/auth/telegram/callback?code=x&state=y')).status, 400);
 
   assert.equal(safeReturn('/e/x?signup=1'), '/e/x?signup=1');
-  for (const bad of ['//evil.test', '/\\evil.test', 'https://evil.test', undefined]) assert.equal(safeReturn(bad), '/');
+  for (const bad of ['//evil.test', '/\\evil.test', '/\t/evil.test', '/\n/evil.test', 'https://evil.test', undefined]) assert.equal(safeReturn(bad), '/');
 
   const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const jwks = [{ ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256' }];
@@ -658,7 +660,7 @@ test('заходы: пишутся с тем, кто позвал; органи�
   assert.deepEqual(await contactsOf(tma(903, 'Гость')), []);
 
   const rows = await db.select().from(visits).where(eq(visits.event_id, event.id)).orderBy(asc(visits.created_at));
-  assert.deepEqual(rows.map((r) => [r.user_id, r.referrer_id]), [[903, 902], [903, null], [903, null]]);
+  assert.deepEqual(rows.map((r) => [r.user_id, r.referrer_id]), [[903, 902]], 'повторные заходы за час строк не добавляют');
 });
 
 test('фото: аватар гостя и фото сообщества организатора хранятся в базе и отдаются с долгим кэшем', async () => {
@@ -807,10 +809,11 @@ test('переписка: бот пишет всё в базу, админ от�
   settings.illustratorUrl = 'http://illustrator.test';
   const draw = illustrator.ask;
   let task = '';
-  illustrator.ask = async (t) => ((task = t), { cover_url: null, video_url: 'https://files-cdn.x.ai/abc/file_1.mp4' });
+  illustrator.ask = async (t) => ((task = t), { cover_url: null, video_url: 'https://files-cdn.x.ai/abc/file_1.mp4', keep: false });
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-5-0' }), { started: true });
   await new Promise((r) => setTimeout(r, 50));
   assert.ok(task.includes('"title":"Баня"') && task.includes(cover), 'роль получает данные события и фото анонса');
+  assert.ok(task.startsWith('Обложка уже готова'), 'обложку проверили — роль снимает только ролик');
   assert.equal(((await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem).video_url, 'https://files-cdn.x.ai/abc/file_1.mp4');
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-5-0' }), { error: 'video_exists' });
   settings.illustratorDailyLimit = 1;
@@ -820,8 +823,9 @@ test('переписка: бот пишет всё в базу, админ от�
   });
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-6-0' }), { error: 'video_limit' });
   assert.deepEqual(parseIllustration('cover: https://files-cdn.x.ai/a/b_1.png\nvideo: https://files-cdn.x.ai/c/d_2.mp4'),
-    { cover_url: 'https://files-cdn.x.ai/a/b_1.png', video_url: 'https://files-cdn.x.ai/c/d_2.mp4' });
-  assert.deepEqual(parseIllustration('cover: https://evil.example/x.png\n[[не получилось: нет фото]]'), { cover_url: null, video_url: null }, 'чужие адреса не берём');
+    { cover_url: 'https://files-cdn.x.ai/a/b_1.png', video_url: 'https://files-cdn.x.ai/c/d_2.mp4', keep: false });
+  assert.deepEqual(parseIllustration('cover: https://evil.example/x.png\n[[не получилось: нет фото]]'), { cover_url: null, video_url: null, keep: false }, 'чужие адреса не берём');
+  assert.deepEqual(parseIllustration('cover: keep'), { cover_url: null, video_url: null, keep: true });
   // Модерация: новое событие ждёт решения и нигде не видно; одобренное выходит в ленту после обработки.
   const moderated = { ...{ channel: 'danangevent', starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/7' } },
     external_id: 'telegram:danangevent/7#0',
@@ -840,9 +844,15 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual([edited.status, edited.title, edited.telegram_username, edited.description, edited.starts_at], ['pending', 'Чайная церемония', 'teamaster', '', later]);
   const [stored] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
   assert.deepEqual([stored!.telegram_username, stored!.starts_at.toISOString()], ['teamaster', new Date(later).toISOString()]);
-  // Лимит выбран — одобренное выходит как есть, а не ждёт сутки. Правка и решение — одним запросом.
-  assert.equal(((await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved', price: '200 000 ₫' })).json()) as AdminCollectedEvent).status, 'published');
+  // Одобренное ждёт проверки обложки — лимит роликов на неё не влияет — и выходит в ленту. Правка и решение — одним запросом.
+  assert.equal(((await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved', price: '200 000 ₫' })).json()) as AdminCollectedEvent).status, 'approved');
+  assert.equal(await inFeed(), false);
+  illustrator.ask = async (t) => ((task = t), { cover_url: null, video_url: null, keep: true });
+  assert.equal(await requestNextCover(db), 'danangevent-7-0', 'сначала одобренные');
+  assert.ok(task.startsWith('Проверь обложку') && task.includes('Чайная церемония'));
   assert.equal(await inFeed(), true);
+  const [checked] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
+  assert.ok(checked!.cover_checked_at, 'фото анонса годится — оставлено, обложка проверена');
   assert.equal(((await (await app.request('/collected-events/danangevent-7-0')).json()) as CollectedEventItem).price, '200 000 ₫');
   // Перерисовать: обложка удалена, обработка сброшена; очередь возьмёт событие только через 20 минут.
   await db.update(collectedEvents).set({ video_url: 'https://files-cdn.x.ai/a/old.mp4', video_tries: 1 }).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
@@ -851,6 +861,7 @@ test('переписка: бот пишет всё в базу, админ от�
   const redone = (await adminEvents()).find((e) => e.id === 'danangevent-7-0') as unknown as CollectedEventItem;
   assert.deepEqual([redone.video_url, redone.cover_url], [null, null]);
   assert.equal(await requestNextVideo(db), null, 'до возврата фото анонса очередь его не берёт');
+  assert.equal(await requestNextCover(db), 'danangevent-6-0', 'и очередь обложек тоже — берёт другое');
   // Пока очередь не взяла событие, перерисовку можно отменить: обложка и ролик возвращаются.
   const redoAction = (await lastAction())!;
   assert.deepEqual([redoAction.action, redoAction.undoable], ['admin_collected_events_redo', true]);
@@ -864,7 +875,8 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.equal((await call(admin, 'DELETE', '/admin/collected-events/danangevent-7-0')).status, 204);
   assert.equal((await adminEvents()).some((e) => e.id === 'danangevent-7-0'), false);
 
-  // Автообход: берёт ближайшее событие без ролика; лимит выбран — тихо пропускает.
+  // Автообход: берёт ближайшее событие без ролика с проверенной обложкой; лимит выбран — тихо пропускает.
+  illustrator.ask = async (t) => ((task = t), { cover_url: null, video_url: 'https://files-cdn.x.ai/abc/file_1.mp4', keep: false });
   assert.equal(await requestNextVideo(db), null, 'лимит на сегодня выбран');
   settings.illustratorDailyLimit = 5;
   assert.equal(await requestNextVideo(db), 'danangevent-6-0');
@@ -1828,4 +1840,68 @@ test('журнал: упавшее действие не оставляет ни
   await db.update(eventsTable).set({ allow_plus_one: false }).where(eq(eventsTable.id, w.eventId));
   assert.deepEqual(await (await setGuest({ plus_ones: 1 })).json(), { error: 'plus_one_off' });
   assert.equal((await db.select().from(adminActions)).length, count);
+});
+
+test('безопасность: проверенное событие чужой анонс не меняет, токен роли ограничен, сессия истекает, лимиты', async () => {
+  // Опубликованное событие без личного контакта; посторонний пересылает боту «тот же» анонс со своим контактом.
+  await db.delete(collectedEvents);
+  const e = extracted({ title: 'Экстатик у моря' });
+  await db.insert(collectedEvents).values({
+    external_id: 'telegram:danangyoga/100#0', channel: 'danangyoga', announcement: { url: 'https://t.me/danangyoga/100' }, event: e,
+    starts_at: new Date(e.starts_at), signup_url: '', status: 'published',
+  });
+  const forged = { ...e, description: 'Предоплата только через @u7002. '.repeat(5), telegram_username: 'u7002' };
+  await handleUpdate(db, async () => [forged], botMessage(7001, ANNOUNCEMENT, { forward_origin: { type: 'user', date: 1794000000, sender_user: { id: 7002, username: 'u7002' } } }));
+  const page = (await (await app.request('/collected-events/danangyoga-100-0')).json()) as CollectedEventItem;
+  assert.deepEqual([page.description, page.signup_url], [e.description, 'https://t.me/danangyoga/100'], 'описание и «Записаться» прежние');
+  const bob = tma(7002, 'Боб');
+  assert.equal((await call(bob, 'POST', '/collected-events/danangyoga-100-0/claim')).status, 403);
+  // Контакт в анонсе, который команда ещё не проверила, права на событие не даёт.
+  await db.update(collectedEvents).set({ status: 'pending', telegram_username: 'u7002' });
+  assert.equal((await call(bob, 'POST', '/collected-events/danangyoga-100-0/claim')).status, 404);
+  assert.deepEqual(((await (await call(bob, 'GET', '/me')).json()) as Me).claimable, []);
+
+  // Токен роли: только MCP и только свои инструменты, даже если его владелец — админ.
+  settings.adminIds = [70];
+  await call(tma(70, 'Админ'), 'GET', '/events');
+  const rpc = async (auth: string, method: string, params?: object) => (await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params })).json()) as any;
+  const names = async (auth: string) => ((await rpc(auth, 'tools/list')).result.tools as { name: string }[]).map((t) => t.name).sort();
+  const role = `Bearer ${await issueToken(db, 70, { scope: 'support' })}`;
+  assert.deepEqual(await names(role), ['collected_events_list', 'person_events_create', 'person_events_get', 'person_events_list', 'person_events_update']);
+  assert.deepEqual(await names(`Bearer ${await issueToken(db, 70, { scope: 'catalog' })}`), ['collected_events_list']);
+  const denied = await rpc(role, 'tools/call', { name: 'admin_users_search', arguments: {} });
+  assert.ok(denied.error || denied.result.isError, 'инструмент команды токену роли не отвечает');
+  for (const path of ['/me', '/events', '/admin/inbox']) assert.equal((await call(role, 'GET', path)).status, 403, `REST закрыт: ${path}`);
+
+  // Сессия сайта живёт столько же, сколько cookie; бессрочным остаётся только токен без срока.
+  assert.equal((await app.request('/me', { headers: { cookie: `ysw_session=${await issueToken(db, 7002, { ttlS: -1 })}` } })).status, 401);
+  assert.equal((await app.request('/me', { headers: { cookie: `ysw_session=${await issueToken(db, 7002, { ttlS: 60 })}` } })).status, 200);
+
+  // Ссылку на встречу видят организатор и те, кто идёт.
+  const { event, ticket_types } = await newEvent(tma(7003, 'Хост'), { meeting_url: 'https://meet.example/x' });
+  const guest = tma(7004, 'Гость');
+  assert.equal(((await (await call(guest, 'GET', `/events/${event.id}`)).json()) as EventView).event.meeting_url, null);
+  const going = await call(guest, 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved', event_ticket_type_id: ticket_types[0]!.id });
+  assert.equal(((await going.json()) as EventView).event.meeting_url, 'https://meet.example/x');
+
+  // Код входа в наш аккаунт Telegram лежит в базе зашифрованным, когда у API есть ключ сборщика.
+  settings.accountsKey = 'ab'.repeat(32);
+  const [account] = await db.insert(tgAccounts).values({ label: 'Шифр', phone: '+84900000077', status: 'login_code' }).returning();
+  assert.equal((await call(tma(70, 'Админ'), 'POST', `/admin/accounts/${account!.id}/login`, { secret: '54321' })).status, 204);
+  const [{ login }] = await db.select({ login: tgAccounts.login }).from(tgAccounts).where(eq(tgAccounts.id, account!.id)) as [{ login: { secret?: string; sealed?: string } }];
+  const [iv, tag, body] = login.sealed!.split('.').map((part) => Buffer.from(part, 'base64'));
+  const decipher = createDecipheriv('aes-256-gcm', Buffer.from(settings.accountsKey, 'hex'), iv!).setAuthTag(tag!);
+  assert.deepEqual([login.secret, Buffer.concat([decipher.update(body!), decipher.final()]).toString()], [undefined, '54321']);
+  settings.accountsKey = '';
+
+  // Лимит запросов в минуту на человека и размер тела запроса.
+  settings.requestsPerMinute = 1;
+  try {
+    const limited = await call(guest, 'GET', '/events');
+    assert.deepEqual([limited.status, limited.headers.get('retry-after')], [429, '60']);
+  } finally {
+    settings.requestsPerMinute = Infinity;
+  }
+  const huge = await app.request('/telegram/webhook', { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': String(9 * 1024 * 1024) }, body: '{}' });
+  assert.equal(huge.status, 413);
 });

@@ -1,6 +1,6 @@
 // Роль поддержки — Hermes, профиль support (agents/support): отвечает людям, которые пишут боту не анонс, а вопрос.
 // Мы передаём ей переписку и получаем текст ответа; отправляет его наш бот. Сама роль никому писать не может.
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { sseEvents } from '@yaswami/core';
 import { settings } from './settings.ts';
 
@@ -14,7 +14,11 @@ export interface SupportReply {
 }
 
 const TICKET_TTL_S = 30 * 60;
-const sign = (payload: string) => createHmac('sha256', settings.supportKey).update(payload).digest('base64url');
+// Ключ подписи билетов — свой и случайный, а не ключ входа роли: тот знает контейнер Hermes, и его утечка дала бы
+// подделать билет на любого человека. ponytail: ключ живёт в памяти процесса — перезапуск API гасит выданные билеты
+// (роль получает новый с каждым сообщением), а второй экземпляр API потребует общего ключа из окружения.
+const ticketKey = randomBytes(32);
+const sign = (payload: string) => createHmac('sha256', ticketKey).update(payload).digest('base64url');
 
 /**
  * Билет собеседника: с ним роль вызывает инструменты `person_*` от имени именно этого человека (mcp.ts).
@@ -134,10 +138,11 @@ export const hunter = {
 const COVER_URL = /https:\/\/files-cdn\.x\.ai\/[\w\-/.]+\.(?:png|jpe?g)|data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=]+/;
 const VIDEO_URL = /https:\/\/files-cdn\.x\.ai\/[\w\-/.]+\.mp4/;
 
-export interface Illustration { cover_url: string | null; video_url: string | null }
+/** `keep` — роль посмотрела фото анонса и оставила его (`cover: keep`, agents/illustrator/skills/event-cover). */
+export interface Illustration { cover_url: string | null; video_url: string | null; keep: boolean }
 
 export const parseIllustration = (content: string): Illustration =>
-  ({ cover_url: COVER_URL.exec(content)?.[0] ?? null, video_url: VIDEO_URL.exec(content)?.[0] ?? null });
+  ({ cover_url: COVER_URL.exec(content)?.[0] ?? null, video_url: VIDEO_URL.exec(content)?.[0] ?? null, keep: /^cover:\s*keep\b/im.test(content) });
 
 /** Роль illustrator (agents/illustrator): по данным события рисует обложку и ролик с неё. Тесты подменяют `ask`. */
 export const illustrator = {

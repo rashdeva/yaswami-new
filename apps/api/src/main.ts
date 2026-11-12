@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
+import { secureHeaders } from 'hono/secure-headers';
 import { createExtractor } from '@yaswami/extract';
 import { createApp } from './app.ts';
 import { createDb } from './db/client.ts';
@@ -53,7 +54,13 @@ if (BOT_TOKEN) startFeedbackLoop(db);
 startVideoLoop(db); // без роли illustrator (ILLUSTRATOR_URL пуст) ничего не делает
 
 // Один сервер на всё: REST под /api, MCP на /mcp, админка под /admin, остальное — собранное мини-приложение.
+// Заголовки безопасности на всё: HSTS, nosniff, Referrer-Policy. Запрет встраивания во фрейм — только админке:
+// мини-приложение Telegram в веб-версии открывает именно во фрейме. Cross-Origin-* не ставим по той же причине.
+// ponytail: полной Content-Security-Policy нет — её надо собирать под скрипты Telegram и PostHog и проверять в приложении.
+const HEADERS = { crossOriginResourcePolicy: false, crossOriginOpenerPolicy: false, referrerPolicy: 'strict-origin-when-cross-origin' } as const;
 const server = new Hono()
+  .use(secureHeaders({ ...HEADERS, xFrameOptions: false }))
+  .use('/admin/*', secureHeaders({ ...HEADERS, contentSecurityPolicy: { frameAncestors: ["'none'"] } }))
   .route('/api', api)
   .on(['GET', 'POST', 'DELETE'], ['/mcp', '/health'], (c) => api.fetch(c.req.raw));
 

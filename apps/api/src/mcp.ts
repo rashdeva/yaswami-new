@@ -11,6 +11,7 @@ import {
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
 import type { Db } from './db/client.ts';
+import type { TokenScope } from './db/schema.ts';
 import {
   adminOverview, conversationById, createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin, listAccounts, rejectDraft, sendDraft,
   updateAccount, updateDraft,
@@ -23,12 +24,21 @@ const event_ticket_type_id = z.string().describe('Ticket type id (uuid)');
 
 const KINDS = `Event kind is a visual template: ${Object.entries(TEMPLATES).map(([k, t]) => `${k} — ${t.name}`).join(', ')}.`;
 
-function buildServer(db: Db, actor: User) {
+// Что доступно токену с областью действия (роли Hermes, с которыми говорят посторонние): только эти инструменты.
+// Ограничение живёт здесь, на сервере, а не в конфиге роли: украденный токен роли не открывает ни переписку, ни админку.
+const PERSON_TOOLS = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update'];
+const SCOPE_TOOLS: Record<TokenScope, Set<string>> = {
+  support: new Set(['collected_events_list', ...PERSON_TOOLS]),
+  catalog: new Set(['collected_events_list']),
+};
+
+function buildServer(db: Db, actor: User, scope: TokenScope | null) {
   const server = new McpServer({ name: 'yaswami', version: '0.1.0' });
+  const allowed = scope && SCOPE_TOOLS[scope];
 
   // Админ (оператор в командном чате) может выполнить любой «пользовательский» инструмент от имени другого человека:
   // так он управляет чем угодно в сервисе. Гостю параметр недоступен; роль поддержки эти инструменты не получает вовсе.
-  const asAdmin = isAdmin(actor);
+  const asAdmin = isAdmin(actor) && !allowed;
   const ctx: Ctx = { actor, via: 'mcp' }; // для журнала: агент действует как владелец токена
   const AS_USER = { as_user_id: z.number().int().optional().describe('Admin only: act on behalf of this user (Telegram id, see admin_users_search or host_id in admin_events_list). Omit to act as yourself.') };
 
@@ -40,7 +50,7 @@ function buildServer(db: Db, actor: User) {
     config: { title: string; description: string; shape: Shape; readOnly?: boolean; destructive?: boolean; asUser?: boolean },
     run: (args: z.infer<z.ZodObject<Shape>>, me: User, db: Db) => Promise<unknown>,
   ) =>
-    server.registerTool(
+    (!allowed || allowed.has(name)) && server.registerTool(
       name,
       {
         title: config.title,
@@ -78,7 +88,7 @@ function buildServer(db: Db, actor: User) {
 
   tool('events_get', {
     title: 'Get event', readOnly: true, asUser: true, shape: { event_id },
-    description: 'One event with its ticket types, guest list (first names only), counts and the user\'s own response.',
+    description: 'One event with its ticket types, guest list (first names only), counts and the user\'s own response. `meeting_url` is shown only to the host and to guests who are going.',
   }, (a, me, db) => s.getEvent(db, me, a.event_id));
 
   tool('events_create', {
@@ -144,7 +154,8 @@ function buildServer(db: Db, actor: User) {
 
   // Операции команды над всем сервисом — только тем, кому открыта админка: через них работают Hermes и оператор.
   // Каждое изменение пишется в журнал (admin_actions_list) и, если можно, отменяется admin_actions_undo.
-  if (isAdmin(actor)) {
+  // Токен с областью действия проходит сюда ради person_*; остальное отсекает `allowed` в `tool`.
+  if (isAdmin(actor) || allowed) {
     const ONLY_TEAM = 'Only on an explicit instruction from the team. Logged; undo with admin_actions_undo.';
     const user_id = z.number().int().positive().describe('Telegram id of the user (admin_users_search)');
 
@@ -449,8 +460,8 @@ function buildServer(db: Db, actor: User) {
 }
 
 /** Один запрос — один сервер: состояния между запросами нет, поэтому сервис масштабируется без общих сессий. */
-export async function handleMcp(db: Db, actor: User, request: Request): Promise<Response> {
-  const server = buildServer(db, actor);
+export async function handleMcp(db: Db, actor: User, request: Request, scope: TokenScope | null = null): Promise<Response> {
+  const server = buildServer(db, actor, scope);
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   return transport.handleRequest(request);

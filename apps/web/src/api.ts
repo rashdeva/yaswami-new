@@ -28,6 +28,7 @@ const MESSAGES: Record<string, string> = {
   already_claimed: 'Это событие уже подтвердил организатор',
   unauthorized: 'Не получилось войти. Откройте приложение заново',
   invalid_input: 'Проверьте заполненные поля',
+  too_many_requests: 'Слишком много запросов. Подождите минуту',
 };
 
 export class ApiError extends Error {

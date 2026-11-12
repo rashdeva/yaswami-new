@@ -32,7 +32,7 @@ export const settings = {
   hunterUserIds: (process.env.HUNTER_USER_IDS ?? '').split(',').map(Number).filter(Boolean),
   /**
    * Роль illustrator в Hermes: рисует ролик о событии (services.ts, requestCollectedVideo). Пусто — выключено.
-   * `illustratorDailyLimit` — сколько роликов можно заказать за сутки: каждая генерация стоит 1–2 доллара.
+   * `illustratorDailyLimit` — сколько роликов можно заказать за сутки: каждый стоит 1–2 доллара. Обложек не касается.
    */
   illustratorUrl: (process.env.ILLUSTRATOR_URL ?? '').replace(/\/$/, ''),
   illustratorKey: process.env.ILLUSTRATOR_KEY ?? '',
@@ -48,4 +48,8 @@ export const settings = {
   /** Telegram id тех, кому открыта админка переписки (/admin), через запятую. */
   adminIds: (process.env.ADMIN_IDS ?? '').split(',').map(Number).filter(Boolean),
   botMessagesPerMinute: Number(process.env.BOT_MESSAGES_PER_MINUTE ?? 5),
+  /** Сколько запросов к API в минуту делает один вошедший человек или токен; сверх — 429. */
+  requestsPerMinute: Number(process.env.REQUESTS_PER_MINUTE ?? 300),
+  /** Ключ шифрования сборщика (тот же ACCOUNTS_KEY): им API шифрует код и пароль входа в наш аккаунт Telegram. Пусто — они ждут сборщика открытыми. */
+  accountsKey: process.env.ACCOUNTS_KEY ?? '',
 };

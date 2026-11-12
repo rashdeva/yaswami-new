@@ -1,5 +1,5 @@
 {
-  "id": "b552ad18-8b4c-4354-a82e-0a543ea7d5e7",
+  "id": "786e1c92-743a-416e-993e-3b38bb7eab82",
   "prevId": "2a9e66fe-006d-4031-aa1d-72705e58ed2e",
   "version": "7",
   "dialect": "postgresql",
@@ -167,6 +167,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1704,13 +1716,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "daily_limit": {
-          "name": "daily_limit",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 20
         },
         "created_at": {
           "name": "created_at",

@@ -222,3 +222,37 @@ console.log('cover ok');
   }]);
   console.log('leads ok');
 }
+
+// Разведка: активность чата и люди с интересом к досугу.
+{
+  const { chatStats, pickCandidates } = await import('./scout.mjs');
+  const now = 1_800_000_000_000;
+  const daysAgo = (d) => now / 1000 - d * 86400;
+  const user = (id, username = `u${id}`) => ({ className: 'User', id: BigInt(id), username, firstName: 'И', bot: false });
+  const messages = [
+    { id: 1, date: daysAgo(1), message: 'Куда сходить вечером?', sender: user(1) },
+    { id: 2, date: daysAgo(20), message: 'Ищу партнёра на бачату, кто со мной?', sender: user(2) },
+    { id: 3, date: daysAgo(2), message: 'Ищу партнёра на бачату по четвергам', sender: user(2) },
+    { id: 4, date: daysAgo(10), message: 'Только приехала, хочу познакомиться', sender: user(3) },
+    { id: 5, date: daysAgo(1), message: 'Сдаю байк', sender: user(4) },
+    { id: 6, date: daysAgo(1), message: 'Ищу партнёра по бизнесу', sender: user(5) }, // не досуг
+    { id: 7, date: daysAgo(1), message: 'Чем заняться вечером?', sender: { ...user(6), bot: true } }, // бот
+    { id: 8, date: daysAgo(40), message: 'Куда сходить?', sender: user(7) }, // за окном
+  ];
+  const found = pickCandidates('danang_chat', messages, 30, now);
+  assert.deepEqual(found.map((c) => [c.author.username, c.score, c.topic]), [
+    ['u2', 10, 'бачат'], // 3 × 3 (свежее) + 1 повтор
+    ['u1', 6, null],
+    ['u3', 2, null],
+  ]);
+  assert.equal(found[0].url, 'https://t.me/danang_chat/3');
+  assert.deepEqual(chatStats(messages, 30, now), { per_day: 0, authors: 5 });
+  console.log('scout ok');
+}
+
+// Поиск источников: контакты из текста сообщения.
+{
+  const { contactsIn } = await import('./find-sources.mjs');
+  assert.deepEqual(contactsIn('Пишите @Surf_Bob или t.me/surfdanang, чат t.me/joinchat/AbC, почта a@b.co'), ['surf_bob', 'surfdanang']);
+  console.log('find-sources ok');
+}
