@@ -2,6 +2,7 @@
 import * as z from 'zod';
 import type { Event, Guest, TicketType, User } from './schema.ts';
 import { Event as EventSchema, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
+import { OTHER_TOPIC, TOPIC_GUIDES } from './topics.ts';
 
 const isTimeZone = (tz: string) => {
   try {
@@ -142,19 +143,38 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
 export const COLLECTED_STATUSES = ['pending', 'approved', 'published', 'rejected'] as const;
 export type CollectedStatus = (typeof COLLECTED_STATUSES)[number];
 
-/** Собранное событие в админке модерации: любого статуса, с источником. */
-export interface AdminCollectedEvent extends CollectedEventItem {
+/** Собранное событие в админке модерации: любого статуса, с источником и контактами, которые витрина прячет. */
+export interface AdminCollectedEvent extends CollectedEventItem, Pick<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {
   status: CollectedStatus;
   channel: string; // источник: канал или группа, откуда анонс
+  source_text: string | null; // текст публикации-источника: с ним модератор сверяет, что извлёк ИИ
 }
 
 /** Отбор собранных событий в модерации: без статуса — все. */
 export const CollectedListInput = z.object({ status: z.enum(COLLECTED_STATUSES).optional().describe('Only this status; pending — waiting for a decision') });
 export type CollectedListInput = z.infer<typeof CollectedListInput>;
 
-/** Решение модератора: одобрить (дальше обработка и публикация) или отклонить (снять с публикации). */
-export const CollectedModerateInput = z.object({ status: z.enum(['approved', 'rejected']) });
-export type CollectedModerateInput = z.infer<typeof CollectedModerateInput>;
+const text = (max: number) => z.string().trim().max(max);
+/**
+ * Правка собранного события модератором: меняются только переданные поля. `status` — решение: одобрить (дальше
+ * обработка и публикация) или отклонить (снять с публикации); с правкой в одном запросе — «поправил и одобрил».
+ * Аналог events/update в Luma; поля — как у CollectedEvent.
+ */
+export const CollectedUpdateInput = z.object({
+  status: z.enum(['approved', 'rejected']).optional().describe('approved — make the cover and video, then publish; rejected — hide everywhere'),
+  title: text(200).min(1).optional(),
+  description: text(5000).optional(),
+  starts_at: dateTime.optional(),
+  ends_at: dateTime.nullable().optional(),
+  place: text(200).nullable().optional(),
+  address: text(300).nullable().optional(),
+  price: text(100).nullable().optional(),
+  topic: z.enum([...Object.keys(TOPIC_GUIDES), OTHER_TOPIC]).optional(),
+  telegram_username: z.string().regex(/^@?\w{4,32}$/).nullable().optional().describe('Contact for sign-up, Telegram username; also links the event to its organizer'),
+  whatsapp_phone: text(30).nullable().optional(),
+  url: z.url().nullable().optional().describe('Sign-up link from the announcement'),
+});
+export type CollectedUpdateInput = z.infer<typeof CollectedUpdateInput>;
 
 /** Собранное событие в «Моих событиях»: куда человек заходил или нажимал «Записаться». */
 export interface MyCollectedItem {

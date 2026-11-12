@@ -121,7 +121,7 @@ export const collectedEvents = pgTable(
   {
     external_id: text().primaryKey(), // telegram:<канал>/<публикация>#<номер события в ней>
     channel: text().notNull(),
-    announcement: jsonb().$type<{ url: string }>().notNull(),
+    announcement: jsonb().$type<{ url: string; text?: string }>().notNull(),
     event: jsonb().$type<CollectedEvent>().notNull(),
     starts_at: at('starts_at').notNull(),
     ends_at: at('ends_at'),

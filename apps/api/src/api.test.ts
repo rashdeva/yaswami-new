@@ -5,7 +5,7 @@ import { after, before, test } from 'node:test';
 import { asc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminOverview, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
+import type { AdminCollectedEvent, AdminOverview, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
 import { bot } from './telegram.ts';
@@ -752,9 +752,17 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual([await inFeed(), (await app.request('/collected-events/danangevent-7-0')).status], [false, 404]);
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-7-0' }), { error: 'not_approved' });
   assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/collected-events')).status, 403);
-  // Лимит выбран — одобренное выходит как есть, а не ждёт сутки.
-  assert.deepEqual(await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved' })).json(), { status: 'published' });
+  // Правка без решения: событие остаётся ждать, поля и колонки для выборок меняются, контакт — как у сборщика.
+  assert.equal((await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { title: '' })).status, 400);
+  const later = new Date(starts_at.getTime() + 3600_000).toISOString().replace('Z', '+00:00');
+  const edited = (await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { title: 'Чайная церемония', place: null, starts_at: later, telegram_username: '@TeaMaster' })).json()) as AdminCollectedEvent;
+  assert.deepEqual([edited.status, edited.title, edited.telegram_username, edited.description, edited.starts_at], ['pending', 'Чайная церемония', 'teamaster', '', later]);
+  const [stored] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
+  assert.deepEqual([stored!.telegram_username, stored!.starts_at.toISOString()], ['teamaster', new Date(later).toISOString()]);
+  // Лимит выбран — одобренное выходит как есть, а не ждёт сутки. Правка и решение — одним запросом.
+  assert.equal(((await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved', price: '200 000 ₫' })).json()) as AdminCollectedEvent).status, 'published');
   assert.equal(await inFeed(), true);
+  assert.equal(((await (await app.request('/collected-events/danangevent-7-0')).json()) as CollectedEventItem).price, '200 000 ₫');
   // Перерисовать: обложка удалена, обработка сброшена; очередь возьмёт событие только через 20 минут.
   await db.update(collectedEvents).set({ video_url: 'https://files-cdn.x.ai/a/old.mp4', video_tries: 1 }).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
   await db.insert(photos).values({ collected_external_id: 'telegram:danangevent/7#0', source: 'x', data: Buffer.from([0xff, 0xd8]) });
@@ -763,7 +771,7 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual([redone.video_url, redone.cover_url], [null, null]);
   assert.equal(await requestNextVideo(db), null, 'до возврата фото анонса очередь его не берёт');
   // Снять с публикации и удалить.
-  assert.deepEqual(await tool('admin_collected_events_moderate', { id: 'danangevent-7-0', status: 'rejected' }), { status: 'rejected' });
+  assert.equal(((await tool('admin_collected_events_update', { id: 'danangevent-7-0', status: 'rejected' })) as AdminCollectedEvent).status, 'rejected');
   assert.equal(await inFeed(), false);
   assert.equal((await call(admin, 'DELETE', '/admin/collected-events/danangevent-7-0')).status, 204);
   assert.equal((await adminEvents()).some((e) => e.id === 'danangevent-7-0'), false);
@@ -1233,7 +1241,7 @@ test('парность: у каждого инструмента MCP есть м
     admin_hosts_list: 'GET /admin/hosts',
     admin_overview_get: 'GET /admin/overview',
     admin_collected_events_list: 'GET /admin/collected-events',
-    admin_collected_events_moderate: 'PATCH /admin/collected-events/:id',
+    admin_collected_events_update: 'PATCH /admin/collected-events/:id',
     admin_collected_events_get: 'GET /admin/collected-events/:id',
     admin_collected_events_delete: 'DELETE /admin/collected-events/:id',
     admin_collected_events_redo: 'POST /admin/collected-events/:id/redo',
