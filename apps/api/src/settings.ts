@@ -32,7 +32,7 @@ export const settings = {
   hunterUserIds: (process.env.HUNTER_USER_IDS ?? '').split(',').map(Number).filter(Boolean),
   /**
    * Роль illustrator в Hermes: рисует ролик о событии (services.ts, requestCollectedVideo). Пусто — выключено.
-   * `illustratorDailyLimit` — сколько роликов можно заказать за сутки: каждая генерация стоит 1–2 доллара.
+   * `illustratorDailyLimit` — сколько роликов можно заказать за сутки: каждый стоит 1–2 доллара. Обложек не касается.
    */
   illustratorUrl: (process.env.ILLUSTRATOR_URL ?? '').replace(/\/$/, ''),
   illustratorKey: process.env.ILLUSTRATOR_KEY ?? '',

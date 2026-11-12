@@ -18,7 +18,7 @@ import { adminActions, collectedEvents, contacts, conversations, guests, hosts, 
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { saveUserPhoto } from './photos.ts';
-import { listCollectedForAdmin, requestNextVideo } from './services.ts';
+import { listCollectedForAdmin, requestNextCover, requestNextVideo } from './services.ts';
 import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
@@ -129,7 +129,7 @@ test('обложка события: без своей рисует иллюст
   let drawn!: () => void;
   const done = new Promise<void>((resolve) => (drawn = resolve));
   settings.illustratorUrl = 'http://illustrator.test';
-  illustrator.ask = async (t) => ((task = t), setTimeout(drawn, 50), { cover_url: `data:image/png;base64,${png}`, video_url: null });
+  illustrator.ask = async (t) => ((task = t), setTimeout(drawn, 50), { cover_url: `data:image/png;base64,${png}`, video_url: null, keep: false });
   try {
     const host = tma(3, 'Лена');
     const created = await newEvent(host);
@@ -809,10 +809,11 @@ test('переписка: бот пишет всё в базу, админ от�
   settings.illustratorUrl = 'http://illustrator.test';
   const draw = illustrator.ask;
   let task = '';
-  illustrator.ask = async (t) => ((task = t), { cover_url: null, video_url: 'https://files-cdn.x.ai/abc/file_1.mp4' });
+  illustrator.ask = async (t) => ((task = t), { cover_url: null, video_url: 'https://files-cdn.x.ai/abc/file_1.mp4', keep: false });
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-5-0' }), { started: true });
   await new Promise((r) => setTimeout(r, 50));
   assert.ok(task.includes('"title":"Баня"') && task.includes(cover), 'роль получает данные события и фото анонса');
+  assert.ok(task.startsWith('Обложка уже готова'), 'обложку проверили — роль снимает только ролик');
   assert.equal(((await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem).video_url, 'https://files-cdn.x.ai/abc/file_1.mp4');
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-5-0' }), { error: 'video_exists' });
   settings.illustratorDailyLimit = 1;
@@ -822,8 +823,9 @@ test('переписка: бот пишет всё в базу, админ от�
   });
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-6-0' }), { error: 'video_limit' });
   assert.deepEqual(parseIllustration('cover: https://files-cdn.x.ai/a/b_1.png\nvideo: https://files-cdn.x.ai/c/d_2.mp4'),
-    { cover_url: 'https://files-cdn.x.ai/a/b_1.png', video_url: 'https://files-cdn.x.ai/c/d_2.mp4' });
-  assert.deepEqual(parseIllustration('cover: https://evil.example/x.png\n[[не получилось: нет фото]]'), { cover_url: null, video_url: null }, 'чужие адреса не берём');
+    { cover_url: 'https://files-cdn.x.ai/a/b_1.png', video_url: 'https://files-cdn.x.ai/c/d_2.mp4', keep: false });
+  assert.deepEqual(parseIllustration('cover: https://evil.example/x.png\n[[не получилось: нет фото]]'), { cover_url: null, video_url: null, keep: false }, 'чужие адреса не берём');
+  assert.deepEqual(parseIllustration('cover: keep'), { cover_url: null, video_url: null, keep: true });
   // Модерация: новое событие ждёт решения и нигде не видно; одобренное выходит в ленту после обработки.
   const moderated = { ...{ channel: 'danangevent', starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/7' } },
     external_id: 'telegram:danangevent/7#0',
@@ -842,9 +844,15 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual([edited.status, edited.title, edited.telegram_username, edited.description, edited.starts_at], ['pending', 'Чайная церемония', 'teamaster', '', later]);
   const [stored] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
   assert.deepEqual([stored!.telegram_username, stored!.starts_at.toISOString()], ['teamaster', new Date(later).toISOString()]);
-  // Лимит выбран — одобренное выходит как есть, а не ждёт сутки. Правка и решение — одним запросом.
-  assert.equal(((await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved', price: '200 000 ₫' })).json()) as AdminCollectedEvent).status, 'published');
+  // Одобренное ждёт проверки обложки — лимит роликов на неё не влияет — и выходит в ленту. Правка и решение — одним запросом.
+  assert.equal(((await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved', price: '200 000 ₫' })).json()) as AdminCollectedEvent).status, 'approved');
+  assert.equal(await inFeed(), false);
+  illustrator.ask = async (t) => ((task = t), { cover_url: null, video_url: null, keep: true });
+  assert.equal(await requestNextCover(db), 'danangevent-7-0', 'сначала одобренные');
+  assert.ok(task.startsWith('Проверь обложку') && task.includes('Чайная церемония'));
   assert.equal(await inFeed(), true);
+  const [checked] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
+  assert.ok(checked!.cover_checked_at, 'фото анонса годится — оставлено, обложка проверена');
   assert.equal(((await (await app.request('/collected-events/danangevent-7-0')).json()) as CollectedEventItem).price, '200 000 ₫');
   // Перерисовать: обложка удалена, обработка сброшена; очередь возьмёт событие только через 20 минут.
   await db.update(collectedEvents).set({ video_url: 'https://files-cdn.x.ai/a/old.mp4', video_tries: 1 }).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
@@ -853,6 +861,7 @@ test('переписка: бот пишет всё в базу, админ от�
   const redone = (await adminEvents()).find((e) => e.id === 'danangevent-7-0') as unknown as CollectedEventItem;
   assert.deepEqual([redone.video_url, redone.cover_url], [null, null]);
   assert.equal(await requestNextVideo(db), null, 'до возврата фото анонса очередь его не берёт');
+  assert.equal(await requestNextCover(db), 'danangevent-6-0', 'и очередь обложек тоже — берёт другое');
   // Пока очередь не взяла событие, перерисовку можно отменить: обложка и ролик возвращаются.
   const redoAction = (await lastAction())!;
   assert.deepEqual([redoAction.action, redoAction.undoable], ['admin_collected_events_redo', true]);
@@ -866,7 +875,8 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.equal((await call(admin, 'DELETE', '/admin/collected-events/danangevent-7-0')).status, 204);
   assert.equal((await adminEvents()).some((e) => e.id === 'danangevent-7-0'), false);
 
-  // Автообход: берёт ближайшее событие без ролика; лимит выбран — тихо пропускает.
+  // Автообход: берёт ближайшее событие без ролика с проверенной обложкой; лимит выбран — тихо пропускает.
+  illustrator.ask = async (t) => ((task = t), { cover_url: null, video_url: 'https://files-cdn.x.ai/abc/file_1.mp4', keep: false });
   assert.equal(await requestNextVideo(db), null, 'лимит на сегодня выбран');
   settings.illustratorDailyLimit = 5;
   assert.equal(await requestNextVideo(db), 'danangevent-6-0');

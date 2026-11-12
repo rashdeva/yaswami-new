@@ -138,10 +138,11 @@ export const hunter = {
 const COVER_URL = /https:\/\/files-cdn\.x\.ai\/[\w\-/.]+\.(?:png|jpe?g)|data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=]+/;
 const VIDEO_URL = /https:\/\/files-cdn\.x\.ai\/[\w\-/.]+\.mp4/;
 
-export interface Illustration { cover_url: string | null; video_url: string | null }
+/** `keep` — роль посмотрела фото анонса и оставила его (`cover: keep`, agents/illustrator/skills/event-cover). */
+export interface Illustration { cover_url: string | null; video_url: string | null; keep: boolean }
 
 export const parseIllustration = (content: string): Illustration =>
-  ({ cover_url: COVER_URL.exec(content)?.[0] ?? null, video_url: VIDEO_URL.exec(content)?.[0] ?? null });
+  ({ cover_url: COVER_URL.exec(content)?.[0] ?? null, video_url: VIDEO_URL.exec(content)?.[0] ?? null, keep: /^cover:\s*keep\b/im.test(content) });
 
 /** Роль illustrator (agents/illustrator): по данным события рисует обложку и ролик с неё. Тесты подменяют `ask`. */
 export const illustrator = {
