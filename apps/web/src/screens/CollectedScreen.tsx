@@ -2,7 +2,8 @@ import { Drawer } from 'vaul';
 import { useEffect, useState } from 'react';
 import type { CollectedHost } from '@yaswami/core';
 import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
-import { loginUrl } from '../api.ts';
+import { track } from '../analytics.ts';
+import { startLogin } from '../api.ts';
 import { useCollectedEvent } from '../hooks/useCollectedEvent.ts';
 import { openExternal } from '../tg.ts';
 import { collectedLink } from '../format.ts';
@@ -55,13 +56,15 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
   const guide = event.topic ? TOPIC_GUIDES[event.topic] : undefined;
 
   function signUp() {
+    track('signup_clicked', { collected_event_id: id, authed });
     if (event!.claimed_event_id) return onOpenEvent(event!.claimed_event_id);
     if (!authed && canLogin) {
-      location.href = loginUrl(`${collectedPath(id)}?signup=1`);
+      startLogin(`${collectedPath(id)}?signup=1`);
       return;
     }
     // Запись уходит в фоне, а ссылка открывается сразу: иначе браузер сочтёт новую вкладку всплывающим окном.
     if (authed && !signedUp) recordSignUp();
+    track('host_contacted', { collected_event_id: id });
     openExternal(event!.signup_url);
   }
 
@@ -115,7 +118,7 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
         {' '}<a href={event.source_url} target="_blank" rel="noreferrer">Исходный анонс</a>
       </p>
       {!event.claimed_event_id && !authed && canLogin && (
-        <button className="quiet" onClick={() => { location.href = loginUrl(collectedPath(id)); }}>Вы организатор? Войдите, чтобы принимать записи здесь</button>
+        <button className="quiet" onClick={() => { startLogin(collectedPath(id)); }}>Вы организатор? Войдите, чтобы принимать записи здесь</button>
       )}
 
       {!past && (
@@ -159,7 +162,7 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
                     ))}
                   </div>
                 )}
-                {hostOpen.channel_url && <button className="cta alt" onClick={() => openExternal(hostOpen.channel_url!)}>Перейти в канал</button>}
+                {hostOpen.channel_url && <button className="cta alt" onClick={() => { track('host_channel_opened', { collected_event_id: id }); openExternal(hostOpen.channel_url!); }}>Перейти в канал</button>}
               </>
             )}
           </Drawer.Content>

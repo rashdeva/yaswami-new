@@ -200,7 +200,7 @@ export interface Contact {
 
 /** Кто вошёл и на какие собранные события он уже записывался. */
 export interface Me {
-  user: Pick<User, 'id' | 'first_name'>;
+  user: Pick<User, 'id' | 'first_name' | 'username'>;
   collected_signups: CollectedEventItem['id'][];
   /** Предстоящие собранные события, где контактом указан этот человек: их можно подтвердить как свои. */
   claimable: CollectedEventItem[];

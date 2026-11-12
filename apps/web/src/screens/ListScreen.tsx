@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useViewed } from '../hooks/useViewed.ts';
 import { useEffect } from 'react';
 import type { CollectedEventItem, Event } from '@yaswami/core';
 import { collectedDayKey, collectedIsPast, collectedTime, topicIcon } from '@yaswami/core';
@@ -52,6 +53,7 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
 
   const first = (upcoming[0] ?? past[0])?.kind ?? 'o';
   useEffect(() => { onKind(first); }, [first, onKind]);
+  useViewed('my_events_viewed');
 
   // Как в витрине: по дням, ближайшие первыми. Прошедшие — отдельным блоком в конце.
   const grid = (items: Row[]) => (

@@ -1,9 +1,10 @@
 // Все маршруты приложения. Страница здесь — тонкая связка: берёт адрес, вход и общие вещи layout и раздаёт экрану.
 import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect, useNavigate } from '@tanstack/react-router';
 import { App, AppTabs, Claims, useClaim, useShell } from './App.tsx';
-import { hasCredentials, loginUrl } from './api.ts';
+import { hasCredentials, startLogin } from './api.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
 import { useSession } from './hooks/useSession.ts';
+import { useViewed } from './hooks/useViewed.ts';
 import { CollectedScreen } from './screens/CollectedScreen.tsx';
 import { CreateScreen } from './screens/CreateScreen.tsx';
 import { EditScreen } from './screens/EditScreen.tsx';
@@ -85,7 +86,7 @@ function Private() {
       <b>✨</b>
       <h2>Войдите, чтобы продолжить</h2>
       <p>Свои события и ответы на приглашения доступны после входа через Telegram — без регистрации и паролей.</p>
-      <button className="chip" onClick={() => void (location.href = loginUrl(location.pathname + location.search))}>Войти через Telegram</button>
+      <button className="chip" onClick={() => startLogin(location.pathname + location.search)}>Войти через Telegram</button>
       <button className="quiet" onClick={() => void navigate({ to: '/' })}>Смотреть все события</button>
     </div>
   ) : (
@@ -124,6 +125,7 @@ const list = createRoute({ getParentRoute: () => personal, path: '/my', componen
 function CreatePage() {
   const navigate = useNavigate();
   const { toast, onKind, onBack } = useShell();
+  useViewed('create_opened');
   return <CreateScreen onBack={onBack} onKind={onKind} toast={toast} onCreated={(view) => void navigate({ to: '/events/$id', params: { id: view.event.id } })} />;
 }
 const create = createRoute({ getParentRoute: () => personal, path: '/new', component: CreatePage });

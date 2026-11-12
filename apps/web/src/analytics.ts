@@ -1,0 +1,62 @@
+// Аналитика действий — PostHog: клики и переходы он ловит сам (autocapture), записи сессий включаются в его настройках проекта.
+// Здесь — запуск, привязка к пользователю и именованные действия для воронок. В разработке ничего не отправляется.
+import posthog from 'posthog-js';
+import { inTelegram, startParam, startRef, tg } from './tg.ts';
+
+// Ключ проекта публичный по замыслу PostHog (он виден в любом браузере), поэтому лежит в коде: сборка в Docker переменных VITE_* не получает.
+const KEY = 'phc_xveQ5LMXvEFu669ULn5VyuCUVaCmtsyw5feni58hxPrt';
+const on = import.meta.env.PROD;
+
+/**
+ * Именованные действия, по ним строятся воронки. Путь гостя: app_opened → feed_viewed → collected_event_viewed →
+ * signup_clicked → (login_started → logged_in) → collected_signed_up → host_contacted. Гость события Ясвами:
+ * app_opened → event_viewed → rsvp_submitted → link_shared. Организатор: create_opened → event_created → link_shared.
+ * «Первый заход» отдельным действием не шлём: в PostHog у шага воронки есть условие «впервые для пользователя».
+ */
+type Action =
+  | 'app_opened' | 'login_started' | 'logged_in' | 'logged_out'
+  | 'feed_viewed' | 'feed_filtered' | 'collected_event_viewed' | 'signup_clicked' | 'collected_signed_up' | 'host_contacted' | 'host_channel_opened'
+  | 'event_viewed' | 'rsvp_submitted' | 'link_shared'
+  | 'my_events_viewed' | 'create_opened' | 'event_created' | 'event_updated' | 'event_claimed';
+type Props = Record<string, string | number | boolean | null | undefined>;
+
+// Вход на сайте уводит со страницы; по этой отметке после возврата понимаем, что человек именно вошёл, а не вернулся со старой сессией.
+const LOGIN_MARK = 'login_started';
+const mark = (fn: (s: Storage) => void) => {
+  try {
+    fn(sessionStorage);
+  } catch {
+    // хранилище закрыто (приватный режим) — обойдёмся без logged_in
+  }
+};
+
+export function initAnalytics() {
+  if (!on) return;
+  // Telegram кладёт в hash подписанные данные входа (tgWebAppData). Скрипт Telegram их уже прочитал — убираем из адреса,
+  // чтобы они не ушли в PostHog вместе с адресом страницы и записью сессии.
+  if (location.hash.includes('tgWebAppData')) history.replaceState(history.state, '', location.pathname + location.search);
+  // ponytail: шлём напрямую на us.i.posthog.com — блокировщики рекламы это режут. Заметим потери — проксировать через наш /api.
+  posthog.init(KEY, { api_host: 'https://us.i.posthog.com', defaults: '2025-05-24', person_profiles: 'identified_only' });
+  // Откуда человек: мини-приложение или сайт — на каждом действии, чтобы любую воронку можно было разрезать.
+  posthog.register({ in_telegram: inTelegram, tg_platform: tg?.platform });
+  // С чем открыли: ссылка на собранное событие (c_<id>), на событие Ясвами или просто приложение; ref — кто позвал.
+  track('app_opened', { start: !startParam ? 'none' : startParam.startsWith('c_') ? 'collected_event' : 'event', ref: startRef });
+}
+
+/** Привязывает действия к пользователю: id в PostHog — Telegram id, тот же, что в админке. `null` — не вошёл. */
+export function identify(user: { id: number; first_name: string; username: string | null } | null) {
+  if (!on) return;
+  if (!user) return void (posthog._isIdentified() && posthog.reset());
+  posthog.identify(String(user.id), { name: user.first_name, username: user.username });
+  mark((s) => {
+    if (!s.getItem(LOGIN_MARK)) return;
+    s.removeItem(LOGIN_MARK);
+    track('logged_in');
+  });
+}
+
+export function track(action: Action, props?: Props) {
+  if (!on) return;
+  if (action === 'login_started') mark((s) => s.setItem(LOGIN_MARK, '1'));
+  posthog.capture(action, props);
+}

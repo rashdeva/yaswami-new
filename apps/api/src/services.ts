@@ -577,7 +577,7 @@ export async function me(db: Db, actor: User): Promise<Me> {
         .orderBy(asc(collectedEvents.starts_at))
     : [];
   return {
-    user: { id: actor.id, first_name: actor.first_name },
+    user: { id: actor.id, first_name: actor.first_name, username: actor.username },
     collected_signups: signups.map((r) => collectedSlug(r.external_id)),
     claimable: claimable.map(toCollectedItem),
   };

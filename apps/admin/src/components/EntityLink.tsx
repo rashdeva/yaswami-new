@@ -24,5 +24,8 @@ export const ExternalLink = ({ href, icon, children }: { href: string; icon?: bo
   <a className={`${LINK} inline-flex items-center gap-1`} href={href} target="_blank" rel="noreferrer">{icon && <ExternalLinkIcon className="size-3.5" />}{children}</a>
 );
 
+/** Действия человека в мини-приложении и на сайте: в PostHog он записан под своим Telegram id (apps/web/src/analytics.ts). */
+export const PostHogLink = ({ userId }: { userId: number }) => <ExternalLink icon href={`https://us.posthog.com/project/188112/person/${userId}`}>PostHog</ExternalLink>;
+
 /** Профиль в Telegram по username. */
 export const TelegramLink = ({ username }: { username: string }) => <ExternalLink href={`https://t.me/${username}`}>@{username}</ExternalLink>;
