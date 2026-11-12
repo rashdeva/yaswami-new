@@ -17,6 +17,10 @@ import { bot } from './telegram.ts';
 const NO_TEXT = '[сообщение без текста]';
 // ponytail: лента без страниц — последние 200 диалогов и сообщений; подгрузка старого — когда этого станет мало.
 const FEED_LIMIT = 200;
+// Время сообщений и диалогов ставит только база: входящие получают его по умолчанию (now()), и если исходящим ставить
+// время из JS, часы API и базы расходятся на миллисекунды — ответ, пришедший позже, оказывается «раньше» нашего
+// сообщения, и стадия «ответил» не наступает.
+const dbNow = sql`now()`;
 
 /** Собеседник. `account_id` — он пишет на наш аккаунт Telegram, а не боту. */
 interface Peer { id: number; name?: string; username?: string | null; account_id?: string | null }
@@ -34,7 +38,7 @@ async function record(db: Db, peer: Peer, message: Pick<Message, 'direction' | '
     .onConflictDoUpdate({
       target: [conversations.channel, conversations.peer_id],
       // Человек написал на другой наш аккаунт — дальше отвечаем с него.
-      set: { last_message_at: new Date(), ...profile, ...(peer.account_id ? { account_id: peer.account_id } : {}), ...(attention === undefined ? {} : { attention }) },
+      set: { last_message_at: dbNow, ...profile, ...(peer.account_id ? { account_id: peer.account_id } : {}), ...(attention === undefined ? {} : { attention }) },
     })
     .returning();
   await db.insert(messages).values({ conversation_id: conversation!.id, ...message });
@@ -186,8 +190,8 @@ export async function sendDraft(db: Db, id: string, text?: string): Promise<void
     if (!account) throw new AppError('no_account', 409);
     await db.update(conversations).set({ account_id: account.id }).where(eq(conversations.id, conversation.id));
   }
-  await db.update(messages).set({ status: 'queued', created_at: new Date(), ...(text ? { text } : {}) }).where(eq(messages.id, id));
-  await db.update(conversations).set({ attention: null, last_message_at: new Date() }).where(eq(conversations.id, draft.conversation_id));
+  await db.update(messages).set({ status: 'queued', created_at: dbNow, ...(text ? { text } : {}) }).where(eq(messages.id, id));
+  await db.update(conversations).set({ attention: null, last_message_at: dbNow }).where(eq(conversations.id, draft.conversation_id));
 }
 
 /** Черновик отклонён: сообщение не уходит и из переписки пропадает. */
@@ -361,7 +365,7 @@ export async function inboxSend(db: Db, author: string, id: string, text: string
     // С аккаунта отправляет сборщик: кладём сообщение в очередь, он заберёт его в течение нескольких секунд.
     if (!conversation.account_id) throw new AppError('account_gone', 409);
     await db.insert(messages).values({ conversation_id: id, direction: 'out', author, text, status: 'queued' });
-    await db.update(conversations).set({ mode: 'human', attention: null, last_message_at: new Date() }).where(eq(conversations.id, id));
+    await db.update(conversations).set({ mode: 'human', attention: null, last_message_at: dbNow }).where(eq(conversations.id, id));
     return;
   }
   const result = await bot.send('sendMessage', { chat_id: conversation.peer_id, text }, author);
