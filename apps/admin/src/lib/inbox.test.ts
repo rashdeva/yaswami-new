@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { InboxConversation, InboxFeed, Message, Wire } from '@yaswami/core';
-import { agentOf, draftsOf, eventsOf, feedRows, filterPeople, kind, lastOf, leads, pick, sender, via, who } from './inbox.ts';
+import { agentOf, draftsOf, eventsOf, feedRows, filterPeople, kind, lastOf, leads, pick, sender, via, visible, who } from './inbox.ts';
 
 const conv = (id: string, over: Partial<Wire<InboxConversation>> = {}): Wire<InboxConversation> => ({
-  id, channel: 'bot', account_id: null, peer_id: 1, peer_name: `Имя ${id}`, peer_username: null, mode: 'agent', attention: null,
+  id, channel: 'bot', account_id: null, peer_id: 1, peer_name: `Имя ${id}`, peer_username: null, mode: 'agent', attention: null, hidden_at: null,
   last_message_at: '2026-01-01T00:00:00Z', kind: 'guest', stage: 'bot', agent: null, ...over,
 });
 const msg = (id: string, conversation_id: string, over: Partial<Wire<Message>> = {}): Wire<Message> => ({
@@ -59,6 +59,14 @@ test('люди: фильтр, агент и поиск', () => {
   assert.deepEqual(ids({ filter: 'all', query: ' @anya ' }), ['a']);
   assert.deepEqual(ids({ filter: 'all', query: 'бор' }), ['b']);
   assert.deepEqual(ids({ filter: 'organizer', query: 'бор' }), []);
+  assert.deepEqual(ids({ filter: 'hidden', query: '' }), []);
+});
+
+test('скрытые: только под своим фильтром, в ленту не идут', () => {
+  const hidden = { ...feed, conversations: [feed.conversations[0]!, { ...feed.conversations[1]!, hidden_at: '2026-01-02T00:00:00Z' }] };
+  assert.deepEqual(filterPeople(hidden.conversations, { filter: 'all', query: '' }).map((c) => c.id), ['a']);
+  assert.deepEqual(filterPeople(hidden.conversations, { filter: 'hidden', query: '' }).map((c) => c.id), ['b']);
+  assert.deepEqual(eventsOf(visible(hidden)).map(({ m }) => m.id), ['m1']);
 });
 
 test('лента: черновики и чужие диалоги не идут, выбор ходит по закреплённым и сообщениям', () => {

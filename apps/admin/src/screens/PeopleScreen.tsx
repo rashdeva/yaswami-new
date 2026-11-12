@@ -26,7 +26,7 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [edited, setEdited] = useState<Record<string, string>>({}); // наши правки черновиков: id сообщения → текст
-  const { send, sendDraft, saveDraft, rejectDraft, toggleMode, done } = useConversationActions();
+  const { send, sendDraft, saveDraft, rejectDraft, toggleMode, done, toggleHidden } = useConversationActions();
 
   const all = feed.conversations;
   const people = filterPeople(all, { filter, agent, query });
@@ -84,10 +84,12 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
                 {c.peer_username && <a className="text-xs text-muted-foreground underline" href={`https://t.me/${c.peer_username}`} target="_blank" rel="noreferrer">@{c.peer_username}</a>}
                 <div className="text-xs text-muted-foreground">{person(c)} · пишет {via(c, feed.accounts)} · {leads(c)}</div>
                 {c.attention && <div className="text-xs text-amber-700 dark:text-amber-400">Ждёт вас: {c.attention}</div>}
+                {c.hidden_at && <div className="text-xs text-muted-foreground">Скрыт {time(c.hidden_at)}: вернётся, когда человек напишет снова</div>}
               </div>
               <div className="flex gap-2">
                 {c.attention && <Button size="sm" variant="outline" onClick={() => done(c)}>Готово</Button>}
                 <Button size="sm" variant="outline" onClick={() => toggleMode(c)}>{c.mode === 'agent' ? 'Взять на себя' : 'Вернуть агенту'}</Button>
+                <Button size="sm" variant="ghost" onClick={() => toggleHidden(c)}>{c.hidden_at ? 'Вернуть в список' : 'Скрыть'}</Button>
               </div>
             </header>
             <Thread conversation={c} messages={thread} me={feed.me} through={via(c, feed.accounts)} />

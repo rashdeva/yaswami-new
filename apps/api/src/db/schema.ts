@@ -298,6 +298,7 @@ export const conversations = pgTable(
     peer_username: text(),
     mode: text().$type<Conversation['mode']>().notNull().default('agent'),
     attention: text(),
+    hidden_at: at('hidden_at'),
     last_message_at: at('last_message_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('conversations_peer_idx').on(t.channel, t.peer_id), index('conversations_last_idx').on(t.last_message_at)],

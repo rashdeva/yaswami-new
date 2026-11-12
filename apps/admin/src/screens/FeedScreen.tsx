@@ -8,14 +8,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { isFresh, useConversationActions, useFeed, useThread } from '@/hooks/useInbox';
 import { useInboxKeys } from '@/hooks/useInboxKeys';
-import { draftsOf, eventsOf, feedRows, kind, person, pick, time, via, who } from '@/lib/inbox';
+import { draftsOf, eventsOf, feedRows, kind, person, pick, time, via, visible, who } from '@/lib/inbox';
 
 // Полоска слева у сообщения: кто написал.
 const EDGE = { user: 'border-l-border', bot: 'border-l-muted-foreground/50', agent: 'border-l-muted-foreground/50', admin: 'border-l-primary' } as const;
 const SELECTED = 'data-[selected=true]:bg-muted data-[selected=true]:ring-2 data-[selected=true]:ring-ring';
 
 export function FeedScreen() {
-  const feed = useFeed();
+  const feed = visible(useFeed());
   const [selected, setSelected] = useState(''); // ключ строки: c:<диалог> или m:<сообщение>
   const [drawer, setDrawer] = useState(false);
   const [edited, setEdited] = useState<Record<string, string>>({}); // наши правки черновиков: id сообщения → текст

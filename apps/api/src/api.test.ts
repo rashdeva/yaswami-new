@@ -874,6 +874,32 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual([(await inbox()).messages[0]!.text, (await inbox()).messages[0]!.status], ['Вы тут?', 'failed']);
 });
 
+test('скрытие: диалог пропадает из списка до следующего сообщения человека, скрытие отменяется', async () => {
+  await db.execute(sql`truncate conversations cascade`);
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const never = async () => assert.fail('ИИ вызывать не нужно');
+  const one = async () => ((await (await call(admin, 'GET', '/admin/inbox')).json()) as InboxFeed).conversations[0]!;
+  await handleUpdate(db, never, botMessage(71, 'Как записаться на покер?'));
+  const { id } = await one();
+
+  // Скрыли — диалог помечен и больше не ждёт нас; отмена возвращает его как был.
+  const res = await call(admin, 'PATCH', `/admin/conversations/${id}`, { is_hidden: true });
+  assert.equal(res.status, 200);
+  let c = await one();
+  assert.ok(c.hidden_at, 'скрыт');
+  assert.equal(c.attention, null);
+  assert.equal((await call(admin, 'POST', `/admin/actions/${(await lastAction())!.id}/undo`)).status, 201);
+  c = await one();
+  assert.deepEqual([c.hidden_at, c.attention], [null, 'Бот не создал событие']);
+
+  // Человек написал снова — диалог сам возвращается в список.
+  await call(admin, 'PATCH', `/admin/conversations/${id}`, { is_hidden: true });
+  assert.ok((await one()).hidden_at);
+  await handleUpdate(db, never, botMessage(71, '/start'));
+  assert.equal((await one()).hidden_at, null);
+});
+
 test('аккаунты Telegram: вход по шагам из админки, сообщения с аккаунта, ответ через очередь', async () => {
   await db.execute(sql`truncate conversations, tg_accounts cascade`);
   settings.adminIds = [70];

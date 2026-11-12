@@ -169,6 +169,13 @@
       "when": 1794468268918,
       "tag": "0023_breezy_thing",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794474075344,
+      "tag": "0024_conversations_hidden_at",
+      "breakpoints": true
     }
   ]
 }

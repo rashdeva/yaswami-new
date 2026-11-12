@@ -153,7 +153,7 @@ function buildServer(db: Db, actor: User) {
     const conversation_id = z.uuid().describe('Conversation id from admin_conversations_list');
     tool('admin_conversations_list', {
       title: 'List conversations', readOnly: true, shape: { waiting_only: z.boolean().optional().describe('Only conversations that wait for a human') },
-      description: 'Conversations between people and the bot, newest first. `attention` says why a conversation waits for a human (null — it does not); `mode` is who leads it: agent (the bot answers) or human (the bot stays silent).',
+      description: 'Conversations between people and the bot, newest first. `attention` says why a conversation waits for a human (null — it does not); `mode` is who leads it: agent (the bot answers) or human (the bot stays silent); `hidden_at` not null — the team hid it as one it will not answer.',
     }, async (a) => (await inboxFeed(db, actor)).conversations.filter((c) => !a.waiting_only || c.attention));
 
     tool('admin_conversations_get', {
@@ -167,9 +167,13 @@ function buildServer(db: Db, actor: User) {
     }, (a) => inboxSend(db, ctx, a.conversation_id, a.text));
 
     tool('admin_conversations_update', {
-      title: 'Update conversation', shape: { conversation_id, mode: z.enum(['agent', 'human']).optional(), done: z.boolean().optional().describe('true — the conversation no longer waits for a human') },
-      description: 'Hand a conversation back to the bot (mode: agent) or take it (mode: human); done: true clears the waiting mark.',
-    }, (a) => inboxUpdate(db, ctx, a.conversation_id, { mode: a.mode, ...(a.done ? { attention: null } : {}) }));
+      title: 'Update conversation',
+      shape: {
+        conversation_id, mode: z.enum(['agent', 'human']).optional(), done: z.boolean().optional().describe('true — the conversation no longer waits for a human'),
+        is_hidden: z.boolean().optional().describe('true — hide a conversation the team will not answer (spam, a stranger); it comes back by itself when the person writes again'),
+      },
+      description: 'Hand a conversation back to the bot (mode: agent) or take it (mode: human); done: true clears the waiting mark; is_hidden hides or unhides it in the admin panel.',
+    }, (a) => inboxUpdate(db, ctx, a.conversation_id, { mode: a.mode, ...(a.done ? { attention: null } : {}), is_hidden: a.is_hidden }));
 
     const message_id = z.uuid().describe('Id of a message with status "draft" from admin_conversations_get');
     tool('admin_drafts_send', {
