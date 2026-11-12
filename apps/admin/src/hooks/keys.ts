@@ -6,4 +6,5 @@ export const keys = {
   /** Разделы «Организаторы» и «Агенты»; `newest` — последнее сообщение ленты, с ним сводка перечитывается. */
   overview: (newest?: string) => ['overview', newest],
   collectedEvents: ['collected-events'],
+  sources: ['sources'],
 } as const;

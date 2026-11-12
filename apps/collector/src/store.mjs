@@ -1,10 +1,24 @@
-// Хранилище сборщика в Postgres. Таблицы описаны в apps/api/src/db/schema.ts (collected_events,
+// Хранилище сборщика в Postgres. Таблицы описаны в apps/api/src/db/schema.ts (collected_events, sources,
 // collector_cursors) и создаются миграциями API; здесь — только запросы.
 import postgres from 'postgres';
 
 export function createStore(url) {
   const sql = postgres(url, { onnotice: () => {} });
   return {
+    /** Источники из CHANNELS: добавляем те, которых ещё нет; выключенный в админке так и остаётся выключенным. */
+    addSources: (channels) => channels.length ? sql`insert into sources ${sql(channels.map((channel) => ({ channel })))} on conflict do nothing` : [],
+    /** Каналы организаторов, которых ещё нет в источниках, — не больше `limit` за раз; возвращает добавленные. */
+    adoptHostChannels: async (limit) => (await sql`
+      insert into sources (channel, host_id)
+      select channel, id from hosts h
+      where channel is not null and not exists (select 1 from sources s where lower(s.channel) = lower(h.channel))
+      order by created_at limit ${limit}
+      on conflict do nothing
+      returning channel`).map((r) => r.channel),
+    /** Включённые источники; у канала организатора — его username: контакт для анонсов без контакта. */
+    sources: () => sql`
+      select s.channel, h.username as host_username from sources s left join hosts h on h.id = s.host_id
+      where s.enabled order by s.created_at`,
     /** Номер последней разобранной публикации по каждому источнику. */
     async cursors() {
       const rows = await sql`select channel, last_number from collector_cursors`;

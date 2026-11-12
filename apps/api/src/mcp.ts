@@ -3,7 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import * as z from 'zod';
 import type { User } from '@yaswami/core';
-import { CollectedListInput, collectedPath, CollectedUpdateInput, CoverSetInput, EventCreateInput, EventUpdateInput, RsvpInput, TEMPLATES, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput } from '@yaswami/core';
+import { CollectedListInput, collectedPath, CollectedUpdateInput, SourceCreateInput, SourceUpdateInput, CoverSetInput, EventCreateInput, EventUpdateInput, RsvpInput, TEMPLATES, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Db } from './db/client.ts';
 import { adminOverview, conversationById, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin, listAccounts, rejectDraft, sendDraft } from './inbox.ts';
@@ -209,6 +209,21 @@ function buildServer(db: Db, actor: User) {
       title: 'Organizer profiles', readOnly: true, shape: {},
       description: 'Organizers of catalogue events, profiled from their public Telegram. `user_id` is set once the person has signed in to the service.',
     }, () => admin.listHosts(db));
+
+    tool('admin_sources_list', {
+      title: 'Announcement sources', readOnly: true, shape: {},
+      description: 'Telegram channels and groups the collector reads announcements from, newest first. `host` — the organizer whose profile the channel came from (the collector adds organizers\' channels by itself); null — added by the team. Disabled sources are not read.',
+    }, () => admin.listSources(db));
+
+    tool('admin_sources_create', {
+      title: 'Add announcement source', shape: SourceCreateInput.shape,
+      description: 'Start reading announcements from a public Telegram channel or group; the collector picks it up on its next pass. Only on an explicit instruction from the team. Errors: source_exists.',
+    }, (a) => admin.createSource(db, a));
+
+    tool('admin_sources_update', {
+      title: 'Enable or disable announcement source', shape: { channel: z.string().describe('Channel from admin_sources_list'), ...SourceUpdateInput.shape },
+      description: 'Stop or resume reading a source, e.g. when an organizer\'s channel turns out to be someone else\'s or not about events. Only on an explicit instruction from the team. Errors: not_found.',
+    }, ({ channel, ...input }) => admin.updateSource(db, channel, input));
 
     tool('admin_overview_get', {
       title: 'Agents and organizers overview', readOnly: true, shape: {},

@@ -9,6 +9,7 @@ import { EventsScreen } from '@/screens/EventsScreen';
 import { FeedScreen } from '@/screens/FeedScreen';
 import { HostsScreen } from '@/screens/HostsScreen';
 import { PeopleScreen } from '@/screens/PeopleScreen';
+import { SourcesScreen } from '@/screens/SourcesScreen';
 
 const root = createRootRoute({ component: App });
 
@@ -50,9 +51,10 @@ const agents = createRoute({ getParentRoute: () => root, path: '/agents', compon
 
 const events = createRoute({ getParentRoute: () => root, path: '/events', component: EventsScreen });
 const accounts = createRoute({ getParentRoute: () => root, path: '/accounts', component: AccountsScreen });
+const sources = createRoute({ getParentRoute: () => root, path: '/sources', component: SourcesScreen });
 
 // Сервер отдаёт админку по /admin (apps/api/src/main.ts), Vite — с base: '/admin/'.
-export const router = createRouter({ routeTree: root.addChildren([people, feed, hosts, agents, events, accounts]), basepath: '/admin' });
+export const router = createRouter({ routeTree: root.addChildren([people, feed, hosts, agents, events, sources, accounts]), basepath: '/admin' });
 
 declare module '@tanstack/react-router' {
   interface Register {

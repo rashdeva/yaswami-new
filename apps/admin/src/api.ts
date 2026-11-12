@@ -1,5 +1,5 @@
 // Клиент API админки: единственное место, где есть fetch. Формы запросов и ответов — из @yaswami/core.
-import type { AccountCreateInput, AdminCollectedEvent, AdminOverview, CollectedUpdateInput, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, Message, TgAccount, Wire } from '@yaswami/core';
+import type { AccountCreateInput, AdminCollectedEvent, AdminOverview, AdminSource, CollectedUpdateInput, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, Message, TgAccount, Wire } from '@yaswami/core';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
 // Вход — cookie сайта; в разработке вместо неё токен админа из .env.
@@ -19,6 +19,7 @@ const MESSAGES: Record<string, string> = {
   account_gone: 'Аккаунт, с которого шла переписка, удалён',
   no_account: 'Отправлять не с чего: добавьте аккаунт Telegram в «Аккаунты»',
   not_draft: 'Черновик уже отправлен или отклонён',
+  source_exists: 'Этот канал уже есть в источниках',
   not_delivered: 'Telegram не доставил сообщение: человек не открывал бота или заблокировал его',
 };
 
@@ -68,4 +69,7 @@ export const api = {
   adminEventUpdate: (event: string, input: CollectedUpdateInput) => request<Wire<AdminCollectedEvent>>('PATCH', `/admin/collected-events/${id(event)}`, input),
   adminEventRedo: (event: string) => request<void>('POST', `/admin/collected-events/${id(event)}/redo`),
   adminEventDelete: (event: string) => request<void>('DELETE', `/admin/collected-events/${id(event)}`),
+  sources: () => request<Wire<AdminSource>[]>('GET', '/admin/sources'),
+  sourceCreate: (channel: string) => request<Wire<AdminSource>>('POST', '/admin/sources', { channel }),
+  sourceUpdate: (channel: string, enabled: boolean) => request<Wire<AdminSource>>('PATCH', `/admin/sources/${id(channel)}`, { enabled }),
 };
