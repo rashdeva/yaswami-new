@@ -1141,6 +1141,19 @@ test('организаторы: запись на событие станови�
   host.ask = async () => assert.fail('диалог ведём мы');
   await report('Вы тут?');
 
+  // Организатор вошёл в сервис — агент своего добился: неотправленное предложение пропадает, новых не будет.
+  await db.execute(sql`truncate conversations cascade`);
+  host.ask = async () => parseSupportReply('Марина, здравствуйте. На вашу йогу записался один человек.');
+  await recordHostLead(db, external_id);
+  assert.equal((await inbox()).messages.filter((m) => m.status === 'draft').length, 1);
+  assert.equal((await call(tma(9300, 'Марина'), 'GET', '/me')).status, 200); // вход организатора
+  feed = await inbox();
+  assert.deepEqual([feed.messages.filter((m) => m.status === 'draft').length, feed.conversations[0]!.attention], [0, null]);
+  await db.execute(sql`truncate conversations cascade`);
+  await recordHostLead(db, external_id);
+  assert.equal((await inbox()).conversations.length, 0, 'вошедшему не пишем');
+  await db.update(hosts).set({ user_id: null }).where(eq(hosts.telegram_id, 9300));
+
   // Событие уже подтверждено организатором — писать незачем.
   await db.execute(sql`truncate conversations cascade`);
   await db.update(collectedEvents).set({ claimed_event_id: (await newEvent(tma(70, 'Админ'))).event.id }).where(eq(collectedEvents.external_id, external_id));
