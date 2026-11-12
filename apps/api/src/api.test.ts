@@ -855,6 +855,18 @@ test('переписка: бот пишет всё в базу, админ от�
   sent.length = 0;
   await handleUpdate(db, async () => [], botMessage(71, 'Что будет в пятницу 20 ноября в 19:00?'));
   assert.deepEqual(sent.filter(([m]) => m === 'sendMessage').map(([, b]) => b.text), ['В пятницу покер в 19:00.']);
+  // Модель роли отказала: Hermes отвечает 200 с текстом ошибки — человеку уходит прежний отказ бота, а не эта ошибка.
+  support.ask = ask;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({
+    choices: [{ message: { role: 'assistant', content: 'Billing or credits exhausted: HTTP 402' }, finish_reason: 'error' }],
+    hermes: { failed: true, error: 'HTTP 402' },
+  });
+  try {
+    assert.deepEqual(await write('Как поменять имя?'), [REPLIES.no_date]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
   // Роль открыта только списку пользователей — остальным прежний отказ бота, роль даже не спрашиваем.
   settings.supportUserIds = [70];
   support.ask = async () => assert.fail('роль не для этого пользователя');

@@ -50,7 +50,11 @@ async function askRole(url: string, key: string, history: SupportTurn[], timeout
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-    const content = ((await res.json()) as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content?.trim();
+    const body = (await res.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[]; hermes?: { failed?: boolean; error?: string } };
+    // Модель отказала (кончились кредиты, лимит) — Hermes всё равно отвечает 200, а в content кладёт текст ошибки.
+    // Отправлять его человеку нельзя: это сбой роли.
+    if (body.hermes?.failed || body.choices?.[0]?.finish_reason === 'error') throw new Error(`${url}: ${body.hermes?.error ?? 'agent error'}`);
+    const content = body.choices?.[0]?.message?.content?.trim();
     if (!content) throw new Error(`${url}: empty reply`);
     return content;
   } catch (e) {
