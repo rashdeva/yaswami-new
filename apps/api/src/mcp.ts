@@ -173,7 +173,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
 
     tool('admin_messages_send', {
       title: 'Send message to person', shape: { conversation_id, text: z.string().trim().min(1).max(4000) },
-      description: 'Send a Telegram message to the person in this conversation, on behalf of the team. After it the bot stops auto-replying there and the person\'s next message waits for a human. Cannot be undone. Errors: not_delivered (Telegram refused it: the person blocked the bot), account_gone.',
+      description: 'Send a Telegram message to the person in this conversation, on behalf of the team. After it the bot stops auto-replying there and the person\'s next message waits for a human. Cannot be undone. Errors: not_delivered (Telegram refused it: the person blocked the bot), account_gone, daily_limit (the account sent its daily number of first messages to people who have not written to us; replies are not limited).',
     }, (a) => inboxSend(db, ctx, a.conversation_id, a.text));
 
     tool('admin_conversations_update', {
@@ -188,7 +188,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
     const message_id = z.uuid().describe('Id of a message with status "draft" from admin_conversations_get');
     tool('admin_drafts_send', {
       title: 'Send agent draft', shape: { message_id, text: z.string().trim().min(1).max(4000).optional().describe('Corrected text; omit to send as written') },
-      description: 'Approve a draft written by an agent (message status "draft"): it is queued and sent from our Telegram account. Only on an explicit go-ahead from the team; cannot be undone. Errors: not_draft (already sent or rejected), no_account.',
+      description: 'Approve a draft written by an agent (message status "draft"): it is queued and sent from our Telegram account. Only on an explicit go-ahead from the team; cannot be undone. Errors: not_draft (already sent or rejected), no_account, daily_limit (the account sent its daily number of first messages to people who have not written to us; replies are not limited).',
     }, (a) => sendDraft(db, ctx, a.message_id, a.text));
 
     tool('admin_drafts_update', {
@@ -420,7 +420,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
     const account_id = z.uuid().describe('Account id from admin_accounts_list');
     tool('admin_accounts_list', {
       title: 'Our Telegram accounts', readOnly: true, shape: {},
-      description: 'Telegram accounts the team writes to people from, with their state (active, logging in, error).',
+      description: 'Telegram accounts the team writes to people from, with their state (active, logging in, error), daily_limit and cold_today (first messages sent in the last 24 hours).',
     }, () => listAccounts(db));
 
     tool('admin_accounts_create', {
@@ -429,8 +429,8 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
     }, (a) => createAccount(db, ctx, a));
 
     tool('admin_accounts_update', {
-      title: 'Rename a Telegram account', shape: { account_id, ...AccountUpdateInput.shape },
-      description: 'Change the label of our Telegram account in the admin panel.',
+      title: 'Update a Telegram account', shape: { account_id, ...AccountUpdateInput.shape },
+      description: 'Change the label of our Telegram account or its daily_limit: how many first messages (to people who have not written to us) it may send in 24 hours. Replies are not limited.',
     }, ({ account_id: id, ...input }) => updateAccount(db, ctx, id, input));
 
     tool('admin_accounts_delete', {

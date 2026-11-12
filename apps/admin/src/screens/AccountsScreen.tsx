@@ -1,4 +1,4 @@
-// «Аккаунты»: аккаунты Telegram, с которых мы пишем людям, — добавить, пройти вход по шагам, переименовать, удалить.
+// «Аккаунты»: аккаунты Telegram, с которых мы пишем людям, — добавить, пройти вход по шагам, переименовать, задать лимит, удалить.
 import { CircleAlertIcon, PencilIcon } from 'lucide-react';
 import { useState } from 'react';
 import type { Account } from '@/api';
@@ -34,9 +34,25 @@ function Label({ a, onRename }: { a: Account; onRename: (label: string) => void 
   );
 }
 
+/** Первые сообщения за сутки: сколько ушло и лимит; по клику на лимит — поле. */
+function DailyLimit({ a, onChange }: { a: Account; onChange: (n: number) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  const label = `Первых сообщений за сутки: ${a.cold_today} из `;
+  if (text === null) {
+    return <Hint>{label}<button type="button" className="underline underline-offset-2" onClick={() => setText(String(a.daily_limit))}>{a.daily_limit}</button>. Ответам тем, кто написал сам, лимит не мешает.</Hint>;
+  }
+  const n = Number(text);
+  return (
+    <form className="flex items-center gap-2" onSubmit={(e) => (e.preventDefault(), Number.isInteger(n) && n !== a.daily_limit && onChange(n), setText(null))}>
+      <Input autoFocus type="number" min={0} max={200} className="w-24" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setText(null)} />
+      <Button size="sm">Сохранить</Button>
+    </form>
+  );
+}
+
 export function AccountsScreen() {
   const { accounts } = useFeed();
-  const { create, rename, login, remove } = useAccounts();
+  const { create, rename, setLimit, login, remove } = useAccounts();
   const [label, setLabel] = useState('');
   const [phone, setPhone] = useState('');
   const [secrets, setSecrets] = useState<Record<string, string>>({}); // код или пароль по id аккаунта
@@ -58,6 +74,7 @@ export function AccountsScreen() {
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               {LOGIN_STEP[a.status] && <Hint>{LOGIN_STEP[a.status]}</Hint>}
+              {a.status === 'active' && <DailyLimit a={a} onChange={(n) => setLimit({ id: a.id, daily_limit: n })} />}
               {a.last_error && <Alert variant="destructive"><CircleAlertIcon /><AlertDescription>{a.last_error}</AlertDescription></Alert>}
               {(a.status === 'login_code' || a.status === 'login_password') && (
                 <form

@@ -228,10 +228,15 @@ export const sendDraft = (db: Db, ctx: Ctx, id: string, text?: string) =>
     const draft = await draftById(db, id);
     // Черновик появился, когда аккаунта ещё не было, — отправляем с первого подключённого.
     const conversation = await conversationById(db, draft.conversation_id);
-    if (conversation.channel === 'account' && !conversation.account_id) {
-      const account = await activeAccount(db);
-      if (!account) throw new AppError('no_account', 409);
-      await db.update(conversations).set({ account_id: account.id }).where(eq(conversations.id, conversation.id));
+    if (conversation.channel === 'account') {
+      let accountId = conversation.account_id;
+      if (!accountId) {
+        const account = await activeAccount(db);
+        if (!account) throw new AppError('no_account', 409);
+        accountId = account.id;
+        await db.update(conversations).set({ account_id: accountId }).where(eq(conversations.id, conversation.id));
+      }
+      await checkDailyLimit(db, conversation.id, accountId);
     }
     await db.update(messages).set({ status: 'queued', created_at: dbNow, ...(text ? { text } : {}) }).where(eq(messages.id, id));
     await db.update(conversations).set({ attention: null, last_message_at: dbNow }).where(eq(conversations.id, draft.conversation_id));
@@ -386,10 +391,31 @@ export async function inboxFeed(db: Db, actor: User): Promise<InboxFeed> {
 }
 
 // Наружу — без сессии и без кода с паролем: их видит только сборщик.
+// Ссылка на tg_accounts.id написана текстом: в returning drizzle пишет колонку без имени таблицы, и `id` неоднозначен.
+// Первое сообщение — наше исходящее, перед которым человек нам в этом диалоге не писал (и повторное без ответа тоже).
+const coldToday = sql<number>`(
+  select count(*)::int from ${messages} m join ${conversations} c on c.id = m.conversation_id
+  where c.account_id = tg_accounts.id and m.direction = 'out' and m.status in ('sent', 'queued')
+    and m.created_at > now() - interval '24 hours'
+    and not exists (select 1 from ${messages} i where i.conversation_id = m.conversation_id and i.direction = 'in' and i.created_at < m.created_at)
+)`;
 const accountFields = {
   id: tgAccounts.id, label: tgAccounts.label, phone: tgAccounts.phone, status: tgAccounts.status,
-  last_error: tgAccounts.last_error, created_at: tgAccounts.created_at,
+  last_error: tgAccounts.last_error, daily_limit: tgAccounts.daily_limit, cold_today: coldToday, created_at: tgAccounts.created_at,
 };
+
+/**
+ * Лимит в коде, а не в тексте роли: человек нам ещё не писал — первых сообщений с аккаунта за сутки не больше
+ * `daily_limit`. Ответ тому, кто написал сам, уходит всегда.
+ */
+async function checkDailyLimit(db: Db, conversationId: string, accountId: string): Promise<void> {
+  const [replied] = await db.select({ id: messages.id }).from(messages)
+    .where(and(eq(messages.conversation_id, conversationId), eq(messages.direction, 'in'))).limit(1);
+  if (replied) return;
+  // ponytail: проверка и запись не под блокировкой — два одновременных «отправить» могут превысить лимит на одно.
+  const [account] = await db.select({ limit: tgAccounts.daily_limit, cold: coldToday }).from(tgAccounts).where(eq(tgAccounts.id, accountId));
+  if (account && account.cold >= account.limit) throw new AppError('daily_limit', 409);
+}
 export const listAccounts = (db: Db): Promise<TgAccount[]> => db.select(accountFields).from(tgAccounts).orderBy(asc(tgAccounts.created_at));
 
 /** Новый аккаунт: сборщик увидит строку и запросит у Telegram код на этот номер. */
@@ -457,6 +483,7 @@ export const inboxSend = (db: Db, ctx: Ctx, id: string, text: string) =>
     if (conversation.channel === 'account') {
       // С аккаунта отправляет сборщик: кладём сообщение в очередь, он заберёт его в течение нескольких секунд.
       if (!conversation.account_id) throw new AppError('account_gone', 409);
+      await checkDailyLimit(db, id, conversation.account_id);
       await db.insert(messages).values({ conversation_id: id, direction: 'out', author, text, status: 'queued' });
       await db.update(conversations).set({ mode: 'human', attention: null, last_message_at: dbNow }).where(eq(conversations.id, id));
       return;
