@@ -6,13 +6,14 @@ import { KeyRoundIcon, Trash2Icon } from 'lucide-react';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
-import { EntityLink } from '@/components/EntityLink';
+import { EntityLink, TelegramLink } from '@/components/EntityLink';
 import { SaveBar, saveDirty, TextField } from '@/components/Fields';
 import { History } from '@/components/History';
-import { Failed, Loading, Page, Section } from '@/components/Page';
+import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item';
 import { useContacts, useUser, useUserActions } from '@/hooks/useUsers';
 import { APPROVAL_LABELS, EVENT_STATUS_LABELS } from '@/lib/catalog';
 import { wallParts } from '@/lib/form';
@@ -31,7 +32,8 @@ export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => voi
 
   return (
     <Page
-      title={<>{u.first_name} {u.username && <span className="text-sm font-normal text-muted-foreground">@{u.username}</span>}</>}
+      title={u.first_name}
+      description={<>{u.username && <><TelegramLink username={u.username} /> · </>}Telegram id {u.id}</>}
       actions={
         <>
           <Confirm
@@ -51,8 +53,6 @@ export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => voi
         </>
       }
     >
-      <p className="text-sm text-muted-foreground">Telegram id {u.id}</p>
-
       <Section title="Поля">
         <form onSubmit={saveDirty(form, act.update)} className="flex flex-col gap-4">
           <FieldGroup>
@@ -68,36 +68,42 @@ export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => voi
       </Section>
 
       <Section title={<>Его события <Badge variant="secondary">{events.length}</Badge></>}>
-        {events.length === 0 && <p className="text-xs text-muted-foreground">Своих событий нет.</p>}
-        <ul className="flex flex-col gap-1 text-sm">
+        {events.length === 0 && <Hint>Своих событий нет.</Hint>}
+        <ItemGroup className="gap-1">
           {events.map((e) => (
-            <li key={e.id} className="flex flex-wrap items-center gap-2">
-              <EntityLink entity="event" id={e.id}>{e.name}</EntityLink>
-              <span className="text-xs text-muted-foreground">{wallParts(e.start_at, e.timezone).join(' ')}</span>
-              <Badge variant="secondary">{EVENT_STATUS_LABELS[e.status]}</Badge>
-            </li>
+            <Item key={e.id} size="xs" variant="muted">
+              <ItemContent>
+                <ItemTitle><EntityLink entity="event" id={e.id}>{e.name}</EntityLink></ItemTitle>
+                <ItemDescription>{wallParts(e.start_at, e.timezone).join(' ')}</ItemDescription>
+              </ItemContent>
+              <ItemActions><Badge variant="secondary">{EVENT_STATUS_LABELS[e.status]}</Badge></ItemActions>
+            </Item>
           ))}
-        </ul>
+        </ItemGroup>
       </Section>
 
       <Section title={<>Ответы на события <Badge variant="secondary">{guests.length}</Badge></>}>
-        {guests.length === 0 && <p className="text-xs text-muted-foreground">Ни на одно событие не отвечал.</p>}
-        <ul className="flex flex-col gap-1 text-sm">
+        {guests.length === 0 && <Hint>Ни на одно событие не отвечал.</Hint>}
+        <ItemGroup className="gap-1">
           {guests.map((g) => (
-            <li key={g.event_id} className="flex flex-wrap items-center gap-2">
-              <EntityLink entity="event" id={g.event_id}>{g.event_name}</EntityLink>
-              <Badge variant="outline">{APPROVAL_LABELS[g.approval_status]}</Badge>
-              {g.plus_ones > 0 && <span className="text-xs text-muted-foreground">+{g.plus_ones}</span>}
-            </li>
+            <Item key={g.event_id} size="xs" variant="muted">
+              <ItemContent><ItemTitle><EntityLink entity="event" id={g.event_id}>{g.event_name}</EntityLink></ItemTitle></ItemContent>
+              <ItemActions>
+                {g.plus_ones > 0 && <Badge variant="secondary">+{g.plus_ones}</Badge>}
+                <Badge variant="outline">{APPROVAL_LABELS[g.approval_status]}</Badge>
+              </ItemActions>
+            </Item>
           ))}
-        </ul>
+        </ItemGroup>
       </Section>
 
       {collected_signups.length > 0 && (
         <Section title={<>Записался в каталоге <Badge variant="secondary">{collected_signups.length}</Badge></>}>
-          <ul className="flex flex-col gap-1 text-sm">
-            {collected_signups.map((c) => <li key={c}><EntityLink entity="collected_event" id={c}>{c}</EntityLink></li>)}
-          </ul>
+          <ItemGroup className="gap-1">
+            {collected_signups.map((c) => (
+              <Item key={c} size="xs" variant="muted"><ItemContent><ItemTitle><EntityLink entity="collected_event" id={c}>{c}</EntityLink></ItemTitle></ItemContent></Item>
+            ))}
+          </ItemGroup>
         </Section>
       )}
 
@@ -113,16 +119,21 @@ function Audience({ id, remove }: { id: number; remove: (contact: string) => voi
   if (!data?.length) return null;
   return (
     <Section title={<>Аудитория <Badge variant="secondary">{data.length}</Badge></>}>
-      <ul className="flex flex-col divide-y text-sm">
+      <ItemGroup className="gap-1">
         {data.map((c) => (
-          <li key={c.id} className="flex items-center gap-2 py-1">
-            <EntityLink entity="user" id={c.user_id}>{c.first_name}</EntityLink> {c.username && <span className="text-xs text-muted-foreground">@{c.username}</span>}
-            <Confirm title={`Убрать ${c.first_name} из аудитории?`} description={`Человек вернётся в аудиторию, если снова зайдёт на событие. ${UNDO_HINT}`} action="Убрать" onConfirm={() => remove(c.id)}>
-              <Button size="icon-sm" variant="ghost" className="ml-auto" aria-label="Убрать"><Trash2Icon /></Button>
-            </Confirm>
-          </li>
+          <Item key={c.id} size="xs" variant="muted">
+            <ItemContent>
+              <ItemTitle><EntityLink entity="user" id={c.user_id}>{c.first_name}</EntityLink></ItemTitle>
+              {c.username && <ItemDescription><TelegramLink username={c.username} /></ItemDescription>}
+            </ItemContent>
+            <ItemActions>
+              <Confirm title={`Убрать ${c.first_name} из аудитории?`} description={`Человек вернётся в аудиторию, если снова зайдёт на событие. ${UNDO_HINT}`} action="Убрать" onConfirm={() => remove(c.id)}>
+                <Button size="icon-sm" variant="ghost" aria-label="Убрать"><Trash2Icon /></Button>
+              </Confirm>
+            </ItemActions>
+          </Item>
         ))}
-      </ul>
+      </ItemGroup>
     </Section>
   );
 }

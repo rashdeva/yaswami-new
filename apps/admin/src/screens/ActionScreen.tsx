@@ -2,10 +2,12 @@
 import { ChevronDownIcon } from 'lucide-react';
 import { ActionLink, EntityLink } from '@/components/EntityLink';
 import { ActionState, Actor, UndoButton, when } from '@/components/History';
-import { Failed, Loading, Page, Section } from '@/components/Page';
+import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import { useAction } from '@/hooks/useActions';
 import { actionLabel, CHILDREN, ENTITIES, showValue, snapshotDiff } from '@/lib/journal';
 
@@ -16,7 +18,7 @@ function Raw({ title, value }: { title: string; value: unknown }) {
     <Collapsible>
       <CollapsibleTrigger asChild><Button size="sm" variant="ghost">{title}<ChevronDownIcon /></Button></CollapsibleTrigger>
       <CollapsibleContent>
-        <pre className="max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(value, null, 2)}</pre>
+        <Textarea readOnly value={JSON.stringify(value, null, 2)} className="max-h-96 font-mono text-xs" />
       </CollapsibleContent>
     </Collapsible>
   );
@@ -30,40 +32,48 @@ export function ActionScreen({ id }: { id: string }) {
 
   return (
     <Page title={<>{actionLabel(a.action)} <ActionState a={a} /></>} actions={<UndoButton a={a} />}>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-        <dt className="text-muted-foreground">Когда</dt><dd>{when(a.created_at)}</dd>
-        <dt className="text-muted-foreground">Кто</dt><dd><Actor id={a.actor_id} via={a.via} /> · {a.via === 'mcp' ? 'агент через MCP' : 'в админке'}</dd>
-        <dt className="text-muted-foreground">Над чем</dt>
-        <dd>{ENTITIES[a.entity]}: <EntityLink entity={a.entity} id={a.entity_id}><span className="font-mono">{a.entity_id}</span></EntityLink></dd>
-        <dt className="text-muted-foreground">Инструмент</dt><dd className="font-mono text-xs">{a.action}</dd>
-        {a.undo_of && <><dt className="text-muted-foreground">Отменяет</dt><dd><ActionLink id={a.undo_of}>действие</ActionLink></dd></>}
-        {a.undone_by && <><dt className="text-muted-foreground">Отменено</dt><dd><ActionLink id={a.undone_by}>этим действием</ActionLink></dd></>}
-      </dl>
+      <Table>
+        <TableBody>
+          {[
+            ['Когда', when(a.created_at)],
+            ['Кто', <><Actor id={a.actor_id} via={a.via} /> · {a.via === 'mcp' ? 'агент через MCP' : 'в админке'}</>],
+            ['Над чем', <>{ENTITIES[a.entity]}: <EntityLink entity={a.entity} id={a.entity_id}>{a.entity_id}</EntityLink></>],
+            ['Инструмент', a.action],
+            ...(a.undo_of ? [['Отменяет', <ActionLink id={a.undo_of}>действие</ActionLink>]] : []),
+            ...(a.undone_by ? [['Отменено', <ActionLink id={a.undone_by}>этим действием</ActionLink>]] : []),
+          ].map(([label, value]) => (
+            <TableRow key={label as string}><TableCell className="w-32 text-muted-foreground">{label}</TableCell><TableCell>{value}</TableCell></TableRow>
+          ))}
+        </TableBody>
+      </Table>
 
       <Section title={`Что изменилось · ${KIND[diff.kind]}`}>
-        {diff.fields.length === 0 && <p className="text-xs text-muted-foreground">Поля самой записи не менялись.</p>}
+        {diff.fields.length === 0 && <Hint>Поля самой записи не менялись.</Hint>}
         {diff.fields.length > 0 && (
           <Table>
             <TableHeader><TableRow><TableHead>Поле</TableHead><TableHead>Было</TableHead><TableHead>Стало</TableHead></TableRow></TableHeader>
             <TableBody>
               {diff.fields.map((f) => (
                 <TableRow key={f.key}>
-                  <TableCell className="font-mono text-xs">{f.key}</TableCell>
-                  <TableCell className="max-w-xs text-xs whitespace-pre-wrap text-muted-foreground">{showValue(f.before)}</TableCell>
-                  <TableCell className="max-w-xs text-xs whitespace-pre-wrap">{showValue(f.after)}</TableCell>
+                  <TableCell>{f.key}</TableCell>
+                  <TableCell className="max-w-xs whitespace-pre-wrap text-muted-foreground">{showValue(f.before)}</TableCell>
+                  <TableCell className="max-w-xs whitespace-pre-wrap">{showValue(f.after)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         )}
         {diff.children.length > 0 && (
-          <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          <ItemGroup className="mt-3 grid gap-2 sm:grid-cols-2">
             {diff.children.map((c) => (
-              <li key={c.name} className={c.changed ? '' : 'text-muted-foreground'}>
-                {CHILDREN[c.name] ?? c.name}: {c.before ?? '—'} → {c.after ?? '—'}{c.changed && c.before === c.after ? ' (изменены)' : ''}
-              </li>
+              <Item key={c.name} size="xs" variant={c.changed ? 'outline' : 'muted'}>
+                <ItemContent>
+                  <ItemTitle>{CHILDREN[c.name] ?? c.name}</ItemTitle>
+                  <ItemDescription>{c.before ?? '—'} → {c.after ?? '—'}{c.changed && c.before === c.after ? ' (изменены)' : ''}</ItemDescription>
+                </ItemContent>
+              </Item>
             ))}
-          </ul>
+          </ItemGroup>
         )}
       </Section>
 

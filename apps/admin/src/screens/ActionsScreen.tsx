@@ -37,8 +37,7 @@ export function ActionsScreen({ filter, onFilter }: { filter: ActionsFilter; onF
   const actors = [...new Set([me, ...(entries ?? []).map((a) => a.actor_id), ...(filter.actor ? [filter.actor] : [])])];
 
   return (
-    <Page title="Журнал">
-      <p className="text-xs text-muted-foreground">Каждое изменение команды: кто, когда, через что и над чем. Отменить можно всё, что не ушло людям в Telegram, не стоило денег и не касалось входа.</p>
+    <Page title="Журнал" description="Каждое изменение команды: кто, когда, через что и над чем. Отменить можно всё, что не ушло людям в Telegram, не стоило денег и не касалось входа.">
       <div className="flex flex-wrap items-center gap-2">
         <Pick value={filter.entity} placeholder="Любая сущность" options={ADMIN_ENTITIES.map((e) => [e, ENTITIES[e]])} onChange={(v) => onFilter({ ...filter, entity: v as AdminEntity | undefined })} />
         <Pick value={filter.action} placeholder="Любое действие" options={Object.entries(ACTIONS)} onChange={(v) => onFilter({ ...filter, action: v })} />
@@ -62,11 +61,11 @@ export function ActionsScreen({ filter, onFilter }: { filter: ActionsFilter; onF
           <TableBody>
             {entries.map((a) => (
               <TableRow key={a.id}>
-                <TableCell className="text-xs text-muted-foreground">{when(a.created_at)}</TableCell>
+                <TableCell className="text-muted-foreground">{when(a.created_at)}</TableCell>
                 <TableCell><Actor id={a.actor_id} via={a.via} /></TableCell>
                 <TableCell><ActionLink id={a.id}>{actionLabel(a.action)}</ActionLink></TableCell>
-                <TableCell className="text-xs">
-                  {ENTITIES[a.entity]}: <EntityLink entity={a.entity} id={a.entity_id}><span className="font-mono">{a.entity_id}</span></EntityLink>
+                <TableCell>
+                  {ENTITIES[a.entity]}: <EntityLink entity={a.entity} id={a.entity_id}>{a.entity_id}</EntityLink>
                 </TableCell>
                 <TableCell><ActionState a={a} /></TableCell>
                 <TableCell className="text-right"><UndoButton a={a} size="xs" /></TableCell>

@@ -4,12 +4,15 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import type { AdminCollectedEvent, CollectedUpdateInput as Input } from '@yaswami/core';
 import { CollectedUpdateInput } from '@yaswami/core';
 import { useForm } from 'react-hook-form';
+import { Cover } from '@/components/Cover';
+import { ExternalLink } from '@/components/EntityLink';
 import { AreaField, DateTimeField, SelectField, TextField } from '@/components/Fields';
-import { Loading, Nothing } from '@/components/Page';
+import { Hint, Loading, Nothing } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { FieldGroup } from '@/components/ui/field';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useModerationQueue } from '@/hooks/useCollectedEvents';
 import { topicOptions } from '@/lib/catalog';
 import { offsetOf, pickDirty } from '@/lib/form';
@@ -27,18 +30,20 @@ function QueueCard({ event, onDecide, onSkip }: { event: AdminCollectedEvent; on
   return (
     <form onSubmit={approve}>
       <Card>
-        <CardContent className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-          <div className="flex min-w-0 gap-3">
-            {event.cover_url
-              ? <img className="aspect-9/16 w-24 flex-none self-start rounded-lg bg-muted object-cover" src={event.cover_url} alt="" loading="lazy" />
-              : <div className="flex aspect-9/16 w-24 flex-none items-center justify-center self-start rounded-lg bg-muted text-[11px] text-muted-foreground">нет фото</div>}
-            <div className="flex min-w-0 flex-col gap-1.5 text-xs">
-              <div className="text-muted-foreground">источник: {event.channel}</div>
-              <a className="underline" href={event.source_url} target="_blank" rel="noreferrer">исходный анонс</a>
-              {event.source_text && <p className="max-h-[28rem] overflow-y-auto rounded-md bg-muted p-2.5 whitespace-pre-wrap">{event.source_text}</p>}
+        <CardContent className="grid gap-5 lg:grid-cols-5">
+          <div className="flex min-w-0 gap-3 lg:col-span-2">
+            <Cover url={event.cover_url} className="w-24 flex-none self-start" />
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <Hint>источник: {event.channel}</Hint>
+              <ExternalLink href={event.source_url} icon>исходный анонс</ExternalLink>
+              {event.source_text && (
+                <ScrollArea className="h-96 rounded-md border">
+                  <Hint><span className="block p-2.5 whitespace-pre-wrap">{event.source_text}</span></Hint>
+                </ScrollArea>
+              )}
             </div>
           </div>
-          <FieldGroup className="grid content-start gap-3 sm:grid-cols-2">
+          <FieldGroup className="grid content-start gap-3 sm:grid-cols-2 lg:col-span-3">
             <div className="sm:col-span-2"><TextField form={form} name="title" label="Название" /></div>
             <DateTimeField form={form} name="starts_at" label="Начало" zone={zone} />
             <DateTimeField form={form} name="ends_at" label="Конец" zone={zone} nullable />
@@ -69,7 +74,7 @@ export function CatalogQueueScreen() {
   if (!current) return <Nothing title="Новых событий нет" />;
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="flex items-center gap-2 text-sm font-medium">Ждут решения <Badge>{left}</Badge></h3>
+      <Hint>Ждут решения: <Badge>{left}</Badge></Hint>
       <QueueCard key={current.id} event={current} onSkip={() => skip(current.id)} onDecide={(input) => decide(current.id, input)} />
     </section>
   );
