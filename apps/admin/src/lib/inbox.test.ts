@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { InboxConversation, InboxFeed, Message, Wire } from '@yaswami/core';
-import { agentOf, draftsOf, eventsOf, feedRows, filterPeople, kind, lastOf, leads, pick, sender, via, visible, who } from './inbox.ts';
+import { agentOf, day, draftsOf, eventsOf, feedRows, filterPeople, initials, kind, lastOf, leads, pick, sender, via, visible, who } from './inbox.ts';
 
 const conv = (id: string, over: Partial<Wire<InboxConversation>> = {}): Wire<InboxConversation> => ({
   id, channel: 'bot', account_id: null, peer_id: 1, peer_name: `Имя ${id}`, peer_username: null, mode: 'agent', attention: null, hidden_at: null,
@@ -78,4 +78,18 @@ test('лента: черновики и чужие диалоги не идут,
   assert.equal(pick(rows, 'm:m3').at, 1);
   assert.equal(pick(rows, 'нет такой').cur?.key, 'c:a');
   assert.equal(pick([], '').cur, undefined);
+});
+
+test('day: сегодня, вчера, дата, год — только не текущий', () => {
+  const now = new Date(2026, 10, 12, 15, 0);
+  assert.equal(day(new Date(2026, 10, 12, 0, 5).toISOString(), now), 'Сегодня');
+  assert.equal(day(new Date(2026, 10, 11, 23, 59).toISOString(), now), 'Вчера');
+  assert.equal(day(new Date(2026, 10, 3, 12).toISOString(), now), '3 ноября');
+  assert.match(day(new Date(2025, 0, 1, 12).toISOString(), now), /2025/);
+});
+
+test('initials: две буквы, лишние пробелы и пустое имя', () => {
+  assert.equal(initials('Рашид Шамсудинов Ш'), 'РШ');
+  assert.equal(initials('  аня  '), 'А');
+  assert.equal(initials(''), '?');
 });

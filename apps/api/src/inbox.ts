@@ -246,12 +246,21 @@ export const logSent = (db: Db) => async (method: string, body: { chat_id: numbe
   await record(db, { id: body.chat_id, name: user?.first_name, username: user?.username }, { direction: 'out', author, text, status: result.ok ? 'sent' : 'failed' });
 };
 
-/** Сообщает нам в Telegram, что диалог ждёт человека. Пишет бот «Я с вами»; кто не открывал бота — не получит. */
+/**
+ * Сообщает нам в Telegram, что диалог ждёт человека. Пишет командный бот (там же оператор Hermes, ему можно сразу
+ * сказать, что ответить), без его токена — бот «Я с вами». Кто не открывал этого бота — не получит.
+ */
 export async function alertAdmins(conversation: Conversation, reason: string): Promise<void> {
-  const text = `${conversation.peer_name}${conversation.peer_username ? ` (@${conversation.peer_username})` : ''} ждёт человека: ${reason}\n${settings.publicUrl}/admin`;
+  const text = `${conversation.peer_name}${conversation.peer_username ? ` (@${conversation.peer_username})` : ''} ждёт человека: ${reason}\n${settings.publicUrl}/admin/?c=${conversation.id}`; // сразу открывает этот диалог в «Людях»
   // Админу, который сам и есть собеседник (проверяет бота), не пишем: оповещение упало бы в тот же чат.
   const admins = settings.adminIds.filter((chat_id) => chat_id !== conversation.peer_id);
-  await Promise.all(admins.map((chat_id) => bot.send('sendMessage', { chat_id, text }, 'alert')));
+  const token = settings.teamBotToken;
+  // ponytail: в командный бот — прямой вызов без очереди bot.send: оповещений мало, лимиты Telegram не грозят.
+  const send = (chat_id: number) => token
+    ? fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id, text }), signal: AbortSignal.timeout(10_000) })
+      .then((res) => res.ok || console.error(`оповещение ${chat_id}: HTTP ${res.status}`), console.error)
+    : bot.send('sendMessage', { chat_id, text }, 'alert');
+  await Promise.all(admins.map(send));
 }
 
 /** Последние сообщения диалога в виде, который понимает роль поддержки: человек — user, всё наше — assistant. */

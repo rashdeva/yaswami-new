@@ -2,7 +2,7 @@
 import type { User } from '@yaswami/core';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList, CommandShortcut } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useUsers } from '@/hooks/useUsers';
 
@@ -22,8 +22,8 @@ export function UserPicker({ label, picked, onPick }: { label: string; picked?: 
             <CommandEmpty>{isFetching ? 'Ищу…' : 'Никого не нашлось'}</CommandEmpty>
             {data?.map((u) => (
               <CommandItem key={u.id} value={String(u.id)} onSelect={() => (onPick(u), setOpen(false))}>
-                {u.first_name} {u.username && <span className="text-muted-foreground">@{u.username}</span>}
-                <span className="ml-auto text-xs text-muted-foreground">{u.id}</span>
+                {u.first_name}{u.username && ` @${u.username}`}
+                <CommandShortcut>{u.id}</CommandShortcut>
               </CommandItem>
             ))}
           </CommandList>

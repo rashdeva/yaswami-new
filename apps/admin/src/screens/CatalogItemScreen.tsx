@@ -2,18 +2,21 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { AdminCollectedEventView, CollectedUpdateInput as Input, Wire } from '@yaswami/core';
 import { CollectedUpdateInput, collectedPath } from '@yaswami/core';
-import { ExternalLinkIcon, Trash2Icon } from 'lucide-react';
+import { Trash2Icon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
-import { EntityLink } from '@/components/EntityLink';
+import { Cover } from '@/components/Cover';
+import { EntityLink, ExternalLink, TelegramLink } from '@/components/EntityLink';
 import { AreaField, DateTimeField, ListField, SaveBar, saveDirty, SelectField, TextField, TriField } from '@/components/Fields';
 import { History } from '@/components/History';
-import { Failed, Loading, Page, Section } from '@/components/Page';
+import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
+import { AspectRatio } from '@/components/ui/aspect-ratio';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FieldGroup, FieldLegend, FieldSet } from '@/components/ui/field';
 import { Input as TextInput } from '@/components/ui/input';
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item';
 import { useCatalogActions, useCollectedEvent } from '@/hooks/useCollectedEvents';
 import { COLLECTED_LABELS, topicOptions } from '@/lib/catalog';
 import { offsetOf } from '@/lib/form';
@@ -54,12 +57,12 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
         </>
       }
     >
-      <div className="flex flex-wrap gap-3 text-sm">
-        <a className="inline-flex items-center gap-1 underline" href={e.source_url} target="_blank" rel="noreferrer"><ExternalLinkIcon className="size-3.5" />анонс в @{e.channel}</a>
+      <div className="flex flex-wrap items-center gap-3">
+        <ExternalLink href={e.source_url} icon>анонс в @{e.channel}</ExternalLink>
         {/* Страница события — на сайте, вне админки: обычная ссылка, не маршрут. */}
-        {e.status === 'published' && <a className="inline-flex items-center gap-1 underline" href={collectedPath(e.id)} target="_blank" rel="noreferrer"><ExternalLinkIcon className="size-3.5" />страница события</a>}
-        {e.hosts?.map((h) => <span key={h.name} className="text-muted-foreground">организатор: {h.name}{h.confirmed ? ' (вошёл)' : ''}</span>)}
-        {e.views != null && <span className="text-muted-foreground">просмотров {e.views}</span>}
+        {e.status === 'published' && <ExternalLink href={collectedPath(e.id)} icon>страница события</ExternalLink>}
+        {e.hosts?.map((h) => <Badge key={h.name} variant="outline">организатор: {h.name}{h.confirmed ? ' (вошёл)' : ''}</Badge>)}
+        {e.views != null && <Badge variant="secondary">просмотров {e.views}</Badge>}
       </div>
 
       <Section title="Поля анонса">
@@ -101,16 +104,14 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
       <div className="grid gap-4 md:grid-cols-2">
         <Section title="Обложка">
           <div className="flex gap-3">
-            {e.cover_url
-              ? <img className="aspect-9/16 w-28 flex-none rounded-lg bg-muted object-cover" src={e.cover_url} alt="" />
-              : <div className="flex aspect-9/16 w-28 flex-none items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">нет</div>}
-            <div className="flex min-w-0 flex-col gap-2 text-sm">
+            <Cover url={e.cover_url} className="w-28 flex-none" />
+            <div className="flex min-w-0 flex-col gap-2">
               <Button size="sm" variant="outline" onClick={() => setCover({ id })}>Оставить фото анонса</Button>
               <form className="flex flex-col gap-2" onSubmit={(ev) => (ev.preventDefault(), imageUrl && setCover({ id, image_url: imageUrl.trim() }, { onSuccess: () => setImageUrl('') }))}>
                 <TextInput value={imageUrl} onChange={(ev) => setImageUrl(ev.target.value)} placeholder="https://files-cdn.x.ai/…" type="url" />
                 <Button size="sm" type="submit" disabled={!imageUrl}>Заменить нарисованной</Button>
               </form>
-              <p className="text-xs text-muted-foreground">Картинка — только из хранилища xAI. Решение можно отменить в «Журнале».</p>
+              <Hint>Картинка — только из хранилища xAI. Решение можно отменить в «Журнале».</Hint>
             </div>
           </div>
         </Section>
@@ -118,8 +119,8 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
         <Section title="Ролик">
           {e.video_url
             ? (
-              <div className="flex flex-col items-start gap-2 text-sm">
-                <video className="aspect-9/16 w-40 rounded-lg bg-muted" src={e.video_url} controls preload="metadata" />
+              <div className="flex flex-col items-start gap-2">
+                <div className="w-40"><AspectRatio ratio={9 / 16} className="overflow-hidden rounded-md bg-muted"><video className="size-full" src={e.video_url} controls preload="metadata" /></AspectRatio></div>
                 <Confirm
                   title="Перерисовать обложку и ролик?" action="Перерисовать"
                   description="Нарисованная обложка и ролик удалятся, иллюстратор сделает новые минут через 20–30 — это стоит денег. Пока он не взялся, действие можно отменить в «Журнале»."
@@ -130,8 +131,8 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
               </div>
             )
             : (
-              <div className="flex flex-col items-start gap-2 text-sm">
-                <p className="text-muted-foreground">Ролика нет. Его делает иллюстратор после одобрения.</p>
+              <div className="flex flex-col items-start gap-2">
+                <Hint>Ролика нет. Его делает иллюстратор после одобрения.</Hint>
                 <Confirm
                   title="Заказать ролик?" action="Заказать" destructive={false}
                   description="Генерация ролика стоит денег и не отменяется. Ролик появится здесь через несколько минут."
@@ -145,15 +146,18 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
       </div>
 
       <Section title={<>Записались <Badge variant="secondary">{e.signups.length}</Badge></>}>
-        {e.signups.length === 0 && <p className="text-xs text-muted-foreground">Никто ещё не нажал «Записаться».</p>}
-        <ul className="flex flex-col gap-1 text-sm">
+        {e.signups.length === 0 && <Hint>Никто ещё не нажал «Записаться».</Hint>}
+        <ItemGroup className="gap-1">
           {e.signups.map((s) => (
-            <li key={s.id}>
-              <EntityLink entity="user" id={s.id}>{s.first_name}</EntityLink> {s.username && <span className="text-xs text-muted-foreground">@{s.username}</span>}{' '}
-              <span className="text-xs text-muted-foreground">{new Date(s.at).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-            </li>
+            <Item key={s.id} size="xs" variant="muted">
+              <ItemContent>
+                <ItemTitle><EntityLink entity="user" id={s.id}>{s.first_name}</EntityLink></ItemTitle>
+                {s.username && <ItemDescription><TelegramLink username={s.username} /></ItemDescription>}
+              </ItemContent>
+              <ItemActions><ItemDescription>{new Date(s.at).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</ItemDescription></ItemActions>
+            </Item>
           ))}
-        </ul>
+        </ItemGroup>
       </Section>
 
       <History entity="collected_event" id={id} />

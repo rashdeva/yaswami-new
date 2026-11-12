@@ -2,16 +2,20 @@
 import type { ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export function Page({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
+/** Каркас раздела: заголовок, пояснение под ним, действия справа. Типографика заголовков живёт только здесь. */
+export function Page({ title, description, actions, children }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
     <div className="h-full overflow-y-auto p-5 pb-16">
       <div className="mx-auto flex max-w-5xl flex-col gap-4">
-        <header className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="flex min-w-0 items-center gap-2 font-medium">{title}</h2>
+        <header className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-col gap-1">
+            <h2 className="flex min-w-0 flex-wrap items-center gap-2 font-medium">{title}</h2>
+            {description && <Hint>{description}</Hint>}
+          </div>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
         {children}
@@ -20,13 +24,17 @@ export function Page({ title, actions, children }: { title: ReactNode; actions?:
   );
 }
 
+/** Мелкое пояснение: пустой список, подсказка под полем, сноска. */
+export const Hint = ({ children }: { children: ReactNode }) => <p className="text-xs text-muted-foreground">{children}</p>;
+
 /** Блок карточки сущности: «Поля», «Гости», «История»… */
-export function Section({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
+export function Section({ title, description, actions, children }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
     <Card>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+      <CardHeader>
         <CardTitle className="flex items-center gap-2">{title}</CardTitle>
-        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+        {description && <CardDescription>{description}</CardDescription>}
+        {actions && <CardAction className="flex flex-wrap gap-2">{actions}</CardAction>}
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>

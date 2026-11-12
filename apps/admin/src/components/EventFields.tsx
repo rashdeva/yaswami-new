@@ -3,7 +3,7 @@ import type { Event, EventUpdateInput, Guide, Wire } from '@yaswami/core';
 import { EVENT_STATUSES, TEMPLATES } from '@yaswami/core';
 import type { Base, Form } from '@/components/Fields';
 import { AreaField, DateTimeField, ListField, NumberField, SelectField, Shell, SwitchField, TextField, TriField } from '@/components/Fields';
-import { FieldGroup, FieldLegend, FieldSet } from '@/components/ui/field';
+import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { EVENT_STATUS_LABELS } from '@/lib/catalog';
@@ -36,10 +36,10 @@ function GuideField(p: Base) {
         return (
           <div className="grid gap-2 md:grid-cols-2">
             {GUIDE.map(([key, label]) => (
-              <label key={key} className="flex flex-col gap-1 text-xs text-muted-foreground">
-                {label}
-                <Textarea rows={3} value={guide[key]} onBlur={f.onBlur} onChange={(e) => set(key, e.target.value)} />
-              </label>
+              <Field key={key}>
+                <FieldLabel htmlFor={`guide-${key}`}>{label}</FieldLabel>
+                <Textarea id={`guide-${key}`} rows={3} value={guide[key]} onBlur={f.onBlur} onChange={(e) => set(key, e.target.value)} />
+              </Field>
             ))}
           </div>
         );

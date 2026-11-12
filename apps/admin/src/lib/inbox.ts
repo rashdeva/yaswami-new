@@ -13,6 +13,20 @@ export const time = (iso: string) => {
     : d.toLocaleDateString('ru', { day: 'numeric', month: 'short' });
 };
 
+/** Подпись дня над сообщениями: «Сегодня», «Вчера» или «12 ноября» (с годом, если не текущий). */
+export function day(iso: string, now = new Date()) {
+  const d = new Date(iso);
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return 'Сегодня';
+  if (d.toDateString() === yesterday.toDateString()) return 'Вчера';
+  return d.toLocaleDateString('ru', { day: 'numeric', month: 'long', ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }) });
+}
+
+/** Буквы для аватара: первые буквы двух первых слов имени. */
+export const initials = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => [...w][0]).join('').toUpperCase() || '?';
+
 /** Какой агент написал сообщение: `agent:<роль>`, у оператора — просто `agent`. */
 export const agentOf = (author: string): AgentKey | null => {
   if (!author.startsWith('agent')) return null;
@@ -42,8 +56,10 @@ export const kind = (m: Msg) => (m.direction === 'in' ? 'user' : m.author === 'b
 
 export const person = (c: Conv) => `${c.kind === 'organizer' ? 'Организатор' : 'Гость'} · ${INBOX_STAGES[c.stage]}`;
 
-export const statusText = (m: Msg) =>
-  m.status === 'failed' ? 'не доставлено' : m.status === 'queued' ? 'отправляется' : m.status === 'draft' ? 'черновик, не отправлено' : time(m.created_at);
+/** Состояние сообщения или когда оно пришло; `clock` — только время: день уже подписан разделителем в переписке. */
+export const statusText = (m: Msg, clock = false) =>
+  m.status === 'failed' ? 'не доставлено' : m.status === 'queued' ? 'отправляется' : m.status === 'draft' ? 'черновик, не отправлено'
+    : clock ? new Date(m.created_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }) : time(m.created_at);
 
 /** Скрытые диалоги видны только под фильтром «Скрытые»: вернуть руками. */
 const shown = (c: Conv) => !c.hidden_at;
