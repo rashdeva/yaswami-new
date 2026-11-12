@@ -17,6 +17,8 @@ export function Cover({ cover_url, icon, popular, meta, title, extra, href, onOp
     <>
       {cover_url ? <img className="bg" src={cover_url} alt="" loading="lazy" /> : <img className="ico" src={icon} alt="" loading="lazy" />}
       {popular && <span className="badge sm hot">Популярное</span>}
+      {/* Знак «Я с вами» на обложке: так своё видно в ленте. На плитке с иконкой не нужен. */}
+      {cover_url && <img className="mark" src="/mark.svg" alt="" />}
       <div className="cap">
         <small>{meta}</small>
         <b>{title}</b>
