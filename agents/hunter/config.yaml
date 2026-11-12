@@ -6,6 +6,10 @@ model:
   default: grok-4.6
   provider: xai-oauth
   base_url: https://api.x.ai/v1
+# Когда Grok отказывает (кончилась подписка, сбой xAI), роль отвечает через Gemini по ключу GEMINI_API_KEY.
+fallback_providers:
+  - provider: gemini
+    model: gemini-3.5-flash
 
 platform_toolsets:
   api_server: [mcp-yaswami, skills]

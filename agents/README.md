@@ -41,6 +41,7 @@ railway up agents --path-as-root --service hermes
 | `HUNTER_API_KEY` | ключ роли `hunter`; тот же ключ — в `HUNTER_KEY` сервиса `api` |
 | `HOST_API_KEY` | ключ роли `host`; тот же ключ — в `HOST_KEY` сервиса `api`. Не задан — роль не ставится |
 | `ILLUSTRATOR_API_KEY` | ключ роли `illustrator`; тот же ключ — в `ILLUSTRATOR_KEY` сервиса `api`. Не задан — роль не ставится |
+| `GEMINI_API_KEY` | запасная модель: когда Grok отказывает (кончилась подписка, сбой xAI), `operator`, `support`, `hunter` и `host` отвечают через Gemini; тот же ключ, что у сервиса `api`. Иллюстратору запасной нет — картинки и ролики делает только Grok Imagine |
 
 ## Вход в модель
 
