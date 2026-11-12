@@ -44,17 +44,19 @@ railway up agents --path-as-root --service hermes
 
 ## Вход в модель
 
-Один раз на каждый профиль, хранится на томе. Основная модель — ChatGPT по подписке (`openai-codex`) у `operator`, `support`, `hunter` и `host`; запасная у них и единственная у `illustrator` — Grok по подписке (`xai-oauth`).
+Хранится на томе. Основная модель — ChatGPT по подписке (`openai-codex`) у `operator`, `support`, `hunter` и `host`; запасная у них и единственная у `illustrator` — Grok по подписке (`xai-oauth`).
+
+В ChatGPT входим **один раз, в основной профиль**: профиль без своего входа берёт его оттуда. Свой вход в профиле ломает всё — OpenAI держит одну живую сессию на аккаунт и при новом входе отзывает прежнюю.
 
 ```bash
 railway ssh --service hermes -- hermes auth add openai-codex --no-browser
 ```
 
-```bash
-railway ssh --service hermes -- hermes -p support auth add openai-codex --no-browser
-```
+Grok, наоборот, входит в каждый профиль отдельно:
 
-То же для `hunter` и `host`; для Grok — `auth add xai-oauth`.
+```bash
+railway ssh --service hermes -- hermes -p illustrator auth add xai-oauth --no-browser
+```
 
 Команда печатает адрес и код; код подтверждается в браузере под аккаунтом с подпиской.
 

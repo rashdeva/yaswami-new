@@ -4,7 +4,7 @@
 _config_version: 53 # формат конфига Hermes 0.23; без метки Hermes считает файл древним и ругается при старте
 model:
   default: gpt-6-sol
-  provider: openai-codex # вход по подписке ChatGPT: hermes -p hunter auth add openai-codex --no-browser
+  provider: openai-codex # вход по подписке ChatGPT — общий, из основного профиля (agents/README.md)
 # Когда ChatGPT отказывает (лимит подписки) — Grok по подписке, если она жива. Gemini не берём: бесплатного лимита хватает на пару ответов.
 fallback_providers:
   - provider: xai-oauth
