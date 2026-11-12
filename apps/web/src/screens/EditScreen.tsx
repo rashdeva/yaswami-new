@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
-import type { Event, Guide } from '@yaswami/core';
+import { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import type { Event, EventUpdateInput, Guide } from '@yaswami/core';
 import { ABOUT_MAX, ABOUT_STEP_MAX, GUIDE_MAX, TOPIC_GUIDES } from '@yaswami/core';
 import type { EventData } from '../api.ts';
-import { api } from '../api.ts';
+import { useEvent } from '../hooks/useEvent.ts';
 import { haptic } from '../tg.ts';
 import { CreateScreen } from './CreateScreen.tsx';
 
@@ -15,39 +16,35 @@ const SECTIONS: { id: EditSection; emoji: string; title: string; hint: string }[
 
 interface Props {
   id: string;
-  initial?: EventData;
   section?: EditSection;
   onSection: (section: EditSection) => void;
   onBack: (() => void) | null;
   onKind: (kind: Event['kind']) => void;
-  /** Сохранили: новое состояние события; экран возвращается к списку разделов. */
-  onSaved: (view: EventData) => void;
+  /** Сохранили: экран возвращается к списку разделов. */
+  onSaved: () => void;
   toast: (text: string) => void;
 }
 
-export function EditScreen({ id, initial, section, onSection, onBack, onKind, onSaved, toast }: Props) {
-  const [view, setView] = useState<EventData | null>(initial ?? null);
-  const [failed, setFailed] = useState<string | null>(null);
-  useEffect(() => { api.event(id).then(setView, (e: Error) => setFailed(e.message)); }, [id]);
-  useEffect(() => { if (initial) setView(initial); }, [initial]); // после сохранения приходит свежее состояние
+export function EditScreen({ id, section, onSection, onBack, onKind, onSaved, toast }: Props) {
+  const { view, failed, update } = useEvent(id);
   const kind = view?.event.kind;
   useEffect(() => { if (kind) onKind(kind); }, [kind, onKind]);
 
   if (!view) {
     return failed ? (
-      <div className="state"><b>🫥</b><p>{failed}</p>{onBack && <button className="chip" onClick={onBack}>← Назад</button>}</div>
+      <div className="state"><b>🫥</b><p>{failed.message}</p>{onBack && <button className="chip" onClick={onBack}>← Назад</button>}</div>
     ) : (
       <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>
     );
   }
   if (!view.is_host) return <div className="state"><b>🔒</b><p>Редактировать может только организатор.</p></div>;
 
-  const save = async (input: Parameters<typeof api.updateEvent>[1]) => {
+  const save: Save = async (input) => {
     try {
-      const next = await api.updateEvent(id, input);
+      await update(input);
       haptic.success();
       toast('Сохранено');
-      onSaved(next);
+      onSaved();
     } catch (e) {
       haptic.error();
       toast((e as Error).message);
@@ -77,7 +74,7 @@ export function EditScreen({ id, initial, section, onSection, onBack, onKind, on
   );
 }
 
-type Save = (input: Parameters<typeof api.updateEvent>[1]) => Promise<void>;
+type Save = (input: EventUpdateInput) => Promise<void>;
 function SaveBar({ disabled, busy }: { disabled: boolean; busy: boolean }) {
   return <div className="main"><div><button className="cta" disabled={disabled || busy}>{busy ? 'Сохраняем…' : 'Сохранить'}</button></div></div>;
 }
@@ -92,58 +89,56 @@ const templateOf = (topic: string): Guide => {
 };
 const sameGuide = (a: Guide, b: Guide) => GUIDE_FIELDS.every(([k]) => a[k].trim() === b[k].trim());
 
+/** Поля формы: шаги одной строкой на шаг, гид — всегда четыре строки (пустой гид при сохранении превращается в null). */
+interface AboutValues { topic: string; steps: string; for_whom: string; beginner_friendly: boolean | null; takeaway: string; guide: Guide }
+
 function AboutForm({ event, save }: { event: EventData['event']; save: Save }) {
-  const [topic, setTopic] = useState(event.topic ?? '');
-  const [steps, setSteps] = useState(event.what_happens.join('\n'));
-  const [forWhom, setForWhom] = useState(event.for_whom ?? '');
-  const [beginner, setBeginner] = useState<boolean | null>(event.beginner_friendly);
-  const [takeaway, setTakeaway] = useState(event.takeaway ?? '');
-  const [guide, setGuide] = useState<Guide>(event.guide ?? EMPTY_GUIDE);
-  const [busy, setBusy] = useState(false);
+  const { register, handleSubmit, watch, setValue, formState: { isSubmitting } } = useForm<AboutValues>({
+    defaultValues: {
+      topic: event.topic ?? '', steps: event.what_happens.join('\n'), for_whom: event.for_whom ?? '',
+      beginner_friendly: event.beginner_friendly, takeaway: event.takeaway ?? '', guide: event.guide ?? EMPTY_GUIDE,
+    },
+  });
+  const { topic, steps, beginner_friendly: beginner, guide } = watch();
 
   // Сменили тему: гид подставляем из шаблона, только если свои правки в нём не сделаны.
   const pickTopic = (next: string) => {
-    if (sameGuide(guide, EMPTY_GUIDE) || sameGuide(guide, templateOf(topic))) setGuide(templateOf(next));
-    setTopic(next);
+    if (sameGuide(guide, EMPTY_GUIDE) || sameGuide(guide, templateOf(topic))) setValue('guide', templateOf(next));
+    setValue('topic', next); // тема — управляемое поле: у события может быть тема, которой нет в списке
   };
 
   const lines = steps.split('\n').map((s) => s.trim()).filter(Boolean);
   const invalid = lines.length > 10 || lines.some((s) => s.length > ABOUT_STEP_MAX);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    await save({
-      topic: topic || null,
-      what_happens: lines,
-      for_whom: forWhom.trim() || null,
-      beginner_friendly: beginner,
-      takeaway: takeaway.trim() || null,
-      guide: sameGuide(guide, EMPTY_GUIDE) ? null : guide,
-    });
-    setBusy(false);
-  };
+  const submit = handleSubmit((v) => save({
+    topic: v.topic || null,
+    what_happens: lines,
+    for_whom: v.for_whom.trim() || null,
+    beginner_friendly: v.beginner_friendly,
+    takeaway: v.takeaway.trim() || null,
+    guide: sameGuide(v.guide, EMPTY_GUIDE) ? null : v.guide,
+  }));
 
-  const area = (label: string, value: string, set: (v: string) => void, max: number, rows = 3, placeholder?: string) => (
-    <div className="group"><div className="row tall"><textarea aria-label={label} value={value} onChange={(e) => set(e.target.value)} rows={rows} maxLength={max} placeholder={placeholder} /></div></div>
+  const area = (label: string, name: 'steps' | 'for_whom' | 'takeaway' | `guide.${keyof Guide}`, max: number, rows = 3, placeholder?: string) => (
+    <div className="group"><div className="row tall"><textarea aria-label={label} {...register(name)} rows={rows} maxLength={max} placeholder={placeholder} /></div></div>
   );
 
   return (
-    <form onSubmit={(e) => void submit(e)} noValidate>
+    <form onSubmit={submit} noValidate>
       <h2>Что будет</h2>
-      {area('Что будет', steps, setSteps, ABOUT_STEP_MAX * 10, 4, 'По шагу в строке: разминка, танец в парах, чай')}
+      {area('Что будет', 'steps', ABOUT_STEP_MAX * 10, 4, 'По шагу в строке: разминка, танец в парах, чай')}
       {invalid && <p className="error" role="alert">Не больше 10 шагов, каждый до {ABOUT_STEP_MAX} символов</p>}
 
       <h2>Для кого</h2>
-      {area('Для кого', forWhom, setForWhom, ABOUT_MAX, 2, 'Кому подойдёт')}
+      {area('Для кого', 'for_whom', ABOUT_MAX, 2, 'Кому подойдёт')}
       <div className="chips">
         {([[null, 'Не указывать'], [true, 'Можно без опыта'], [false, 'Нужен опыт']] as const).map(([value, label]) => (
-          <button key={label} type="button" className="chip" aria-pressed={beginner === value} onClick={() => setBeginner(value)}>{label}</button>
+          <button key={label} type="button" className="chip" aria-pressed={beginner === value} onClick={() => setValue('beginner_friendly', value)}>{label}</button>
         ))}
       </div>
 
       <h2>С чем уйдёшь</h2>
-      {area('С чем уйдёшь', takeaway, setTakeaway, ABOUT_MAX, 2, 'Что получит человек — ваше обещание')}
+      {area('С чем уйдёшь', 'takeaway', ABOUT_MAX, 2, 'Что получит человек — ваше обещание')}
 
       <h2>Гид по формату</h2>
       <div className="group"><div className="row">
@@ -156,11 +151,11 @@ function AboutForm({ event, save }: { event: EventData['event']; save: Save }) {
       {(topic || !sameGuide(guide, EMPTY_GUIDE)) && GUIDE_FIELDS.map(([key, label]) => (
         <div key={key}>
           <h2 className="cap">{label}</h2>
-          {area(label, guide[key], (v) => setGuide({ ...guide, [key]: v }), GUIDE_MAX, 4)}
+          {area(label, `guide.${key}`, GUIDE_MAX, 4)}
         </div>
       ))}
       <p className="note">Гид можно править под ваше событие: при выборе темы он подставляется из шаблона.</p>
-      <SaveBar disabled={invalid} busy={busy} />
+      <SaveBar disabled={invalid} busy={isSubmitting} />
     </form>
   );
 }

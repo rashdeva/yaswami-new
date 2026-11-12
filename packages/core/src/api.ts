@@ -49,6 +49,16 @@ export { RsvpInput };
 export const VisitInput = z.object({ ref: z.number().int().positive().optional() });
 export type VisitInput = z.infer<typeof VisitInput>;
 
+/** Поиск человека среди пользователей сервиса. */
+export const UserSearchInput = z.object({ query: z.string().trim().min(1).max(64).describe('Part of a first name or @username') });
+export type UserSearchInput = z.infer<typeof UserSearchInput>;
+
+/** Решение иллюстратора об обложке собранного события. */
+export const CoverSetInput = z.object({
+  image_url: z.url().optional().describe('Public URL of a generated 9:16 image (files-cdn.x.ai). Omit to keep the announcement photo as the cover.'),
+});
+export type CoverSetInput = z.infer<typeof CoverSetInput>;
+
 /** Гость, как его видят другие: только имя и фото, без username и id. */
 export interface GuestView {
   user_first_name: string;
@@ -137,6 +147,10 @@ export interface AdminCollectedEvent extends CollectedEventItem {
   status: CollectedStatus;
   channel: string; // источник: канал или группа, откуда анонс
 }
+
+/** Отбор собранных событий в модерации: без статуса — все. */
+export const CollectedListInput = z.object({ status: z.enum(COLLECTED_STATUSES).optional().describe('Only this status; pending — waiting for a decision') });
+export type CollectedListInput = z.infer<typeof CollectedListInput>;
 
 /** Решение модератора: одобрить (дальше обработка и публикация) или отклонить (снять с публикации). */
 export const CollectedModerateInput = z.object({ status: z.enum(['approved', 'rejected']) });

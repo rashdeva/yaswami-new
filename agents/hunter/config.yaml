@@ -17,7 +17,7 @@ mcp_servers:
     headers:
       Authorization: "Bearer __MCP_TOKEN__"
     tools:
-      include: [catalog_events] # только публичный каталог
+      include: [collected_events_list] # только публичный каталог
       resources: false
       prompts: false
 

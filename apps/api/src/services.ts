@@ -14,6 +14,7 @@ import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts
 import { photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
+import { recordHostLead } from './inbox.ts';
 import { guestRegistered } from './rsvp-notices.ts';
 import { settings } from './settings.ts';
 
@@ -265,8 +266,8 @@ export function startVideoLoop(db: Db, everyMs = 15 * 60_000): void {
 }
 
 /** Все собранные события для админки модерации: ждущие решения сверху, дальше по дате; прошедшие не показываем. */
-export async function listCollectedForAdmin(db: Db): Promise<AdminCollectedEvent[]> {
-  const rows = await collectedWithCover(db).where(upcomingCollected)
+export async function listCollectedForAdmin(db: Db, status?: CollectedStatus): Promise<AdminCollectedEvent[]> {
+  const rows = await collectedWithCover(db).where(and(upcomingCollected, status ? eq(collectedEvents.status, status) : undefined))
     .orderBy(sql`${collectedEvents.status} <> 'pending'`, asc(collectedEvents.starts_at)).limit(500);
   return rows.map((r) => ({ ...toCollectedItem(r), status: r.status, channel: r.channel }));
 }
@@ -323,7 +324,10 @@ export async function getCollectedEvent(db: Db, slug: string): Promise<Collected
 /** Фиксирует, что человек собрался на событие. Повторный вызов ничего не меняет. */
 export async function signUpForCollectedEvent(db: Db, actor: User, slug: string): Promise<CollectedEventItem> {
   const item = await getCollectedEvent(db, slug);
-  await db.insert(collectedEventSignups).values({ external_id: collectedExternalId(slug), user_id: actor.id }).onConflictDoNothing();
+  const external_id = collectedExternalId(slug);
+  await db.insert(collectedEventSignups).values({ external_id, user_id: actor.id }).onConflictDoNothing();
+  // Запись — повод написать организатору: роль host готовит черновик, человек его отправляет. Ответа роли не ждём.
+  void recordHostLead(db, external_id).catch(console.error);
   return item;
 }
 

@@ -180,14 +180,15 @@ test('MCP: список инструментов, создание событи�
 
   const { tools } = await rpc('tools/list', {});
   assert.deepEqual(tools.map((t: { name: string }) => t.name).sort(), [
-    'catalog_events', 'contacts_list', 'event_create', 'event_get', 'event_rsvp', 'event_update', 'events_list',
-    'my_catalog_events', 'ticket_type_create', 'ticket_type_delete', 'ticket_type_update',
+    'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
+    'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
+    'events_ticket_types_update', 'events_update', 'me_collected_list', 'users_get_self',
   ]);
-  const create = tools.find((t: { name: string }) => t.name === 'event_create');
+  const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
 
   const created = await rpc('tools/call', {
-    name: 'event_create',
+    name: 'events_create',
     arguments: { kind: 'c', name: 'Кофе', start_at: '2026-12-01T10:00:00+04:00', timezone: 'Asia/Tbilisi', max_capacity: 1 },
   });
   const view = JSON.parse(created.content[0].text) as EventView;
@@ -195,11 +196,11 @@ test('MCP: список инструментов, создание событи�
 
   // событие, созданное через MCP, видно в REST
   await call(tma(9, 'Лёша'), 'POST', `/events/${view.event.id}/rsvp`, { approval_status: 'approved' });
-  const full = await rpc('tools/call', { name: 'event_rsvp', arguments: { event_id: view.event.id, approval_status: 'approved' } });
+  const full = await rpc('tools/call', { name: 'events_rsvp', arguments: { event_id: view.event.id, approval_status: 'approved' } });
   assert.equal(full.isError, true);
   assert.deepEqual(JSON.parse(full.content[0].text), { error: 'full' });
 
-  const invalid = await rpc('tools/call', { name: 'event_create', arguments: { kind: 'zzz', name: 'x' } });
+  const invalid = await rpc('tools/call', { name: 'events_create', arguments: { kind: 'zzz', name: 'x' } });
   assert.equal(invalid.isError, true);
 });
 
@@ -697,12 +698,12 @@ test('переписка: бот пишет всё в базу, админ от�
   const mcp = async (auth: string, method: string, params?: object) =>
     ((await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params })).json()) as { result: any }).result;
   const toolNames = async (auth: string) => (await mcp(auth, 'tools/list')).tools.map((t: { name: string }) => t.name);
-  assert.ok(!(await toolNames(tma(71, 'Аня'))).includes('message_send'));
-  assert.ok((await toolNames(admin)).includes('message_send'));
+  assert.ok(!(await toolNames(tma(71, 'Аня'))).includes('admin_messages_send'));
+  assert.ok((await toolNames(admin)).includes('admin_messages_send'));
   const tool = async (name: string, args: object) => JSON.parse((await mcp(admin, 'tools/call', { name, arguments: args })).content[0].text);
-  assert.deepEqual((await tool('conversations_list', { waiting_only: true })).map((c: Conversation) => c.id), [id]);
+  assert.deepEqual((await tool('admin_conversations_list', { waiting_only: true })).map((c: Conversation) => c.id), [id]);
   sent.length = 0;
-  await tool('message_send', { conversation_id: id, text: 'Сегодня в 19:00 покер, записать?' });
+  await tool('admin_messages_send', { conversation_id: id, text: 'Сегодня в 19:00 покер, записать?' });
   assert.deepEqual(sent.map(([, b]) => b.text), ['Сегодня в 19:00 покер, записать?']);
   // Обложки: иллюстратор видит события без проверки, оставляет фото анонса; чужой адрес картинки не скачиваем.
   await db.delete(collectedEvents);
@@ -713,30 +714,30 @@ test('переписка: бот пишет всё в базу, админ от�
   });
   const [photo] = await db.insert(photos).values({ collected_external_id: 'telegram:danangevent/5#0', source: 'telegram:danangevent/5', data: Buffer.from([0xff, 0xd8, 1]) }).returning();
   const cover = `${settings.publicUrl}/api/photos/${photo!.id}`;
-  assert.deepEqual(await tool('covers_pending', {}), [{ id: 'danangevent-5-0', title: 'Баня', description: 'Парим', topic: 'баня', tags: ['баня'], place: null, photo_url: cover }]);
-  assert.deepEqual(await tool('cover_set', { id: 'danangevent-5-0', image_url: 'https://evil.example/x.png' }), { error: 'bad_image_url' });
-  assert.deepEqual(await tool('cover_set', { id: 'danangevent-5-0' }), { cover_url: cover });
-  assert.deepEqual(await tool('covers_pending', {}), []);
+  assert.deepEqual(await tool('admin_covers_list', {}), [{ id: 'danangevent-5-0', title: 'Баня', description: 'Парим', topic: 'баня', tags: ['баня'], place: null, photo_url: cover }]);
+  assert.deepEqual(await tool('admin_covers_set', { id: 'danangevent-5-0', image_url: 'https://evil.example/x.png' }), { error: 'bad_image_url' });
+  assert.deepEqual(await tool('admin_covers_set', { id: 'danangevent-5-0' }), { cover_url: cover });
+  assert.deepEqual(await tool('admin_covers_list', {}), []);
   assert.equal(((await (await app.request('/collected-events')).json()) as CollectedEventItem[])[0]!.cover_url, cover);
-  assert.ok(!(await toolNames(tma(71, 'Аня'))).includes('cover_set'));
+  assert.ok(!(await toolNames(tma(71, 'Аня'))).includes('admin_covers_set'));
 
   // Ролик: заказ уходит роли illustrator вместе с фото анонса, ссылка сохраняется; второй раз и сверх лимита — отказ.
-  assert.deepEqual(await tool('event_video_request', { id: 'danangevent-5-0' }), { error: 'illustrator_off' });
+  assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-5-0' }), { error: 'illustrator_off' });
   settings.illustratorUrl = 'http://illustrator.test';
   const draw = illustrator.ask;
   let task = '';
   illustrator.ask = async (t) => ((task = t), { cover_url: null, video_url: 'https://files-cdn.x.ai/abc/file_1.mp4' });
-  assert.deepEqual(await tool('event_video_request', { id: 'danangevent-5-0' }), { started: true });
+  assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-5-0' }), { started: true });
   await new Promise((r) => setTimeout(r, 50));
   assert.ok(task.includes('"title":"Баня"') && task.includes(cover), 'роль получает данные события и фото анонса');
   assert.equal(((await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem).video_url, 'https://files-cdn.x.ai/abc/file_1.mp4');
-  assert.deepEqual(await tool('event_video_request', { id: 'danangevent-5-0' }), { error: 'video_exists' });
+  assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-5-0' }), { error: 'video_exists' });
   settings.illustratorDailyLimit = 1;
   await db.insert(collectedEvents).values({
     external_id: 'telegram:danangevent/6#0', channel: 'danangevent', status: 'published' as const, starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/6' },
     event: { title: 'Йога', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'anna', whatsapp_phone: null, url: null },
   });
-  assert.deepEqual(await tool('event_video_request', { id: 'danangevent-6-0' }), { error: 'video_limit' });
+  assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-6-0' }), { error: 'video_limit' });
   assert.deepEqual(parseIllustration('cover: https://files-cdn.x.ai/a/b_1.png\nvideo: https://files-cdn.x.ai/c/d_2.mp4'),
     { cover_url: 'https://files-cdn.x.ai/a/b_1.png', video_url: 'https://files-cdn.x.ai/c/d_2.mp4' });
   assert.deepEqual(parseIllustration('cover: https://evil.example/x.png\n[[не получилось: нет фото]]'), { cover_url: null, video_url: null }, 'чужие адреса не берём');
@@ -746,18 +747,18 @@ test('переписка: бот пишет всё в базу, админ от�
     event: { title: 'Чай', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'tea', whatsapp_phone: null, url: null } };
   await db.insert(collectedEvents).values(moderated);
   const inFeed = async () => ((await (await app.request('/collected-events')).json()) as CollectedEventItem[]).some((e) => e.id === 'danangevent-7-0');
-  const adminEvents = async () => (await (await call(admin, 'GET', '/admin/events')).json()) as { id: string; status: string }[];
+  const adminEvents = async () => (await (await call(admin, 'GET', '/admin/collected-events')).json()) as { id: string; status: string }[];
   assert.equal((await adminEvents())[0]!.id, 'danangevent-7-0', 'ждущие решения — сверху');
   assert.deepEqual([await inFeed(), (await app.request('/collected-events/danangevent-7-0')).status], [false, 404]);
-  assert.deepEqual(await tool('event_video_request', { id: 'danangevent-7-0' }), { error: 'not_approved' });
-  assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/events')).status, 403);
+  assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-7-0' }), { error: 'not_approved' });
+  assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/collected-events')).status, 403);
   // Лимит выбран — одобренное выходит как есть, а не ждёт сутки.
-  assert.deepEqual(await (await call(admin, 'PATCH', '/admin/events/danangevent-7-0', { status: 'approved' })).json(), { status: 'published' });
+  assert.deepEqual(await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved' })).json(), { status: 'published' });
   assert.equal(await inFeed(), true);
   // Снять с публикации и удалить.
-  assert.deepEqual(await tool('event_moderate', { id: 'danangevent-7-0', status: 'rejected' }), { status: 'rejected' });
+  assert.deepEqual(await tool('admin_collected_events_moderate', { id: 'danangevent-7-0', status: 'rejected' }), { status: 'rejected' });
   assert.equal(await inFeed(), false);
-  assert.equal((await call(admin, 'DELETE', '/admin/events/danangevent-7-0')).status, 204);
+  assert.equal((await call(admin, 'DELETE', '/admin/collected-events/danangevent-7-0')).status, 204);
   assert.equal((await adminEvents()).some((e) => e.id === 'danangevent-7-0'), false);
 
   // Автообход: берёт ближайшее событие без ролика; лимит выбран — тихо пропускает.
@@ -776,9 +777,9 @@ test('переписка: бот пишет всё в базу, админ от�
   illustrator.ask = draw;
   settings.illustratorUrl = '';
 
-  const read = await tool('conversation_get', { conversation_id: id });
+  const read = await tool('admin_conversations_get', { conversation_id: id });
   assert.deepEqual([read.conversation.mode, read.messages.at(-1).author], ['human', 'agent']);
-  assert.deepEqual(await tool('conversations_list', { waiting_only: true }), []);
+  assert.deepEqual(await tool('admin_conversations_list', { waiting_only: true }), []);
 
   // Роль поддержки: на вопрос без даты отвечает она, а не отказ бота; переписку получает целиком.
   await call(admin, 'PATCH', `/admin/conversations/${id}`, { mode: 'agent', attention: null });
@@ -798,12 +799,12 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.equal(verifyTicket(ticket), 71);
   assert.equal(verifyTicket(ticket.replace(/^71/, '70')), null, 'чужой номер под той же подписью');
   assert.equal(verifyTicket(ticket, Date.now() + 31 * 60_000), null, 'просрочен');
-  const made = await tool('person_event_create', { ticket, kind: 'o', name: 'Йога на пляже', start_at: '2027-01-10T07:00:00+07:00', timezone: 'Asia/Ho_Chi_Minh' });
+  const made = await tool('person_events_create', { ticket, kind: 'o', name: 'Йога на пляже', start_at: '2027-01-10T07:00:00+07:00', timezone: 'Asia/Ho_Chi_Minh' });
   assert.equal(made.is_host, true);
   assert.ok(made.url.includes(made.event.id));
-  assert.ok((await tool('person_events', { ticket })).some((e: any) => e.event.name === 'Йога на пляже' && e.is_host), 'в списке событий человека');
-  assert.equal((await tool('person_event_update', { ticket, event_id: made.event.id, name: 'Йога на рассвете' })).event.name, 'Йога на рассвете');
-  assert.deepEqual(await tool('person_events', { ticket: 'подделка' }), { error: 'bad_ticket' });
+  assert.ok((await tool('person_events_list', { ticket })).some((e: any) => e.event.name === 'Йога на пляже' && e.is_host), 'в списке событий человека');
+  assert.equal((await tool('person_events_update', { ticket, event_id: made.event.id, name: 'Йога на рассвете' })).event.name, 'Йога на рассвете');
+  assert.deepEqual(await tool('person_events_list', { ticket: 'подделка' }), { error: 'bad_ticket' });
   const view = (await (await call(tma(71, 'Аня'), 'GET', `/events/${made.event.id}`)).json()) as EventView;
   assert.deepEqual([view.event.name, view.is_host], ['Йога на рассвете', true], 'событие принадлежит человеку, а не владельцу токена');
   settings.supportKey = '';
@@ -1147,17 +1148,27 @@ test('MCP для оператора: любое событие сервиса, �
   assert.ok(!(await mcp(tma(82, 'Даша'), 'tools/list')).tools.some((t: { name: string }) => t.name.startsWith('admin_')), 'не админу их не видно');
   assert.ok((await tool(admin, 'admin_events_list', {})).some((e: any) => e.event.id === event.id && e.host_name === 'Олег'));
   // Админ видит чужое событие глазами организатора — в том числе отказавшихся — и может его изменить.
-  assert.deepEqual((await tool(admin, 'admin_event_get', { event_id: event.id })).guest_counts, { approved: 0, maybe: 0, declined: 1 });
-  assert.equal((await tool(admin, 'admin_event_update', { event_id: event.id, name: 'Покер в пятницу' })).event.name, 'Покер в пятницу');
-  assert.deepEqual(await tool(admin, 'admin_event_get', { event_id: 'e_nope' }), { error: 'not_found' });
+  assert.deepEqual((await tool(admin, 'admin_events_get', { event_id: event.id })).guest_counts, { approved: 0, maybe: 0, declined: 1 });
+  assert.equal((await tool(admin, 'admin_events_update', { event_id: event.id, name: 'Покер в пятницу' })).event.name, 'Покер в пятницу');
+  assert.deepEqual(await tool(admin, 'admin_events_get', { event_id: 'e_nope' }), { error: 'not_found' });
+
+  // Те же операции через REST — для админки; не админу закрыты.
+  const rest = async (path: string) => (await call(admin, 'GET', path)).json() as Promise<any>;
+  assert.equal((await call(tma(82, 'Даша'), 'GET', '/admin/events')).status, 403);
+  assert.ok((await rest('/admin/events')).some((e: any) => e.event.id === event.id && e.host_name === 'Олег'));
+  assert.deepEqual((await rest(`/admin/events/${event.id}`)).guest_counts, { approved: 0, maybe: 0, declined: 1 });
+  assert.equal((await (await call(admin, 'PATCH', `/admin/events/${event.id}`, { name: 'Покер в субботу' })).json() as any).event.name, 'Покер в субботу');
+  assert.deepEqual((await rest('/admin/users?query=u81')).map((u: any) => u.id), [81]);
+  assert.equal((await call(admin, 'GET', '/admin/users')).status, 400);
+  for (const path of ['/admin/hosts', '/admin/accounts', '/admin/covers']) assert.ok(Array.isArray(await rest(path)), path);
 
   // От имени другого человека: админ создаёт событие за Олега и отвечает за Дашу; гостю такой параметр не дан.
-  assert.deepEqual((await tool(admin, 'admin_users_find', { query: 'u81' })).map((u: any) => u.id), [81]);
-  const made = await tool(admin, 'event_create', { as_user_id: 81, kind: 'o', name: 'Турнир', start_at: '2027-02-01T19:00:00+07:00', timezone: 'Asia/Ho_Chi_Minh' });
+  assert.deepEqual((await tool(admin, 'admin_users_search', { query: 'u81' })).map((u: any) => u.id), [81]);
+  const made = await tool(admin, 'events_create', { as_user_id: 81, kind: 'o', name: 'Турнир', start_at: '2027-02-01T19:00:00+07:00', timezone: 'Asia/Ho_Chi_Minh' });
   assert.ok((await tool(tma(81, 'Олег'), 'events_list', {})).some((e: any) => e.event.id === made.event.id && e.is_host), 'событие принадлежит Олегу');
-  assert.equal((await tool(admin, 'event_rsvp', { as_user_id: 82, event_id: made.event.id, approval_status: 'approved' })).me.user_id, 82);
+  assert.equal((await tool(admin, 'events_rsvp', { as_user_id: 82, event_id: made.event.id, approval_status: 'approved' })).me.user_id, 82);
   assert.deepEqual(await tool(admin, 'events_list', { as_user_id: 999_999 }), { error: 'user_not_found' });
-  const forged = await tool(tma(82, 'Даша'), 'event_update', { as_user_id: 81, event_id: made.event.id, name: 'Взлом' });
+  const forged = await tool(tma(82, 'Даша'), 'events_update', { as_user_id: 81, event_id: made.event.id, name: 'Взлом' });
   assert.deepEqual(forged, { error: 'forbidden' }, 'гость не может действовать за другого');
 
   // Каталог из анонсов: кто записался, убрать событие по просьбе организатора.
@@ -1169,9 +1180,74 @@ test('MCP для оператора: любое событие сервиса, �
     telegram_username: 'banya',
   });
   assert.equal((await call(tma(82, 'Даша'), 'POST', '/collected-events/opchan-1-0/signup')).status, 200);
-  assert.deepEqual((await tool(admin, 'admin_catalog_event', { catalog_event_id: 'opchan-1-0' })).signups.map((u: any) => u.id), [82]);
-  await tool(admin, 'admin_catalog_event_delete', { catalog_event_id: 'opchan-1-0' });
+  assert.deepEqual((await tool(admin, 'admin_collected_events_get', { collected_event_id: 'opchan-1-0' })).signups.map((u: any) => u.id), [82]);
+  assert.deepEqual((await rest('/admin/collected-events/opchan-1-0')).signups.map((u: any) => u.id), [82]);
+  // Обычный пользователь через MCP: то же, что кнопки на странице события.
+  assert.equal((await tool(tma(82, 'Даша'), 'collected_events_get', { collected_event_id: 'opchan-1-0' })).signups_count, 1);
+  assert.equal((await tool(tma(83, 'Петя'), 'collected_events_signup', { collected_event_id: 'opchan-1-0' })).id, 'opchan-1-0');
+  assert.deepEqual((await tool(tma(83, 'Петя'), 'users_get_self', {})).collected_signups, ['opchan-1-0']);
+  assert.deepEqual(await tool(tma(83, 'Петя'), 'collected_events_claim', { collected_event_id: 'opchan-1-0' }), { error: 'forbidden' });
+  await tool(admin, 'admin_collected_events_delete', { collected_event_id: 'opchan-1-0' });
   assert.equal((await app.request('/collected-events/opchan-1-0')).status, 404);
-  assert.deepEqual(await tool(admin, 'admin_catalog_event_delete', { catalog_event_id: 'opchan-1-0' }), { error: 'not_found' });
-  assert.ok(Array.isArray(await tool(admin, 'accounts_list', {})) && Array.isArray(await tool(admin, 'admin_hosts_list', {})));
+  assert.deepEqual(await tool(admin, 'admin_collected_events_delete', { collected_event_id: 'opchan-1-0' }), { error: 'not_found' });
+  assert.ok(Array.isArray(await tool(admin, 'admin_accounts_list', {})) && Array.isArray(await tool(admin, 'admin_hosts_list', {})));
+});
+
+// Правило «операция = сервис + REST + MCP» (docs/agents/api.md). Добавил инструмент или маршрут — допиши строку сюда:
+// пару или исключение с причиной в docs/agents/api.md.
+test('парность: у каждого инструмента MCP есть маршрут REST и наоборот', async () => {
+  const PAIRS: Record<string, string> = {
+    collected_events_list: 'GET /collected-events',
+    collected_events_get: 'GET /collected-events/:id',
+    collected_events_claim: 'POST /collected-events/:id/claim',
+    collected_events_signup: 'POST /collected-events/:id/signup',
+    users_get_self: 'GET /me',
+    me_collected_list: 'GET /me/collected',
+    contacts_list: 'GET /contacts',
+    events_list: 'GET /events',
+    events_create: 'POST /events',
+    events_get: 'GET /events/:id',
+    events_update: 'PATCH /events/:id',
+    events_rsvp: 'POST /events/:id/rsvp',
+    events_ticket_types_create: 'POST /events/:id/ticket-types',
+    events_ticket_types_update: 'PATCH /ticket-types/:id',
+    events_ticket_types_delete: 'DELETE /ticket-types/:id',
+    admin_conversations_list: 'GET /admin/inbox',
+    admin_conversations_get: 'GET /admin/conversations/:id/messages',
+    admin_conversations_update: 'PATCH /admin/conversations/:id',
+    admin_messages_send: 'POST /admin/conversations/:id/messages',
+    admin_drafts_send: 'POST /admin/messages/:id/send',
+    admin_drafts_reject: 'DELETE /admin/messages/:id',
+    admin_accounts_list: 'GET /admin/accounts',
+    admin_events_list: 'GET /admin/events',
+    admin_events_get: 'GET /admin/events/:id',
+    admin_events_update: 'PATCH /admin/events/:id',
+    admin_users_search: 'GET /admin/users',
+    admin_hosts_list: 'GET /admin/hosts',
+    admin_overview_get: 'GET /admin/overview',
+    admin_collected_events_list: 'GET /admin/collected-events',
+    admin_collected_events_moderate: 'PATCH /admin/collected-events/:id',
+    admin_collected_events_get: 'GET /admin/collected-events/:id',
+    admin_collected_events_delete: 'DELETE /admin/collected-events/:id',
+    admin_covers_list: 'GET /admin/covers',
+    admin_covers_set: 'POST /admin/covers/:id',
+    admin_videos_request: 'POST /admin/videos/:id',
+  };
+  const MCP_ONLY = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update'];
+  const REST_ONLY = [
+    'GET /health', 'GET /config', 'GET /photos/:id', 'POST /telegram/webhook', 'POST /internal/account-message', 'POST /internal/lead',
+    'GET /auth/telegram/login', 'GET /auth/telegram/callback', 'POST /auth/logout', 'POST /tokens', 'DELETE /tokens',
+    'POST /collected-events/:id/visit', 'POST /events/:id/visit',
+    'POST /admin/accounts', 'POST /admin/accounts/:id/login', 'DELETE /admin/accounts/:id',
+  ];
+
+  settings.adminIds = [70];
+  await call(tma(70, 'Админ'), 'GET', '/events');
+  const res = await call(`Bearer ${await issueToken(db, 70)}`, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+  const tools = ((await res.json()) as { result: { tools: { name: string }[] } }).result.tools.map((t) => t.name);
+  assert.deepEqual(tools.sort(), [...Object.keys(PAIRS), ...MCP_ONLY].sort());
+
+  // Маршруты приложения без промежуточных обработчиков (у них метод ALL) и самого входа MCP.
+  const routes = [...new Set(app.routes.filter((r) => r.method !== 'ALL').map((r) => `${r.method} ${r.path}`))];
+  assert.deepEqual(routes.sort(), [...Object.values(PAIRS), ...REST_ONLY].sort());
 });

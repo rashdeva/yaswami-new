@@ -5,9 +5,9 @@ description: Сводка по переписке сервиса — кто жд
 
 # Сводка по переписке
 
-1. Вызови `mcp__yaswami__conversations_list` с `waiting_only: true` — это диалоги, которые ждут человека. Поле `attention` говорит почему.
-2. Для каждого такого диалога вызови `mcp__yaswami__conversation_get` и прочитай последние сообщения.
-3. Если просили сводку целиком — вызови `mcp__yaswami__conversations_list` без фильтра и посчитай диалоги за нужный период по `last_message_at`.
+1. Вызови `mcp__yaswami__admin_conversations_list` с `waiting_only: true` — это диалоги, которые ждут человека. Поле `attention` говорит почему.
+2. Для каждого такого диалога вызови `mcp__yaswami__admin_conversations_get` и прочитай последние сообщения.
+3. Если просили сводку целиком — вызови `mcp__yaswami__admin_conversations_list` без фильтра и посчитай диалоги за нужный период по `last_message_at`.
 
 ## Формат ответа
 
