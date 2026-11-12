@@ -103,14 +103,19 @@ async function sendEventCard(db: Db, chatId: number, id: string): Promise<void> 
   if (!photo || !photo.ok) await bot.send('sendMessage', { chat_id: chatId, text: caption, reply_markup }, 'agent:support');
 }
 
-/** Чаще обновлять живой ответ не стоит: Telegram ограничивает sendMessageDraft так же, как «печатает». */
-const DRAFT_MS = 1000;
+/**
+ * Задержка перед показом написанного. Роль пишет текст быстро — с секундой готовое сообщение успевало раньше и
+ * дописывания никто не видел. Признак сбоя Hermes приходит через миллисекунды после текста ошибки — 0,3 с хватает.
+ */
+export const DRAFT_MS = 300;
+/** Пока текста нет. Пустой sendMessageDraft (Telegram пишет «Думаю…») некоторые клиенты рисуют пустым пузырём. */
+export const DRAFT_PLACEHOLDER = 'Смотрю, что есть…';
 /** Живой ответ у человека держится ~30 с: пока роль думает дольше (ходит в инструменты), показываем его заново. */
 const DRAFT_KEEP_MS = 20_000;
 
 /**
  * Живой ответ (CONTEXT.md): ответ роли появляется у человека по мере того, как она его пишет (sendMessageDraft,
- * Bot API 9.5): сначала «Думаю…», потом текст. Он временный — готовый ответ после `run` всё равно уходит обычным сообщением и заменяет его.
+ * Bot API 9.5): сначала DRAFT_PLACEHOLDER, потом текст. Он временный — готовый ответ после `run` всё равно уходит обычным сообщением и заменяет его.
  * Текст показываем не сразу, а через DRAFT_MS: при сбое Hermes присылает текст ошибки одним куском перед признаком
  * сбоя, и за эту задержку мы узнаём о сбое раньше, чем покажем ошибку человеку.
  */
@@ -122,10 +127,10 @@ async function withDraft<T>(chatId: number, draftId: number, run: (show: (text: 
     (inflight = bot.call('sendMessageDraft', { chat_id: chatId, draft_id: draftId, ...body }).then((r) => r.ok, () => false));
   const push = () => {
     timer = undefined;
-    void call({ text: text.slice(0, 4096) });
+    void call({ text: (text || DRAFT_PLACEHOLDER).slice(0, 4096) });
   };
-  // Пустой текст — «Думаю…»; Telegram его не принял — хотя бы «печатает».
-  void call({ text: '' }).then((ok) => ok || void bot.call('sendChatAction', { chat_id: chatId, action: 'typing' }));
+  // Telegram живой ответ не принял — хотя бы «печатает».
+  void call({ text: DRAFT_PLACEHOLDER }).then((ok) => ok || void bot.call('sendChatAction', { chat_id: chatId, action: 'typing' }));
   const keep = setInterval(push, DRAFT_KEEP_MS);
   try {
     return await run((next) => {

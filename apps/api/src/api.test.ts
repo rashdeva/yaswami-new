@@ -7,7 +7,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
-import { handleUpdate, REPLIES } from './bot.ts';
+import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES } from './bot.ts';
 import { collectedWhen, sseEvents } from '@yaswami/core';
 import { bot } from './telegram.ts';
 import type { CollectedEvent } from '@yaswami/core';
@@ -956,7 +956,7 @@ test('переписка: бот пишет всё в базу, админ от�
   } finally {
     globalThis.fetch = realFetch;
   }
-  // Роль отвечает потоком: человек сразу видит черновик «Думаю…», потом написанное — без пометок, даже недописанных;
+  // Роль отвечает потоком: человек сразу видит «Смотрю, что есть…», потом написанное — без пометок, даже недописанных;
   // готовый ответ уходит обычным сообщением. Второй кусок приходит позже, чем бот показывает черновик.
   const stream = (frames: string[], pauseMs = 0) => new Response(new ReadableStream({
     async start(controller) {
@@ -969,11 +969,11 @@ test('переписка: бот пишет всё в базу, админ от�
   }), { headers: { 'content-type': 'text/event-stream' } });
   const chunk = (content: string) => `data: ${JSON.stringify({ choices: [{ delta: { content }, finish_reason: null }] })}\n\n`;
   const drafts = () => sent.filter(([m]) => m === 'sendMessageDraft').map(([, b]) => b.text);
-  globalThis.fetch = async () => stream([chunk('Сегодня бачата.\n[[собы'), chunk('тие: cardchan-1-0]]'), 'event: hermes.tool.progress\ndata: {}\n\n', ': keepalive\n\n', 'data: [DONE]\n\n'], 1200);
+  globalThis.fetch = async () => stream([chunk('Сегодня бачата.\n[[собы'), chunk('тие: cardchan-1-0]]'), 'event: hermes.tool.progress\ndata: {}\n\n', ': keepalive\n\n', 'data: [DONE]\n\n'], 500);
   try {
     const answer = await write('Куда сходить вечером?');
     assert.deepEqual([answer[0], answer.length], ['Сегодня бачата.', 2], 'текст без пометки и карточка события');
-    assert.deepEqual(drafts(), ['', 'Сегодня бачата.']);
+    assert.deepEqual(drafts(), [DRAFT_PLACEHOLDER, 'Сегодня бачата.']);
     // Модель отказала посреди потока: текст ошибки человеку не показываем — ни черновиком, ни сообщением.
     globalThis.fetch = async () => stream([
       chunk('Billing or credits exhausted: HTTP 402'),
@@ -981,7 +981,7 @@ test('переписка: бот пишет всё в базу, админ от�
       'data: [DONE]\n\n',
     ]);
     assert.deepEqual(await write('Как поменять имя?'), [REPLIES.no_date]);
-    assert.deepEqual(drafts(), ['']);
+    assert.deepEqual(drafts(), [DRAFT_PLACEHOLDER]);
   } finally {
     globalThis.fetch = realFetch;
   }
