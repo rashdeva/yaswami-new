@@ -89,7 +89,10 @@ async function hostFacts(db: Db, username: string): Promise<string> {
     .orderBy(asc(collectedEvents.starts_at))
     .limit(10);
   const app = bot.username ? `https://t.me/${bot.username}/${bot.appName}` : settings.publicUrl;
+  const [profile] = await db.select({ user_id: hosts.user_id }).from(hosts).where(eq(hosts.username, username));
   return [
+    // Цель роли — чтобы организатор вошёл в сервис. Вошёл — продавать больше нечего, только отвечать.
+    ...(profile?.user_id ? ['Организатор уже вошёл в «Я с вами». Ничего не предлагай и не уговаривай: только отвечай на его вопросы.'] : []),
     'Данные сервиса об организаторе. События собраны из его открытых анонсов; «записались» — столько человек нажали «Записаться» в «Я с вами» (это интерес, места подтверждает он сам).',
     ...rows.map((r) => `- «${r.event.title}», ${collectedWhen(r.event.starts_at)} — записались: ${r.signups}${r.claimed ? ', событие уже подтверждено им' : ''}. Страница: ${settings.publicUrl}${collectedPath(collectedSlug(r.external_id))}`),
     `Как подтвердить событие: открыть приложение ${app}, там появится вопрос «Это ваше событие?» — нажать «Это моё». После этого гости отвечают «Пойду» в один тап, а организатор видит список, кто придёт, и может отправить приглашение в любой чат. Это бесплатно.`,
@@ -98,8 +101,8 @@ async function hostFacts(db: Db, username: string): Promise<string> {
 
 /**
  * На событие организатора нажали «Записаться» — повод написать ему первым. Роль host пишет сообщение, оно ложится
- * черновиком в «Ждут вас»; отправляет человек, в личку с нашего аккаунта. Организатору, который уже подтвердил
- * событие, и тому, кому писали на днях, не пишем.
+ * черновиком в «Ждут вас»; отправляет человек, в личку с нашего аккаунта. Цель — чтобы организатор вошёл в сервис:
+ * вошедшему, подтвердившему это событие и тому, кому писали на днях, не пишем.
  */
 export async function recordHostLead(db: Db, externalId: string): Promise<void> {
   if (!settings.hostUrl) return;
@@ -107,7 +110,7 @@ export async function recordHostLead(db: Db, externalId: string): Promise<void> 
   if (!event?.telegram_username || event.claimed_event_id) return;
   // Профиль организатора собирает сборщик: без него не знаем, кому писать.
   const [profile] = await db.select().from(hosts).where(eq(hosts.username, event.telegram_username));
-  if (!profile || (await contactedRecently(db, profile.telegram_id))) return;
+  if (!profile || profile.user_id || (await contactedRecently(db, profile.telegram_id))) return;
 
   const reply = await host.ask([
     { role: 'system', content: await hostFacts(db, profile.username) },
@@ -125,6 +128,18 @@ export async function recordHostLead(db: Db, externalId: string): Promise<void> 
 }
 
 /** Организатор ответил на наше сообщение: роль host готовит черновик ответа. Прежний неотправленный черновик заменяется. */
+/**
+ * Организатор вошёл в сервис: неотправленные черновики роли host с предложением войти больше не нужны.
+ * Зовётся при входе (auth.ts); сам диалог остаётся, на вопросы роль по-прежнему отвечает.
+ */
+export async function dropHostPitch(db: Db, telegramId: number): Promise<void> {
+  const dialogs = db.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.channel, 'account'), eq(conversations.peer_id, telegramId)));
+  const dropped = await db.delete(messages)
+    .where(and(inArray(messages.conversation_id, dialogs), eq(messages.author, 'agent:host'), eq(messages.status, 'draft')))
+    .returning({ conversation_id: messages.conversation_id });
+  for (const { conversation_id } of dropped) await setAttention(db, conversation_id, null);
+}
+
 async function draftHostReply(db: Db, conversation: Conversation): Promise<void> {
   const history = await supportHistory(db, conversation.id);
   const reply = await host.ask([{ role: 'system', content: await hostFacts(db, conversation.peer_username ?? '') }, ...history]);

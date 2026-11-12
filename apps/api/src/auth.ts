@@ -3,6 +3,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { User } from '@yaswami/core';
+import { dropHostPitch } from './inbox.ts';
 import type { Db } from './db/client.ts';
 import { apiTokens, hosts, users } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
@@ -49,7 +50,9 @@ export async function upsertUser(db: Db, tg: TelegramUser): Promise<User> {
     .returning();
   // Вошёл организатор, чей профиль уже собран по анонсам: привязываем профиль к нему.
   // ponytail: запрос на каждый вход; если станет заметно — привязывать только при создании пользователя.
-  await db.update(hosts).set({ user_id: user!.id }).where(and(eq(hosts.telegram_id, tg.id), isNull(hosts.user_id)));
+  const linked = await db.update(hosts).set({ user_id: user!.id }).where(and(eq(hosts.telegram_id, tg.id), isNull(hosts.user_id))).returning({ id: hosts.id });
+  // Организатор вошёл — агент для организаторов своего добился: уговаривать его больше нечего.
+  if (linked.length) await dropHostPitch(db, tg.id);
   // Аватар сохраняем в фоне: вход не ждёт загрузки картинки.
   void saveUserPhoto(db, user!.id);
   return user!;
