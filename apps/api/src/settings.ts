@@ -9,6 +9,8 @@ export const settings = {
   /** Город витрины и его часовой пояс; пока он один. */
   city: process.env.CITY ?? 'Дананг',
   timezone: process.env.TIMEZONE ?? 'Asia/Ho_Chi_Minh',
+  /** Возможности, открытые всем без личного включения (имена из Feature в core), через запятую. */
+  featuresOn: (process.env.FEATURES_ON ?? '').split(',').map((f) => f.trim()).filter(Boolean),
   /** Сколько событий организатор создаёт бесплатно; дальше — по подписке (её пока нет). */
   freeEventsLimit: Number(process.env.FREE_EVENTS_LIMIT ?? 10),
   /** Сколько ждать перед уведомлением о записи: за это время гость может передумать, а записи — собраться в сводку. */

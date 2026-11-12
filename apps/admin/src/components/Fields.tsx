@@ -95,6 +95,27 @@ export function SwitchField(p: Base) {
   return <Shell {...p} inline>{(f) => <Switch id={p.name} checked={!!f.value} onCheckedChange={f.onChange} />}</Shell>;
 }
 
+/** Несколько переключателей на одно поле-список: значение — включённые пункты. */
+export function SwitchListField({ options, ...p }: Base & { options: readonly (readonly [string, string])[] }) {
+  return (
+    <Shell {...p}>
+      {(f) => {
+        const on = (f.value as string[] | undefined) ?? [];
+        return (
+          <div className="flex flex-col gap-2">
+            {options.map(([value, label]) => (
+              <FieldLabel key={value} className="flex items-center gap-2">
+                <Switch checked={on.includes(value)} onCheckedChange={(checked) => f.onChange(checked ? [...on, value] : on.filter((v) => v !== value))} />
+                {label}
+              </FieldLabel>
+            ))}
+          </div>
+        );
+      }}
+    </Shell>
+  );
+}
+
 const NONE = '__none'; // у Radix Select не бывает пустого значения
 
 /** Выбор из списка; `nullable` — пункт «не указано» значит null. */

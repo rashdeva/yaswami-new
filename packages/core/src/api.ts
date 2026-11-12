@@ -1,6 +1,6 @@
 // Формы запросов и ответов. Одни и те же схемы проверяют REST-запросы, описывают инструменты MCP и формы на фронте.
 import * as z from 'zod';
-import type { Event, Guest, TicketType, User } from './schema.ts';
+import type { Event, Feature, Guest, TicketType, User } from './schema.ts';
 import { Event as EventSchema, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
 
 const isTimeZone = (tz: string) => {
@@ -202,6 +202,8 @@ export interface Contact {
 /** Кто вошёл и на какие собранные события он уже записывался. */
 export interface Me {
   user: Pick<User, 'id' | 'first_name' | 'username'>;
+  /** Возможности, открытые человеку: включённые лично и включённые всем. */
+  features: Feature[];
   collected_signups: CollectedEventItem['id'][];
   /** Предстоящие собранные события, где контактом указан этот человек: их можно подтвердить как свои. */
   claimable: CollectedEventItem[];

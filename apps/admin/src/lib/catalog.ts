@@ -1,5 +1,5 @@
 // Чистые функции каталога: подписи статусов, контакт для записи из ссылки «Записаться», события организатора.
-import type { AdminCollectedEvent, CollectedStatus, Guest } from '@yaswami/core';
+import type { AdminCollectedEvent, CollectedStatus, Feature, Guest } from '@yaswami/core';
 import { OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
 
 export const COLLECTED_LABELS: Record<CollectedStatus, string> = {
@@ -10,6 +10,9 @@ export const COLLECTED_LABELS: Record<CollectedStatus, string> = {
 };
 
 export const EVENT_STATUS_LABELS = { draft: 'Черновик', published: 'Опубликовано', cancelled: 'Отменено' } as const;
+
+/** Возможности, которые команда включает человеку лично. */
+export const FEATURE_LABELS: Record<Feature, string> = { event_create: 'Создавать события (организатор)' };
 
 export const APPROVAL_LABELS: Record<Guest['approval_status'], string> = { approved: 'Пойдёт', maybe: 'Думает', declined: 'Не пойдёт', waitlist: 'Лист ожидания' };
 

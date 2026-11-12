@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, CollectedEvent, Conversation, Event, Guest, Guide, Host, Message, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, CollectedEvent, Conversation, Event, Feature, Guest, Guide, Host, Message, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -16,6 +16,7 @@ export const users = pgTable('users', {
   username: text(),
   lang: text().notNull(),
   timezone: text().notNull(),
+  features: jsonb().$type<Feature[]>().notNull().default([]),
 });
 
 export const events = pgTable(

@@ -3,6 +3,7 @@ import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect,
 import { App, AppTabs, Claims, useClaim, useShell } from './App.tsx';
 import { hasCredentials, startLogin } from './api.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
+import { useFeature } from './hooks/useFeature.ts';
 import { useSession } from './hooks/useSession.ts';
 import { useViewed } from './hooks/useViewed.ts';
 import { CollectedScreen } from './screens/CollectedScreen.tsx';
@@ -104,9 +105,10 @@ function ListPage() {
   const navigate = useNavigate();
   const { events, collected: seen, total, failed } = useMyEvents();
   const { onKind } = useShell();
+  const canCreate = useFeature('event_create');
   if (failed) return <Failed error={failed} />;
   if (total === null) return <Spinner />;
-  if (total === 0) return <Navigate to="/new" replace />; // показывать нечего — предлагаем создать
+  if (total === 0 && canCreate) return <Navigate to="/new" replace />; // показывать нечего — организатору предлагаем создать
   return (
     <ListScreen
       events={events ?? []}
@@ -115,7 +117,7 @@ function ListPage() {
       lead={<Claims />}
       onOpen={(id) => void navigate({ to: '/events/$id', params: { id } })}
       onOpenCollected={(item) => void navigate({ to: '/e/$id', params: { id: item.id } })}
-      onNew={() => void navigate({ to: '/new' })}
+      onNew={canCreate ? () => void navigate({ to: '/new' }) : null}
       onKind={onKind}
     />
   );
@@ -125,10 +127,15 @@ const list = createRoute({ getParentRoute: () => personal, path: '/my', componen
 function CreatePage() {
   const navigate = useNavigate();
   const { toast, onKind, onBack } = useShell();
-  useViewed('create_opened');
   return <CreateScreen onBack={onBack} onKind={onKind} toast={toast} onCreated={(view) => void navigate({ to: '/events/$id', params: { id: view.event.id } })} />;
 }
-const create = createRoute({ getParentRoute: () => personal, path: '/new', component: CreatePage });
+/** Создание открыто не всем: без возможности `event_create` адрес /new ведёт в «Мои». */
+function CreateGate() {
+  const canCreate = useFeature('event_create');
+  useViewed(canCreate ? 'create_opened' : 'create_denied');
+  return canCreate ? <CreatePage /> : <Navigate to="/my" replace />;
+}
+const create = createRoute({ getParentRoute: () => personal, path: '/new', component: CreateGate });
 
 function EventPage() {
   const { id } = event.useParams();

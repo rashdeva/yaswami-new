@@ -6,6 +6,8 @@ import { inTelegram, startParam, startRef, tg } from './tg.ts';
 // Ключ проекта публичный по замыслу PostHog (он виден в любом браузере), поэтому лежит в коде: сборка в Docker переменных VITE_* не получает.
 const KEY = 'phc_xveQ5LMXvEFu669ULn5VyuCUVaCmtsyw5feni58hxPrt';
 const on = import.meta.env.PROD;
+/** Откуда человек: мини-приложение в Telegram или сайт. */
+const source = inTelegram ? 'telegram' : 'web';
 
 /**
  * Именованные действия, по ним строятся воронки. Путь гостя: app_opened → feed_viewed → collected_event_viewed →
@@ -17,7 +19,7 @@ type Action =
   | 'app_opened' | 'login_started' | 'logged_in' | 'logged_out'
   | 'feed_viewed' | 'feed_filtered' | 'collected_event_viewed' | 'signup_clicked' | 'collected_signed_up' | 'host_contacted' | 'host_channel_opened'
   | 'event_viewed' | 'rsvp_submitted' | 'link_shared'
-  | 'my_events_viewed' | 'create_opened' | 'event_created' | 'event_updated' | 'event_claimed';
+  | 'my_events_viewed' | 'create_opened' | 'create_denied' | 'event_created' | 'event_updated' | 'event_claimed';
 type Props = Record<string, string | number | boolean | null | undefined>;
 
 // Вход на сайте уводит со страницы; по этой отметке после возврата понимаем, что человек именно вошёл, а не вернулся со старой сессией.
@@ -37,17 +39,23 @@ export function initAnalytics() {
   if (location.hash.includes('tgWebAppData')) history.replaceState(history.state, '', location.pathname + location.search);
   // ponytail: шлём напрямую на us.i.posthog.com — блокировщики рекламы это режут. Заметим потери — проксировать через наш /api.
   posthog.init(KEY, { api_host: 'https://us.i.posthog.com', defaults: '2025-05-24', person_profiles: 'identified_only' });
-  // Откуда человек: мини-приложение или сайт — на каждом действии, чтобы любую воронку можно было разрезать.
-  posthog.register({ in_telegram: inTelegram, tg_platform: tg?.platform });
+  // Источник — на каждом действии, чтобы любую воронку можно было разрезать; tg_platform — ios, android, tdesktop…
+  posthog.register({ source, tg_platform: tg?.platform });
   // С чем открыли: ссылка на собранное событие (c_<id>), на событие Ясвами или просто приложение; ref — кто позвал.
   track('app_opened', { start: !startParam ? 'none' : startParam.startsWith('c_') ? 'collected_event' : 'event', ref: startRef });
 }
 
 /** Привязывает действия к пользователю: id в PostHog — Telegram id, тот же, что в админке. `null` — не вошёл. */
-export function identify(user: { id: number; first_name: string; username: string | null } | null) {
+export function identify(user: { id: number; first_name: string; username: string | null; features: string[] } | null) {
   if (!on) return;
   if (!user) return void (posthog._isIdentified() && posthog.reset());
-  posthog.identify(String(user.id), { name: user.first_name, username: user.username });
+  // В карточке человека: кто это, что ему открыто (по `features` в PostHog строятся когорты — например, организаторы),
+  // откуда заходил в последний раз и в первый, и ссылка на его карточку в нашей админке.
+  posthog.identify(
+    String(user.id),
+    { name: user.first_name, username: user.username, features: user.features, source, admin_url: `${location.origin}/admin/users/${user.id}` },
+    { first_source: source },
+  );
   mark((s) => {
     if (!s.getItem(LOGIN_MARK)) return;
     s.removeItem(LOGIN_MARK);
@@ -60,3 +68,12 @@ export function track(action: Action, props?: Props) {
   if (action === 'login_started') mark((s) => s.setItem(LOGIN_MARK, '1'));
   posthog.capture(action, props);
 }
+
+/** Значение флага PostHog; `fallback` — пока флаги не пришли, если PostHog недоступен и в разработке. Экраны берут его через `useFlag`. */
+export function flag<T extends boolean | string>(name: string, fallback: T): T {
+  const value = on ? posthog.getFeatureFlag(name) : undefined;
+  return typeof value === typeof fallback ? (value as T) : fallback;
+}
+
+/** Подписка на приход и смену флагов; возвращает отписку. */
+export const onFlags = (cb: () => void) => (on ? posthog.onFeatureFlags(cb) : () => {});

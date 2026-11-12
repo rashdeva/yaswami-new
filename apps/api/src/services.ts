@@ -8,7 +8,7 @@ import type {
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
 import { isSameEvent, mergeEvents } from '@yaswami/extract';
-import { ADDRESS_MAX, normalUsername, collectedPath, collectedSignupUrl, popularIds, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
+import { ADDRESS_MAX, Feature, normalUsername, collectedPath, collectedSignupUrl, popularIds, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, ticketTypes, users, visits } from './db/schema.ts';
@@ -427,8 +427,19 @@ async function insertExtractedEvent(tx: Tx, actor: User, extracted: CollectedEve
   return id;
 }
 
+/** Возможности, открытые человеку: включённые всем (FEATURES_ON) и включённые ему лично. */
+export const featuresOf = (actor: Pick<User, 'features'>): Feature[] =>
+  Feature.options.filter((f) => settings.featuresOn.includes(f) || actor.features.includes(f));
+
+/** Отказ, если возможность человеку не открыта. Единственное место, где это решается: REST, MCP и бот идут через сервис. */
+function assertFeature(actor: User, feature: Feature) {
+  if (!featuresOf(actor).includes(feature)) throw new AppError('feature_off', 403);
+}
+
+// Создавать события могут те, кому открыта возможность `event_create`.
 // Считаются все события организатора за всё время, включая подтверждённые из собранных.
-async function assertUnderLimit(tx: Tx, actor: User) {
+async function assertCanCreate(tx: Tx, actor: User) {
+  assertFeature(actor, 'event_create');
   const [mine] = await tx.select({ n: count() }).from(events).where(eq(events.user_id, actor.id));
   if (mine!.n >= settings.freeEventsLimit) throw new AppError('events_limit', 403);
 }
@@ -466,7 +477,7 @@ export async function addCollectedEvent(
  */
 export async function createEventFromAnnouncement(db: Db, actor: User, extracted: CollectedEvent): Promise<EventView> {
   return db.transaction(async (tx) => {
-    await assertUnderLimit(tx, actor);
+    await assertCanCreate(tx, actor);
     const id = await insertExtractedEvent(tx, actor, extracted);
     if (actor.username) {
       const rows = await tx
@@ -493,6 +504,11 @@ export async function claimCollectedEvent(db: Db, actor: User, slug: string): Pr
     if (!actor.username || row.telegram_username !== actor.username.toLowerCase()) throw new AppError('forbidden', 403);
 
     // Лимит бесплатных событий здесь не проверяется: подтверждение — вход организатора в Ясвами, а не новое событие.
+    // По той же причине не нужна и возможность создавать события: подтвердивший её получает — дальше он создаёт сам.
+    if (!actor.features.includes('event_create')) {
+      actor = { ...actor, features: [...actor.features, 'event_create'] };
+      await tx.update(users).set({ features: actor.features }).where(eq(users.id, actor.id));
+    }
     const id = await insertExtractedEvent(tx, actor, row.event);
     await tx.update(collectedEvents).set({ claimed_event_id: id }).where(eq(collectedEvents.external_id, row.external_id));
     return getEvent(tx, actor, id);
@@ -578,6 +594,7 @@ export async function me(db: Db, actor: User): Promise<Me> {
     : [];
   return {
     user: { id: actor.id, first_name: actor.first_name, username: actor.username },
+    features: featuresOf(actor),
     collected_signups: signups.map((r) => collectedSlug(r.external_id)),
     claimable: claimable.map(toCollectedItem),
   };
@@ -585,7 +602,7 @@ export async function me(db: Db, actor: User): Promise<Me> {
 
 export async function createEvent(db: Db, actor: User, input: EventCreateInput): Promise<EventView> {
   const view = await db.transaction(async (tx) => {
-    await assertUnderLimit(tx, actor);
+    await assertCanCreate(tx, actor);
     const id = newEventId();
     const { ticket_types, ...fields } = input;
     await tx.insert(events).values({
