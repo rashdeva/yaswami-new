@@ -2,9 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import * as z from 'zod';
 import { Toaster } from '@/components/ui/sonner';
 import './index.css';
 import { router } from './router.tsx';
+
+// Тексты ошибок проверки форм — по-русски (схемы из core работают на том же zod).
+z.config(z.locales.ru());
 
 // Тема — как в системе: shadcn включает тёмную классом `dark` на <html>.
 const dark = matchMedia('(prefers-color-scheme: dark)');

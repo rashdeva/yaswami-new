@@ -1,9 +1,14 @@
-// «Аккаунты»: аккаунты Telegram, с которых мы пишем людям, — добавить, пройти вход по шагам, удалить.
+// «Аккаунты»: аккаунты Telegram, с которых мы пишем людям, — добавить, пройти вход по шагам, переименовать, удалить.
+import { PencilIcon } from 'lucide-react';
 import { useState } from 'react';
 import type { Account } from '@/api';
+import { Confirm } from '@/components/Confirm';
+import { History } from '@/components/History';
+import { Nothing, Page } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useFeed } from '@/hooks/useInbox';
@@ -14,22 +19,35 @@ const LOGIN_STEP: Partial<Record<Account['status'], string>> = {
   login_password: 'Введите пароль двухэтапной проверки',
 };
 
+/** Название аккаунта: по клику — поле, Enter сохраняет, Esc — отмена. */
+function Label({ a, onRename }: { a: Account; onRename: (label: string) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  if (text === null) {
+    return <span className="inline-flex items-center gap-1">{a.label}<Button size="icon-xs" variant="ghost" aria-label="Переименовать" onClick={() => setText(a.label)}><PencilIcon /></Button></span>;
+  }
+  return (
+    <form className="flex gap-2" onSubmit={(e) => (e.preventDefault(), text.trim() && text.trim() !== a.label && onRename(text.trim()), setText(null))}>
+      <Input autoFocus value={text} maxLength={40} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setText(null)} />
+      <Button size="sm">Сохранить</Button>
+    </form>
+  );
+}
+
 export function AccountsScreen() {
   const { accounts } = useFeed();
-  const { create, login, remove } = useAccounts();
+  const { create, rename, login, remove } = useAccounts();
   const [label, setLabel] = useState('');
   const [phone, setPhone] = useState('');
   const [secrets, setSecrets] = useState<Record<string, string>>({}); // код или пароль по id аккаунта
 
   return (
-    <div className="h-full overflow-y-auto p-5 pb-16">
+    <Page title="Аккаунты Telegram">
       <div className="flex max-w-xl flex-col gap-3">
-        <h2 className="font-medium">Аккаунты Telegram</h2>
-        {accounts.length === 0 && <p className="text-xs text-muted-foreground">Пока нет ни одного. Нужен отдельный, не личный номер: аккаунт могут заблокировать.</p>}
+        {accounts.length === 0 && <Nothing title="Пока нет ни одного" hint="Нужен отдельный, не личный номер: аккаунт могут заблокировать." />}
         {accounts.map((a) => (
           <Card key={a.id} size="sm">
             <CardHeader>
-              <CardTitle>{a.label}</CardTitle>
+              <CardTitle><Label a={a} onRename={(l) => rename({ id: a.id, label: l })} /></CardTitle>
               <CardDescription>{a.phone}</CardDescription>
               <CardAction>
                 {a.status === 'active' ? <Badge variant="outline" className="border-green-600/40 text-green-700 dark:text-green-400">На связи</Badge>
@@ -58,12 +76,19 @@ export function AccountsScreen() {
                   <Button>Отправить</Button>
                 </form>
               )}
-              <Button
-                variant="link" size="sm" className="self-start px-0 text-destructive"
-                onClick={() => confirm(`Удалить аккаунт «${a.label}»? Его переписка останется, но писать в неё будет не с чего.`) && remove(a.id)}
-              >
-                Удалить
-              </Button>
+              <Collapsible>
+                <div className="flex items-center gap-2">
+                  <Confirm
+                    title={`Удалить аккаунт «${a.label}»?`}
+                    description="Сессия Telegram удалится — это не отменить, войти придётся заново с кодом. Переписка останется, но писать в неё будет не с чего."
+                    onConfirm={() => remove(a.id)}
+                  >
+                    <Button variant="link" size="sm" className="px-0 text-destructive">Удалить</Button>
+                  </Confirm>
+                  <CollapsibleTrigger asChild><Button variant="link" size="sm" className="ml-auto px-0">История</Button></CollapsibleTrigger>
+                </div>
+                <CollapsibleContent className="mt-2"><History entity="account" id={a.id} /></CollapsibleContent>
+              </Collapsible>
             </CardContent>
           </Card>
         ))}
@@ -79,6 +104,6 @@ export function AccountsScreen() {
           <Button>Добавить</Button>
         </form>
       </div>
-    </div>
+    </Page>
   );
 }

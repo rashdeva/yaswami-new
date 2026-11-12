@@ -1,6 +1,6 @@
 // Корневой layout: вход, боковое меню разделов, шапка с «ждут вас» и состоянием связи.
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router';
-import { ActivityIcon, BotIcon, CalendarCheckIcon, LogOutIcon, MegaphoneIcon, SmartphoneIcon, UsersIcon } from 'lucide-react';
+import { ActivityIcon, BotIcon, CalendarCheckIcon, HistoryIcon, LayoutListIcon, LogOutIcon, MegaphoneIcon, MessagesSquareIcon, SmartphoneIcon, UserIcon } from 'lucide-react';
 import { loginUrl } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,12 +13,15 @@ import { useInbox } from '@/hooks/useInbox';
 import { useLogout } from '@/hooks/useLogout';
 
 const NAV = [
-  { to: '/', label: 'Люди', icon: UsersIcon },
+  { to: '/', label: 'Люди', icon: MessagesSquareIcon },
   { to: '/feed', label: 'Лента', icon: ActivityIcon },
   { to: '/hosts', label: 'Организаторы', icon: MegaphoneIcon },
   { to: '/agents', label: 'Агенты', icon: BotIcon },
-  { to: '/events', label: 'События', icon: CalendarCheckIcon },
+  { to: '/catalog', label: 'Каталог', icon: LayoutListIcon },
+  { to: '/events', label: 'События Ясвами', icon: CalendarCheckIcon },
+  { to: '/users', label: 'Пользователи', icon: UserIcon },
   { to: '/accounts', label: 'Аккаунты', icon: SmartphoneIcon },
+  { to: '/actions', label: 'Журнал', icon: HistoryIcon },
 ] as const;
 
 /** Пока ленты нет: вход через Telegram, «нет доступа» или ожидание связи. */
@@ -34,13 +37,13 @@ function Gate({ problem }: { problem: string | null }) {
 
 export function App() {
   const { feed, problem } = useInbox();
-  const events = useCollectedEvents(); // загружается сразу: нужен счётчик в меню
+  const { data: collected } = useCollectedEvents(); // загружается сразу: нужен счётчик в меню
   const logout = useLogout();
   const match = useMatchRoute();
   if (!feed) return <Gate problem={problem} />;
 
   const counts: Partial<Record<(typeof NAV)[number]['to'], number>> = {
-    '/events': events?.filter((e) => e.status === 'pending').length, // ждут решения
+    '/catalog': collected?.filter((e) => e.status === 'pending').length, // ждут решения
     '/accounts': feed.accounts.filter((a) => a.status === 'active').length, // на связи
   };
   const inFeed = !!match({ to: '/feed' });
@@ -55,7 +58,7 @@ export function App() {
               <SidebarMenu>
                 {NAV.map(({ to, label, icon: Icon }) => (
                   <SidebarMenuItem key={to}>
-                    <SidebarMenuButton asChild isActive={!!match({ to })}>
+                    <SidebarMenuButton asChild isActive={!!match({ to, fuzzy: to !== '/' })}>
                       <Link to={to}><Icon />{label}</Link>
                     </SidebarMenuButton>
                     {!!counts[to] && <SidebarMenuBadge>{counts[to]}</SidebarMenuBadge>}

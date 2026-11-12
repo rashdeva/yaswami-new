@@ -41,13 +41,17 @@ export function useThread(conversation: string | undefined) {
 }
 
 export function useConversationActions() {
+  const undoConv = (c: Conv) => ['conversation', c.id] as ['conversation', string];
   return {
+    /** Сообщение человеку уходит в Telegram: не отменяется. */
     send: useAct(({ id, text }: { id: string; text: string }) => api.inboxSend(id, text)),
-    /** Отправить черновик агента; `text` — наша правка. */
+    /** Отправить черновик агента; `text` — наша правка. Не отменяется. */
     sendDraft: useAct(({ id, text }: { id: string; text?: string }) => api.draftSend(id, text)),
-    rejectDraft: useAct(api.draftReject),
+    /** Сохранить правку черновика, не отправляя. */
+    saveDraft: useAct(({ id, text }: { id: string; text: string }) => api.draftUpdate(id, text), { undo: ({ id }) => ['message', id] }),
+    rejectDraft: useAct(api.draftReject, { undo: (id) => ['message', id] }),
     /** Взять диалог на себя или вернуть агенту; отметка «ждёт вас» снимается. */
-    toggleMode: useAct((c: Conv) => api.inboxUpdate(c.id, { mode: c.mode === 'agent' ? 'human' : 'agent', attention: null })),
-    done: useAct((c: Conv) => api.inboxUpdate(c.id, { attention: null })),
+    toggleMode: useAct((c: Conv) => api.inboxUpdate(c.id, { mode: c.mode === 'agent' ? 'human' : 'agent', attention: null }), { undo: undoConv }),
+    done: useAct((c: Conv) => api.inboxUpdate(c.id, { attention: null }), { undo: undoConv }),
   };
 }

@@ -19,7 +19,7 @@ export function FeedScreen() {
   const [selected, setSelected] = useState(''); // ключ строки: c:<диалог> или m:<сообщение>
   const [drawer, setDrawer] = useState(false);
   const [edited, setEdited] = useState<Record<string, string>>({}); // наши правки черновиков: id сообщения → текст
-  const { send, sendDraft, rejectDraft } = useConversationActions();
+  const { send, sendDraft, saveDraft, rejectDraft } = useConversationActions();
 
   const pinned = feed.conversations.filter((c) => c.attention);
   const events = eventsOf(feed);
@@ -59,6 +59,7 @@ export function FeedScreen() {
                 {pending ? (
                   <Draft
                     draft={pending} text={edited[pending.id]} onEdit={(text) => setEdited({ ...edited, [pending.id]: text })}
+                    onSave={(text) => saveDraft({ id: pending.id, text }, { onSuccess: () => setEdited(({ [pending.id]: _, ...rest }) => rest) })}
                     onSend={() => sendDraft({ id: pending.id, text: edited[pending.id] })} onReject={() => rejectDraft(pending.id)}
                   />
                 ) : <Reply onSend={(text) => send({ id: c.id, text })} />}
