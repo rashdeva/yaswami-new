@@ -3,7 +3,7 @@ import { track } from '../analytics.ts';
 import { useViewed } from '../hooks/useViewed.ts';
 import { useEffect, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
-import { collectedBadges, collectedDayKey, collectedPath, collectedTime, TOPIC_GUIDES, topicIcon } from '@yaswami/core';
+import { collectedBadges, collectedDayKey, collectedPath, collectedTime, TOPIC_GUIDES, topicIcon, topicSlug } from '@yaswami/core';
 import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
 import { EventRow } from '../components/EventRow.tsx';
 import { dayLabel } from '../format.ts';
@@ -85,6 +85,7 @@ export function FeedScreen({ city, tabs, lead, onOpen }: Props) {
                   sub={[e.place, e.price, e.beginner_friendly && 'можно без опыта'].filter(Boolean).join(' · ')}
                   cover_url={e.cover_url}
                   icon={topicIcon(e.topic)}
+                  topic={topicSlug(e.topic)}
                   badges={collectedBadges(e)}
                   onOpen={() => onOpen(e)}
                 />
