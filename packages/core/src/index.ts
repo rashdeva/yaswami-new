@@ -6,3 +6,4 @@ export * from './public-state.ts';
 export * from './collected.ts';
 export * from './topics.ts';
 export * from './inbox.ts';
+export * from './admin.ts';

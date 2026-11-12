@@ -1,6 +1,6 @@
 import type { Event, Guest, RsvpStatus, TicketType } from './schema.ts';
 
-export type RsvpError = 'closed' | 'ticket_required' | 'ticket_unknown' | 'full';
+export type RsvpError = 'closed' | 'ticket_required' | 'ticket_unknown' | 'full' | 'plus_one_off';
 
 export type RsvpResult =
   | { ok: true; event: Event; guests: Guest[]; guest: Guest; changed: boolean }
@@ -13,6 +13,10 @@ export interface RsvpArgs {
   user_id: number;
   approval_status: RsvpStatus;
   event_ticket_type_id?: string;
+  /** «+1» гостя; не передано — прежние. Задаёт только организатор (команда — от его имени). */
+  plus_ones?: number;
+  /** Отвечает за гостя организатор: ему доступны и скрытые типы. */
+  by_host?: boolean;
   now: Date;
 }
 
@@ -29,14 +33,15 @@ export function rsvp(a: RsvpArgs): RsvpResult {
 
   const prev = guests.find((g) => g.user_id === user_id);
   const others = guests.filter((g) => g.user_id !== user_id);
-  const plus_ones = prev?.plus_ones ?? 0;
+  if (a.plus_ones && !event.allow_plus_one) return { ok: false, error: 'plus_one_off' };
+  const plus_ones = a.plus_ones ?? prev?.plus_ones ?? 0;
   let event_ticket_type_id: string | null = null;
 
   if (approval_status === 'approved') {
     const visible = ticketTypes.filter((t) => !t.is_hidden);
     // Скрытый тип гость сам выбрать не может — только сохранить уже назначенный организатором.
     const type = a.event_ticket_type_id
-      ? ticketTypes.find((t) => t.id === a.event_ticket_type_id && (!t.is_hidden || prev?.event_ticket_type_id === t.id))
+      ? ticketTypes.find((t) => t.id === a.event_ticket_type_id && (!t.is_hidden || a.by_host || prev?.event_ticket_type_id === t.id))
       : (ticketTypes.find((t) => t.id === prev?.event_ticket_type_id) ?? (visible.length === 1 ? visible[0] : undefined));
     if (!type) return { ok: false, error: a.event_ticket_type_id ? 'ticket_unknown' : 'ticket_required' };
 
@@ -48,7 +53,7 @@ export function rsvp(a: RsvpArgs): RsvpResult {
     event_ticket_type_id = type.id;
   }
 
-  if (prev && prev.approval_status === approval_status && prev.event_ticket_type_id === event_ticket_type_id) {
+  if (prev && prev.approval_status === approval_status && prev.event_ticket_type_id === event_ticket_type_id && prev.plus_ones === plus_ones) {
     return { ok: true, event, guests, guest: prev, changed: false };
   }
   const guest: Guest = { event_id: event.id, user_id, approval_status, event_ticket_type_id, plus_ones, registered_at: now };

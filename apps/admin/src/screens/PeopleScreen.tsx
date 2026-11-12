@@ -26,7 +26,7 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [edited, setEdited] = useState<Record<string, string>>({}); // наши правки черновиков: id сообщения → текст
-  const { send, sendDraft, rejectDraft, toggleMode, done } = useConversationActions();
+  const { send, sendDraft, saveDraft, rejectDraft, toggleMode, done } = useConversationActions();
 
   const all = feed.conversations;
   const people = filterPeople(all, { filter, agent, query });
@@ -94,6 +94,7 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
             {draft && (
               <Draft
                 className="border-t px-4 py-3" draft={draft} text={edited[draft.id]} onEdit={(text) => setEdited({ ...edited, [draft.id]: text })}
+                onSave={(text) => saveDraft({ id: draft.id, text }, { onSuccess: () => setEdited(({ [draft.id]: _, ...rest }) => rest) })}
                 onSend={() => sendDraft({ id: draft.id, text: edited[draft.id] })} onReject={() => rejectDraft(draft.id)}
               />
             )}

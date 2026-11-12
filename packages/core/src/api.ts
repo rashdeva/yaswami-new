@@ -2,7 +2,6 @@
 import * as z from 'zod';
 import type { Event, Guest, TicketType, User } from './schema.ts';
 import { Event as EventSchema, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
-import { OTHER_TOPIC, TOPIC_GUIDES } from './topics.ts';
 
 const isTimeZone = (tz: string) => {
   try {
@@ -13,8 +12,8 @@ const isTimeZone = (tz: string) => {
   }
 };
 // В JSON дата — строка ISO с часовым поясом; в Date её превращает бэк.
-const dateTime = z.iso.datetime({ offset: true }).describe('ISO 8601 with offset, e.g. 2026-11-20T19:00:00+04:00');
-const timeZone = z.string().refine(isTimeZone, 'unknown time zone').describe('IANA time zone, e.g. Asia/Tbilisi');
+export const dateTime = z.iso.datetime({ offset: true }).describe('ISO 8601 with offset, e.g. 2026-11-20T19:00:00+04:00');
+export const timeZone = z.string().refine(isTimeZone, 'unknown time zone').describe('IANA time zone, e.g. Asia/Tbilisi');
 
 const eventFields = EventSchema.pick({
   kind: true, name: true, description: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true,
@@ -50,8 +49,8 @@ export { RsvpInput };
 export const VisitInput = z.object({ ref: z.number().int().positive().optional() });
 export type VisitInput = z.infer<typeof VisitInput>;
 
-/** Поиск человека среди пользователей сервиса. */
-export const UserSearchInput = z.object({ query: z.string().trim().min(1).max(64).describe('Part of a first name or @username') });
+/** Поиск человека среди пользователей сервиса; без запроса — список. */
+export const UserSearchInput = z.object({ query: z.string().trim().min(1).max(64).optional().describe('Part of a first name or @username; omit to list everyone (first 50 by name)') });
 export type UserSearchInput = z.infer<typeof UserSearchInput>;
 
 /** Решение иллюстратора об обложке собранного события. */
@@ -154,27 +153,7 @@ export interface AdminCollectedEvent extends CollectedEventItem, Pick<CollectedE
 export const CollectedListInput = z.object({ status: z.enum(COLLECTED_STATUSES).optional().describe('Only this status; pending — waiting for a decision') });
 export type CollectedListInput = z.infer<typeof CollectedListInput>;
 
-const text = (max: number) => z.string().trim().max(max);
-/**
- * Правка собранного события модератором: меняются только переданные поля. `status` — решение: одобрить (дальше
- * обработка и публикация) или отклонить (снять с публикации); с правкой в одном запросе — «поправил и одобрил».
- * Аналог events/update в Luma; поля — как у CollectedEvent.
- */
-export const CollectedUpdateInput = z.object({
-  status: z.enum(['approved', 'rejected']).optional().describe('approved — make the cover and video, then publish; rejected — hide everywhere'),
-  title: text(200).min(1).optional(),
-  description: text(5000).optional(),
-  starts_at: dateTime.optional(),
-  ends_at: dateTime.nullable().optional(),
-  place: text(200).nullable().optional(),
-  address: text(300).nullable().optional(),
-  price: text(100).nullable().optional(),
-  topic: z.enum([...Object.keys(TOPIC_GUIDES), OTHER_TOPIC]).optional(),
-  telegram_username: z.string().regex(/^@?\w{4,32}$/).nullable().optional().describe('Contact for sign-up, Telegram username; also links the event to its organizer'),
-  whatsapp_phone: text(30).nullable().optional(),
-  url: z.url().nullable().optional().describe('Sign-up link from the announcement'),
-});
-export type CollectedUpdateInput = z.infer<typeof CollectedUpdateInput>;
+// Правка и решение модератора — CollectedUpdateInput в admin.ts.
 
 /**
  * Source: канал или группа Telegram, откуда сборщик берёт анонсы. Источники добавляет команда, а каналы организаторов —

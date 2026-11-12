@@ -31,6 +31,17 @@ test('один видимый тип: запись без выбора типа,
   assert.equal(r.guests.length, 1);
 });
 
+test('организатор: «+1» только если событие разрешает, места считаются с ними; скрытый тип доступен', () => {
+  assert.deepEqual(run({ plus_ones: 1 }), { ok: false, error: 'plus_one_off' });
+  const open = { ...event, allow_plus_one: true, max_capacity: 2 };
+  const r = run({ event: open, plus_ones: 1 });
+  assert.ok(r.ok && r.guest.plus_ones === 1);
+  assert.deepEqual(run({ event: open, plus_ones: 2 }), { ok: false, error: 'full' });
+  const hidden = [type('a'), type('h', { is_hidden: true })];
+  assert.deepEqual(run({ ticketTypes: hidden, event_ticket_type_id: 'h' }), { ok: false, error: 'ticket_unknown' });
+  assert.ok(run({ ticketTypes: hidden, event_ticket_type_id: 'h', by_host: true }).ok);
+});
+
 test('несколько видимых типов: без выбора — ticket_required, с выбором — запись', () => {
   const ticketTypes = [type('a'), type('b')];
   assert.deepEqual(run({ ticketTypes }), { ok: false, error: 'ticket_required' });

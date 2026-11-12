@@ -132,6 +132,10 @@ export interface TgAccount {
 export const AccountCreateInput = z.object({ label: z.string().trim().min(1).max(40), phone: z.string().trim().regex(/^\+\d{7,15}$/) });
 export type AccountCreateInput = z.infer<typeof AccountCreateInput>;
 
+/** Подпись аккаунта в админке; номер и вход не меняются. */
+export const AccountUpdateInput = AccountCreateInput.pick({ label: true });
+export type AccountUpdateInput = z.infer<typeof AccountUpdateInput>;
+
 /** Шаг входа: код из Telegram или пароль двухэтапной проверки — что именно, определяет `status` аккаунта. */
 export const AccountLoginInput = z.object({ secret: z.string().trim().min(1).max(200) });
 export type AccountLoginInput = z.infer<typeof AccountLoginInput>;
@@ -162,6 +166,10 @@ export type DraftSendInput = z.infer<typeof DraftSendInput>;
 
 export const InboxSendInput = z.object({ text: z.string().trim().min(1).max(4000) });
 export type InboxSendInput = z.infer<typeof InboxSendInput>;
+
+/** Новый текст черновика агента: сообщение остаётся черновиком и ждёт «Отправить». */
+export const DraftUpdateInput = InboxSendInput;
+export type DraftUpdateInput = InboxSendInput;
 
 export const ConversationUpdateInput = z.object({ mode: z.enum(['agent', 'human']).optional(), attention: z.null().optional() });
 export type ConversationUpdateInput = z.infer<typeof ConversationUpdateInput>;

@@ -26,6 +26,7 @@ export function useInboxKeys({ rows, at, onSelect, draft, draftText, scope, onTo
   useEffect(() => {
     const focus = (selector: string) => document.querySelector<HTMLElement>(selector)?.focus();
     const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest('[role=alertdialog]')) return; // открыт диалог подтверждения: Enter — его
       const typing = (e.target as HTMLElement).closest<HTMLElement>('input, textarea');
       if (e.key === 'Escape') return typing ? typing.blur() : onEscape?.();
       // В черновике Enter — перенос строки, отправка — Cmd/Ctrl+Enter.

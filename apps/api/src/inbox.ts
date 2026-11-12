@@ -1,10 +1,12 @@
 // Переписка (docs/agents-inbox.md): запись всего, что люди пишут боту и что бот или мы отвечаем, и операции админки.
 import { and, asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type {
-  AccountCreateInput, AccountMessageInput, AdminOverview, AgentKey, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message,
+  AccountCreateInput, AccountMessageInput, AccountUpdateInput, AdminOverview, AgentKey, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message,
   TgAccount, User,
 } from '@yaswami/core';
 import { AGENTS, collectedPath, collectedWhen } from '@yaswami/core';
+import type { Ctx } from './audit.ts';
+import { audited } from './audit.ts';
 import type { Db } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, conversations, hosts, messages, tgAccounts, users } from './db/schema.ts';
 import { AppError, collectedSlug } from './services.ts';
@@ -131,7 +133,6 @@ export async function recordHostLead(db: Db, externalId: string): Promise<void> 
   await alertAdmins(conversation, reason);
 }
 
-/** Организатор ответил на наше сообщение: роль host готовит черновик ответа. Прежний неотправленный черновик заменяется. */
 /**
  * Организатор вошёл в сервис: неотправленные черновики роли host с предложением войти больше не нужны.
  * Зовётся при входе (auth.ts); сам диалог остаётся, на вопросы роль по-прежнему отвечает.
@@ -144,6 +145,7 @@ export async function dropHostPitch(db: Db, telegramId: number): Promise<void> {
   for (const { conversation_id } of dropped) await setAttention(db, conversation_id, null);
 }
 
+/** Организатор ответил на наше сообщение: роль host готовит черновик ответа. Прежний неотправленный черновик заменяется. */
 async function draftHostReply(db: Db, conversation: Conversation): Promise<void> {
   const history = await supportHistory(db, conversation.id);
   const reply = await host.ask([{ role: 'system', content: await hostFacts(db, conversation.peer_username ?? '') }, ...history]);
@@ -195,26 +197,36 @@ async function draftById(db: Db, id: string): Promise<Message> {
   return message;
 }
 
-/** Мы утвердили черновик агента: он встаёт в очередь на отправку, с нашим текстом, если мы его поправили. */
-export async function sendDraft(db: Db, id: string, text?: string): Promise<void> {
-  const draft = await draftById(db, id);
-  // Черновик появился, когда аккаунта ещё не было, — отправляем с первого подключённого.
-  const conversation = await conversationById(db, draft.conversation_id);
-  if (conversation.channel === 'account' && !conversation.account_id) {
-    const account = await activeAccount(db);
-    if (!account) throw new AppError('no_account', 409);
-    await db.update(conversations).set({ account_id: account.id }).where(eq(conversations.id, conversation.id));
-  }
-  await db.update(messages).set({ status: 'queued', created_at: dbNow, ...(text ? { text } : {}) }).where(eq(messages.id, id));
-  await db.update(conversations).set({ attention: null, last_message_at: dbNow }).where(eq(conversations.id, draft.conversation_id));
-}
+/** Мы утвердили черновик агента: он встаёт в очередь на отправку, с нашим текстом, если мы его поправили. Не отменяется: уйдёт в Telegram. */
+export const sendDraft = (db: Db, ctx: Ctx, id: string, text?: string) =>
+  audited(db, ctx, { action: 'admin_drafts_send', entity: 'message', id, input: { text }, undoable: false }, async (db) => {
+    const draft = await draftById(db, id);
+    // Черновик появился, когда аккаунта ещё не было, — отправляем с первого подключённого.
+    const conversation = await conversationById(db, draft.conversation_id);
+    if (conversation.channel === 'account' && !conversation.account_id) {
+      const account = await activeAccount(db);
+      if (!account) throw new AppError('no_account', 409);
+      await db.update(conversations).set({ account_id: account.id }).where(eq(conversations.id, conversation.id));
+    }
+    await db.update(messages).set({ status: 'queued', created_at: dbNow, ...(text ? { text } : {}) }).where(eq(messages.id, id));
+    await db.update(conversations).set({ attention: null, last_message_at: dbNow }).where(eq(conversations.id, draft.conversation_id));
+  });
+
+/** Поправить текст черновика, не отправляя его. */
+export const updateDraft = (db: Db, ctx: Ctx, id: string, text: string): Promise<Message> =>
+  audited(db, ctx, { action: 'admin_drafts_update', entity: 'message', id, input: { text } }, async (db) => {
+    await draftById(db, id);
+    const [message] = await db.update(messages).set({ text }).where(eq(messages.id, id)).returning();
+    return message!;
+  });
 
 /** Черновик отклонён: сообщение не уходит и из переписки пропадает. */
-export async function rejectDraft(db: Db, id: string): Promise<void> {
-  const draft = await draftById(db, id);
-  await db.delete(messages).where(eq(messages.id, id));
-  await db.update(conversations).set({ attention: null }).where(eq(conversations.id, draft.conversation_id));
-}
+export const rejectDraft = (db: Db, ctx: Ctx, id: string) =>
+  audited(db, ctx, { action: 'admin_drafts_reject', entity: 'message', id }, async (db) => {
+    const draft = await draftById(db, id);
+    await db.delete(messages).where(eq(messages.id, id));
+    await db.update(conversations).set({ attention: null }).where(eq(conversations.id, draft.conversation_id));
+  });
 
 export const setAttention = (db: Db, id: string, attention: string | null) => db.update(conversations).set({ attention }).where(eq(conversations.id, id));
 
@@ -344,22 +356,41 @@ const accountFields = {
 export const listAccounts = (db: Db): Promise<TgAccount[]> => db.select(accountFields).from(tgAccounts).orderBy(asc(tgAccounts.created_at));
 
 /** Новый аккаунт: сборщик увидит строку и запросит у Telegram код на этот номер. */
-export async function createAccount(db: Db, input: AccountCreateInput): Promise<TgAccount> {
-  const [account] = await db.insert(tgAccounts).values(input).onConflictDoNothing().returning(accountFields);
-  if (!account) throw new AppError('phone_taken', 409);
-  return account;
-}
+export const createAccount = (db: Db, ctx: Ctx, input: AccountCreateInput): Promise<TgAccount> =>
+  audited(db, ctx, { action: 'admin_accounts_create', entity: 'account', id: (a) => a.id, input }, async (db) => {
+    const [account] = await db.insert(tgAccounts).values(input).onConflictDoNothing().returning(accountFields);
+    if (!account) throw new AppError('phone_taken', 409);
+    return account;
+  });
 
-/** Шаг входа: код или пароль. Сборщик заберёт значение, выполнит шаг и сотрёт его. */
-export async function submitAccountLogin(db: Db, id: string, secret: string): Promise<void> {
-  const [account] = await db.select(accountFields).from(tgAccounts).where(eq(tgAccounts.id, id));
-  if (!account) throw new AppError('not_found', 404);
-  if (account.status !== 'login_code' && account.status !== 'login_password') throw new AppError('not_expected', 409);
-  await db.update(tgAccounts).set({ login: { secret }, last_error: null }).where(eq(tgAccounts.id, id));
-}
+export const updateAccount = (db: Db, ctx: Ctx, id: string, input: AccountUpdateInput): Promise<TgAccount> =>
+  audited(db, ctx, { action: 'admin_accounts_update', entity: 'account', id, input }, async (db) => {
+    const [account] = await db.update(tgAccounts).set(input).where(eq(tgAccounts.id, id)).returning(accountFields);
+    if (!account) throw new AppError('not_found', 404);
+    return account;
+  });
 
-/** Удаляет аккаунт вместе с сессией. Его диалоги остаются в истории, но писать в них будет не с чего. */
-export const deleteAccount = (db: Db, id: string) => db.delete(tgAccounts).where(eq(tgAccounts.id, id));
+/**
+ * Шаг входа: код или пароль. Сборщик заберёт значение, выполнит шаг и сотрёт его. В журнал — без секрета; не
+ * отменяется: шаг входа уже ушёл в Telegram.
+ */
+export const submitAccountLogin = (db: Db, ctx: Ctx, id: string, secret: string) =>
+  audited(db, ctx, { action: 'admin_accounts_login', entity: 'account', id, input: {}, undoable: false }, async (db) => {
+    const [account] = await db.select(accountFields).from(tgAccounts).where(eq(tgAccounts.id, id));
+    if (!account) throw new AppError('not_found', 404);
+    if (account.status !== 'login_code' && account.status !== 'login_password') throw new AppError('not_expected', 409);
+    await db.update(tgAccounts).set({ login: { secret }, last_error: null }).where(eq(tgAccounts.id, id));
+  });
+
+/**
+ * Удаляет аккаунт вместе с сессией. Его диалоги остаются в истории, но писать в них будет не с чего. Не отменяется:
+ * сессии в журнале нет, вернуть аккаунт можно только новым входом.
+ */
+export const deleteAccount = (db: Db, ctx: Ctx, id: string) =>
+  audited(db, ctx, { action: 'admin_accounts_delete', entity: 'account', id, undoable: false }, async (db) => {
+    const gone = await db.delete(tgAccounts).where(eq(tgAccounts.id, id)).returning({ id: tgAccounts.id });
+    if (!gone.length) throw new AppError('not_found', 404);
+  });
 
 export const inboxThread = (db: Db, id: string): Promise<Message[]> =>
   db.select().from(messages).where(eq(messages.conversation_id, id)).orderBy(asc(messages.created_at)).limit(500);
@@ -372,25 +403,29 @@ export async function conversationById(db: Db, id: string): Promise<Conversation
 
 /**
  * Мы пишем человеку сами: сообщение уходит через бота, а диалог переходит к нам — бот в нём замолкает.
- * `author` — `admin:<telegram id>` из админки или `agent`, когда пишет агент через MCP.
+ * Автор — `admin:<telegram id>` из админки или `agent`, когда пишет агент через MCP. Не отменяется: ушло в Telegram.
  */
-export async function inboxSend(db: Db, author: string, id: string, text: string): Promise<void> {
-  const conversation = await conversationById(db, id);
-  if (conversation.channel === 'account') {
-    // С аккаунта отправляет сборщик: кладём сообщение в очередь, он заберёт его в течение нескольких секунд.
-    if (!conversation.account_id) throw new AppError('account_gone', 409);
-    await db.insert(messages).values({ conversation_id: id, direction: 'out', author, text, status: 'queued' });
-    await db.update(conversations).set({ mode: 'human', attention: null, last_message_at: dbNow }).where(eq(conversations.id, id));
-    return;
-  }
-  const result = await bot.send('sendMessage', { chat_id: conversation.peer_id, text }, author);
-  await db.update(conversations).set({ mode: 'human', attention: null }).where(eq(conversations.id, id));
-  // Сообщение уже в ленте с пометкой «не доставлено»; ошибка — чтобы админка сказала об этом сразу.
-  if (!result.ok) throw new AppError('not_delivered', 409);
-}
+export const inboxSend = (db: Db, ctx: Ctx, id: string, text: string) =>
+  audited(db, ctx, { action: 'admin_messages_send', entity: 'conversation', id, input: { text }, undoable: false }, async (db) => {
+    const author = ctx.via === 'admin' ? `admin:${ctx.actor.id}` : 'agent';
+    const conversation = await conversationById(db, id);
+    if (conversation.channel === 'account') {
+      // С аккаунта отправляет сборщик: кладём сообщение в очередь, он заберёт его в течение нескольких секунд.
+      if (!conversation.account_id) throw new AppError('account_gone', 409);
+      await db.insert(messages).values({ conversation_id: id, direction: 'out', author, text, status: 'queued' });
+      await db.update(conversations).set({ mode: 'human', attention: null, last_message_at: dbNow }).where(eq(conversations.id, id));
+      return;
+    }
+    const result = await bot.send('sendMessage', { chat_id: conversation.peer_id, text }, author);
+    await db.update(conversations).set({ mode: 'human', attention: null }).where(eq(conversations.id, id));
+    // Сообщение уже в ленте с пометкой «не доставлено» (его пишет bot.log мимо этой транзакции); ошибка — чтобы
+    // админка сказала об этом сразу.
+    if (!result.ok) throw new AppError('not_delivered', 409);
+  });
 
-export async function inboxUpdate(db: Db, id: string, input: ConversationUpdateInput): Promise<Conversation> {
-  await conversationById(db, id);
-  const [conversation] = await db.update(conversations).set(input).where(eq(conversations.id, id)).returning();
-  return conversation!;
-}
+export const inboxUpdate = (db: Db, ctx: Ctx, id: string, input: ConversationUpdateInput): Promise<Conversation> =>
+  audited(db, ctx, { action: 'admin_conversations_update', entity: 'conversation', id, input }, async (db) => {
+    await conversationById(db, id);
+    const [conversation] = await db.update(conversations).set(input).where(eq(conversations.id, id)).returning();
+    return conversation!;
+  });
