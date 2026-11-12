@@ -33,6 +33,10 @@ function when(event: Pick<Event, 'start_at' | 'timezone'>): string {
   const time = part({ hour: '2-digit', minute: '2-digit' });
   return part({ weekday: 'short', day: 'numeric', month: 'long' }) + (time === '00:00' ? '' : `, ${time}`);
 }
+/** Ссылка на событие каталога: оно же в мини-приложении (startapp=c_<id>), а если id Telegram не примет — сайт. */
+export const collectedUrl = (id: string) =>
+  bot.username && /^[\w-]{1,60}$/.test(id) ? `https://t.me/${bot.username}/${bot.appName}?startapp=c_${id}` : settings.publicUrl + collectedPath(id);
+
 const eventRows = (event: Event): Card['rows'] => [
   ['🗓', when(event)],
   ...(event.geo_address_json ? [['📍', event.geo_address_json.address] as [string, string]] : []),

@@ -8,6 +8,8 @@ export interface SupportReply {
   text: string;
   /** Роль просит позвать человека: причина для «Ждут вас». null — справилась сама. */
   human: string | null;
+  /** События каталога, которые роль показывает карточками под ответом (id из collected_events_list). */
+  events?: string[];
 }
 
 const TICKET_TTL_S = 30 * 60;
@@ -35,9 +37,15 @@ export function verifyTicket(ticket: string, now = Date.now()): number | null {
 // Так роль зовёт человека (agents/support/SOUL.md): отдельная строка в ответе, человеку её не показываем.
 const HUMAN_MARK = /^[ \t]*\[\[человек:(.*?)\]\][ \t]*$/im;
 
+// Так роль показывает событие: отдельная строка, вместо неё бот присылает карточку с обложкой и кнопкой.
+const EVENT_MARK = /^[ \t]*\[\[событие:\s*(.*?)\]\][ \t]*$/gim;
+const EVENTS_SHOWN = 3; // больше карточек подряд — уже лента, а не ответ
+
 export function parseSupportReply(content: string): SupportReply {
   const mark = HUMAN_MARK.exec(content);
-  return { text: content.replace(HUMAN_MARK, '').trim(), human: mark ? mark[1]!.trim() || 'Просит человека' : null };
+  const events = [...new Set([...content.matchAll(EVENT_MARK)].map((m) => m[1]!.trim()).filter(Boolean))].slice(0, EVENTS_SHOWN);
+  const text = content.replace(HUMAN_MARK, '').replace(EVENT_MARK, '').replace(/\n{3,}/g, '\n\n').trim();
+  return { text, human: mark ? mark[1]!.trim() || 'Просит человека' : null, events };
 }
 
 /** Вопрос роли Hermes по её HTTP-входу. null — роль недоступна или ответила пусто. Не бросает. */
