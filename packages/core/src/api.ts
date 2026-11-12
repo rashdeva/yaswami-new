@@ -12,8 +12,8 @@ const isTimeZone = (tz: string) => {
   }
 };
 // В JSON дата — строка ISO с часовым поясом; в Date её превращает бэк.
-const dateTime = z.iso.datetime({ offset: true }).describe('ISO 8601 with offset, e.g. 2026-11-20T19:00:00+04:00');
-const timeZone = z.string().refine(isTimeZone, 'unknown time zone').describe('IANA time zone, e.g. Asia/Tbilisi');
+export const dateTime = z.iso.datetime({ offset: true }).describe('ISO 8601 with offset, e.g. 2026-11-20T19:00:00+04:00');
+export const timeZone = z.string().refine(isTimeZone, 'unknown time zone').describe('IANA time zone, e.g. Asia/Tbilisi');
 
 const eventFields = EventSchema.pick({
   kind: true, name: true, description: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true,
@@ -49,8 +49,8 @@ export { RsvpInput };
 export const VisitInput = z.object({ ref: z.number().int().positive().optional() });
 export type VisitInput = z.infer<typeof VisitInput>;
 
-/** Поиск человека среди пользователей сервиса. */
-export const UserSearchInput = z.object({ query: z.string().trim().min(1).max(64).describe('Part of a first name or @username') });
+/** Поиск человека среди пользователей сервиса; без запроса — список. */
+export const UserSearchInput = z.object({ query: z.string().trim().min(1).max(64).optional().describe('Part of a first name or @username; omit to list everyone (first 50 by name)') });
 export type UserSearchInput = z.infer<typeof UserSearchInput>;
 
 /** Решение иллюстратора об обложке собранного события. */

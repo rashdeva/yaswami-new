@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import { createHmac, generateKeyPairSync, sign } from 'node:crypto';
 import { after, before, test } from 'node:test';
-import { asc, eq, sql } from 'drizzle-orm';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminOverview, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
+import type { AdminAction, AdminActionList, AdminGuest, AdminOverview, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
 import { bot } from './telegram.ts';
@@ -13,7 +13,9 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { collectedEvents, hosts, photos, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, collectedEvents, contacts, conversations, guests, hosts, messages, photos, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
+import { afterCommit, audited } from './audit.ts';
+import { AppError, updateEvent } from './services.ts';
 import { saveUserPhoto } from './photos.ts';
 import { listCollectedForAdmin, requestNextVideo } from './services.ts';
 import { settings } from './settings.ts';
@@ -38,7 +40,7 @@ before(async () => {
   url.pathname = '/yaswami_test';
   db = createDb(url.href);
   await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
-  await db.execute(sql`truncate users cascade`);
+  await db.execute(sql`truncate users, admin_actions, collected_events, hosts, tg_accounts, conversations cascade`);
   app = createApp({ db, botToken: BOT_TOKEN });
 });
 after(() => db.$client.end());
@@ -753,10 +755,10 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-7-0' }), { error: 'not_approved' });
   assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/collected-events')).status, 403);
   // Лимит выбран — одобренное выходит как есть, а не ждёт сутки.
-  assert.deepEqual(await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved' })).json(), { status: 'published' });
+  assert.equal(((await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved' })).json()) as { status: string }).status, 'published');
   assert.equal(await inFeed(), true);
   // Снять с публикации и удалить.
-  assert.deepEqual(await tool('admin_collected_events_moderate', { id: 'danangevent-7-0', status: 'rejected' }), { status: 'rejected' });
+  assert.equal((await tool('admin_collected_events_update', { collected_event_id: 'danangevent-7-0', status: 'rejected' })).status, 'rejected');
   assert.equal(await inFeed(), false);
   assert.equal((await call(admin, 'DELETE', '/admin/collected-events/danangevent-7-0')).status, 204);
   assert.equal((await adminEvents()).some((e) => e.id === 'danangevent-7-0'), false);
@@ -1159,7 +1161,7 @@ test('MCP для оператора: любое событие сервиса, �
   assert.deepEqual((await rest(`/admin/events/${event.id}`)).guest_counts, { approved: 0, maybe: 0, declined: 1 });
   assert.equal((await (await call(admin, 'PATCH', `/admin/events/${event.id}`, { name: 'Покер в субботу' })).json() as any).event.name, 'Покер в субботу');
   assert.deepEqual((await rest('/admin/users?query=u81')).map((u: any) => u.id), [81]);
-  assert.equal((await call(admin, 'GET', '/admin/users')).status, 400);
+  assert.ok((await rest('/admin/users')).some((u: any) => u.id === 81), 'без запроса — список');
   for (const path of ['/admin/hosts', '/admin/accounts', '/admin/covers']) assert.ok(Array.isArray(await rest(path)), path);
 
   // От имени другого человека: админ создаёт событие за Олега и отвечает за Дашу; гостю такой параметр не дан.
@@ -1193,6 +1195,56 @@ test('MCP для оператора: любое событие сервиса, �
   assert.ok(Array.isArray(await tool(admin, 'admin_accounts_list', {})) && Array.isArray(await tool(admin, 'admin_hosts_list', {})));
 });
 
+// Операции команды: инструмент MCP ↔ маршрут REST. Изменяющие из них проверяет тест журнала ниже.
+const ADMIN_PAIRS: Record<string, string> = {
+  admin_overview_get: 'GET /admin/overview',
+  admin_conversations_list: 'GET /admin/inbox',
+  admin_conversations_get: 'GET /admin/conversations/:id/messages',
+  admin_conversations_update: 'PATCH /admin/conversations/:id',
+  admin_messages_send: 'POST /admin/conversations/:id/messages',
+  admin_drafts_send: 'POST /admin/messages/:id/send',
+  admin_drafts_update: 'PATCH /admin/messages/:id',
+  admin_drafts_reject: 'DELETE /admin/messages/:id',
+  admin_accounts_list: 'GET /admin/accounts',
+  admin_accounts_create: 'POST /admin/accounts',
+  admin_accounts_update: 'PATCH /admin/accounts/:id',
+  admin_accounts_delete: 'DELETE /admin/accounts/:id',
+  admin_events_list: 'GET /admin/events',
+  admin_events_create: 'POST /admin/events',
+  admin_events_get: 'GET /admin/events/:id',
+  admin_events_update: 'PATCH /admin/events/:id',
+  admin_events_delete: 'DELETE /admin/events/:id',
+  admin_events_guests_list: 'GET /admin/events/:id/guests',
+  admin_events_guests_update: 'PUT /admin/events/:id/guests/:user_id',
+  admin_events_guests_remove: 'DELETE /admin/events/:id/guests/:user_id',
+  admin_events_ticket_types_create: 'POST /admin/events/:id/ticket-types',
+  admin_events_ticket_types_update: 'PATCH /admin/ticket-types/:id',
+  admin_events_ticket_types_delete: 'DELETE /admin/ticket-types/:id',
+  admin_events_feedback_list: 'GET /admin/events/:id/feedback',
+  admin_events_feedback_delete: 'DELETE /admin/events/:id/feedback/:user_id',
+  admin_collected_events_list: 'GET /admin/collected-events',
+  admin_collected_events_get: 'GET /admin/collected-events/:id',
+  admin_collected_events_update: 'PATCH /admin/collected-events/:id',
+  admin_collected_events_delete: 'DELETE /admin/collected-events/:id',
+  admin_covers_list: 'GET /admin/covers',
+  admin_covers_set: 'POST /admin/covers/:id',
+  admin_videos_request: 'POST /admin/videos/:id',
+  admin_hosts_list: 'GET /admin/hosts',
+  admin_hosts_get: 'GET /admin/hosts/:id',
+  admin_hosts_update: 'PATCH /admin/hosts/:id',
+  admin_hosts_delete: 'DELETE /admin/hosts/:id',
+  admin_users_search: 'GET /admin/users',
+  admin_users_get: 'GET /admin/users/:id',
+  admin_users_update: 'PATCH /admin/users/:id',
+  admin_users_delete: 'DELETE /admin/users/:id',
+  admin_users_tokens_revoke: 'DELETE /admin/users/:id/tokens',
+  admin_contacts_list: 'GET /admin/contacts',
+  admin_contacts_remove: 'DELETE /admin/contacts/:id',
+  admin_actions_list: 'GET /admin/actions',
+  admin_actions_get: 'GET /admin/actions/:id',
+  admin_actions_undo: 'POST /admin/actions/:id/undo',
+};
+
 // Правило «операция = сервис + REST + MCP» (docs/agents/api.md). Добавил инструмент или маршрут — допиши строку сюда:
 // пару или исключение с причиной в docs/agents/api.md.
 test('парность: у каждого инструмента MCP есть маршрут REST и наоборот', async () => {
@@ -1212,33 +1264,14 @@ test('парность: у каждого инструмента MCP есть м
     events_ticket_types_create: 'POST /events/:id/ticket-types',
     events_ticket_types_update: 'PATCH /ticket-types/:id',
     events_ticket_types_delete: 'DELETE /ticket-types/:id',
-    admin_conversations_list: 'GET /admin/inbox',
-    admin_conversations_get: 'GET /admin/conversations/:id/messages',
-    admin_conversations_update: 'PATCH /admin/conversations/:id',
-    admin_messages_send: 'POST /admin/conversations/:id/messages',
-    admin_drafts_send: 'POST /admin/messages/:id/send',
-    admin_drafts_reject: 'DELETE /admin/messages/:id',
-    admin_accounts_list: 'GET /admin/accounts',
-    admin_events_list: 'GET /admin/events',
-    admin_events_get: 'GET /admin/events/:id',
-    admin_events_update: 'PATCH /admin/events/:id',
-    admin_users_search: 'GET /admin/users',
-    admin_hosts_list: 'GET /admin/hosts',
-    admin_overview_get: 'GET /admin/overview',
-    admin_collected_events_list: 'GET /admin/collected-events',
-    admin_collected_events_moderate: 'PATCH /admin/collected-events/:id',
-    admin_collected_events_get: 'GET /admin/collected-events/:id',
-    admin_collected_events_delete: 'DELETE /admin/collected-events/:id',
-    admin_covers_list: 'GET /admin/covers',
-    admin_covers_set: 'POST /admin/covers/:id',
-    admin_videos_request: 'POST /admin/videos/:id',
+    ...ADMIN_PAIRS,
   };
   const MCP_ONLY = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update'];
   const REST_ONLY = [
     'GET /health', 'GET /config', 'GET /photos/:id', 'POST /telegram/webhook', 'POST /internal/account-message', 'POST /internal/lead',
     'GET /auth/telegram/login', 'GET /auth/telegram/callback', 'POST /auth/logout', 'POST /tokens', 'DELETE /tokens',
     'POST /collected-events/:id/visit', 'POST /events/:id/visit',
-    'POST /admin/accounts', 'POST /admin/accounts/:id/login', 'DELETE /admin/accounts/:id',
+    'POST /admin/accounts/:id/login',
   ];
 
   settings.adminIds = [70];
@@ -1250,4 +1283,248 @@ test('парность: у каждого инструмента MCP есть м
   // Маршруты приложения без промежуточных обработчиков (у них метод ALL) и самого входа MCP.
   const routes = [...new Set(app.routes.filter((r) => r.method !== 'ALL').map((r) => `${r.method} ${r.path}`))];
   assert.deepEqual(routes.sort(), [...Object.values(PAIRS), ...REST_ONLY].sort());
+});
+
+// --- Журнал действий команды и отмена (audit.ts, ADR-0004)
+
+const ADMIN = 70;
+const mcpCall = async (auth: string, name: string, args: object) => {
+  const res = await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+  const { result } = (await res.json()) as { result: { isError?: boolean; content: { text: string }[] } };
+  return { error: !!result.isError, body: JSON.parse(result.content[0]!.text) };
+};
+const lastAction = async () => (await db.select().from(adminActions).orderBy(desc(adminActions.created_at)).limit(1))[0];
+
+/** Свой маленький мир на каждый вызов: организатор, гость, событие с двумя типами, отзыв, каталог, профиль, аккаунт, диалог. */
+let worlds = 0;
+async function world() {
+  const n = ++worlds;
+  const base = 600_000 + n * 10;
+  const [hostId, guestId, otherId] = [base + 1, base + 2, base + 3];
+  await db.insert(users).values([hostId, guestId, otherId].map((id) => ({ id, first_name: `U${id}`, username: `u${id}`, lang: 'ru', timezone: 'UTC' })));
+  const eventId = `e_audit${n}`;
+  await db.insert(eventsTable).values({ id: eventId, user_id: hostId, kind: 'o', name: 'Событие', start_at: new Date(Date.now() + 86_400_000), timezone: 'UTC', status: 'published', allow_plus_one: true });
+  const [t1, t2] = await db.insert(ticketTypes).values([{ event_id: eventId, name: 'A' }, { event_id: eventId, name: 'B', position: 1 }]).returning();
+  await db.insert(guests).values({ event_id: eventId, user_id: guestId, approval_status: 'approved', event_ticket_type_id: t1!.id, registered_at: new Date() });
+  await db.insert(eventFeedback).values({ event_id: eventId, user_id: guestId, rating: 5, comment: 'Отлично' });
+  const [contact] = await db.insert(contacts).values({ host_user_id: hostId, user_id: guestId }).returning();
+  const starts = new Date(Date.now() + 86_400_000);
+  await db.insert(collectedEvents).values({
+    external_id: `telegram:auditchan/${n}#0`, channel: 'auditchan', status: 'approved', starts_at: starts, signup_url: '', announcement: { url: `https://t.me/auditchan/${n}` },
+    event: { title: 'Баня', description: '', starts_at: starts.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null },
+  });
+  const [profile] = await db.insert(hosts).values({ telegram_id: base + 5, username: `host${n}`, name: 'Орг' }).returning();
+  const [account] = await db.insert(tgAccounts).values({ label: 'Основной', phone: `+7900${base}` }).returning();
+  const [conversation] = await db.insert(conversations).values({ channel: 'bot', peer_id: guestId, peer_name: 'Гость' }).returning();
+  const [draft] = await db.insert(messages).values({ conversation_id: conversation!.id, direction: 'out', author: 'agent:host', text: 'Привет', status: 'draft' }).returning();
+  return {
+    n, hostId, guestId, otherId, eventId, t1: t1!.id, t2: t2!.id, slug: `auditchan-${n}-0`, profileId: profile!.id, accountId: account!.id,
+    conversationId: conversation!.id, draftId: draft!.id, contactId: contact!.id,
+  };
+}
+type World = Awaited<ReturnType<typeof world>>;
+interface Case { args: object; params?: Record<string, string | number>; body?: object; entity_id: string | ((res: any) => string) }
+
+// Каждое изменяющее действие команды: как вызвать его в MCP и в REST и чего касается строка журнала.
+const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
+  admin_events_create: (w) => {
+    const input = { user_id: w.otherId, kind: 'o', name: 'Новое', start_at: '2027-01-01T10:00:00+07:00', timezone: 'Asia/Ho_Chi_Minh' };
+    return { args: input, body: input, entity_id: (r) => r.event.id };
+  },
+  admin_events_update: (w) => ({ args: { event_id: w.eventId, name: 'Другое' }, params: { id: w.eventId }, body: { name: 'Другое' }, entity_id: w.eventId }),
+  admin_events_delete: (w) => ({ args: { event_id: w.eventId }, params: { id: w.eventId }, entity_id: w.eventId }),
+  admin_events_guests_update: (w) => ({
+    args: { event_id: w.eventId, user_id: w.otherId, approval_status: 'approved', event_ticket_type_id: w.t1, plus_ones: 1 }, params: { id: w.eventId, user_id: w.otherId },
+    body: { approval_status: 'approved', event_ticket_type_id: w.t1, plus_ones: 1 }, entity_id: w.eventId,
+  }),
+  admin_events_guests_remove: (w) => ({ args: { event_id: w.eventId, user_id: w.guestId }, params: { id: w.eventId, user_id: w.guestId }, entity_id: w.eventId }),
+  admin_events_ticket_types_create: (w) => ({ args: { event_id: w.eventId, name: 'C' }, params: { id: w.eventId }, body: { name: 'C' }, entity_id: w.eventId }),
+  admin_events_ticket_types_update: (w) => ({ args: { event_ticket_type_id: w.t2, name: 'BB' }, params: { id: w.t2 }, body: { name: 'BB' }, entity_id: w.eventId }),
+  admin_events_ticket_types_delete: (w) => ({ args: { event_ticket_type_id: w.t2 }, params: { id: w.t2 }, entity_id: w.eventId }),
+  admin_events_feedback_delete: (w) => ({ args: { event_id: w.eventId, user_id: w.guestId }, params: { id: w.eventId, user_id: w.guestId }, entity_id: w.eventId }),
+  admin_collected_events_update: (w) => ({ args: { collected_event_id: w.slug, title: 'Баня на углях' }, params: { id: w.slug }, body: { title: 'Баня на углях' }, entity_id: w.slug }),
+  admin_collected_events_delete: (w) => ({ args: { collected_event_id: w.slug }, params: { id: w.slug }, entity_id: w.slug }),
+  admin_covers_set: (w) => ({ args: { id: w.slug }, params: { id: w.slug }, body: {}, entity_id: w.slug }),
+  admin_videos_request: (w) => ({ args: { id: w.slug }, params: { id: w.slug }, entity_id: w.slug }),
+  admin_hosts_update: (w) => ({ args: { host_id: w.profileId, name: 'Игорь' }, params: { id: w.profileId }, body: { name: 'Игорь' }, entity_id: w.profileId }),
+  admin_hosts_delete: (w) => ({ args: { host_id: w.profileId }, params: { id: w.profileId }, entity_id: w.profileId }),
+  admin_users_update: (w) => ({ args: { user_id: w.otherId, first_name: 'Иван' }, params: { id: w.otherId }, body: { first_name: 'Иван' }, entity_id: String(w.otherId) }),
+  admin_users_delete: (w) => ({ args: { user_id: w.guestId }, params: { id: w.guestId }, entity_id: String(w.guestId) }),
+  admin_users_tokens_revoke: (w) => ({ args: { user_id: w.otherId }, params: { id: w.otherId }, entity_id: String(w.otherId) }),
+  admin_contacts_remove: (w) => ({ args: { contact_id: w.contactId }, params: { id: w.contactId }, entity_id: w.contactId }),
+  admin_accounts_create: (w) => {
+    const input = { label: 'Второй', phone: `+7911${w.hostId}` };
+    return { args: input, body: input, entity_id: (r) => r.id };
+  },
+  admin_accounts_update: (w) => ({ args: { account_id: w.accountId, label: 'Запасной' }, params: { id: w.accountId }, body: { label: 'Запасной' }, entity_id: w.accountId }),
+  admin_accounts_delete: (w) => ({ args: { account_id: w.accountId }, params: { id: w.accountId }, entity_id: w.accountId }),
+  admin_conversations_update: (w) => ({ args: { conversation_id: w.conversationId, mode: 'human' }, params: { id: w.conversationId }, body: { mode: 'human' }, entity_id: w.conversationId }),
+  admin_messages_send: (w) => ({ args: { conversation_id: w.conversationId, text: 'Здравствуйте' }, params: { id: w.conversationId }, body: { text: 'Здравствуйте' }, entity_id: w.conversationId }),
+  admin_drafts_send: (w) => ({ args: { message_id: w.draftId }, params: { id: w.draftId }, body: {}, entity_id: w.draftId }),
+  admin_drafts_update: (w) => ({ args: { message_id: w.draftId, text: 'Добрый день' }, params: { id: w.draftId }, body: { text: 'Добрый день' }, entity_id: w.draftId }),
+  admin_drafts_reject: (w) => ({ args: { message_id: w.draftId }, params: { id: w.draftId }, entity_id: w.draftId }),
+  admin_actions_undo: async (w) => {
+    assert.equal((await call(tma(ADMIN, 'Админ'), 'PATCH', `/admin/events/${w.eventId}`, { name: 'Для отмены' })).status, 200);
+    const { id } = (await lastAction())!;
+    return { args: { action_id: id }, params: { id }, entity_id: w.eventId };
+  },
+};
+
+test('журнал: каждое изменяющее действие команды оставляет запись — кто, откуда, что и с чем', async () => {
+  settings.adminIds = [ADMIN];
+  settings.illustratorUrl = 'http://illustrator.test';
+  settings.illustratorDailyLimit = 1000;
+  const draw = illustrator.ask;
+  illustrator.ask = async () => null;
+  const admin = tma(ADMIN, 'Админ');
+
+  // Список случаев сверяется со входами: новая изменяющая операция без строки здесь роняет тест.
+  const listed = await call(admin, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+  const tools = ((await listed.json()) as { result: { tools: { name: string; annotations: { readOnlyHint: boolean } }[] } }).result.tools;
+  assert.deepEqual(Object.keys(CASES).sort(), tools.filter((t) => t.name.startsWith('admin_') && !t.annotations.readOnlyHint).map((t) => t.name).sort());
+  const restWrites = [...new Set(app.routes.filter((r) => r.path.startsWith('/admin') && r.method !== 'GET' && r.method !== 'ALL').map((r) => `${r.method} ${r.path}`))];
+  assert.deepEqual(restWrites.sort(), [...Object.keys(CASES).map((t) => ADMIN_PAIRS[t]!), 'POST /admin/accounts/:id/login'].sort());
+
+  for (const [name, make] of Object.entries(CASES)) {
+    const viaMcp = await make(await world());
+    const done = await mcpCall(admin, name, viaMcp.args);
+    assert.equal(done.error, false, `${name} (MCP): ${JSON.stringify(done.body)}`);
+    let row = await lastAction();
+    const mcpId = typeof viaMcp.entity_id === 'string' ? viaMcp.entity_id : viaMcp.entity_id(done.body);
+    assert.deepEqual([row!.actor_id, row!.via, row!.action, row!.entity_id], [ADMIN, 'mcp', name, mcpId], name);
+
+    const viaRest = await make(await world());
+    const [method, template] = ADMIN_PAIRS[name]!.split(' ') as [string, string];
+    const path = template.replace(/:(\w+)/g, (_m, key: string) => encodeURIComponent(String(viaRest.params![key])));
+    const res = await call(admin, method, path, viaRest.body);
+    assert.ok(res.ok, `${name} (REST ${method} ${path}): ${res.status} ${await res.clone().text()}`);
+    row = await lastAction();
+    const restId = typeof viaRest.entity_id === 'string' ? viaRest.entity_id : viaRest.entity_id(await res.json());
+    assert.deepEqual([row!.actor_id, row!.via, row!.action, row!.entity_id], [ADMIN, 'admin', name, restId], `${name} (REST)`);
+  }
+
+  // От имени пользователя через as_user_id — тоже строка журнала, без отмены.
+  const w = await world();
+  assert.equal((await mcpCall(admin, 'events_update', { as_user_id: w.hostId, event_id: w.eventId, name: 'Сам организатор' })).error, false);
+  const row = await lastAction();
+  assert.deepEqual([row!.action, row!.entity, row!.entity_id, row!.undoable, row!.via], ['events_update', 'user', String(w.hostId), false, 'mcp']);
+  assert.equal((await mcpCall(admin, 'events_list', { as_user_id: w.hostId })).error, false);
+  assert.equal((await lastAction())!.id, row!.id, 'чтение в журнал не пишется');
+
+  // Страницы журнала: новые сверху, курсор ведёт дальше.
+  const page = (await (await call(admin, 'GET', '/admin/actions?pagination_limit=2')).json()) as AdminActionList;
+  assert.deepEqual([page.entries.length, page.has_more, page.entries[0]!.id], [2, true, row!.id]);
+  assert.ok(!('before' in page.entries[0]!), 'снимки — только в admin_actions_get');
+  const next = (await (await call(admin, 'GET', `/admin/actions?pagination_limit=2&pagination_cursor=${page.next_cursor}`)).json()) as AdminActionList;
+  assert.ok(next.entries.every((e) => !page.entries.some((p) => p.id === e.id)) && next.entries.length === 2);
+  const filtered = (await (await call(admin, 'GET', `/admin/actions?entity=user&entity_id=${w.hostId}`)).json()) as AdminActionList;
+  assert.deepEqual(filtered.entries.map((e) => e.action), ['events_update']);
+  assert.equal((await call(tma(w.guestId, 'Гость'), 'GET', '/admin/actions')).status, 403);
+
+  await new Promise((r) => setTimeout(r, 20)); // заказы роликов уходят после фиксации
+  illustrator.ask = draw;
+  settings.illustratorUrl = '';
+});
+
+test('отмена: правка и удаление возвращаются целиком; после чужой правки, повторно и неотменяемое — отказ', async () => {
+  settings.adminIds = [ADMIN];
+  const admin = tma(ADMIN, 'Админ');
+  const undo = (id: string) => call(admin, 'POST', `/admin/actions/${id}/undo`);
+  const eventOf = async (id: string) => (await call(admin, 'GET', `/admin/events/${id}`)).json() as Promise<EventView>;
+
+  // Правка события → отмена возвращает поля.
+  const w = await world();
+  const before = await eventOf(w.eventId);
+  await call(admin, 'PATCH', `/admin/events/${w.eventId}`, { name: 'Переименовано', max_capacity: 10 });
+  const edit = (await lastAction())!;
+  assert.deepEqual([edit.undoable, edit.undone_by, (edit.input as { name: string }).name], [true, null, 'Переименовано']);
+  const res = await undo(edit.id);
+  assert.equal(res.status, 201);
+  const undone = (await res.json()) as AdminAction;
+  assert.deepEqual([undone.action, undone.undo_of, undone.entity_id], ['admin_actions_undo', edit.id, w.eventId]);
+  assert.deepEqual((await eventOf(w.eventId)).event, before.event);
+  assert.equal(((await (await call(admin, 'GET', `/admin/actions/${edit.id}`)).json()) as AdminAction).undone_by, undone.id);
+
+  // Повторно — нельзя; отмена отмены возвращает правку.
+  assert.deepEqual([(await undo(edit.id)).status, await (await undo(edit.id)).json()], [409, { error: 'already_undone' }]);
+  assert.equal((await undo(undone.id)).status, 201);
+  assert.equal((await eventOf(w.eventId)).event.name, 'Переименовано');
+
+  // Правка после действия — отмена затёрла бы её: changed_since.
+  await call(admin, 'PATCH', `/admin/events/${w.eventId}`, { name: 'Первая' });
+  const first = (await lastAction())!;
+  await call(admin, 'PATCH', `/admin/events/${w.eventId}`, { name: 'Вторая' });
+  assert.deepEqual(await (await undo(first.id)).json(), { error: 'changed_since' });
+  // Гость сам поменял ответ — это тоже изменение события.
+  await call(admin, 'PATCH', `/admin/events/${w.eventId}`, { name: 'Третья' });
+  const third = (await lastAction())!;
+  assert.equal((await call(tma(w.guestId, 'Гость'), 'POST', `/events/${w.eventId}/rsvp`, { approval_status: 'maybe' })).status, 200);
+  assert.deepEqual(await (await undo(third.id)).json(), { error: 'changed_since' });
+
+  // Удаление события с гостями, типами билетов и отзывом → отмена возвращает всё.
+  const v = await world();
+  const guestsBefore = (await (await call(admin, 'GET', `/admin/events/${v.eventId}/guests`)).json()) as AdminGuest[];
+  const full = await eventOf(v.eventId);
+  assert.equal((await call(admin, 'DELETE', `/admin/events/${v.eventId}`)).status, 204);
+  assert.equal((await call(admin, 'GET', `/admin/events/${v.eventId}`)).status, 404);
+  assert.equal((await undo((await lastAction())!.id)).status, 201);
+  const back = await eventOf(v.eventId);
+  assert.deepEqual([back.event, back.ticket_types, back.guest_counts, back.feedback], [full.event, full.ticket_types, full.guest_counts, full.feedback]);
+  assert.deepEqual(await (await call(admin, 'GET', `/admin/events/${v.eventId}/guests`)).json(), guestsBefore);
+
+  // Удаление пользователя возвращается с его ответами; собранное событие — с обложкой.
+  const u = await world();
+  await db.insert(photos).values({ collected_external_id: `telegram:auditchan/${u.n}#0`, source: 'x', data: Buffer.from([0xff, 0xd8, 9]) });
+  assert.deepEqual(await (await call(admin, 'DELETE', `/admin/users/${u.hostId}`)).json(), { error: 'user_has_events' });
+  assert.equal((await call(admin, 'DELETE', `/admin/users/${u.guestId}`)).status, 204);
+  assert.equal((await undo((await lastAction())!.id)).status, 201);
+  assert.deepEqual(((await (await call(admin, 'GET', `/admin/events/${u.eventId}/guests`)).json()) as AdminGuest[]).map((g) => g.user_id), [u.guestId]);
+  assert.equal((await call(admin, 'DELETE', `/admin/collected-events/${u.slug}`)).status, 204);
+  assert.equal((await undo((await lastAction())!.id)).status, 201);
+  const [cover] = await db.select().from(photos).where(eq(photos.collected_external_id, `telegram:auditchan/${u.n}#0`));
+  assert.deepEqual(cover!.data, Buffer.from([0xff, 0xd8, 9]));
+
+  // Неотменяемое: ушло в Telegram.
+  await call(admin, 'POST', `/admin/conversations/${u.conversationId}/messages`, { text: 'Привет' });
+  const sentAction = (await lastAction())!;
+  assert.deepEqual([sentAction.action, sentAction.undoable], ['admin_messages_send', false]);
+  assert.deepEqual([(await undo(sentAction.id)).status, await (await undo(sentAction.id)).json()], [409, { error: 'not_undoable' }]);
+  assert.equal((await call(admin, 'POST', '/admin/actions/00000000-0000-0000-0000-000000000000/undo')).status, 404);
+});
+
+test('журнал: секреты входа в аккаунт не попадают в запись', async () => {
+  settings.adminIds = [ADMIN];
+  const w = await world();
+  await db.update(tgAccounts).set({ status: 'login_code', session: 'secret-session' }).where(eq(tgAccounts.id, w.accountId));
+  assert.equal((await call(tma(ADMIN, 'Админ'), 'POST', `/admin/accounts/${w.accountId}/login`, { secret: '73519' })).status, 204);
+  const row = (await lastAction())!;
+  assert.deepEqual([row.action, row.input, row.undoable], ['admin_accounts_login', {}, false]);
+  const text = JSON.stringify(row);
+  assert.ok(!text.includes('73519') && !text.includes('secret-session'), 'ни кода, ни сессии');
+});
+
+test('журнал: упавшее действие не оставляет ни изменения, ни записи, ни побочных действий', async () => {
+  const w = await world();
+  const [host] = await db.select().from(users).where(eq(users.id, w.hostId));
+  const ctx = { actor: host!, via: 'admin' as const };
+  let fired = false;
+  await assert.rejects(audited(db, ctx, { action: 'test_fail', entity: 'event', id: w.eventId }, async (tx) => {
+    await updateEvent(tx, host!, w.eventId, { name: 'Не сохранится' }); // своя транзакция сервиса — точка сохранения внутри
+    afterCommit(tx, () => (fired = true));
+    throw new AppError('boom', 409);
+  }), { message: 'boom' });
+  const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, w.eventId));
+  assert.deepEqual([event!.name, event!.rev], ['Событие', 0]);
+  assert.equal((await db.select().from(adminActions).where(eq(adminActions.action, 'test_fail'))).length, 0);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(fired, false, 'побочное действие не случилось');
+
+  // Через вход: отказ правил — ни записи, ни изменения.
+  settings.adminIds = [ADMIN];
+  const count = (await db.select().from(adminActions)).length;
+  const setGuest = (body: object) => call(tma(ADMIN, 'Админ'), 'PUT', `/admin/events/${w.eventId}/guests/${w.otherId}`, { approval_status: 'approved', event_ticket_type_id: w.t1, ...body });
+  assert.equal((await setGuest({ plus_ones: 11 })).status, 400);
+  await db.update(eventsTable).set({ allow_plus_one: false }).where(eq(eventsTable.id, w.eventId));
+  assert.deepEqual(await (await setGuest({ plus_ones: 1 })).json(), { error: 'plus_one_off' });
+  assert.equal((await db.select().from(adminActions)).length, count);
 });

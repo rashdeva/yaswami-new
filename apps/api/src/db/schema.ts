@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, CollectedEvent, Conversation, Event, Guest, Guide, Message, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, CollectedEvent, Conversation, Event, Guest, Guide, Host, Message, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -320,6 +320,32 @@ export const eventFeedback = pgTable(
   (t) => [primaryKey({ columns: [t.event_id, t.user_id] }), check('event_feedback_rating_check', sql`${t.rating} between 1 and 5`)],
 );
 
+// Журнал действий команды (audit.ts, ADR-0004): каждое изменение из админки и через admin_* в MCP, со снимками
+// сущности до и после — по ним действие отменяется. Без внешних ключей: строка журнала переживает и сущность, и автора.
+export const adminActions = pgTable(
+  'admin_actions',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    created_at: at('created_at').notNull().defaultNow(),
+    actor_id: telegramId('actor_id').notNull(),
+    via: text().$type<AdminAction['via']>().notNull(),
+    action: text().notNull(),
+    entity: text().$type<AdminEntity>().notNull(),
+    entity_id: text().notNull(),
+    input: jsonb().$type<unknown>(),
+    before: jsonb().$type<unknown>(),
+    after: jsonb().$type<unknown>(),
+    undoable: boolean().notNull(),
+    undo_of: uuid(),
+    undone_by: uuid(),
+  },
+  (t) => [
+    index('admin_actions_created_idx').on(t.created_at, t.id),
+    index('admin_actions_entity_idx').on(t.entity, t.entity_id),
+    check('admin_actions_via_check', sql`${t.via} in ('admin', 'mcp')`),
+  ],
+);
+
 // Сверка с ядром: типы должны совпадать в обе стороны.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 export const tablesMatchCore: [
@@ -330,4 +356,6 @@ export const tablesMatchCore: [
   Same<typeof shares.$inferSelect, Share>,
   Same<typeof conversations.$inferSelect, Conversation>,
   Same<typeof messages.$inferSelect, Message>,
-] = [true, true, true, true, true, true, true];
+  Same<typeof hosts.$inferSelect, Host>,
+  Same<typeof adminActions.$inferSelect, AdminAction>,
+] = [true, true, true, true, true, true, true, true, true];
