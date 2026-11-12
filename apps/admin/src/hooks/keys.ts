@@ -5,6 +5,8 @@ export const keys = {
   /** Лента переписки: диалоги, последние сообщения, аккаунты. */
   inbox: ['inbox'],
   thread: (conversation: string) => ['thread', conversation],
+  /** Кто сейчас пишет: его кладёт поток `/admin/live`, а не запрос. */
+  live: ['live'],
   /** Разделы «Организаторы» и «Агенты»; `newest` — последнее сообщение ленты, с ним сводка перечитывается. */
   overview: (newest?: string) => ['overview', newest],
   events: (filter: object) => ['events', filter],

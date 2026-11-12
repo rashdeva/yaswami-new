@@ -8,14 +8,15 @@ import { Message, MessageContent, MessageFooter } from '@/components/ui/message'
 import {
   MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerItem, MessageScrollerProvider, MessageScrollerViewport, useMessageScroller,
 } from '@/components/ui/message-scroller';
-import { day, kind, statusText, who } from '@/lib/inbox';
+import type { Typing } from '@yaswami/core';
+import { day, kind, statusText, typingText, who } from '@/lib/inbox';
 
 const BUBBLE = { user: 'secondary', bot: 'outline', agent: 'outline', admin: 'default' } as const;
 
-/** Новое сообщение в открытой переписке — прокручиваем к нему. */
-function Follow({ count }: { count: number }) {
+/** Новое сообщение или дописанный агентом текст в открытой переписке — прокручиваем к нему. */
+function Follow({ at }: { at: string }) {
   const { scrollToEnd } = useMessageScroller();
-  useEffect(() => void scrollToEnd(), [count]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => void scrollToEnd(), [at]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 }
 
@@ -26,9 +27,11 @@ interface Props {
   me: number;
   /** Через что идёт диалог: «боту» или «аккаунт …». */
   through: string;
+  /** Кто пишет прямо сейчас: агент — с текстом, который уже написал. */
+  typing: Typing[];
 }
 
-export function Thread({ conversation, messages, me, through }: Props) {
+export function Thread({ conversation, messages, me, through, typing }: Props) {
   const sent = messages.filter((m) => m.status !== 'draft'); // черновик показывается отдельно, с кнопками
   return (
     <MessageScrollerProvider key={conversation.id}>
@@ -54,6 +57,21 @@ export function Thread({ conversation, messages, me, through }: Props) {
                 </MessageScrollerItem>
               );
             })}
+            {typing.map((t) => {
+              const align = t.who === 'user' ? 'start' : 'end';
+              return (
+                <MessageScrollerItem key={t.who} messageId={`typing-${t.who}`}>
+                  <Message align={align}>
+                    <MessageContent className="gap-1">
+                      <Bubble variant={BUBBLE[t.who]} align={align}>
+                        <BubbleContent className="whitespace-pre-wrap">{t.text || '…'}</BubbleContent>
+                      </Bubble>
+                      <MessageFooter>{typingText(t)}</MessageFooter>
+                    </MessageContent>
+                  </Message>
+                </MessageScrollerItem>
+              );
+            })}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton>
@@ -61,7 +79,7 @@ export function Thread({ conversation, messages, me, through }: Props) {
           <span className="sr-only">К последнему сообщению</span>
         </MessageScrollerButton>
       </MessageScroller>
-      <Follow count={sent.length} />
+      <Follow at={`${sent.length}:${typing.map((t) => t.text?.length ?? 0).join()}`} />
     </MessageScrollerProvider>
   );
 }

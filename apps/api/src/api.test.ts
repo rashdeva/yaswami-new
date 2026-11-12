@@ -8,7 +8,7 @@ import postgres from 'postgres';
 import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { handleUpdate, REPLIES } from './bot.ts';
-import { collectedWhen } from '@yaswami/core';
+import { collectedWhen, sseEvents } from '@yaswami/core';
 import { bot } from './telegram.ts';
 import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
@@ -956,6 +956,35 @@ test('переписка: бот пишет всё в базу, админ от�
   } finally {
     globalThis.fetch = realFetch;
   }
+  // Роль отвечает потоком: человек сразу видит черновик «Думаю…», потом написанное — без пометок, даже недописанных;
+  // готовый ответ уходит обычным сообщением. Второй кусок приходит позже, чем бот показывает черновик.
+  const stream = (frames: string[], pauseMs = 0) => new Response(new ReadableStream({
+    async start(controller) {
+      for (const [i, frame] of frames.entries()) {
+        if (i === 1) await new Promise((resolve) => setTimeout(resolve, pauseMs));
+        controller.enqueue(new TextEncoder().encode(frame));
+      }
+      controller.close();
+    },
+  }), { headers: { 'content-type': 'text/event-stream' } });
+  const chunk = (content: string) => `data: ${JSON.stringify({ choices: [{ delta: { content }, finish_reason: null }] })}\n\n`;
+  const drafts = () => sent.filter(([m]) => m === 'sendMessageDraft').map(([, b]) => b.text);
+  globalThis.fetch = async () => stream([chunk('Сегодня бачата.\n[[собы'), chunk('тие: cardchan-1-0]]'), 'event: hermes.tool.progress\ndata: {}\n\n', ': keepalive\n\n', 'data: [DONE]\n\n'], 1200);
+  try {
+    const answer = await write('Куда сходить вечером?');
+    assert.deepEqual([answer[0], answer.length], ['Сегодня бачата.', 2], 'текст без пометки и карточка события');
+    assert.deepEqual(drafts(), ['', 'Сегодня бачата.']);
+    // Модель отказала посреди потока: текст ошибки человеку не показываем — ни черновиком, ни сообщением.
+    globalThis.fetch = async () => stream([
+      chunk('Billing or credits exhausted: HTTP 402'),
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'error' }], hermes: { failed: true, error: 'HTTP 402' } })}\n\n`,
+      'data: [DONE]\n\n',
+    ]);
+    assert.deepEqual(await write('Как поменять имя?'), [REPLIES.no_date]);
+    assert.deepEqual(drafts(), ['']);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
   // Роль открыта только списку пользователей — остальным прежний отказ бота, роль даже не спрашиваем.
   settings.supportUserIds = [70];
   support.ask = async () => assert.fail('роль не для этого пользователя');
@@ -1038,6 +1067,29 @@ test('аккаунты Telegram: вход по шагам из админки, �
 
   // Ответ из админки не идёт через бота: ложится в очередь, её заберёт сборщик.
   const id = feed.conversations[0]!.id;
+
+  // Тим набирает ещё одно сообщение — админка видит это в потоке /admin/live сразу, без опроса.
+  const live = sseEvents((await call(admin, 'GET', '/admin/live')).body!);
+  const next = async (name: string) => {
+    for (;;) {
+      const { value } = await live.next();
+      if (value!.event === name) return JSON.parse(value!.data) as unknown;
+    }
+  };
+  assert.deepEqual(await next('typing'), [], 'сразу — кто пишет сейчас');
+  const typing = (body: object) => app.request('/internal/account-typing', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-collector-secret': 'collector-secret' }, body: JSON.stringify(body),
+  });
+  assert.equal((await typing({ account_id: account.id, peer_id: 555 })).status, 204);
+  assert.deepEqual(await next('typing'), [{ conversation_id: id, who: 'user', agent: null, text: null }]);
+  assert.equal((await typing({ account_id: account.id, peer_id: 556 })).status, 204, 'диалога нет — показывать негде, но и не ошибка');
+  // Сообщение пришло — «печатает» снят, и лента перечитывается.
+  assert.equal((await report({ ...incoming, text: 'И сколько стоит?' }, 'collector-secret')).status, 204);
+  assert.deepEqual(await next('typing'), []);
+  assert.equal(await next('changed'), null);
+  await live.return(undefined);
+  await db.delete(messages).where(eq(messages.text, 'И сколько стоит?'));
+  feed = await inbox();
   sent.length = 0;
   assert.equal((await call(admin, 'POST', `/admin/conversations/${id}/messages`, { text: 'Каталог событий Дананга.' })).status, 204);
   assert.deepEqual(sent, []);
@@ -1482,7 +1534,7 @@ test('парность: у каждого инструмента MCP есть м
   };
   const MCP_ONLY = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update'];
   const REST_ONLY = [
-    'GET /health', 'GET /config', 'GET /photos/:id', 'POST /telegram/webhook', 'POST /internal/account-message', 'POST /internal/lead',
+    'GET /health', 'GET /config', 'GET /photos/:id', 'POST /telegram/webhook', 'POST /internal/account-message', 'POST /internal/account-typing', 'POST /internal/lead', 'GET /admin/live',
     'GET /auth/telegram/login', 'GET /auth/telegram/callback', 'POST /auth/logout', 'POST /tokens', 'DELETE /tokens',
     'POST /collected-events/:id/visit', 'POST /events/:id/visit',
     'POST /admin/accounts/:id/login',

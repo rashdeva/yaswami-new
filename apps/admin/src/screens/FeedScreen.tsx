@@ -12,6 +12,7 @@ import { Marker, MarkerContent } from '@/components/ui/marker';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { isFresh, useConversationActions, useFeed, useThread } from '@/hooks/useInbox';
 import { useInboxKeys } from '@/hooks/useInboxKeys';
+import { useTyping } from '@/hooks/useLive';
 import { draftsOf, eventsOf, feedRows, initials, person, pick, time, via, visible, who } from '@/lib/inbox';
 
 
@@ -30,6 +31,7 @@ export function FeedScreen() {
   const draft = cur && drafts.get(cur.c.id);
   const open = drawer && !!cur;
   const thread = useThread(open ? cur.c.id : undefined);
+  const typing = useTyping();
   useInboxKeys({
     rows, at, onSelect: setSelected, draft, draftText: draft && edited[draft.id],
     scope: '[data-selected=true]',
@@ -103,7 +105,7 @@ export function FeedScreen() {
               <SheetTitle>{cur.c.peer_name}</SheetTitle>
               <SheetDescription>{cur.c.peer_username && `@${cur.c.peer_username} · `}{person(cur.c)} · {cur.c.mode === 'human' ? 'диалог ведёте вы' : 'отвечает агент'}</SheetDescription>
             </SheetHeader>
-            <Thread conversation={cur.c} messages={thread} me={feed.me} through={via(cur.c, feed.accounts)} />
+            <Thread conversation={cur.c} messages={thread} me={feed.me} through={via(cur.c, feed.accounts)} typing={typing.filter((t) => t.conversation_id === cur.c.id)} />
             <Reply className="p-4" onSend={(text) => send({ id: cur.c.id, text })} />
           </SheetContent>
         )}

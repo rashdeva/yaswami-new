@@ -1,5 +1,5 @@
 // Чистые функции переписки: кто написал, кто ведёт диалог, выборки для «Людей» и «Ленты». Без React и сети.
-import type { AgentKey, InboxConversation, InboxFeed, Message, Wire } from '@yaswami/core';
+import type { AgentKey, InboxConversation, InboxFeed, Message, Typing, Wire } from '@yaswami/core';
 import { AGENTS, INBOX_STAGES } from '@yaswami/core';
 
 type Conv = Wire<InboxConversation>;
@@ -116,3 +116,6 @@ export function pick<T extends { key: string }>(rows: T[], selected: string) {
   const at = Math.max(0, rows.findIndex((r) => r.key === selected));
   return { at, cur: rows[at] };
 }
+
+/** Подпись того, кто сейчас пишет: «печатает…» у человека, «Поддержка пишет…» у агента. */
+export const typingText = (t: Typing) => (t.who === 'user' ? 'печатает…' : `${t.agent ? AGENTS[t.agent].name : 'Агент'} пишет…`);

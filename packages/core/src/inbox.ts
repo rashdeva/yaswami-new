@@ -154,6 +154,24 @@ export const AccountMessageInput = z.object({
 });
 export type AccountMessageInput = z.infer<typeof AccountMessageInput>;
 
+/**
+ * Сборщик сообщает, что человек набирает сообщение на наш аккаунт (Telegram присылает это аккаунту, а боту — нет).
+ * В Luma переписки нет; имя наше.
+ */
+export const AccountTypingInput = z.object({ account_id: z.uuid(), peer_id: z.number().int() });
+export type AccountTypingInput = z.infer<typeof AccountTypingInput>;
+
+/**
+ * Кто сейчас пишет в диалоге: агент готовит ответ (`text` — сколько уже написано) или человек набирает сообщение.
+ * Мгновенное состояние: не хранится, приходит в админку потоком `GET /admin/live`. В Luma такого нет.
+ */
+export interface Typing {
+  conversation_id: string;
+  who: 'agent' | 'user';
+  agent: AgentKey | null;
+  text: string | null;
+}
+
 /** Сборщик нашёл в чате вопрос «куда сходить»: сообщение, его автор и несколько сообщений перед ним. */
 export const LeadInput = z.object({
   chat: z.string().min(1).max(100),

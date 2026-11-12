@@ -1,6 +1,7 @@
 // Роль поддержки — Hermes, профиль support (agents/support): отвечает людям, которые пишут боту не анонс, а вопрос.
 // Мы передаём ей переписку и получаем текст ответа; отправляет его наш бот. Сама роль никому писать не может.
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { sseEvents } from '@yaswami/core';
 import { settings } from './settings.ts';
 
 export interface SupportTurn { role: 'system' | 'user' | 'assistant'; content: string }
@@ -48,23 +49,50 @@ export function parseSupportReply(content: string): SupportReply {
   return { text, human: mark ? mark[1]!.trim() || 'Просит человека' : null, events };
 }
 
-/** Вопрос роли Hermes по её HTTP-входу. null — роль недоступна или ответила пусто. Не бросает. */
-async function askRole(url: string, key: string, history: SupportTurn[], timeoutMs = 90_000): Promise<string | null> {
+/**
+ * Текст, который уже можно показать человеку, пока роль дописывает ответ: без пометок, и без последней строки,
+ * если она начинается с «[», — это может быть недописанная пометка.
+ */
+export const visibleSoFar = (partial: string) => parseSupportReply(partial.replace(/(^|\n)[ \t]*\[[^\n]*$/, '')).text;
+
+interface HermesChoice { message?: { content?: string }; delta?: { content?: string }; finish_reason?: string | null }
+interface HermesBody { choices?: HermesChoice[]; hermes?: { failed?: boolean; error?: string } }
+
+/**
+ * Вопрос роли Hermes по её HTTP-входу. null — роль недоступна или ответила пусто. Не бросает.
+ * С `onText` ответ идёт потоком (`stream: true`): `onText` получает весь текст, написанный к этому моменту.
+ */
+async function askRole(url: string, key: string, history: SupportTurn[], timeoutMs = 90_000, onText?: (text: string) => void): Promise<string | null> {
   try {
     const res = await fetch(`${url}/v1/chat/completions`, {
       method: 'POST',
       headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'hermes-agent', messages: history }),
+      body: JSON.stringify({ model: 'hermes-agent', messages: history, ...(onText ? { stream: true } : {}) }),
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-    const body = (await res.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[]; hermes?: { failed?: boolean; error?: string } };
     // Модель отказала (кончились кредиты, лимит) — Hermes всё равно отвечает 200, а в content кладёт текст ошибки.
-    // Отправлять его человеку нельзя: это сбой роли.
-    if (body.hermes?.failed || body.choices?.[0]?.finish_reason === 'error') throw new Error(`${url}: ${body.hermes?.error ?? 'agent error'}`);
-    const content = body.choices?.[0]?.message?.content?.trim();
-    if (!content) throw new Error(`${url}: empty reply`);
-    return content;
+    // Отправлять его человеку нельзя: это сбой роли. В потоке признак сбоя приходит последним кадром.
+    const failed = (body: HermesBody) => body.hermes?.failed || body.choices?.[0]?.finish_reason === 'error';
+    let content = '';
+    let error: string | undefined;
+    if (res.body && res.headers.get('content-type')?.includes('text/event-stream')) {
+      for await (const { event, data } of sseEvents(res.body)) {
+        // Свои кадры Hermes (ход инструментов, статус) и конец потока — не текст ответа.
+        if (event !== 'message' || data === '[DONE]') continue;
+        const chunk = JSON.parse(data) as HermesBody;
+        if (failed(chunk)) error = chunk.hermes?.error ?? 'agent error';
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (delta) onText?.((content += delta));
+      }
+    } else {
+      const body = (await res.json()) as HermesBody;
+      if (failed(body)) error = body.hermes?.error ?? 'agent error';
+      content = body.choices?.[0]?.message?.content ?? '';
+    }
+    if (error) throw new Error(`${url}: ${error}`);
+    if (!content.trim()) throw new Error(`${url}: empty reply`);
+    return content.trim();
   } catch (e) {
     console.error(e);
     return null;
@@ -73,8 +101,9 @@ async function askRole(url: string, key: string, history: SupportTurn[], timeout
 
 /** Тесты подменяют `ask`. null — роль недоступна: бот ответит сам, как раньше. */
 export const support = {
-  async ask(history: SupportTurn[]): Promise<SupportReply | null> {
-    const content = await askRole(settings.supportUrl, settings.supportKey, history);
+  /** `onText` — текст для человека по мере того, как роль его пишет (без пометок). */
+  async ask(history: SupportTurn[], onText?: (text: string) => void): Promise<SupportReply | null> {
+    const content = await askRole(settings.supportUrl, settings.supportKey, history, undefined, onText && ((raw) => onText(visibleSoFar(raw))));
     return content === null ? null : parseSupportReply(content);
   },
 };
@@ -85,8 +114,8 @@ const SKIP_MARK = /\[\[пропустить/i;
 /** Роль host (agents/host): пишет организаторам событий. Тесты подменяют `ask`. */
 export const host = {
   /** null — роль недоступна или решила не писать. В ответе может быть пометка «позвать человека». */
-  async ask(history: SupportTurn[]): Promise<SupportReply | null> {
-    const content = await askRole(settings.hostUrl, settings.hostKey, history);
+  async ask(history: SupportTurn[], onText?: (text: string) => void): Promise<SupportReply | null> {
+    const content = await askRole(settings.hostUrl, settings.hostKey, history, undefined, onText && ((raw) => onText(visibleSoFar(raw))));
     return content === null || SKIP_MARK.test(content) ? null : parseSupportReply(content);
   },
 };

@@ -1,11 +1,12 @@
 import { timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
+import { streamSSE } from 'hono/streaming';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
 import {
-  AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput,
+  AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
   EventUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
@@ -17,9 +18,11 @@ import type { Extract } from './bot.ts';
 import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
 import {
-  adminOverview, createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, listAccounts, logSent, recordAccountMessage, recordLead, rejectDraft,
+  adminOverview, createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, listAccounts, logSent, recordAccountMessage, recordAccountTyping, recordLead, rejectDraft,
   requireAdmin, sendDraft, submitAccountLogin, updateAccount, updateDraft,
 } from './inbox.ts';
+import type { LiveEvent } from './live.ts';
+import { live } from './live.ts';
 import { handleMcp } from './mcp.ts';
 import { getPhoto } from './photos.ts';
 import * as s from './services.ts';
@@ -29,6 +32,7 @@ import { SESSION_COOKIE, webLogin } from './web-login.ts';
 
 const json = <T extends z.ZodType>(schema: T) => validator('json', (value) => schema.parse(value) as z.infer<T>);
 const userId = z.coerce.number().int().positive();
+const LIVE_PING_MS = 25_000;
 
 interface Options {
   db: Db;
@@ -86,6 +90,11 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await recordAccountMessage(db, c.req.valid('json'));
       return c.body(null, 204);
     })
+    // Человек набирает сообщение на наш аккаунт: админка покажет «печатает».
+    .post('/internal/account-typing', json(AccountTypingInput), async (c) => {
+      await recordAccountTyping(db, c.req.valid('json'));
+      return c.body(null, 204);
+    })
     // Вопрос «куда сходить» из чата: ответ роли занимает секунды, сборщик его не ждёт.
     .post('/internal/lead', json(LeadInput), (c) => {
       void recordLead(db, c.req.valid('json')).catch(console.error);
@@ -138,6 +147,19 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await next();
     })
     .get('/admin/inbox', async (c) => c.json(await inboxFeed(db, c.var.actor)))
+    // Переписка в реальном времени (live.ts): сразу — кто пишет сейчас, дальше — каждое изменение.
+    .get('/admin/live', (c) => streamSSE(c, async (stream) => {
+      const send = (e: LiveEvent) => void stream.writeSSE({ event: e.event, data: JSON.stringify(e.data) }).catch(() => {});
+      send({ event: 'typing', data: live.typing() });
+      const off = live.subscribe(send);
+      // Прокси Railway рвёт соединение, по которому долго ничего не идёт, — шлём пустой комментарий.
+      const ping = setInterval(() => void stream.write(': ping\n\n').catch(() => {}), LIVE_PING_MS);
+      await new Promise<void>((resolve) => stream.onAbort(() => {
+        clearInterval(ping);
+        off();
+        resolve();
+      }));
+    }))
     .get('/admin/overview', async (c) => c.json(await adminOverview(db)))
     .get('/admin/conversations/:id/messages', async (c) => c.json(await inboxThread(db, c.req.param('id'))))
     .post('/admin/conversations/:id/messages', json(InboxSendInput), async (c) => {

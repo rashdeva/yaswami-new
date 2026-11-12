@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useCollectedEvents } from '@/hooks/useCollectedEvents';
 import { useInbox } from '@/hooks/useInbox';
+import { useLive } from '@/hooks/useLive';
 import { useLogout } from '@/hooks/useLogout';
 import { useUser } from '@/hooks/useUsers';
 import { initials } from '@/lib/inbox';
@@ -97,6 +98,7 @@ function Gate({ problem }: { problem: string | null }) {
 
 export function App() {
   const { feed, problem } = useInbox();
+  useLive(!!feed);
   const { data: collected } = useCollectedEvents(); // загружается сразу: нужен счётчик в меню
   const match = useMatchRoute();
   if (!feed) return <Gate problem={problem} />;
