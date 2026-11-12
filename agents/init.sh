@@ -10,14 +10,20 @@ DATA="${HERMES_HOME:-/opt/data}"
 : "${SUPPORT_API_KEY:?ключ HTTP-входа роли support, не короче 16 символов}"
 : "${HUNTER_API_KEY:?ключ HTTP-входа роли hunter, не короче 16 символов}"
 
-# Кладёт роль $1 в домашнюю папку профиля $2: характер, скиллы и конфиг с адресом и токеном нашего MCP.
+# Ролям, с которыми говорят посторонние, — свой токен с областью действия (pnpm api:token <id> <имя> support|catalog):
+# сервер отдаёт такому токену только его инструменты. Не задан — роль работает на общем токене, как раньше.
+[ -n "${YASWAMI_SUPPORT_MCP_TOKEN:-}" ] || echo "[yaswami] ВНИМАНИЕ: YASWAMI_SUPPORT_MCP_TOKEN не задан — роль support работает на токене админа"
+[ -n "${YASWAMI_CATALOG_MCP_TOKEN:-}" ] || echo "[yaswami] ВНИМАНИЕ: YASWAMI_CATALOG_MCP_TOKEN не задан — роль hunter работает на токене админа"
+
+# Кладёт роль $1 в домашнюю папку профиля $2: характер, скиллы и конфиг с адресом нашего MCP и токеном $3
+# (без него — общий токен оператора).
 install_role() {
   mkdir -p "$2/skills"
   cp "$SRC/$1/SOUL.md" "$2/SOUL.md"
   rm -rf "$2/skills/yaswami"
   [ -d "$SRC/$1/skills" ] && cp -R "$SRC/$1/skills" "$2/skills/yaswami"
   # В конфиге токен: файл читает только hermes.
-  sed -e "s|__MCP_URL__|$YASWAMI_MCP_URL|" -e "s|__MCP_TOKEN__|$YASWAMI_MCP_TOKEN|" "$SRC/$1/config.yaml" > "$2/config.yaml"
+  sed -e "s|__MCP_URL__|$YASWAMI_MCP_URL|" -e "s|__MCP_TOKEN__|${3:-$YASWAMI_MCP_TOKEN}|" "$SRC/$1/config.yaml" > "$2/config.yaml"
   chmod 600 "$2/config.yaml"
   chown -R hermes:hermes "$2/SOUL.md" "$2/skills" "$2/config.yaml"
   echo "[yaswami] роль $1 обновлена из образа"
@@ -33,14 +39,14 @@ install_role operator "$DATA"
 install_profile() {
   home="$DATA/profiles/$1"
   [ -d "$home" ] || s6-setuidgid hermes hermes profile create "$1"
-  install_role "$1" "$home"
+  install_role "$1" "$home" "${3:-}"
   # Профиль читает ключи только из своего .env, переменные контейнера ему не видны: ключ запасной модели — тоже сюда.
   (umask 077; printf 'API_SERVER_ENABLED=true\nAPI_SERVER_KEY=%s\n' "$2" > "$home/.env"
    if [ -n "${GEMINI_API_KEY:-}" ]; then printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY" >> "$home/.env"; fi)
   chown hermes:hermes "$home/.env"
 }
-install_profile support "$SUPPORT_API_KEY"
-install_profile hunter "$HUNTER_API_KEY"
+install_profile support "$SUPPORT_API_KEY" "${YASWAMI_SUPPORT_MCP_TOKEN:-}"
+install_profile hunter "$HUNTER_API_KEY" "${YASWAMI_CATALOG_MCP_TOKEN:-}"
 # host — пишет организаторам. Как и illustrator, без ключа не ставится.
 if [ -n "${HOST_API_KEY:-}" ]; then install_profile host "$HOST_API_KEY"; fi
 # illustrator — рисует ролики о событиях. Ключ не задан — профиль не ставим: роль необязательная,

@@ -1,10 +1,11 @@
 // Способы войти: initData мини-приложения Telegram и токен доступа — в заголовке (REST и MCP вне Telegram)
 // или в cookie сайта (её ставит вход через Telegram в web-login.ts).
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, lt, or } from 'drizzle-orm';
 import type { User } from '@yaswami/core';
 import { dropHostPitch } from './inbox.ts';
 import type { Db } from './db/client.ts';
+import type { TokenScope } from './db/schema.ts';
 import { apiTokens, hosts, users } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
 
@@ -60,23 +61,27 @@ export async function upsertUser(db: Db, tg: TelegramUser): Promise<User> {
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
-/** Новый токен пользователя. Возвращается один раз; в базе остаётся только хэш. */
-export async function issueToken(db: Db, userId: number): Promise<string> {
+/**
+ * Новый токен пользователя. Возвращается один раз; в базе остаётся только хэш. `ttlS` — срок жизни (сессия сайта),
+ * `scope` — область действия (токен роли Hermes). Заодно убираем просроченные токены этого человека.
+ */
+export async function issueToken(db: Db, userId: number, { scope, ttlS }: { scope?: TokenScope; ttlS?: number } = {}): Promise<string> {
   const token = TOKEN_PREFIX + randomBytes(32).toString('base64url');
-  await db.insert(apiTokens).values({ token_hash: hashToken(token), user_id: userId });
+  await db.delete(apiTokens).where(and(eq(apiTokens.user_id, userId), lt(apiTokens.expires_at, new Date())));
+  await db.insert(apiTokens).values({ token_hash: hashToken(token), user_id: userId, scope: scope ?? null, expires_at: ttlS ? new Date(Date.now() + ttlS * 1000) : null });
   return token;
 }
 
 export const revokeToken = (db: Db, token: string) => db.delete(apiTokens).where(eq(apiTokens.token_hash, hashToken(token)));
 export const revokeTokens = (db: Db, userId: number) => db.delete(apiTokens).where(eq(apiTokens.user_id, userId));
 
-async function userByToken(db: Db, token: string): Promise<User | null> {
+async function userByToken(db: Db, token: string): Promise<{ user: User; scope: TokenScope | null } | undefined> {
   const [row] = await db
-    .select({ user: users })
+    .select({ user: users, scope: apiTokens.scope })
     .from(apiTokens)
     .innerJoin(users, eq(users.id, apiTokens.user_id))
-    .where(eq(apiTokens.token_hash, hashToken(token)));
-  return row?.user ?? null;
+    .where(and(eq(apiTokens.token_hash, hashToken(token)), or(isNull(apiTokens.expires_at), gt(apiTokens.expires_at, new Date()))));
+  return row;
 }
 
 export type AuthMethod = 'telegram' | 'token';
@@ -84,17 +89,17 @@ export type AuthMethod = 'telegram' | 'token';
 /** Заголовок `Authorization: tma <initData>` или `Authorization: Bearer <токен>`; без заголовка — токен из cookie сайта. */
 export async function authenticate(
   db: Db, botToken: string, header: string | undefined, cookieToken?: string,
-): Promise<{ user: User; method: AuthMethod } | null> {
+): Promise<{ user: User; method: AuthMethod; scope: TokenScope | null } | null> {
   const [scheme, value] = (header ?? (cookieToken ? `Bearer ${cookieToken}` : '')).split(/\s+(.*)/s);
   if (!value) return null;
   if (scheme === 'tma') {
     // Без токена бота подпись проверить нечем: вход через Telegram закрыт, а не открыт для всех.
     const tg = botToken ? verifyInitData(value, botToken) : null;
-    return tg ? { user: await upsertUser(db, tg), method: 'telegram' } : null;
+    return tg ? { user: await upsertUser(db, tg), method: 'telegram', scope: null } : null;
   }
   if (scheme?.toLowerCase() === 'bearer' && value.startsWith(TOKEN_PREFIX)) {
-    const user = await userByToken(db, value);
-    return user ? { user, method: 'token' } : null;
+    const found = await userByToken(db, value);
+    return found ? { ...found, method: 'token' } : null;
   }
   return null;
 }

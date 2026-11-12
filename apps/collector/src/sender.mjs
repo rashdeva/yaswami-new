@@ -64,7 +64,8 @@ export function createSender({ store, apiId, apiHash, key, report, connectClient
 
   /** Один шаг входа. Код и пароль берём из строки аккаунта и сразу стираем. */
   async function login(account) {
-    const secret = account.login?.secret;
+    // API шифрует код и пароль нашим ключом, если он у него есть (ACCOUNTS_KEY); иначе они лежат открыто.
+    const secret = account.login?.sealed ? unseal(key, account.login.sealed) : account.login?.secret;
     try {
       if (account.status === 'login_requested') {
         const client = connectClient({ apiId, apiHash });

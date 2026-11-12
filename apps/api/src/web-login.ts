@@ -60,8 +60,14 @@ function unseal<T>(value: string | undefined, key: Buffer): T | null {
   }
 }
 
-/** Куда вернуть человека после входа: только путь на этом же сайте. */
-export const safeReturn = (value: string | undefined) => (value && /^\/(?![/\\])/.test(value) ? value : '/');
+/**
+ * Куда вернуть человека после входа: только путь на этом же сайте. Разбираем адрес так же, как браузер: он выбрасывает
+ * табуляцию и переводы строк и читает «\» как «/», поэтому «/<таб>/evil.test» для него — чужой сайт.
+ */
+export function safeReturn(value: string | undefined): string {
+  const url = value?.startsWith('/') ? URL.parse(value, 'http://site') : null;
+  return url?.origin === 'http://site' ? url.pathname + url.search + url.hash : '/';
+}
 
 interface Options {
   db: Db;
@@ -80,7 +86,7 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
 
   /** Общий конец любого способа входа: токен доступа в cookie, которую скрипты страницы не видят. */
   async function startSession(c: Context, userId: number) {
-    setCookie(c, SESSION_COOKIE, await issueToken(db, userId), { ...cookie, maxAge: SESSION_MAX_AGE_S });
+    setCookie(c, SESSION_COOKIE, await issueToken(db, userId, { ttlS: SESSION_MAX_AGE_S }), { ...cookie, maxAge: SESSION_MAX_AGE_S });
   }
 
   return new Hono()

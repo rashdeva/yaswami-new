@@ -1,6 +1,7 @@
 // Операции над событиями. REST и MCP вызывают только эти функции — правила доступа и записи живут здесь.
 import { randomBytes } from 'node:crypto';
 import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedStatus, CollectedUpdateInput,
   CollectedEventItem, Contact, MyCollectedItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
@@ -73,7 +74,8 @@ export async function getEvent(db: Db | Tx, actor: User, id: string): Promise<Ev
   const me = rows.find((r) => r.guest.user_id === actor.id)?.guest ?? null;
   const approved = rows.filter((r) => r.guest.approval_status === 'approved');
   return {
-    event,
+    // Ссылку на встречу видят организатор и те, кто идёт, — как в Luma; остальным хватает ссылки на само событие.
+    event: is_host || me?.approval_status === 'approved' ? event : { ...event, meeting_url: null },
     cover_url: cover ? photoUrl(cover.id) : null,
     cover_pending: !cover && coversDrawing.has(id),
     ticket_types: types.filter((t) => is_host || !t.is_hidden || t.id === me?.event_ticket_type_id),
@@ -127,6 +129,8 @@ const toCollectedItem = ({ external_id, event, announcement, claimed_event_id, c
 const upcomingCollected = gte(sql`coalesce(${collectedEvents.ends_at}, ${collectedEvents.starts_at})`, sql`now()`);
 /** В ленту, на страницу события и в каталог для агентов попадает только опубликованное (модерация). */
 const published = eq(collectedEvents.status, 'published');
+/** Подтвердить как своё можно только событие, которое команда одобрила: контакт в непроверенном анонсе мог подставить кто угодно. */
+const CLAIMABLE: CollectedStatus[] = ['approved', 'published'];
 /** Собранные события вместе с id обложки. */
 const collectedWithCover = (db: Db | Tx) => db
   .select({ ...getTableColumns(collectedEvents), cover_id: photos.id })
@@ -454,6 +458,9 @@ export async function addCollectedEvent(
   return db.transaction(async (tx) => {
     const known = await tx.select().from(collectedEvents).where(upcomingCollected).for('update');
     const same = known.find((r) => isSameEvent(r.event, extracted));
+    // Событие, по которому команда уже приняла решение, присланный боту анонс не меняет: иначе пересланным
+    // сообщением можно переписать опубликованное и подставить в него свой контакт.
+    if (same && same.status !== 'pending') return toCollectedItem(same);
     const event = same ? mergeEvents(same.event, extracted) : extracted;
     const values = {
       event, starts_at: new Date(event.starts_at), ends_at: event.ends_at ? new Date(event.ends_at) : null,
@@ -499,7 +506,7 @@ export async function createEventFromAnnouncement(db: Db, actor: User, extracted
 export async function claimCollectedEvent(db: Db, actor: User, slug: string): Promise<EventView> {
   return db.transaction(async (tx) => {
     const [row] = await tx.select().from(collectedEvents).where(eq(collectedEvents.external_id, collectedExternalId(slug))).for('update');
-    if (!row) throw new AppError('not_found', 404);
+    if (!row || !CLAIMABLE.includes(row.status)) throw new AppError('not_found', 404);
     if (row.claimed_event_id) throw new AppError('already_claimed', 409);
     if (!actor.username || row.telegram_username !== actor.username.toLowerCase()) throw new AppError('forbidden', 403);
 
@@ -543,12 +550,20 @@ export async function listContacts(db: Db, actor: User): Promise<{ entries: Cont
   return { entries };
 }
 
+/** Заход того же человека на то же событие за последний час уже записан: повтор строки не добавляет, журнал не раздувается. */
+async function visitedRecently(db: Db, actor: User, target: SQL): Promise<boolean> {
+  const [seen] = await db.select({ id: visits.id }).from(visits)
+    .where(and(eq(visits.user_id, actor.id), target, gte(visits.created_at, sql`now() - interval '1 hour'`))).limit(1);
+  return !!seen;
+}
+
 /** Фиксирует заход на событие Ясвами. Собственные заходы организатора не считаются. */
 export async function visitEvent(db: Db, actor: User, id: string, { ref }: VisitInput): Promise<void> {
   const event = await findEvent(db, actor, id);
   if (event.user_id === actor.id) return;
-  await db.insert(visits).values({ user_id: actor.id, event_id: id, referrer_id: await referrerOf(db, actor, ref) });
   await addContact(db, event.user_id, actor.id);
+  if (await visitedRecently(db, actor, eq(visits.event_id, id))) return;
+  await db.insert(visits).values({ user_id: actor.id, event_id: id, referrer_id: await referrerOf(db, actor, ref) });
 }
 
 /** Фиксирует заход на собранное событие. */
@@ -564,6 +579,7 @@ export async function visitCollectedEvent(db: Db, actor: User, slug: string, { r
     ? await db.select({ user_id: hosts.user_id }).from(hosts).where(and(eq(hosts.username, row.username), isNotNull(hosts.user_id)))
     : [];
   if (host?.user_id) await addContact(db, host.user_id, actor.id);
+  if (await visitedRecently(db, actor, eq(visits.collected_external_id, row.external_id))) return;
   await db.insert(visits).values({ user_id: actor.id, collected_external_id: row.external_id, referrer_id: await referrerOf(db, actor, ref) });
 }
 
@@ -589,7 +605,8 @@ export async function me(db: Db, actor: User): Promise<Me> {
     ? await db
         .select()
         .from(collectedEvents)
-        .where(and(eq(collectedEvents.telegram_username, actor.username.toLowerCase()), isNull(collectedEvents.claimed_event_id), upcomingCollected))
+        .where(and(eq(collectedEvents.telegram_username, actor.username.toLowerCase()), isNull(collectedEvents.claimed_event_id), upcomingCollected,
+          inArray(collectedEvents.status, CLAIMABLE)))
         .orderBy(asc(collectedEvents.starts_at))
     : [];
   return {

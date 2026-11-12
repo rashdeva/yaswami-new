@@ -154,6 +154,8 @@ async function pollChannel({ channel, host_username }, known) {
       if (new Date(event.ends_at ?? event.starts_at) < Date.now()) continue; // уже прошло
       event.telegram_username = contactFor(event, channel, host_username);
       const same = known.find((k) => isSameEvent(k.event, event));
+      // Канал организатора в источники попал сам, без решения команды: событие, которое она уже проверила, он не меняет.
+      if (same && host_username && same.status !== 'pending') continue;
       // Событие без контакта не берём: записаться некуда. Появится контакт в другом посте — склеится или создастся там.
       if (!same && !event.telegram_username && !event.whatsapp_phone) continue;
       const merged = same ? mergeEvents(same.event, event) : event;
@@ -164,7 +166,7 @@ async function pollChannel({ channel, host_username }, known) {
         external_id, channel, announcement, event: merged,
         signup_url: signupUrl(merged, announcement, signupMessage),
       });
-      if (same) same.event = merged; else known.push({ external_id, event });
+      if (same) same.event = merged; else known.push({ external_id, event, status: 'pending' });
     }
     // Сдвигаем отметку только после записи событий: упали посередине — повторим с этой же публикации.
     cursors[channel] = announcement.number;

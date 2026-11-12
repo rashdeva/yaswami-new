@@ -29,7 +29,7 @@ export function createStore(url) {
       on conflict (channel) do update set last_number = excluded.last_number`,
     /** Предстоящие события — с ними склеиваются повторные анонсы. */
     upcoming: () => sql`
-      select external_id, event, exists(select 1 from photos p where p.collected_external_id = e.external_id) as has_cover
+      select external_id, event, status, exists(select 1 from photos p where p.collected_external_id = e.external_id) as has_cover
       from collected_events e where coalesce(ends_at, starts_at) >= now()`,
     /** Новое событие или дополнение уже известного. Публикация остаётся от первого анонса. */
     upsert: ({ external_id, channel, announcement, event, signup_url }) => sql`
@@ -44,10 +44,14 @@ export function createStore(url) {
       on conflict (external_id) do update set
         event = excluded.event, starts_at = excluded.starts_at, ends_at = excluded.ends_at,
         telegram_username = excluded.telegram_username, signup_url = excluded.signup_url, updated_at = now()`,
-    /** Контакты предстоящих событий, по которым профиль ещё не собран. */
+    /**
+     * Контакты предстоящих событий, по которым профиль ещё не собран. Только одобренные командой события: профиль даёт
+     * каналу организатора место в источниках, а контакт в непроверенном анонсе мог подставить кто угодно.
+     */
     unprofiled: async () => (await sql`
       select distinct telegram_username from collected_events
       where telegram_username ~ '^\\w{4,32}$' and coalesce(ends_at, starts_at) >= now()
+        and status in ('approved', 'published')
         and telegram_username not in (select username from hosts)`).map((r) => r.telegram_username),
     /** Профиль организатора. Сменил username — строка та же. Уже входил в Ясвами — профиль сразу привязан к нему. */
     saveHost: (host) => sql`

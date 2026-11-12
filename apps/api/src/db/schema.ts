@@ -104,6 +104,13 @@ export const shares = pgTable(
   (t) => [index('shares_event_idx').on(t.event_id), check('shares_kind_check', oneOf('kind', SHARE_KINDS))],
 );
 
+/**
+ * Область действия токена роли Hermes: с ним доступен только MCP и только перечисленные инструменты (mcp.ts), REST закрыт.
+ * support — каталог и события собеседника по билету; catalog — только каталог. В Luma такого нет.
+ */
+export const TOKEN_SCOPES = ['support', 'catalog'] as const;
+export type TokenScope = (typeof TOKEN_SCOPES)[number];
+
 // Токены доступа для REST и MCP вне Telegram. Храним только sha256: сам токен показывается один раз.
 export const apiTokens = pgTable(
   'api_tokens',
@@ -111,6 +118,10 @@ export const apiTokens = pgTable(
     token_hash: text().primaryKey(),
     user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
+    // null — токен без ограничений: всё, что может его владелец.
+    scope: text().$type<TokenScope>(),
+    // null — бессрочный (токен для MCP-клиента, его отзывают). У сессии сайта срок тот же, что у cookie.
+    expires_at: at('expires_at'),
   },
   (t) => [index('api_tokens_user_idx').on(t.user_id)],
 );
@@ -286,7 +297,8 @@ export const tgAccounts = pgTable('tg_accounts', {
   last_error: text(),
   created_at: at('created_at').notNull().defaultNow(),
   session: text(),
-  login: jsonb().$type<{ secret?: string }>(),
+  // `sealed` — код или пароль, зашифрованные ключом сборщика (ACCOUNTS_KEY у API); `secret` — открыто, когда ключа у API нет.
+  login: jsonb().$type<{ secret?: string; sealed?: string }>(),
 });
 
 // Переписка с людьми (docs/agents-inbox.md): всё, что человек написал боту или на наш аккаунт и что мы ответили.

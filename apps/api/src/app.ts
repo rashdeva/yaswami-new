@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { getCookie } from 'hono/cookie';
 import { validator } from 'hono/validator';
 import * as z from 'zod';
@@ -16,6 +17,7 @@ import { authenticate, issueToken, revokeTokens } from './auth.ts';
 import type { Extract } from './bot.ts';
 import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
+import type { TokenScope } from './db/schema.ts';
 import {
   adminOverview, createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, listAccounts, logSent, recordAccountMessage, recordLead, rejectDraft,
   requireAdmin, sendDraft, submitAccountLogin, updateAccount, updateDraft,
@@ -40,13 +42,29 @@ interface Options {
   telegram?: { webhookSecret: string; extract?: Extract };
 }
 
+// Самое большое тело — обложка от иллюстратора картинкой прямо в запросе (data URL, до 4 МБ в base64 ≈ 5,4 МБ).
+const BODY_MAX = 8 * 1024 * 1024;
+
+// Сколько запросов в минуту делает один вошедший человек или токен: защита от перебора и от раздувания базы.
+// ponytail: счётчик в памяти процесса и только для вошедших; второй экземпляр API или наплыв анонимных запросов
+// к витрине — считать на прокси (Cloudflare) или в базе.
+const hits = new Map<number, { since: number; n: number }>();
+function tooMany(userId: number, now = Date.now()): boolean {
+  const hit = hits.get(userId);
+  if (hit && now - hit.since < 60_000) return ++hit.n > settings.requestsPerMinute;
+  if (hits.size > 10_000) hits.clear();
+  hits.set(userId, { since: now, n: 1 });
+  return false;
+}
+
 /** Кто действует в админке — для журнала (audit.ts). */
 const ctx = (c: { var: { actor: User } }): Ctx => ({ actor: c.var.actor, via: 'admin' });
 
 export function createApp({ db, botToken, config, webLogin: login, telegram }: Options) {
   const web_login = !!(botToken && login?.clientSecret);
   bot.log = logSent(db);
-  return new Hono<{ Variables: { actor: User; method: AuthMethod } }>()
+  return new Hono<{ Variables: { actor: User; method: AuthMethod; scope: TokenScope | null } }>()
+    .use(bodyLimit({ maxSize: BODY_MAX, onError: (c) => c.json({ error: 'too_large' }, 413) }))
     .onError((e, c) => {
       if (e instanceof s.AppError) return c.json({ error: e.code }, e.status);
       if (e instanceof z.ZodError) return c.json({ error: 'invalid_input', issues: e.issues }, 400);
@@ -95,11 +113,18 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .use(async (c, next) => {
       const auth = await authenticate(db, botToken, c.req.header('authorization'), getCookie(c, SESSION_COOKIE));
       if (!auth) return c.json({ error: 'unauthorized' }, 401, { 'WWW-Authenticate': 'Bearer' });
+      if (tooMany(auth.user.id)) return c.json({ error: 'too_many_requests' }, 429, { 'Retry-After': '60' });
       c.set('actor', auth.user);
       c.set('method', auth.method);
+      c.set('scope', auth.scope);
       await next();
     })
-    .all('/mcp', (c) => handleMcp(db, c.var.actor, c.req.raw))
+    .all('/mcp', (c) => handleMcp(db, c.var.actor, c.req.raw, c.var.scope))
+    // Токен с областью действия (роль Hermes) — только для MCP: в REST ему нечего делать.
+    .use(async (c, next) => {
+      if (c.var.scope) throw new s.AppError('forbidden', 403);
+      await next();
+    })
 
     .get('/me', async (c) => c.json(await s.me(db, c.var.actor)))
     .get('/me/collected', async (c) => c.json(await s.myCollectedEvents(db, c.var.actor)))
