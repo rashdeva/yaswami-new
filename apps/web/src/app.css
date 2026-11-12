@@ -120,6 +120,13 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 .cover:has(.mark) .cap { padding-right: 38px; }
 .hero .mark { position: absolute; right: 20px; bottom: 28px; width: 26px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, .45)); }
 .hero.cov:has(.mark) .tags, .hero.cov:has(.mark) h1 { padding-right: 34px; }
+/* Тема события (data-topic, цвет --c — в tokens.css): шапка без обложки в её цвете, на обложке — плашка и низ в цвет темы */
+.hero[data-topic] { --a: var(--c); --b: color-mix(in srgb, var(--c) 55%, #000); }
+.hero.cov[data-topic]::before { background: linear-gradient(rgba(0, 0, 0, .28), transparent 26%, transparent 42%, color-mix(in srgb, var(--c) 62%, #000)); }
+.hero.cov[data-topic] .tags span { background: color-mix(in srgb, var(--c) 45%, rgba(255, 255, 255, .18)); }
+.hero .cat { display: inline-flex; align-items: center; gap: 6px; margin-top: auto; padding: 5px 12px 5px 5px; border-radius: 99px; background: var(--c); font-weight: 700; font-size: 14px; box-shadow: 0 4px 14px rgba(0, 0, 0, .25), inset 0 1px 0 rgba(255, 255, 255, .35); }
+.hero .cat img { width: 26px; height: 26px; }
+.hero.cov .cat + small { margin-top: 10px; }
 .cover .ico { position: absolute; left: 50%; top: 36%; width: 58%; transform: translate(-50%, -50%); }
 .cover .cap { position: absolute; inset: auto 0 0; padding: 48px 12px 12px; background: linear-gradient(transparent, rgba(0, 0, 0, .78)); }
 .cover b { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 16px; line-height: 1.2; overflow-wrap: anywhere; }
@@ -273,6 +280,11 @@ button.cover { width: 100%; padding: 0; border: 0; font: inherit; text-align: le
 .ev small { display: block; margin-top: 2px; color: var(--hint); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ev .th { width: 56px; height: 56px; border-radius: 14px; object-fit: cover; }
 .ev .th.ico { object-fit: contain; padding: 6px; background: color-mix(in srgb, var(--a) 12%, transparent); }
+.ev[data-topic] time { color: var(--c); }
+.ev[data-topic] .th.ico { background: color-mix(in srgb, var(--c) 14%, transparent); }
+.ev .thw { position: relative; height: 56px; }
+.ev .thw .th { display: block; box-shadow: 0 0 0 2px var(--c); }
+.ev .tb { position: absolute; right: -5px; bottom: -5px; width: 24px; height: 24px; padding: 2px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--bg); }
 h2.today { color: var(--btn); }
 /* Ряд чипов прокручивается и режет всё, что вылезает за его край: размытие стекла и длинная тень --shadow
    рисовали под рядом светлую полосу. Здесь чип без размытия и с короткой тенью. */

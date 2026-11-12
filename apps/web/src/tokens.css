@@ -44,3 +44,15 @@
     --col: 540px;
   }
 }
+/* Цвет темы события (Topic): по нему в ленте и в шапке видно, про что событие. Ключ — topicSlug из @yaswami/core. */
+[data-topic] { --c: #64748b; }
+[data-topic='banya'] { --c: #e0442e; }
+[data-topic='yoga'] { --c: #e8891a; }
+[data-topic='body'] { --c: #2f9e6a; }
+[data-topic='sport'] { --c: #65a30d; }
+[data-topic='psy'] { --c: #7a5af8; }
+[data-topic='dance'] { --c: #e2368f; }
+[data-topic='art'] { --c: #e0a000; }
+[data-topic='cinema'] { --c: #2f55d4; }
+[data-topic='games'] { --c: #0f8fd6; }
+[data-topic='meet'] { --c: #0e9f95; }

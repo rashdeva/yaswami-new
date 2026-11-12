@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useViewed } from '../hooks/useViewed.ts';
 import { useEffect } from 'react';
 import type { CollectedEventItem, Event } from '@yaswami/core';
-import { collectedDayKey, collectedIsPast, collectedTime, topicIcon } from '@yaswami/core';
+import { collectedDayKey, collectedIsPast, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
 import type { MyCollectedItem } from '@yaswami/core';
 import type { EventListData } from '../api.ts';
 import { dayLabel, kindIcon, wallParts } from '../format.ts';
@@ -31,7 +31,7 @@ interface Props {
 }
 
 /** Строка списка: свои события и собранные выглядят одинаково. */
-interface Row { key: string; kind: Event['kind']; icon: string; cover?: string | null; title: string; note: string; start: string; /** Дата и время «на стене» в поясе события: по ним день и время в списке. */ wall: string; past: boolean; open: () => void }
+interface Row { key: string; kind: Event['kind']; icon: string; topic?: string; cover?: string | null; title: string; note: string; start: string; /** Дата и время «на стене» в поясе события: по ним день и время в списке. */ wall: string; past: boolean; open: () => void }
 
 export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollected, onNew, onKind }: Props) {
   // Событие считается прошедшим через три часа после начала (или после конца, если он задан).
@@ -45,7 +45,7 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
       };
     }),
     ...collected.map(({ event }): Row => ({
-      key: `c:${event.id}`, kind: 'o', icon: topicIcon(event.topic), title: event.title, cover: event.cover_url,
+      key: `c:${event.id}`, kind: 'o', icon: topicIcon(event.topic), topic: topicSlug(event.topic), title: event.title, cover: event.cover_url,
       note: 'вы заинтересовались', start: event.starts_at, wall: event.starts_at, past: collectedIsPast(event, now), open: () => { onOpenCollected(event); },
     })),
   ].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
@@ -59,7 +59,7 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
   // Как в витрине: по дням, ближайшие первыми. Прошедшие — отдельным блоком в конце.
   const grid = (items: Row[]) => (
     <div className="feed">
-      {items.map((r) => <EventRow key={r.key} time={collectedTime(r.wall)} title={r.title} sub={r.note} cover_url={r.cover} icon={r.icon} onOpen={r.open} />)}
+      {items.map((r) => <EventRow key={r.key} time={collectedTime(r.wall)} title={r.title} sub={r.note} cover_url={r.cover} icon={r.icon} topic={r.topic} onOpen={r.open} />)}
     </div>
   );
   const days: Row[][] = [];
