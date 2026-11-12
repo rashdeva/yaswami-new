@@ -13,13 +13,13 @@ import * as s from '../services.ts';
 export async function getCollectedEventSignups(db: Db, slug: string): Promise<AdminCollectedEventView> {
   const external_id = s.collectedExternalId(slug);
   const item = await s.getCollectedEvent(db, slug, true);
-  const [row] = await db.select({ status: collectedEvents.status, channel: collectedEvents.channel, announcement: collectedEvents.announcement, event: collectedEvents.event })
+  const [row] = await db.select({ status: collectedEvents.status, channel: collectedEvents.channel, announcement: collectedEvents.announcement, event: collectedEvents.event, views: collectedEvents.views, reactions: collectedEvents.reactions })
     .from(collectedEvents).where(eq(collectedEvents.external_id, external_id));
   const signups = await db.select({ id: users.id, first_name: users.first_name, username: users.username, at: collectedEventSignups.created_at })
     .from(collectedEventSignups).innerJoin(users, eq(users.id, collectedEventSignups.user_id))
     .where(eq(collectedEventSignups.external_id, external_id));
   const { telegram_username, whatsapp_phone, url } = row!.event;
-  return { ...item, status: row!.status, channel: row!.channel, source_text: row!.announcement.text ?? null, telegram_username, whatsapp_phone, url, signups };
+  return { ...item, status: row!.status, channel: row!.channel, source_text: row!.announcement.text ?? null, views: row!.views, reactions: row!.reactions, telegram_username, whatsapp_phone, url, signups };
 }
 
 export const updateCollectedEvent = (db: Db, ctx: Ctx, slug: string, input: CollectedUpdateInput): Promise<AdminCollectedEvent> =>

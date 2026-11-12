@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Event, Guest, GuestWithName, TicketType } from './index.ts';
-import { Event as EventSchema, popularIds, PUBLIC_STATE_MAX_BYTES, rsvp, ticketTypeRemovalError, toPublicState } from './index.ts';
+import { collectedBadges, Event as EventSchema, popularIds, PUBLIC_STATE_MAX_BYTES, rsvp, ticketTypeRemovalError, toPublicState } from './index.ts';
 
 const now = new Date('2026-11-11T12:00:00Z');
 const event: Event = {
@@ -128,4 +128,16 @@ test('популярное: отклик сравнивается внутри �
   assert.deepEqual(ids([...big, row('e', 'small', 300, 0)]), ['d']);
   // мало событий — по просмотрам не судим
   assert.deepEqual(ids(big.slice(2)), []);
+});
+
+test('collectedBadges: скоро, популярное, бесплатно — не больше двух', () => {
+  const now = Date.parse('2026-11-14T10:00:00+07:00');
+  const e = (starts_at: string, more: { price?: string; popular?: boolean } = {}) =>
+    collectedBadges({ starts_at, ends_at: null, price: more.price ?? null, popular: more.popular }, now);
+  const labels = (b: { label: string }[]) => b.map((x) => x.label);
+  assert.deepEqual(labels(e('2026-11-14T10:40:00+07:00')), ['Через 40 мин']);
+  assert.deepEqual(labels(e('2026-11-14T12:00:00+07:00', { popular: true, price: 'free' })), ['Через 2 ч', 'Популярное']);
+  assert.deepEqual(labels(e('2026-11-14T09:00:00+07:00')), ['Уже идёт']);
+  assert.deepEqual(labels(e('2026-11-14T19:00:00+07:00', { price: 'Бесплатно' })), ['Бесплатно']);
+  assert.deepEqual(labels(e('2026-11-14T00:00:00+07:00')), [], 'без времени в анонсе «скоро» не ставим');
 });

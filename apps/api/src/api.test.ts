@@ -258,7 +258,8 @@ test('собранные события: витрина без входа, за�
 
   // витрина: только предстоящие, контакт организатора — только внутри ссылки записи
   const items = (await (await app.request('/collected-events')).json()) as CollectedEventItem[];
-  assert.deepEqual(items.map((i) => [i.id, i.popular, i.reactions]), [['danangevent-1-0', false, null], ['danangevent-3-0', true, 12]]);
+  // отклик на анонс наружу не отдаём: из него только пометка «Популярное»
+  assert.deepEqual(items.map((i) => [i.id, i.popular, 'reactions' in i]), [['danangevent-1-0', false, false], ['danangevent-3-0', true, false]]);
   assert.equal(((await (await app.request('/collected-events/danangevent-3-0')).json()) as CollectedEventItem).popular, true);
   // ссылка записи собирается заново: в сообщении организатору — страница события на Ясвами
   const link = new URL(items[0]!.signup_url);

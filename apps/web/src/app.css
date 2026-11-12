@@ -236,6 +236,8 @@ a.item { text-decoration: none; color: inherit; }
 /* «Популярное»: огонёк слегка колышется. Без Lottie: одна анимация не стоит библиотеки. */
 .hot::before { content: '🔥'; display: inline-block; margin-right: 4px; transform-origin: 50% 90%; animation: flick 1.1s ease-in-out infinite alternate; }
 .badge.hot { background: color-mix(in srgb, #f97316 20%, transparent); }
+/* «Через 40 мин», «Уже идёт»: срочность — цветом ссылки, без огонька. */
+.badge.soon { background: color-mix(in srgb, var(--btn) 16%, transparent); }
 @keyframes flick { from { transform: scale(.9) rotate(-6deg); } to { transform: scale(1.12) rotate(6deg); } }
 @media (prefers-reduced-motion: reduce) { .hot::before { animation: none; } }
 .badge.no { background: color-mix(in srgb, var(--bad) 14%, transparent); }

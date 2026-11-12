@@ -116,11 +116,11 @@ export function collectedExternalId(slug: string): string {
 }
 
 type CollectedRow = typeof collectedEvents.$inferSelect & { cover_id?: string | null };
-const toCollectedItem = ({ external_id, event, announcement, claimed_event_id, views, reactions, cover_id, video_url }: CollectedRow): CollectedEventItem => {
+const toCollectedItem = ({ external_id, event, announcement, claimed_event_id, cover_id, video_url }: CollectedRow): CollectedEventItem => {
   const { telegram_username, whatsapp_phone, url, ...shown } = event;
   const id = collectedSlug(external_id);
   return {
-    id, ...shown, claimed_event_id, views, reactions, cover_url: cover_id ? photoUrl(cover_id) : null, video_url, source_url: announcement.url,
+    id, ...shown, claimed_event_id, cover_url: cover_id ? photoUrl(cover_id) : null, video_url, source_url: announcement.url,
     signup_url: collectedSignupUrl(event, announcement.url, settings.publicUrl + collectedPath(id)),
   };
 };
@@ -318,7 +318,7 @@ export function startVideoLoop(db: Db, everyMs = 15 * 60_000): void {
 
 /** Собранное событие для команды: с источником, его текстом и контактами, которые витрина прячет. */
 export const toAdminItem = (r: CollectedRow): AdminCollectedEvent => ({
-  ...toCollectedItem(r), status: r.status, channel: r.channel, source_text: r.announcement.text ?? null,
+  ...toCollectedItem(r), status: r.status, channel: r.channel, source_text: r.announcement.text ?? null, views: r.views, reactions: r.reactions,
   telegram_username: r.event.telegram_username, whatsapp_phone: r.event.whatsapp_phone, url: r.event.url,
 });
 
