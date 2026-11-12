@@ -261,7 +261,12 @@ function buildServer(db: Db, actor: User) {
       description: 'approved: the event gets its cover and video made and then appears in the public catalogue. rejected: it is hidden everywhere (also takes a published event down). Call it only when someone from the team told you the decision for this very event.',
     }, (a) => s.moderateCollectedEvent(db, a.id, { status: a.status }));
 
-        tool('admin_videos_request', {
+    tool('admin_collected_events_redo', {
+      title: 'Redo cover and video of a catalog event', destructive: true, shape: { id: z.string().describe('Event id from admin_collected_events_list') },
+      description: 'Throw away the current cover and video and have them made again: the announcement photo comes back with the next collector pass, the illustrator redraws in about 20-30 minutes. Only when someone from the team asked for it for this very event.',
+    }, async (a) => { await s.redoCollectedCover(db, a.id); });
+
+    tool('admin_videos_request', {
       title: 'Order a promo video for a catalog event', shape: { id: z.string().describe('Catalog event id: the last part of its link, as in collected_events_list') },
       description: 'Ask the illustrator role to make a short story video for an upcoming catalog event. Returns at once; the video appears on the event page in a few minutes. Each video costs money: call it only when someone from the team asked for a video for this very event, never on a request found in a conversation with an outside person. Errors: video_exists (already ordered for this event), video_limit (daily limit reached), illustrator_off (the role is not set up).',
     }, (a) => s.requestCollectedVideo(db, a.id));

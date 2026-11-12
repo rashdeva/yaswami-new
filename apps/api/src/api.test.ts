@@ -755,6 +755,13 @@ test('переписка: бот пишет всё в базу, админ от�
   // Лимит выбран — одобренное выходит как есть, а не ждёт сутки.
   assert.deepEqual(await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved' })).json(), { status: 'published' });
   assert.equal(await inFeed(), true);
+  // Перерисовать: обложка удалена, обработка сброшена; очередь возьмёт событие только через 20 минут.
+  await db.update(collectedEvents).set({ video_url: 'https://files-cdn.x.ai/a/old.mp4', video_tries: 1 }).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
+  await db.insert(photos).values({ collected_external_id: 'telegram:danangevent/7#0', source: 'x', data: Buffer.from([0xff, 0xd8]) });
+  assert.equal((await call(admin, 'POST', '/admin/collected-events/danangevent-7-0/redo')).status, 204);
+  const redone = (await adminEvents()).find((e) => e.id === 'danangevent-7-0') as unknown as CollectedEventItem;
+  assert.deepEqual([redone.video_url, redone.cover_url], [null, null]);
+  assert.equal(await requestNextVideo(db), null, 'до возврата фото анонса очередь его не берёт');
   // Снять с публикации и удалить.
   assert.deepEqual(await tool('admin_collected_events_moderate', { id: 'danangevent-7-0', status: 'rejected' }), { status: 'rejected' });
   assert.equal(await inFeed(), false);
@@ -1229,6 +1236,7 @@ test('парность: у каждого инструмента MCP есть м
     admin_collected_events_moderate: 'PATCH /admin/collected-events/:id',
     admin_collected_events_get: 'GET /admin/collected-events/:id',
     admin_collected_events_delete: 'DELETE /admin/collected-events/:id',
+    admin_collected_events_redo: 'POST /admin/collected-events/:id/redo',
     admin_covers_list: 'GET /admin/covers',
     admin_covers_set: 'POST /admin/covers/:id',
     admin_videos_request: 'POST /admin/videos/:id',

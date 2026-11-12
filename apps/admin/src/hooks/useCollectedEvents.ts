@@ -13,5 +13,6 @@ export function useModeration() {
   return {
     moderate: useAct(({ id, status }: { id: string; status: CollectedModerateInput['status'] }) => api.adminEventModerate(id, status)),
     remove: useAct(api.adminEventDelete),
+    redo: useAct(api.adminEventRedo),
   };
 }

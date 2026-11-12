@@ -16,7 +16,7 @@ const GROUPS: { status: CollectedStatus; title: string; hint: string }[] = [
 
 export function EventsScreen() {
   const items = useCollectedEvents();
-  const { moderate, remove } = useModeration();
+  const { moderate, remove, redo } = useModeration();
 
   const card = (e: AdminCollectedEvent) => (
     <Card key={e.id} size="sm">
@@ -38,6 +38,9 @@ export function EventsScreen() {
             {(e.status === 'pending' || e.status === 'rejected') && <Button size="sm" onClick={() => moderate({ id: e.id, status: 'approved' })}>Одобрить</Button>}
             {e.status !== 'rejected' && (
               <Button size="sm" variant="outline" onClick={() => moderate({ id: e.id, status: 'rejected' })}>{e.status === 'pending' ? 'Отклонить' : 'Снять с публикации'}</Button>
+            )}
+            {e.video_url && (
+              <Button size="sm" variant="outline" onClick={() => confirm(`Перерисовать обложку и ролик «${e.title}»? Новые появятся минут через 20–30.`) && redo(e.id)}>Перерисовать</Button>
             )}
             {e.status !== 'pending' && (
               <Button size="sm" variant="outline" onClick={() => confirm(`Удалить «${e.title}» совсем? Повторный анонс создаст событие заново.`) && remove(e.id)}>Удалить</Button>
