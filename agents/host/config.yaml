@@ -3,9 +3,9 @@
 # черновик утверждает человек в админке.
 _config_version: 53 # формат конфига Hermes 0.23; без метки Hermes считает файл древним и ругается при старте
 model:
-  default: gpt-5.4
-  provider: openai-api # ключ OPENAI_API_KEY (кредиты OpenAI API); init.sh кладёт его в .env профиля
-# Когда OpenAI отказывает — Grok по подписке, если она жива. Gemini не берём: бесплатного лимита хватает на пару ответов.
+  default: gpt-6-sol
+  provider: openai-codex # вход по подписке ChatGPT: hermes -p host auth add openai-codex --no-browser
+# Когда ChatGPT отказывает (лимит подписки) — Grok по подписке, если она жива. Gemini не берём: бесплатного лимита хватает на пару ответов.
 fallback_providers:
   - provider: xai-oauth
     model: grok-4.6

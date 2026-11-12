@@ -25,11 +25,6 @@ install_role() {
 
 # operator — профиль по умолчанию: командный чат в Telegram.
 install_role operator "$DATA"
-# Его .env Hermes ведёт сам: заменяем только строку с ключом OpenAI.
-if [ -n "${OPENAI_API_KEY:-}" ]; then
-  touch "$DATA/.env"; sed -i '/^OPENAI_API_KEY=/d' "$DATA/.env"
-  printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> "$DATA/.env"; chmod 600 "$DATA/.env"; chown hermes:hermes "$DATA/.env"
-fi
 
 # Остальные роли — отдельные профили: с ними говорит только наш API. Один gateway обслуживает все профили
 # на общем порту; роль доступна по адресу /p/<роль>/v1 со своим ключом.
@@ -39,9 +34,9 @@ install_profile() {
   home="$DATA/profiles/$1"
   [ -d "$home" ] || s6-setuidgid hermes hermes profile create "$1"
   install_role "$1" "$home"
-  # Профиль читает ключи только из своего .env, переменные контейнера ему не видны: ключ модели OpenAI — тоже сюда.
+  # Профиль читает ключи только из своего .env, переменные контейнера ему не видны: ключ запасной модели — тоже сюда.
   (umask 077; printf 'API_SERVER_ENABLED=true\nAPI_SERVER_KEY=%s\n' "$2" > "$home/.env"
-   if [ -n "${OPENAI_API_KEY:-}" ]; then printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> "$home/.env"; fi)
+   if [ -n "${GEMINI_API_KEY:-}" ]; then printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY" >> "$home/.env"; fi)
   chown hermes:hermes "$home/.env"
 }
 install_profile support "$SUPPORT_API_KEY"
