@@ -1,6 +1,6 @@
 // Роль поддержки — Hermes, профиль support (agents/support): отвечает людям, которые пишут боту не анонс, а вопрос.
 // Мы передаём ей переписку и получаем текст ответа; отправляет его наш бот. Сама роль никому писать не может.
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { sseEvents } from '@yaswami/core';
 import { settings } from './settings.ts';
 
@@ -14,7 +14,11 @@ export interface SupportReply {
 }
 
 const TICKET_TTL_S = 30 * 60;
-const sign = (payload: string) => createHmac('sha256', settings.supportKey).update(payload).digest('base64url');
+// Ключ подписи билетов — свой и случайный, а не ключ входа роли: тот знает контейнер Hermes, и его утечка дала бы
+// подделать билет на любого человека. ponytail: ключ живёт в памяти процесса — перезапуск API гасит выданные билеты
+// (роль получает новый с каждым сообщением), а второй экземпляр API потребует общего ключа из окружения.
+const ticketKey = randomBytes(32);
+const sign = (payload: string) => createHmac('sha256', ticketKey).update(payload).digest('base64url');
 
 /**
  * Билет собеседника: с ним роль вызывает инструменты `person_*` от имени именно этого человека (mcp.ts).

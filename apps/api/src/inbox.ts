@@ -1,4 +1,5 @@
 // Переписка (docs/agents-inbox.md): запись всего, что люди пишут боту и что бот или мы отвечаем, и операции админки.
+import { createCipheriv, randomBytes } from 'node:crypto';
 import { and, asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type {
   AccountCreateInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminOverview, AgentKey, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message,
@@ -92,6 +93,7 @@ export async function recordAccountTyping(db: Db, input: AccountTypingInput): Pr
 }
 
 const CONTACT_AGAIN_DAYS = 7;
+const pitching = new Set<number>(); // организаторы, которым роль host прямо сейчас пишет первое сообщение
 
 /** Этому человеку мы уже писали на днях или его черновик ещё ждёт — второй раз первыми не лезем. */
 async function contactedRecently(db: Db, peerId: number): Promise<boolean> {
@@ -135,12 +137,14 @@ export async function recordHostLead(db: Db, externalId: string): Promise<void> 
   if (!event?.telegram_username || event.claimed_event_id) return;
   // Профиль организатора собирает сборщик: без него не знаем, кому писать.
   const [profile] = await db.select().from(hosts).where(eq(hosts.username, event.telegram_username));
-  if (!profile || profile.user_id || (await contactedRecently(db, profile.telegram_id))) return;
+  // Пока роль пишет черновик, новые записи к тому же организатору её второй раз не зовут: каждый вызов модели платный.
+  if (!profile || profile.user_id || pitching.has(profile.telegram_id) || (await contactedRecently(db, profile.telegram_id))) return;
 
+  pitching.add(profile.telegram_id);
   const reply = await host.ask([
     { role: 'system', content: await hostFacts(db, profile.username) },
     { role: 'user', content: `Напиши первое сообщение организатору ${profile.name} (@${profile.username}). Повод: на его событие «${event.event.title}» через «Я с вами» записались люди.` },
-  ]);
+  ]).finally(() => pitching.delete(profile.telegram_id));
   if (!reply?.text) return;
 
   const reason = 'Черновик организатору';
@@ -403,6 +407,14 @@ export const updateAccount = (db: Db, ctx: Ctx, id: string, input: AccountUpdate
     return account;
   });
 
+/** Тот же формат, что у сборщика (apps/collector/src/sender.mjs, seal/unseal): AES-256-GCM, iv.tag.body в base64. */
+function seal(key: string, text: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', Buffer.from(key, 'hex'), iv);
+  const body = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  return [iv, cipher.getAuthTag(), body].map((b) => b.toString('base64')).join('.');
+}
+
 /**
  * Шаг входа: код или пароль. Сборщик заберёт значение, выполнит шаг и сотрёт его. В журнал — без секрета; не
  * отменяется: шаг входа уже ушёл в Telegram.
@@ -412,7 +424,7 @@ export const submitAccountLogin = (db: Db, ctx: Ctx, id: string, secret: string)
     const [account] = await db.select(accountFields).from(tgAccounts).where(eq(tgAccounts.id, id));
     if (!account) throw new AppError('not_found', 404);
     if (account.status !== 'login_code' && account.status !== 'login_password') throw new AppError('not_expected', 409);
-    await db.update(tgAccounts).set({ login: { secret }, last_error: null }).where(eq(tgAccounts.id, id));
+    await db.update(tgAccounts).set({ login: settings.accountsKey ? { sealed: seal(settings.accountsKey, secret) } : { secret }, last_error: null }).where(eq(tgAccounts.id, id));
   });
 
 /**

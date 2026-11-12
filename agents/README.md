@@ -33,7 +33,9 @@ railway up agents --path-as-root --service hermes
 | Переменная | Что это |
 |---|---|
 | `YASWAMI_MCP_URL` | адрес MCP нашего API: `https://<сайт>/mcp` |
-| `YASWAMI_MCP_TOKEN` | токен `ysw_…` пользователя из `ADMIN_IDS`: от его имени агент читает переписку и пишет людям |
+| `YASWAMI_MCP_TOKEN` | токен `ysw_…` пользователя из `ADMIN_IDS`: от его имени оператор читает переписку и пишет людям |
+| `YASWAMI_SUPPORT_MCP_TOKEN` | токен роли support с областью действия: `pnpm api:token <telegram id> <имя> support`. Сервер отдаёт ему только каталог и `person_*`, REST закрыт. Не задан — роль работает на токене админа (при старте пишется предупреждение) |
+| `YASWAMI_CATALOG_MCP_TOKEN` | токен роли hunter: `pnpm api:token <telegram id> <имя> catalog` — только каталог |
 | `TELEGRAM_BOT_TOKEN` | токен бота командного чата (отдельный от бота «Я с вами») |
 | `TELEGRAM_ALLOWED_USERS` | Telegram id тех, с кем бот разговаривает, через запятую |
 | `API_SERVER_ENABLED`, `API_SERVER_HOST`, `API_SERVER_KEY` | HTTP-вход Hermes: `true`, `::` и ключ роли `operator`; ключ не короче 16 символов, иначе вход молча не включается |
