@@ -133,6 +133,10 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     // Модерация собранных событий: в ленту выходит только одобренное (services.ts).
     .get('/admin/collected-events', async (c) => c.json(await s.listCollectedForAdmin(db, CollectedListInput.parse(c.req.query()).status)))
     .patch('/admin/collected-events/:id', json(CollectedUpdateInput), async (c) => c.json(await s.updateCollectedEvent(db, c.req.param('id'), c.req.valid('json'))))
+    .post('/admin/collected-events/:id/redo', async (c) => {
+      await s.redoCollectedCover(db, c.req.param('id'));
+      return c.body(null, 204);
+    })
     .delete('/admin/collected-events/:id', async (c) => {
       await s.deleteCollectedEvent(db, c.req.param('id'));
       return c.body(null, 204);

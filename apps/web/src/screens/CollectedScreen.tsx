@@ -72,6 +72,7 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
         {event.video_url
           ? <video className="bg" src={event.video_url} poster={event.cover_url ?? undefined} autoPlay muted loop playsInline />
           : event.cover_url && <img className="bg" src={event.cover_url} alt="" />}
+        {(event.cover_url || event.video_url) && <img className="mark" src="/mark.svg" alt="" />}
         {onBack && <button className="back" onClick={onBack}>← Все события</button>}
         {!event.cover_url && !event.video_url && <img className="emo" src={topicIcon(event.topic)} alt="" />}
         <small>{past ? 'Событие прошло' : [city, guide && event.topic].filter(Boolean).join(' · ')}</small>

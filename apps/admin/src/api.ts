@@ -66,5 +66,6 @@ export const api = {
   accountDelete: (account: string) => request<void>('DELETE', `/admin/accounts/${id(account)}`),
   adminEvents: () => request<Wire<AdminCollectedEvent>[]>('GET', '/admin/collected-events'),
   adminEventUpdate: (event: string, input: CollectedUpdateInput) => request<Wire<AdminCollectedEvent>>('PATCH', `/admin/collected-events/${id(event)}`, input),
+  adminEventRedo: (event: string) => request<void>('POST', `/admin/collected-events/${id(event)}/redo`),
   adminEventDelete: (event: string) => request<void>('DELETE', `/admin/collected-events/${id(event)}`),
 };

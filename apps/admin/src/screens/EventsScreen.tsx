@@ -99,7 +99,7 @@ function Queue() {
 
 export function EventsScreen() {
   const items = useCollectedEvents();
-  const { update, remove } = useModeration();
+  const { update, remove, redo } = useModeration();
 
   const card = (e: Item) => (
     <Card key={e.id} size="sm">
@@ -119,6 +119,9 @@ export function EventsScreen() {
             {e.status === 'rejected'
               ? <Button size="sm" onClick={() => update({ id: e.id, input: { status: 'approved' } })}>Одобрить</Button>
               : <Button size="sm" variant="outline" onClick={() => update({ id: e.id, input: { status: 'rejected' } })}>Снять с публикации</Button>}
+            {e.video_url && (
+              <Button size="sm" variant="outline" onClick={() => confirm(`Перерисовать обложку и ролик «${e.title}»? Новые появятся минут через 20–30.`) && redo(e.id)}>Перерисовать</Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => confirm(`Удалить «${e.title}» совсем? Повторный анонс создаст событие заново.`) && remove(e.id)}>Удалить</Button>
           </div>
         </div>

@@ -299,6 +299,21 @@ export async function updateCollectedEvent(db: Db, slug: string, { status, ...fi
   return toAdminItem(row!);
 }
 
+/**
+ * Перерисовать обложку и ролик: удаляем нарисованную обложку (сборщик заново возьмёт фото анонса) и сбрасываем
+ * обработку. video_at = сейчас: очередь возьмёт событие через VIDEO_STALE_MS, когда фото уже вернётся.
+ */
+export async function redoCollectedCover(db: Db, slug: string): Promise<void> {
+  const external_id = collectedExternalId(slug);
+  await db.transaction(async (tx) => {
+    const [row] = await tx.update(collectedEvents)
+      .set({ video_url: null, video_tries: 0, video_at: new Date(), cover_checked_at: null })
+      .where(eq(collectedEvents.external_id, external_id)).returning({ id: collectedEvents.external_id });
+    if (!row) throw new AppError('not_found', 404);
+    await tx.delete(photos).where(eq(photos.collected_external_id, external_id));
+  });
+}
+
 /** Удалить собранное событие совсем. Повторный анонс создаст его заново — чтобы этого не было, отклоняй, а не удаляй. */
 export async function deleteCollectedEvent(db: Db, slug: string): Promise<void> {
   const gone = await db.delete(collectedEvents).where(eq(collectedEvents.external_id, collectedExternalId(slug))).returning({ id: collectedEvents.external_id });

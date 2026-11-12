@@ -16,6 +16,7 @@ export function useModeration() {
   return {
     update: useAct(({ id, input }: Update) => api.adminEventUpdate(id, input)),
     remove: useAct(api.adminEventDelete),
+    redo: useAct(api.adminEventRedo),
   };
 }
 
