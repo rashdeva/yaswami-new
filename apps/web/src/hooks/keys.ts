@@ -5,6 +5,9 @@ export const keys = {
   /** Витрина: собранные события города. */
   collected: ['collected'],
   collectedEvent: (id: string) => ['collected-event', id],
+  /** Каталог организаторов и страница одного. */
+  hosts: ['hosts'],
+  host: (id: string) => ['host', id],
   /** «Мои события»: свои и собранные, куда заходил. */
   mine: ['mine'],
   event: (id: string) => ['event', id],

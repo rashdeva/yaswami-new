@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNot
 import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedStatus, CollectedUpdateInput,
-  CollectedEventItem, Contact, MyCollectedItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
+  CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
@@ -418,9 +418,6 @@ export async function getCollectedEvent(db: Db, slug: string, anyStatus = false)
   const [row] = await collectedWithCover(db).where(and(eq(collectedEvents.external_id, collectedExternalId(slug)), anyStatus ? undefined : published));
   if (!row) throw new AppError('not_found', 404);
   const [h] = row.telegram_username ? await db.select().from(hosts).where(eq(hosts.username, row.telegram_username)) : [];
-  const shots = h
-    ? await db.select({ id: photos.id, source: photos.source }).from(photos).where(eq(photos.host_id, h.id)).orderBy(desc(photos.created_at)).limit(HOST_PHOTOS)
-    : [];
   const [{ n: signups_count }] = await db.select({ n: count() }).from(collectedEventSignups).where(eq(collectedEventSignups.external_id, row.external_id)) as [{ n: number }];
   // «Популярное» — относительно остальных предстоящих событий источника, поэтому смотрим на них все.
   const upcoming = await db
@@ -430,13 +427,61 @@ export async function getCollectedEvent(db: Db, slug: string, anyStatus = false)
     ...toCollectedItem(row),
     popular: popularIds(upcoming, (r) => r.external_id).has(row.external_id),
     signups_count,
-    hosts: h
-      ? [{ name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`,
-          photo_url: `https://t.me/i/userpic/320/${h.username}.jpg`, confirmed: h.user_id !== null,
-          // Источник фото сообщества — telegram:<канал>/<публикация>: из него же ссылка на публикацию.
-          photos: shots.map((p) => ({ url: photoUrl(p.id), source_url: p.source.replace(/^telegram:/, 'https://t.me/') })) }]
-      : [],
+    hosts: h ? [{ ...hostCard(h), photos: await hostPhotos(db, h.id) }] : [],
   };
+}
+
+type HostRecord = typeof hosts.$inferSelect;
+const hostCard = (h: HostRecord): Omit<CollectedHost, 'photos'> => ({
+  name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`,
+  photo_url: `https://t.me/i/userpic/320/${h.username}.jpg`, confirmed: h.user_id !== null,
+});
+/** Фото сообщества, новые сверху. Источник — telegram:<канал>/<публикация>: из него же ссылка на публикацию. */
+async function hostPhotos(db: Db, hostId: string): Promise<CollectedHost['photos']> {
+  const shots = await db.select({ id: photos.id, source: photos.source }).from(photos).where(eq(photos.host_id, hostId)).orderBy(desc(photos.created_at)).limit(HOST_PHOTOS);
+  return shots.map((p) => ({ url: photoUrl(p.id), source_url: p.source.replace(/^telegram:/, 'https://t.me/') }));
+}
+
+/**
+ * Организатор в каталоге. Practice вне наших Topic не показываем: Topic — контент-политика каталога (CONTEXT.md).
+ * `eventTopics` — темы его предстоящих опубликованных событий, по одной на событие.
+ */
+function toHostListItem(h: HostRecord, eventTopics: (string | undefined)[]): HostListItem | null {
+  const practices = h.practices.filter((p) => p.topic in TOPIC_GUIDES);
+  if (!practices.length && !eventTopics.length) return null;
+  const mentioned = new Set([...practices.map((p) => p.topic), ...eventTopics]);
+  return {
+    ...hostCard(h), id: h.id, username: h.username, contact_url: `https://t.me/${h.username}`,
+    topics: Object.keys(TOPIC_GUIDES).filter((t) => mentioned.has(t)), practices, upcoming_count: eventTopics.length,
+  };
+}
+
+/** Темы предстоящих опубликованных событий по username контакта. */
+async function upcomingTopicsByHost(db: Db, username?: string): Promise<Map<string, (string | undefined)[]>> {
+  const rows = await db.select({ username: collectedEvents.telegram_username, event: collectedEvents.event }).from(collectedEvents)
+    .where(and(upcomingCollected, published, username ? eq(collectedEvents.telegram_username, username) : isNotNull(collectedEvents.telegram_username)));
+  const byHost = new Map<string, (string | undefined)[]>();
+  for (const r of rows) byHost.set(r.username!, [...byHost.get(r.username!) ?? [], r.event.topic]);
+  return byHost;
+}
+
+/** Каталог организаторов: у кого есть предстоящие события или Practice. Открыт всем, как витрина событий. */
+export async function listHosts(db: Db): Promise<HostListItem[]> {
+  const topics = await upcomingTopicsByHost(db);
+  // ponytail: все профили за раз, без постраничной выдачи, пока организаторов одного города — сотни
+  return (await db.select().from(hosts))
+    .flatMap((h) => toHostListItem(h, topics.get(h.username) ?? []) ?? [])
+    .sort((a, b) => b.upcoming_count - a.upcoming_count || b.practices.length - a.practices.length || a.name.localeCompare(b.name));
+}
+
+/** Страница организатора: профиль, Practice, фото сообщества и предстоящие события. */
+export async function getHost(db: Db, id: string): Promise<HostItem> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new AppError('not_found', 404);
+  const [h] = await db.select().from(hosts).where(eq(hosts.id, id));
+  const item = h && toHostListItem(h, (await upcomingTopicsByHost(db, h.username)).get(h.username) ?? []);
+  if (!item) throw new AppError('not_found', 404);
+  const rows = await collectedWithCover(db).where(and(upcomingCollected, published, eq(collectedEvents.telegram_username, h!.username))).orderBy(asc(collectedEvents.starts_at));
+  return { ...item, photos: await hostPhotos(db, h!.id), events: rows.map(toCollectedItem) };
 }
 
 /** Фиксирует, что человек собрался на событие. Повторный вызов ничего не меняет. */

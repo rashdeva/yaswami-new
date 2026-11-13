@@ -125,6 +125,36 @@ export interface CollectedHost {
   photos: { url: string; source_url: string }[];
 }
 
+/**
+ * Practice: устойчивое предложение организатора без даты — регулярные занятия, услуга мастера (CONTEXT.md).
+ * Сборщик извлекает его из самопредставления в чате. В Luma такого нет.
+ */
+export interface Practice {
+  title: string;
+  topic: string; // ключ TOPIC_GUIDES или OTHER_TOPIC
+  description: string | null;
+  price: string | null; // как написал сам организатор
+}
+
+/**
+ * Организатор в каталоге «Организаторы»: тот, у кого есть предстоящие события или Practice из наших Topic.
+ * В Luma общего списка Host нет — там Host живёт только внутри события; поля — как у CollectedHost.
+ */
+export interface HostListItem extends Omit<CollectedHost, 'photos'> {
+  id: string;
+  username: string; // без @: по нему пишут организатору
+  contact_url: string; // t.me/<username>
+  topics: string[]; // темы его Practice и предстоящих событий, порядок — как в TOPIC_GUIDES
+  practices: Practice[];
+  upcoming_count: number; // предстоящих опубликованных событий
+}
+
+/** Страница организатора: то же, что в каталоге, плюс фото сообщества и предстоящие события. */
+export interface HostItem extends HostListItem {
+  photos: CollectedHost['photos'];
+  events: CollectedEventItem[];
+}
+
 /** Карточка собранного события для витрины. */
 export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {
   id: string; // годится для адреса страницы: <канал>-<публикация>-<номер события в ней>

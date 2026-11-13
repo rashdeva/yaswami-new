@@ -22,6 +22,8 @@ const ACTIVITY = /(?<![а-яёa-z])(мероприят|вечеринк|тусо
 export const looksLikeLead = (text) =>
   text.length >= 8 && text.length <= 300 && (ASKS.test(text) || (text.includes('?') && ACTIVITY.test(text)));
 
+import { pickOffers } from './offers.mjs';
+
 const MAX_AGE_MS = 2 * 3600e3; // отвечать на вопрос двухчасовой давности поздно
 const CONTEXT = 3;
 
@@ -45,9 +47,9 @@ export function pickLeads(chat, messages, now = Date.now()) {
   });
 }
 
-/** Новые сообщения чата после `afterNumber`: номер последнего, сколько их прочитано и найденные вопросы. */
+/** Новые сообщения чата после `afterNumber`: номер последнего, сколько их прочитано, найденные вопросы и самопредставления мастеров. */
 export async function fetchLeads(client, chat, afterNumber) {
   if (!client.connected) await client.connect();
   const messages = (await client.getMessages(/^-?\d+$/.test(chat) ? Number(chat) : chat, { limit: 100, minId: afterNumber })).reverse();
-  return { last: messages.at(-1)?.id ?? afterNumber, read: messages.length, leads: pickLeads(chat, messages) };
+  return { last: messages.at(-1)?.id ?? afterNumber, read: messages.length, leads: pickLeads(chat, messages), offers: pickOffers(chat, messages) };
 }

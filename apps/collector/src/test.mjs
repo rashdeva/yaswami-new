@@ -259,6 +259,40 @@ console.log('cover ok');
   console.log('scout ok');
 }
 
+// Мастера: самопредставление в чате.
+{
+  const { looksLikeOffer, pickOffers, saveOffers } = await import('./offers.mjs');
+  const svetlana = 'Здравствуйте! Меня зовут Светлана, я тренер-реабилитолог, опыт 20 лет. Провожу индивидуальные занятия и группы по восстановлению спины. Стоимость 400k, пишите в личку.';
+  assert.ok(looksLikeOffer(svetlana));
+  assert.ok(!looksLikeOffer('Посоветуйте хорошего массажиста в районе Ан Тхыонг, пожалуйста, очень нужно на этой неделе, спина болит после перелёта'), 'ищет мастера, а не предлагает');
+  assert.ok(!looksLikeOffer('Провожу массаж'), 'слишком коротко');
+  const user = (id, username) => ({ className: 'User', id: BigInt(id), firstName: 'Светлана', username, bot: false });
+  const offers = pickOffers('danang_women', [
+    { id: 1, message: svetlana, sender: user(7, 'Sveta_Rehab') },
+    { id: 2, message: svetlana + ' Повтор.', sender: user(7, 'Sveta_Rehab') }, // одна строка на человека — последняя
+    { id: 3, message: svetlana, sender: user(8, null) }, // без username и контакта в тексте не написать
+    // реклама через бота чата: мастер — контакт из текста, кто он — найдёт saveOffers
+    { id: 4, message: svetlana + ' Запись: @Masha_Massage, чат t.me/danang_women', sender: { className: 'User', id: 1n, username: 'ads_bot', bot: true } },
+  ]);
+  assert.deepEqual(offers.map((o) => [o.url, o.author]), [
+    ['https://t.me/danang_women/2', { id: 7, name: 'Светлана', username: 'sveta_rehab' }],
+    ['https://t.me/danang_women/4', { id: null, name: null, username: 'masha_massage' }],
+  ]);
+
+  const saved = [];
+  const store = { hasPractices: async (id) => id === 9, saveOffer: async (h) => saved.push(h) };
+  const practice = { title: 'Реабилитация спины', topic: 'спорт', description: null, price: '400k' };
+  const extractOffer = async () => ({ summary: 'Тренер-реабилитолог.', practices: [practice] });
+  const known = { url: 'x', author: { id: 9, name: 'Уже есть', username: 'known' }, text: svetlana };
+  const resolve = async (u) => (u === 'masha_massage' ? { id: 12, name: 'Маша' } : null);
+  assert.equal(await saveOffers({ store, extractOffer, resolve, pause: async () => {} }, [...offers, known]), 2);
+  assert.deepEqual(saved, [
+    { telegram_id: 7, username: 'sveta_rehab', name: 'Светлана', summary: 'Тренер-реабилитолог.', practices: [practice] },
+    { telegram_id: 12, username: 'masha_massage', name: 'Маша', summary: 'Тренер-реабилитолог.', practices: [practice] },
+  ]);
+  console.log('offers ok');
+}
+
 // Поиск источников: контакты из текста сообщения.
 {
   const { contactsIn } = await import('./find-sources.mjs');

@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
+import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, HostItem, HostListItem, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents } from '@yaswami/core';
@@ -222,7 +222,7 @@ test('MCP: список инструментов, создание событи�
   assert.deepEqual(tools.map((t: { name: string }) => t.name).sort(), [
     'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
-    'events_ticket_types_update', 'events_update', 'me_collected_list', 'users_get_self',
+    'events_ticket_types_update', 'events_update', 'hosts_get', 'hosts_list', 'me_collected_list', 'users_get_self',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
@@ -294,6 +294,41 @@ test('собранные события: витрина без входа, за�
   assert.equal((await app.request('/me', { headers: { cookie: session } })).status, 200);
   assert.equal((await app.request('/auth/logout', { method: 'POST', headers: { cookie: session } })).status, 204);
   assert.equal((await app.request('/me', { headers: { cookie: session } })).status, 401);
+});
+
+test('каталог организаторов: с событиями или Practice из наших тем, страница с событиями', async () => {
+  await db.delete(collectedEvents);
+  await db.delete(hosts);
+  const starts_at = new Date(Date.now() + 86_400_000);
+  const event = (title: string, topic: string, username: string) => ({
+    title, description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [],
+    telegram_username: username, whatsapp_phone: null, url: null, topic,
+  });
+  await db.insert(collectedEvents).values([
+    { external_id: 'telegram:mafia/1#0', channel: 'mafia', status: 'published' as const, starts_at, signup_url: '', announcement: { url: 'https://t.me/mafia/1' }, event: event('Мафия', 'игры', 'club'), telegram_username: 'club' },
+    { external_id: 'telegram:mafia/2#0', channel: 'mafia', status: 'pending' as const, starts_at, signup_url: '', announcement: { url: 'https://t.me/mafia/2' }, event: event('Скрытое', 'игры', 'club'), telegram_username: 'club' },
+  ]);
+  await db.insert(hosts).values([
+    { telegram_id: 40, username: 'club', name: 'Клуб мафии', summary: 'Играют по пятницам.' },
+    { telegram_id: 41, username: 'dasha_yoga', name: 'Даша', summary: 'Ведёт йогу.', practices: [
+      { title: 'Утренняя йога', topic: 'йога', description: 'Группа у моря.', price: '150k' },
+      { title: 'Ремонт телефонов', topic: 'другое', description: null, price: null }, // не наша тема — не показываем
+    ] },
+    { telegram_id: 42, username: 'nobody', name: 'Без всего' }, // ни событий, ни Practice — не в каталоге
+  ]);
+
+  const list = (await (await app.request('/hosts')).json()) as HostListItem[];
+  assert.deepEqual(list.map((h) => [h.username, h.upcoming_count, h.topics, h.practices.map((p) => p.title)]), [
+    ['club', 1, ['игры'], []],
+    ['dasha_yoga', 0, ['йога'], ['Утренняя йога']],
+  ]);
+  assert.equal(list[1]!.contact_url, 'https://t.me/dasha_yoga');
+
+  const club = (await (await app.request(`/hosts/${list[0]!.id}`)).json()) as HostItem;
+  assert.deepEqual(club.events.map((e) => e.title), ['Мафия']); // неопубликованное не видно
+  assert.equal((await app.request('/hosts/not-an-id')).status, 404);
+  const [nobody] = await db.select().from(hosts).where(eq(hosts.username, 'nobody'));
+  assert.equal((await app.request(`/hosts/${nobody!.id}`)).status, 404);
 });
 
 test('подтверждение владельцем: предлагается по username, создаёт событие, второй раз и чужим — нельзя', async () => {
@@ -1510,6 +1545,8 @@ test('парность: у каждого инструмента MCP есть м
   const PAIRS: Record<string, string> = {
     collected_events_list: 'GET /collected-events',
     collected_events_get: 'GET /collected-events/:id',
+    hosts_list: 'GET /hosts',
+    hosts_get: 'GET /hosts/:id',
     collected_events_claim: 'POST /collected-events/:id/claim',
     collected_events_signup: 'POST /collected-events/:id/signup',
     users_get_self: 'GET /me',
@@ -1814,8 +1851,8 @@ test('безопасность: чужой контакт не даёт прав
   const rpc = async (auth: string, method: string, params?: object) => (await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params })).json()) as any;
   const names = async (auth: string) => ((await rpc(auth, 'tools/list')).result.tools as { name: string }[]).map((t) => t.name).sort();
   const role = `Bearer ${await issueToken(db, 70, { scope: 'support' })}`;
-  assert.deepEqual(await names(role), ['collected_events_list', 'person_events_create', 'person_events_get', 'person_events_list', 'person_events_update']);
-  assert.deepEqual(await names(`Bearer ${await issueToken(db, 70, { scope: 'catalog' })}`), ['collected_events_list']);
+  assert.deepEqual(await names(role), ['collected_events_list', 'hosts_list', 'person_events_create', 'person_events_get', 'person_events_list', 'person_events_update']);
+  assert.deepEqual(await names(`Bearer ${await issueToken(db, 70, { scope: 'catalog' })}`), ['collected_events_list', 'hosts_list']);
   const denied = await rpc(role, 'tools/call', { name: 'admin_users_search', arguments: {} });
   assert.ok(denied.error || denied.result.isError, 'инструмент команды токену роли не отвечает');
   for (const path of ['/me', '/events', '/admin/inbox']) assert.equal((await call(role, 'GET', path)).status, 403, `REST закрыт: ${path}`);

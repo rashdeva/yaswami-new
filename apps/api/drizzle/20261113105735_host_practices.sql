@@ -1,0 +1,1 @@
+ALTER TABLE "hosts" ADD COLUMN "practices" jsonb DEFAULT '[]'::jsonb NOT NULL;
