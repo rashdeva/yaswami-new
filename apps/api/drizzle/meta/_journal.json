@@ -250,8 +250,15 @@
     {
       "idx": 35,
       "version": "7",
-      "when": 1794601329069,
-      "tag": "20261113202209_search_trgm",
+      "when": 1794601320224,
+      "tag": "20261113202200_cities",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794601582644,
+      "tag": "20261113202622_search_trgm",
       "breakpoints": true
     }
   ]

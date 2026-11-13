@@ -5,6 +5,7 @@ import { CollectedUpdateInput, collectedPath } from '@yaswami/core';
 import { Trash2Icon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { CityBadge, CityField } from '@/components/City';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
 import { Cover } from '@/components/Cover';
 import { EntityLink, ExternalLink, TelegramLink } from '@/components/EntityLink';
@@ -25,7 +26,7 @@ import { offsetOf } from '@/lib/form';
 const values = (e: Wire<AdminCollectedEventView>): Input => ({
   title: e.title, description: e.description, starts_at: e.starts_at, ends_at: e.ends_at, place: e.place, address: e.address, price: e.price, tags: e.tags,
   telegram_username: e.telegram_username, whatsapp_phone: e.whatsapp_phone, url: e.url, topic: e.topic, what_happens: e.what_happens ?? [], for_whom: e.for_whom ?? null, beginner_friendly: e.beginner_friendly ?? null,
-  takeaway: e.takeaway ?? null,
+  takeaway: e.takeaway ?? null, city_id: e.city_id,
 });
 
 export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: () => void }) {
@@ -59,6 +60,7 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
     >
       <div className="flex flex-wrap items-center gap-3">
         <ExternalLink href={e.source_url} icon>анонс в @{e.channel}</ExternalLink>
+        <CityBadge id={e.city_id} />
         {/* Страница события — на сайте, вне админки: обычная ссылка, не маршрут. */}
         {e.status === 'published' && <ExternalLink href={collectedPath(e.id)} icon>страница события</ExternalLink>}
         {e.hosts?.map((h) => <Badge key={h.name} variant="outline">организатор: {h.name}{h.confirmed ? ' (вошёл)' : ''}</Badge>)}
@@ -76,6 +78,7 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
               <TextField form={form} name="address" label="Адрес" nullable />
               <TextField form={form} name="price" label="Цена" nullable />
               <SelectField form={form} name="topic" label="Тема" options={topicOptions(e.topic)} />
+              <CityField form={form} hint="Достаётся от источника" />
             </div>
             <AreaField form={form} name="description" label="Описание" rows={6} />
             <ListField form={form} name="tags" label="Теги" by="comma" hint="Через запятую" />

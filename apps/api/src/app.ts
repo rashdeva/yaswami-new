@@ -7,7 +7,7 @@ import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
 import {
-  AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput,
+  AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
   EventUpdateInput, HostCreateInput, HostUpdateInput, InboxSendInput, LeadInput, PracticeSignupInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
@@ -220,7 +220,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/admin/events', async (c) => c.json(await admin.listAllEvents(db, AdminEventListInput.parse(c.req.query()))))
     .post('/admin/events', json(AdminEventCreateInput), async (c) => c.json(await admin.createAnyEvent(db, ctx(c), c.req.valid('json')), 201))
     .get('/admin/events/:id', async (c) => c.json(await admin.getAnyEvent(db, c.req.param('id'))))
-    .patch('/admin/events/:id', json(EventUpdateInput), async (c) => c.json(await admin.updateAnyEvent(db, ctx(c), c.req.param('id'), c.req.valid('json'))))
+    .patch('/admin/events/:id', json(AdminEventUpdateInput), async (c) => c.json(await admin.updateAnyEvent(db, ctx(c), c.req.param('id'), c.req.valid('json'))))
     .delete('/admin/events/:id', async (c) => {
       await admin.deleteAnyEvent(db, ctx(c), c.req.param('id'));
       return c.body(null, 204);
@@ -268,6 +268,10 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await admin.deleteHost(db, ctx(c), c.req.param('id'));
       return c.body(null, 204);
     })
+    // Города (admin/cities.ts).
+    .get('/admin/cities', async (c) => c.json(await admin.listCities(db)))
+    .post('/admin/cities', json(CityCreateInput), async (c) => c.json(await admin.createCity(db, ctx(c), c.req.valid('json')), 201))
+    .patch('/admin/cities/:id', json(CityUpdateInput), async (c) => c.json(await admin.updateCity(db, ctx(c), c.req.param('id'), c.req.valid('json'))))
     // Источники сборщика (admin/sources.ts).
     .get('/admin/sources', async (c) => c.json(await admin.listSources(db)))
     .post('/admin/sources', json(SourceCreateInput), async (c) => c.json(await admin.createSource(db, ctx(c), c.req.valid('json')), 201))

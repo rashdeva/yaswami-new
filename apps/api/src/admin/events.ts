@@ -2,7 +2,7 @@
 // события — через те же сервисы и с теми же правилами (лимиты мест, последний тип билета), что у него в приложении.
 import { and, asc, desc, eq, gte, ilike, lt } from 'drizzle-orm';
 import type {
-  AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventView, AdminFeedback, AdminGuest, AdminGuestUpdateInput, EventUpdateInput, EventView,
+  AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, AdminFeedback, AdminGuest, AdminGuestUpdateInput, EventView,
   TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User,
 } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
@@ -44,7 +44,7 @@ export const createAnyEvent = (db: Db, ctx: Ctx, { user_id, ...input }: AdminEve
     return s.createEvent(tx, { ...user, features: [...user.features, 'event_create'] }, input);
   });
 
-export const updateAnyEvent = (db: Db, ctx: Ctx, id: string, input: EventUpdateInput): Promise<EventView> =>
+export const updateAnyEvent = (db: Db, ctx: Ctx, id: string, input: AdminEventUpdateInput): Promise<EventView> =>
   audited(db, ctx, { action: 'admin_events_update', entity: 'event', id, input }, async (tx) => s.updateEvent(tx, await hostOf(tx, id), id, input));
 
 /** Удалить событие совсем, с гостями и типами билетов (в Luma событие только отменяют — `status: cancelled`). */

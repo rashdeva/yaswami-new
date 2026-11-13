@@ -24,11 +24,12 @@ const llmPauseMs = Number(env.LLM_PAUSE_MS ?? 4500); // ≈13 запросов �
 const maxAgeMs = Number(env.MAX_AGE_DAYS ?? 14) * 86_400_000; // старые публикации в ИИ не отправляем
 const pollMinutes = Number(env.POLL_MINUTES ?? 15);
 const signupMessage = env.SIGNUP_MESSAGE ?? 'Привет! Я нашёл событие «{title}» на Ясвами, хочу записаться.';
-const extract = createExtractor({
-  model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite',
-  city: env.CITY ?? 'Дананг',
-  timezone: env.TIMEZONE ?? 'Asia/Ho_Chi_Minh',
-});
+// Разбор анонса — свой на каждый город источника: ИИ знает название города и пишет время в его часовом поясе.
+const extractors = new Map();
+const extractFor = ({ city, timezone }) => extractors.get(`${city}|${timezone}`)
+  ?? extractors.set(`${city}|${timezone}`, createExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite', city, timezone })).get(`${city}|${timezone}`);
+// Дозаполнение старых событий (backfill.mjs): они собраны до городов, все из первого.
+const extract = extractFor({ city: env.CITY ?? 'Дананг', timezone: env.TIMEZONE ?? 'Asia/Ho_Chi_Minh' });
 
 const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const extractOffer = createOfferExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
@@ -41,12 +42,15 @@ const notPeople = new Set();
 async function profileHosts() {
   // Сначала те, кого команда добавила по username в админке: их ждут.
   const requested = await store.requestedHosts();
-  const usernames = [...new Set([...requested, ...(await store.unprofiled()).filter((u) => !notPeople.has(u))])].slice(0, PROFILES_PER_PASS);
+  // Город организатора, найденного по событию, — город этого события; у заготовки команды город уже стоит.
+  const cityOf = new Map((await store.unprofiled()).map((r) => [r.username, r.city_id]));
+  const usernames = [...new Set([...requested, ...[...cityOf.keys()].filter((u) => !notPeople.has(u))])].slice(0, PROFILES_PER_PASS);
   for (const username of usernames) {
     const profile = await fetchProfile(userbot, username);
     if (profile) {
       const { telegram_id, name, bio, channel } = profile;
-      await store.saveHost({ telegram_id, username, name, bio, channel: channel?.username ?? null, summary: await summarize(profile) });
+      const city = requested.includes(username) || !cityOf.has(username) ? {} : { city_id: cityOf.get(username) };
+      await store.saveHost({ telegram_id, username, name, bio, channel: channel?.username ?? null, summary: await summarize(profile), ...city });
     } else if (requested.includes(username)) await store.rejectRequestedHost(username);
     else notPeople.add(username);
     console.log(`@${username}: ${profile ? `профиль${profile.channel ? `, канал @${profile.channel.username}` : ''}` : 'не человек и не канал'}`);
@@ -153,7 +157,8 @@ await store.addSources(channels);
 // ponytail: при перезапуске GramJS заново ищет все источники; если их станут сотни — хранить сущности в сессии.
 const ADOPT_PER_PASS = Number(env.ADOPT_PER_PASS ?? 5);
 
-async function pollChannel({ channel, host_username }, known) {
+async function pollChannel({ channel, host_username, city_id, city, timezone }, known) {
+  const extract = extractFor({ city, timezone });
   const fresh = (await fetchChatAnnouncements(userbot, channel, cursors[channel] ?? 0))
     .sort((a, b) => a.announcement.number - b.announcement.number);
   for (const { announcement, album } of fresh) {
@@ -166,7 +171,7 @@ async function pollChannel({ channel, host_username }, known) {
     for (const [i, event] of events.entries()) {
       if (new Date(event.ends_at ?? event.starts_at) < Date.now()) continue; // уже прошло
       event.telegram_username = contactFor(event, channel, host_username);
-      const same = known.find((k) => isSameEvent(k.event, event));
+      const same = known.find((k) => k.city_id === city_id && isSameEvent(k.event, event));
       // Канал организатора в источники попал сам, без решения команды: событие, которое она уже проверила, он не меняет.
       if (same && host_username && same.status !== 'pending') continue;
       // Событие без контакта не берём: записаться некуда. Появится контакт в другом посте — склеится или создастся там.
@@ -177,10 +182,10 @@ async function pollChannel({ channel, host_username }, known) {
       const external_id = same?.external_id ?? `telegram:${announcement.id}#${i}`;
       if (!same && bucket) media ??= await saveMedia(announcement, photos, album);
       await store.upsert({
-        external_id, channel, announcement: media?.length ? { ...announcement, media } : announcement, event: merged,
+        external_id, channel, city_id, announcement: media?.length ? { ...announcement, media } : announcement, event: merged,
         signup_url: signupUrl(merged, announcement, signupMessage),
       });
-      if (same) same.event = merged; else known.push({ external_id, event, status: 'pending' });
+      if (same) same.event = merged; else known.push({ external_id, city_id, event, status: 'pending' });
     }
     // Сдвигаем отметку только после записи событий: упали посередине — повторим с этой же публикации.
     cursors[channel] = announcement.number;

@@ -1,7 +1,7 @@
 // Карточка события Ясвами: поля, типы билетов, гости, отзывы, история. Всё — от имени организатора, правила мест те же.
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { AdminGuest, RsvpStatus, TicketType, User, Wire } from '@yaswami/core';
-import { EventUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
+import { AdminEventUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput } from '@yaswami/core';
 import { ExternalLinkIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -31,7 +31,7 @@ export function EventScreen({ id, onDeleted }: { id: string; onDeleted: () => vo
   const { data: view, error } = useEvent(id);
   const act = useEventActions(id);
   const values = useMemo(() => view && eventValues(view.event), [view]);
-  const form = useForm({ resolver: zodResolver(EventUpdateInput), values, resetOptions: { keepDirtyValues: true } });
+  const form = useForm({ resolver: zodResolver(AdminEventUpdateInput), values, resetOptions: { keepDirtyValues: true } });
 
   if (error) return <Page title="Событие"><Failed error={error} /></Page>;
   if (!view) return <Page title="Событие"><Loading rows={8} /></Page>;

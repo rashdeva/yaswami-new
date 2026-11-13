@@ -1,7 +1,7 @@
 // Новое событие Ясвами от имени организатора: его лимит бесплатных событий действует.
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { AdminEventCreateInput, User } from '@yaswami/core';
-import { AdminEventCreateInput as Schema } from '@yaswami/core';
+import { AdminEventCreateInput as Schema, DEFAULT_CITY_ID } from '@yaswami/core';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { EventFields } from '@/components/EventFields';
@@ -22,7 +22,7 @@ const tomorrowEvening = () => {
 
 const defaults = (): Omit<AdminEventCreateInput, 'user_id'> => ({
   kind: 'o', name: '', start_at: tomorrowEvening(), end_at: null, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: 'draft',
-  what_happens: [], allow_plus_one: false,
+  what_happens: [], allow_plus_one: false, city_id: DEFAULT_CITY_ID,
 });
 
 export function EventNewScreen({ onCreated }: { onCreated: (id: string) => void }) {

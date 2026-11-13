@@ -1,6 +1,7 @@
 // Поля события Ясвами — одни для создания и правки. Значения формы — как в EventUpdateInput.
-import type { Event, EventUpdateInput, Guide, Wire } from '@yaswami/core';
+import type { AdminEventUpdateInput, Event, Guide, Wire } from '@yaswami/core';
 import { EVENT_STATUSES, TEMPLATES } from '@yaswami/core';
+import { CityField } from '@/components/City';
 import type { Base, Form } from '@/components/Fields';
 import { AreaField, DateTimeField, ListField, NumberField, SelectField, Shell, SwitchField, TextField, TriField } from '@/components/Fields';
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
@@ -56,6 +57,7 @@ export function EventFields({ form }: { form: Form }) {
         <TextField form={form} name="name" label="Название" />
         <SelectField form={form} name="kind" label="Вид" options={KINDS} />
         <SelectField form={form} name="status" label="Статус" options={STATUSES} />
+        <CityField form={form} />
         <TextField form={form} name="timezone" label="Часовой пояс" hint="IANA, например Asia/Tbilisi" />
         <DateTimeField form={form} name="start_at" label="Начало" zone={timezone} hint={`Время в поясе ${timezone}`} />
         <DateTimeField form={form} name="end_at" label="Конец" zone={timezone} nullable />
@@ -80,9 +82,9 @@ export function EventFields({ form }: { form: Form }) {
   );
 }
 
-/** Значения формы из события: ровно поля EventUpdateInput. */
-export const eventValues = (e: Wire<Event>): EventUpdateInput => ({
+/** Значения формы из события: ровно поля AdminEventUpdateInput. */
+export const eventValues = (e: Wire<Event>): AdminEventUpdateInput => ({
   kind: e.kind, name: e.name, description: e.description, start_at: e.start_at, end_at: e.end_at, timezone: e.timezone, geo_address_json: e.geo_address_json,
   meeting_url: e.meeting_url, max_capacity: e.max_capacity, allow_plus_one: e.allow_plus_one, topic: e.topic, what_happens: e.what_happens, for_whom: e.for_whom,
-  beginner_friendly: e.beginner_friendly, takeaway: e.takeaway, guide: e.guide, status: e.status,
+  beginner_friendly: e.beginner_friendly, takeaway: e.takeaway, guide: e.guide, status: e.status, city_id: e.city_id,
 });

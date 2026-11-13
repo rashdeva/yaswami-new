@@ -1,6 +1,7 @@
 // «События Ясвами»: все события сервиса — предстоящие, прошедшие, поиск по названию; создание от имени организатора.
 import { PlusIcon } from 'lucide-react';
 import { useState } from 'react';
+import { CityBadge } from '@/components/City';
 import { EntityLink, TelegramLink } from '@/components/EntityLink';
 import { Failed, Hint, Loading, Nothing, Page } from '@/components/Page';
 import { Search } from '@/components/Search';
@@ -47,7 +48,7 @@ export function EventsScreen({ query, when, onFilter, onNew }: Props) {
           <TableBody>
             {data.map(({ event: e, host_id, host_name, host_username }) => (
               <TableRow key={e.id}>
-                <TableCell className="whitespace-normal"><EntityLink entity="event" id={e.id}>{e.name}</EntityLink></TableCell>
+                <TableCell className="whitespace-normal"><EntityLink entity="event" id={e.id}>{e.name}</EntityLink> <CityBadge id={e.city_id} /></TableCell>
                 <TableCell>{wallParts(e.start_at, e.timezone).join(' ')} <Badge variant="outline">{e.timezone}</Badge></TableCell>
                 <TableCell><EntityLink entity="user" id={host_id}>{host_name}</EntityLink> {host_username && <TelegramLink username={host_username} />}</TableCell>
                 <TableCell><Badge variant={e.status === 'published' ? 'default' : 'secondary'}>{EVENT_STATUS_LABELS[e.status]}</Badge></TableCell>

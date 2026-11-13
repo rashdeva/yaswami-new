@@ -9,7 +9,7 @@ export const useHosts = () => useQuery({ queryKey: keys.hosts, queryFn: api.host
 export const useHost = (id: string) => useQuery({ queryKey: keys.host(id), queryFn: () => api.host(id) });
 
 /** Добавить организатора по username: профиль заполнит сборщик на следующем проходе. */
-export const useHostCreate = () => useAct(api.hostCreate, { undo: (_username, host) => ['host', host.id] });
+export const useHostCreate = () => useAct(api.hostCreate, { undo: (_input, host) => ['host', host.id] });
 
 /** Решение по организатору прямо из списка: опубликовать или отклонить, не открывая карточку. */
 export const useHostStatus = () =>

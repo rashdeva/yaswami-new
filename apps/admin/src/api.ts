@@ -1,8 +1,8 @@
 // Клиент API админки: единственное место, где есть fetch. Формы запросов и ответов — из @yaswami/core.
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
-  AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventView, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource,
-  AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventUpdateInput, EventView, Host, HostUpdateInput, InboxConversation, SourceUpdateInput,
+  AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource,
+  AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, Host, HostUpdateInput, InboxConversation, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
 import { sseEvents } from '@yaswami/core';
@@ -29,6 +29,8 @@ const MESSAGES: Record<string, string> = {
   daily_limit: 'Аккаунт уже отправил дневной лимит первых сообщений. Ответы тем, кто написал сам, уходят без лимита',
   not_draft: 'Черновик уже отправлен или отклонён',
   source_exists: 'Этот канал уже есть в источниках',
+  city_exists: 'Город с таким id уже есть',
+  city_not_found: 'Такого города нет: добавьте его в «Городах»',
   host_exists: 'Организатор с таким username уже есть',
   host_not_found: 'Такого организатора нет: возможно, его удалили',
   not_delivered: 'Telegram не доставил сообщение: человек не открывал бота или заблокировал его',
@@ -135,7 +137,7 @@ export const api = {
   events: (input: AdminEventListInput) => request<Wire<AdminEventItem>[]>('GET', `/admin/events${qs(input)}`),
   eventCreate: (input: AdminEventCreateInput) => request<Wire<EventView>>('POST', '/admin/events', input),
   event: (event: string) => request<Wire<AdminEventView>>('GET', `/admin/events/${id(event)}`),
-  eventUpdate: (event: string, input: EventUpdateInput) => request<Wire<EventView>>('PATCH', `/admin/events/${id(event)}`, input),
+  eventUpdate: (event: string, input: AdminEventUpdateInput) => request<Wire<EventView>>('PATCH', `/admin/events/${id(event)}`, input),
   eventDelete: (event: string) => request<void>('DELETE', `/admin/events/${id(event)}`),
   guests: (event: string) => request<Wire<AdminGuest>[]>('GET', `/admin/events/${id(event)}/guests`),
   guestUpdate: (event: string, user: number, input: AdminGuestUpdateInput) => request<Wire<EventView>>('PUT', `/admin/events/${id(event)}/guests/${user}`, input),
@@ -159,7 +161,7 @@ export const api = {
   // Организаторы
   hosts: () => request<Wire<Host>[]>('GET', '/admin/hosts'),
   host: (host: string) => request<Wire<AdminHostView>>('GET', `/admin/hosts/${id(host)}`),
-  hostCreate: (username: string) => request<Wire<Host>>('POST', '/admin/hosts', { username }),
+  hostCreate: (input: HostCreateInput) => request<Wire<Host>>('POST', '/admin/hosts', input),
   hostUpdate: (host: string, input: HostUpdateInput) => request<Wire<Host>>('PATCH', `/admin/hosts/${id(host)}`, input),
   hostDelete: (host: string) => request<void>('DELETE', `/admin/hosts/${id(host)}`),
 
@@ -177,8 +179,13 @@ export const api = {
   action: (action: string) => request<Wire<AdminAction>>('GET', `/admin/actions/${id(action)}`),
   actionUndo: (action: string) => request<Wire<AdminAction>>('POST', `/admin/actions/${id(action)}/undo`),
 
+  // Города
+  cities: () => request<Wire<City>[]>('GET', '/admin/cities'),
+  cityCreate: (input: CityCreateInput) => request<Wire<City>>('POST', '/admin/cities', input),
+  cityUpdate: (city: string, input: CityUpdateInput) => request<Wire<City>>('PATCH', `/admin/cities/${id(city)}`, input),
+
   // Источники сборщика
   sources: () => request<Wire<AdminSource>[]>('GET', '/admin/sources'),
-  sourceCreate: (channel: string) => request<Wire<AdminSource>>('POST', '/admin/sources', { channel }),
+  sourceCreate: (input: SourceCreateInput) => request<Wire<AdminSource>>('POST', '/admin/sources', input),
   sourceUpdate: (channel: string, input: SourceUpdateInput) => request<Wire<AdminSource>>('PATCH', `/admin/sources/${id(channel)}`, input),
 };
