@@ -1,6 +1,6 @@
 import type { CollectedBadge } from '@yaswami/core';
 
-/** Строка ленты: время слева, название и подробности, квадратное превью справа. Одна в витрине и в «моих событиях».
+/** Карточка ленты: обложка 3:4 слева, время, название и подробности справа. Одна в витрине и в «моих событиях».
  *  Карточка 9:16 (`Cover`) лежит рядом — пока не используется. */
 export interface EventRowProps {
   /** «19:00»; пусто — в анонсе времени нет. */
@@ -8,10 +8,10 @@ export interface EventRowProps {
   title: string;
   /** Строка под названием: место, цена, пометка. */
   sub?: string;
-  /** Обложка, обрезанная в квадрат; нет — иконка темы. */
+  /** Обложка, обрезанная в 3:4; нет — иконка темы на цветной плитке. */
   cover_url?: string | null;
   icon: string;
-  /** Тема (topicSlug): время и рамка превью в её цвете, на обложке — значок темы. Нет — строка без цвета. */
+  /** Тема (topicSlug): время и плитка без обложки в её цвете. Нет — карточка без цвета. */
   topic?: string;
   /** Пометки под названием: «Скоро», «Популярное», «Бесплатно». */
   badges?: CollectedBadge[];
@@ -21,16 +21,15 @@ export interface EventRowProps {
 }
 
 export function EventRow({ time, title, sub, cover_url, icon, topic, badges, href, onOpen }: EventRowProps) {
-  const thumb = cover_url ? <img className="th" src={cover_url} alt="" loading="lazy" /> : <img className="th ico" src={icon} alt="" loading="lazy" />;
   const body = (
     <>
-      <time>{time || '—'}</time>
+      {cover_url ? <img className="th" src={cover_url} alt="" loading="lazy" /> : <img className="th ico" src={icon} alt="" loading="lazy" />}
       <div>
+        {time && <time>{time}</time>}
         <b>{title}</b>
         {sub && <small>{sub}</small>}
         {badges?.map((b) => <span key={b.kind} className={`badge sm ${b.kind}`}>{b.label}</span>)}
       </div>
-      {topic && cover_url ? <span className="thw">{thumb}<img className="tb" src={icon} alt="" /></span> : thumb}
     </>
   );
   if (!href) return <button className="ev" data-topic={topic} onClick={onOpen}>{body}</button>;

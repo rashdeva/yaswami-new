@@ -5,11 +5,13 @@ import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES, topicIcon,
 import { track } from '../analytics.ts';
 import { startLogin } from '../api.ts';
 import { useCollectedEvent } from '../hooks/useCollectedEvent.ts';
+import { useScrolledPast } from '../hooks/useScrolledPast.ts';
 import { openExternal } from '../tg.ts';
 import { collectedLink } from '../format.ts';
 import { shareLink } from '../share.ts';
 import { About } from '../components/About.tsx';
 import { GuestRow } from '../components/GuestRow.tsx';
+import { ShareButton } from '../components/ShareButton.tsx';
 
 interface Props {
   id: string;
@@ -32,6 +34,7 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
   const [claiming, setClaiming] = useState(false);
   const [hostOpen, setHostOpen] = useState<CollectedHost | null>(null);
   const { event, failed, signUp: recordSignUp } = useCollectedEvent(id, authed, toast);
+  const [watch, barShown] = useScrolledPast();
 
   useEffect(() => {
     if (event) document.title = `${event.title} — ${collectedWhen(event.starts_at)}, ${city}`;
@@ -56,6 +59,24 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
   const guide = event.topic ? TOPIC_GUIDES[event.topic] : undefined;
   const cover = !!(event.cover_url || event.video_url);
 
+  // Кнопки сначала лежат в шапке; когда её прокрутили, их копия выезжает снизу.
+  const actions = past ? null : (
+    <div className="cta-row">
+      <ShareButton onClick={() => shareLink(collectedLink(id), `${event.title}\n${collectedWhen(event.starts_at)}, ${city}`, toast)} />
+      {onClaim ? (
+        <button
+          className="cta"
+          disabled={claiming}
+          onClick={() => { setClaiming(true); void onClaim().finally(() => setClaiming(false)); }}
+        >
+          {claiming ? 'Минуту…' : 'Это моё событие'}
+        </button>
+      ) : (
+        <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>
+      )}
+    </div>
+  );
+
   function signUp() {
     track('signup_clicked', { collected_event_id: id, authed });
     if (event!.claimed_event_id) return onOpenEvent(event!.claimed_event_id);
@@ -79,24 +100,23 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
         {cover && <img className="mark" src="/mark.svg" alt="" />}
         {onBack && <button className="back" onClick={onBack}>← Все события</button>}
         {!cover && <img className="emo" src={topicIcon(event.topic)} alt="" />}
-        {/* На обложке тему несёт плашка в её цвете; без обложки её показывает иконка и цвет шапки. */}
-        {cover && guide && <span className="cat"><img src={topicIcon(event.topic)} alt="" />{event.topic![0]!.toUpperCase() + event.topic!.slice(1)}</span>}
-        <small>{past ? 'Событие прошло' : [city, guide && !cover && event.topic].filter(Boolean).join(' · ')}</small>
-        <h1>{event.title}</h1>
-        {(event.popular || event.tags.length > 0) && (
-          <div className="tags">
-            {event.popular && <span className="hot">Популярное</span>}
-            {event.tags.map((t) => <span key={t}>{t}</span>)}
-          </div>
-        )}
+        <div className="sum">
+          {past && <small>Событие прошло</small>}
+          <h1>{event.title}</h1>
+          <p className="when">{collectedWhen(event.starts_at)}</p>
+          <p className="where">📍 {where || city}</p>
+        </div>
+        {actions && <div className="acts" ref={watch}>{actions}</div>}
       </div>
 
-      <div className="group"><div className="meta">
-        <div><span>🗓</span><span>{collectedWhen(event.starts_at)}</span></div>
-        {where && <div><span>📍</span><span>{where}</span></div>}
-        {event.price && <div><span>🎟</span><span>{event.price}</span></div>}
-      </div></div>
+      {event.price && <div className="group"><div className="meta"><div><span>🎟</span><span>{event.price}</span></div></div></div>}
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
+      {(event.popular || event.tags.length > 0) && (
+        <p className="taglist">
+          {event.popular && <span className="badge hot">Популярное</span>}
+          {event.tags.map((t) => <span key={t}>#{t}</span>)}
+        </p>
+      )}
       <About topic={event.topic} what_happens={event.what_happens} for_whom={event.for_whom} beginner_friendly={event.beginner_friendly}
         takeaway={event.takeaway} guide={guide} guideNote="Гид написала редакция Ясвами — это не обещание организатора." />
       <h2>Участники</h2>
@@ -121,24 +141,7 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
         <button className="quiet" onClick={() => { startLogin(collectedPath(id)); }}>Вы организатор? Войдите, чтобы принимать записи здесь</button>
       )}
 
-      {!past && (
-        <div className="main"><div>
-          {onClaim ? (
-            <button
-              className="cta"
-              disabled={claiming}
-              onClick={() => { setClaiming(true); void onClaim().finally(() => setClaiming(false)); }}
-            >
-              {claiming ? 'Минуту…' : 'Это моё событие'}
-            </button>
-          ) : (
-            <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>
-          )}
-          <div className="cta-row">
-            <button className="cta alt" onClick={() => shareLink(collectedLink(id), `${event.title}\n${collectedWhen(event.starts_at)}, ${city}`, toast)}>Поделиться</button>
-          </div>
-        </div></div>
-      )}
+      {actions && <div className="main" data-off={!barShown || undefined} inert={!barShown}><div>{actions}</div></div>}
       <Drawer.Root open={!!hostOpen} onOpenChange={(o) => { if (!o) setHostOpen(null); }}>
         <Drawer.Portal>
           <Drawer.Overlay className="drawer-overlay" />
