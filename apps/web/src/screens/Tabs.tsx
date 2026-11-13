@@ -6,19 +6,15 @@ interface Props {
   me: Me | null;
   /** На сайте можно войти через Telegram. */
   canLogin: boolean;
-  onFeed: () => void;
-  onHosts: () => void;
   onMine: () => void;
   onLogin: () => void;
   onLogout: () => void;
 }
 
-/** Переключатель «Все события / Организаторы / Мои» и вход на сайте. В Telegram вход не нужен: человек уже опознан. */
-export function Tabs({ current, me, canLogin, onFeed, onHosts, onMine, onLogin, onLogout }: Props) {
+/** «Мои» и вход на сайте над экраном; между событиями и организаторами переключает нижний таббар (TabBar). В Telegram вход не нужен: человек уже опознан. */
+export function Tabs({ current, me, canLogin, onMine, onLogin, onLogout }: Props) {
   return (
     <div className="tabs">
-      <button className="chip" aria-pressed={current === 'feed'} onClick={onFeed}>Все события</button>
-      <button className="chip" aria-pressed={current === 'hosts'} onClick={onHosts}>Организаторы</button>
       {(me || canLogin) && <button className="chip" aria-pressed={current === 'mine'} onClick={onMine}>Мои</button>}
       {!inTelegram && (me
         ? <button className="chip end" onClick={onLogout}>Выйти</button>

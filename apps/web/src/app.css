@@ -294,3 +294,13 @@ h2.today { color: var(--btn); }
 /* шапка ленты: заголовок и город в одну строку — меньше места до событий */
 .top .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .top .head p { margin: 0; }
+
+/* Нижний таббар, как в iOS: плавающая стеклянная плашка с двумя разделами (TabBar). */
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; justify-content: center; pointer-events: none; }
+.tabbar > div { display: flex; gap: 4px; margin: 0 16px calc(10px + var(--inset-bottom, env(safe-area-inset-bottom))); padding: 5px; border-radius: 99px; pointer-events: auto;
+  background: var(--mat); border: .5px solid var(--stroke); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); box-shadow: inset 0 1px 0 var(--shine), 0 8px 28px rgba(0, 0, 0, .16); }
+.tabbar button { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 112px; padding: 6px 18px 5px; border: 0; border-radius: 99px; background: none; font: inherit; font-size: 11px; font-weight: 500; color: var(--hint); cursor: pointer; }
+.tabbar button[aria-current='page'] { color: var(--btn); background: color-mix(in srgb, var(--btn) 12%, transparent); }
+.tabbar svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tabbar svg .dot { fill: currentColor; stroke: none; }
+.top .tabs:empty { display: none; }

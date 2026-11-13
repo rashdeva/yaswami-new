@@ -11,6 +11,7 @@ import { useTelegramBack } from './hooks/useTelegramBack.ts';
 import { useToast } from './hooks/useToast.ts';
 import { ClaimBanner } from './screens/ClaimBanner.tsx';
 import { Tabs } from './screens/Tabs.tsx';
+import { TabBar } from './components/TabBar.tsx';
 import { haptic, nativeBack } from './tg.ts';
 
 interface Shell {
@@ -58,6 +59,10 @@ export function App() {
       <div style={tint(kind)}>
         <div className="air" />
         <Outlet />
+        {/* Таббар — на корневых разделах; у страниц события и организатора внизу своя кнопка действия и «назад». */}
+        {(pathname === '/' || pathname === '/hosts' || pathname === '/my') && (
+          <TabBar current={pathname === '/' ? 'feed' : pathname === '/hosts' ? 'hosts' : null} onFeed={() => void navigate({ to: '/' })} onHosts={() => void navigate({ to: '/hosts' })} />
+        )}
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </ShellContext>
@@ -76,8 +81,6 @@ export function AppTabs({ current }: { current: 'feed' | 'hosts' | 'mine' }) {
       current={current}
       me={me ?? null}
       canLogin={canLogin}
-      onFeed={() => void navigate({ to: '/' })}
-      onHosts={() => void navigate({ to: '/hosts' })}
       onMine={() => (authed ? void navigate({ to: hasEvents || !canCreate ? '/my' : '/new' }) : startLogin('/my'))}
       onLogin={() => startLogin(location.pathname)}
       onLogout={() => void logout().catch((e: Error) => toast(e.message))}
