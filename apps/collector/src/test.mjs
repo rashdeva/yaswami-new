@@ -30,6 +30,12 @@ assert.deepEqual(toAnnouncement('danangevent', msg), [{
 assert.deepEqual(toAnnouncement('x', { ...msg, message: '' }), [], 'сообщение без текста');
 assert.equal(toAnnouncement('x', { ...msg, sender: { className: 'Channel', username: 'x' } })[0].author_username, null, 'канал — не автор');
 assert.deepEqual(toAnnouncement('x', { ...msg, sender: { bot: true } }), [], 'сообщение бота');
+const { fetchChatAnnouncements } = await import('./mtproto.mjs');
+const shot = (id, extra) => ({ id, message: '', date: 1794366000, groupedId: 5n, media: { className: 'MessageMediaPhoto' }, ...extra });
+const albumClient = { connected: true, getMessages: async () => [shot(9), shot(8, { message: 'Йога в субботу' }), shot(7), { ...msg, id: 6 }] };
+const got = await fetchChatAnnouncements(albumClient, 'yoga', 0);
+assert.deepEqual(got.map((g) => [g.announcement.number, g.album.map((m) => m.id)]), [[8, [7, 8, 9]], [6, [6]]], 'альбом — все сообщения с тем же groupedId');
+assert.equal('album' in got[0].announcement, false, 'сообщения Telegram не попадают в jsonb публикации');
 console.log('mtproto ok');
 assert.equal(toAnnouncement('-1001234567890', msg)[0].url, 'https://t.me/c/1234567890/7', 'ссылка закрытого канала');
 

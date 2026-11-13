@@ -96,9 +96,15 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
         {where && <div><span>📍</span><span>{where}</span></div>}
         {event.price && <div><span>🎟</span><span>{event.price}</span></div>}
       </div></div>
+      {!!event.media?.length && (
+        <div className="media">
+          {event.media.map((m) => m.type === 'video'
+            ? <video key={m.url} src={m.url} controls preload="metadata" playsInline />
+            : <a key={m.url} href={m.url} target="_blank" rel="noreferrer"><img src={m.url} alt="" loading="lazy" /></a>)}
+        </div>
+      )}
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
-      <About topic={event.topic} what_happens={event.what_happens} for_whom={event.for_whom} beginner_friendly={event.beginner_friendly}
-        takeaway={event.takeaway} guide={guide} guideNote="Гид написала редакция Ясвами — это не обещание организатора." />
+      <About what_happens={event.what_happens} for_whom={event.for_whom} beginner_friendly={event.beginner_friendly} takeaway={event.takeaway} />
       <h2>Участники</h2>
       <div className="group">
         {event.hosts?.map((h) => (
@@ -144,7 +150,8 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
           <Drawer.Overlay className="drawer-overlay" />
           <Drawer.Content className="drawer" aria-describedby={undefined}>
             <Drawer.Handle className="drawer-handle" />
-            <Drawer.Title className="lead">Канал организатора</Drawer.Title>
+            {/* Заголовок нужен читалкам экрана; на экране имя организатора уже говорит, чей это канал. */}
+            <Drawer.Title className="sr">Канал организатора</Drawer.Title>
             {hostOpen && (
               <>
                 <p className="who">
@@ -162,6 +169,7 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
                     ))}
                   </div>
                 )}
+                {!past && !onClaim && <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>}
                 {hostOpen.channel_url && <button className="cta alt" onClick={() => { track('host_channel_opened', { collected_event_id: id }); openExternal(hostOpen.channel_url!); }}>Перейти в канал</button>}
               </>
             )}

@@ -155,6 +155,9 @@ export interface HostItem extends HostListItem {
   events: CollectedEventItem[];
 }
 
+/** Фото или видео из публикации-источника; лежит в нашем бакете (ADR-0006). В Luma такого нет. */
+export interface CollectedMedia { type: 'photo' | 'video'; url: string }
+
 /** Карточка собранного события для витрины. */
 export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {
   id: string; // годится для адреса страницы: <канал>-<публикация>-<номер события в ней>
@@ -165,6 +168,7 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   signups_count?: number; // сколько человек нажали «Записаться» в Ясвами (это интерес, не подтверждённое место); только в ответе на одно событие
   cover_url?: string | null; // обложка 9:16: фото анонса или нарисованная; нет — показываем иконку темы
   video_url?: string | null; // ролик-история 9:16 о событии; название и время накладывает страница, в самом ролике текста нет
+  media?: CollectedMedia[]; // в Luma нет: фото и видео из публикации-источника, в порядке альбома
   popular?: boolean; // отклик заметно выше обычного для этого источника (popularIds)
 }
 
