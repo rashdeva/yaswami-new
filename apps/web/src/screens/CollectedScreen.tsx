@@ -8,6 +8,9 @@ import { useCollectedEvent } from '../hooks/useCollectedEvent.ts';
 import { useScrolledPast } from '../hooks/useScrolledPast.ts';
 import { openExternal } from '../tg.ts';
 import { collectedLink } from '../format.ts';
+import { mediaLayout } from '../media.ts';
+import { useHeroVideo } from '../hooks/useHeroVideo.ts';
+import { MediaViewer } from '../components/MediaViewer.tsx';
 import { shareLink } from '../share.ts';
 import { About } from '../components/About.tsx';
 import { GuestRow } from '../components/GuestRow.tsx';
@@ -35,6 +38,8 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
   const [hostOpen, setHostOpen] = useState<CollectedHost | null>(null);
   const { event, failed, signUp: recordSignUp } = useCollectedEvent(id, authed, toast);
   const [watch, barShown] = useScrolledPast();
+  const heroVideo = useHeroVideo();
+  const [viewing, setViewing] = useState<number | null>(null);
 
   useEffect(() => {
     if (event) document.title = `${event.title} — ${collectedWhen(event.starts_at)}, ${city}`;
@@ -55,7 +60,8 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
   const past = collectedIsPast(event);
   const host = event.hosts?.[0];
   const where = [event.place, event.address].filter(Boolean).join(', ');
-  const cover = !!(event.cover_url || event.video_url);
+  const { hero: postVideo, gallery } = mediaLayout(event.media);
+  const cover = !!(event.cover_url || event.video_url || postVideo);
 
   // Кнопки сначала лежат в шапке; когда её прокрутили, их копия выезжает снизу.
   const actions = past ? null : (
@@ -91,10 +97,19 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
   return (
     <>
       <div className={`hero${onBack ? '' : ' nb'}${cover ? ' cov' : ''}`} data-topic={topicSlug(event.topic)}>
-        {/* Ролик без звука и по кругу: название и время поверх пишет сама шапка, в ролике текста нет. */}
-        {event.video_url
-          ? <video className="bg" src={event.video_url} poster={event.cover_url ?? undefined} autoPlay muted loop playsInline />
-          : event.cover_url && <img className="bg" src={event.cover_url} alt="" />}
+        {/* Ролик без звука и по кругу: название и время поверх пишет сама шапка. Вертикальный ролик из анонса важнее
+            нарисованного: его снял организатор. */}
+        {postVideo
+          ? <video ref={heroVideo.ref} className="bg" src={postVideo.url} poster={event.cover_url ?? undefined} autoPlay muted loop playsInline />
+          : event.video_url
+            ? <video className="bg" src={event.video_url} poster={event.cover_url ?? undefined} autoPlay muted loop playsInline />
+            : event.cover_url && <img className="bg" src={event.cover_url} alt="" />}
+        {postVideo && (
+          <div className="vctl">
+            <button onClick={heroVideo.togglePlay} aria-label={heroVideo.paused ? 'Смотреть' : 'Пауза'}>{heroVideo.paused ? '▶' : '❚❚'}</button>
+            <button onClick={heroVideo.toggleSound} aria-label={heroVideo.muted ? 'Включить звук' : 'Выключить звук'}>{heroVideo.muted ? '🔇' : '🔊'}</button>
+          </div>
+        )}
         {cover && <img className="mark" src="/mark.svg" alt="" />}
         {onBack && <button className="back" onClick={onBack}>← Все события</button>}
         {!cover && <img className="emo" src={topicIcon(event.topic)} alt="" />}
@@ -108,13 +123,17 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
       </div>
 
       {event.price && <div className="group"><div className="meta"><div><span>🎟</span><span>{event.price}</span></div></div></div>}
-      {!!event.media?.length && (
+      {gallery.length > 0 && (
         <div className="media">
-          {event.media.map((m) => m.type === 'video'
-            ? <video key={m.url} src={m.url} controls preload="metadata" playsInline />
-            : <a key={m.url} href={m.url} target="_blank" rel="noreferrer"><img src={m.url} alt="" loading="lazy" /></a>)}
+          {gallery.map((m, i) => (
+            <button key={m.url} className={m.type} onClick={() => setViewing(i)} aria-label={m.type === 'video' ? 'Смотреть видео' : 'Открыть фото'}>
+              {/* #t=0.1 — чтобы браузер показал первый кадр ролика, а не чёрный прямоугольник */}
+              {m.type === 'video' ? <video src={`${m.url}#t=0.1`} muted playsInline preload="metadata" /> : <img src={m.url} alt="" loading="lazy" />}
+            </button>
+          ))}
         </div>
       )}
+      {viewing !== null && <MediaViewer items={gallery} start={viewing} onClose={() => setViewing(null)} />}
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
       {(event.popular || event.tags.length > 0) && (
         <p className="taglist">

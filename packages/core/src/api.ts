@@ -204,7 +204,12 @@ export type SearchEntry =
 export interface SearchResult { entries: SearchEntry[] } // самые подходящие первыми
 
 /** Фото или видео из публикации-источника; лежит в нашем бакете (ADR-0006). В Luma такого нет. */
-export interface CollectedMedia { type: 'photo' | 'video'; url: string }
+export interface CollectedMedia {
+  type: 'photo' | 'video';
+  url: string;
+  width?: number | null; // в пикселях; по ним страница решает, годится ли ролик в обложку. У файлов до размеров — нет
+  height?: number | null;
+}
 
 /** Карточка собранного события для витрины. */
 export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {

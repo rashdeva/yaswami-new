@@ -209,10 +209,11 @@ async function saveMedia(announcement, photos, album) {
     ...photos.map((p) => ({ ...p, type: 'photo', mime: 'image/jpeg', ext: 'jpg' })),
     ...(await downloadVideos(userbot, album)).map((v) => ({ ...v, type: 'video', mime: v.type, ext: v.type.split('/')[1] ?? 'mp4' })),
   ].sort((a, b) => a.number - b.number);
-  const key = (f) => `telegram/${announcement.id.replace(/\/\d+$/, '')}/${f.number}.${f.ext}`;
+  // Размер в ключе: файл другого размера — другой адрес, CDN не отдаст старую копию.
+  const key = (f) => `telegram/${announcement.id.replace(/\/\d+$/, '')}/${f.number}_${f.width}x${f.height}.${f.ext}`;
   try {
     const media = [];
-    for (const f of files) media.push({ type: f.type, url: await bucket.put(key(f), f.data, f.mime) });
+    for (const f of files) media.push({ type: f.type, url: await bucket.put(key(f), f.data, f.mime), width: f.width, height: f.height });
     return media;
   } catch (e) {
     console.error(`медиа ${announcement.id}: ${e.message}`);

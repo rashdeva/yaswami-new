@@ -91,12 +91,20 @@ const VIDEO_MAX_BYTES = 50_000_000; // ролик анонса — обычно 
 
 const isVideo = (m) => m.media?.className === 'MessageMediaDocument' && m.media.document?.mimeType?.startsWith('video/');
 
-/** Фото публикации (превью 800 px, JPEG) — для ИИ и для страницы события. Не скачалось — пропускаем. */
+const GALLERY_SIDE = 1280; // готовый размер Telegram «y»: на весь экран телефона хватает, оригинал (до 2560) тяжелее втрое
+const GALLERY_MAX_BYTES = 1_500_000;
+
+/** Фото публикации (превью 1280 px, JPEG) с размерами — для ИИ и галереи на странице события. Не скачалось — пропускаем. */
 export async function downloadPhotos(client, album) {
   const photos = [];
   for (const m of album.slice(0, MEDIA_PHOTOS)) {
-    const data = await downloadCover(client, m);
-    if (data) photos.push({ number: m.id, data });
+    const sizes = m.media?.className === 'MessageMediaPhoto' ? m.media.photo?.sizes : null;
+    const type = pickThumb(sizes, GALLERY_SIDE);
+    if (!type) continue;
+    const { w: width, h: height } = sizes.find((s) => s.type === type);
+    const data = await client.downloadMedia(m, { thumb: type }).catch(() => null);
+    const isJpeg = Buffer.isBuffer(data) && data[0] === 0xff && data[1] === 0xd8;
+    if (isJpeg && data.length <= GALLERY_MAX_BYTES) photos.push({ number: m.id, data, width, height });
   }
   return photos;
 }
@@ -105,10 +113,12 @@ export async function downloadPhotos(client, album) {
 export async function downloadVideos(client, album) {
   const videos = [];
   for (const m of album.filter(isVideo)) {
-    const { size, mimeType } = m.media.document;
+    const { size, mimeType, attributes } = m.media.document;
     if (Number(size) > VIDEO_MAX_BYTES) continue;
+    // Размеры решают, станет ли ролик обложкой: вертикальный — да, горизонтальный — только в галерею.
+    const { w: width = null, h: height = null } = attributes?.find((a) => a.className === 'DocumentAttributeVideo') ?? {};
     const data = await client.downloadMedia(m, {}).catch(() => null);
-    if (Buffer.isBuffer(data)) videos.push({ number: m.id, data, type: mimeType });
+    if (Buffer.isBuffer(data)) videos.push({ number: m.id, data, type: mimeType, width, height });
   }
   return videos;
 }
