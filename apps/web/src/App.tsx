@@ -32,14 +32,16 @@ export function App() {
   const [kind, setKind] = useState<Event['kind']>('o');
 
   // У публичных экранов свой нейтральный цвет; личные выставляют цвет шаблона события сами.
-  if ((pathname === '/' || pathname.startsWith('/e/')) && kind !== 'o') setKind('o');
+  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/hosts')) && kind !== 'o') setKind('o');
 
-  // Куда ведёт «назад»: событие → свой список, создание → список или витрина. null — корень.
+  // Куда ведёт «назад»: событие → свой список, организатор → каталог, создание → список или витрина. null — корень.
   const here = { includeSearch: false } as const; // ?signup, ?startapp в адресе маршрут не меняют
   const section = matchRoute({ to: '/events/$id/edit/$section', ...here });
   const edit = matchRoute({ to: '/events/$id/edit', ...here });
   const back = matchRoute({ to: '/e/$id', ...here })
     ? () => void navigate({ to: '/' })
+    : matchRoute({ to: '/hosts/$id', ...here })
+      ? () => void navigate({ to: '/hosts' })
     : section
       ? () => void navigate({ to: '/events/$id/edit', params: { id: section.id } })
       : edit
@@ -63,7 +65,7 @@ export function App() {
 }
 
 /** Переключатель «Все события / Мои» со входом и выходом; страница ставит его в свою шапку. */
-export function AppTabs({ current }: { current: 'feed' | 'mine' }) {
+export function AppTabs({ current }: { current: 'feed' | 'hosts' | 'mine' }) {
   const navigate = useNavigate();
   const { me, authed, canLogin, logout } = useSession();
   const { hasEvents } = useMyEvents();
@@ -75,6 +77,7 @@ export function AppTabs({ current }: { current: 'feed' | 'mine' }) {
       me={me ?? null}
       canLogin={canLogin}
       onFeed={() => void navigate({ to: '/' })}
+      onHosts={() => void navigate({ to: '/hosts' })}
       onMine={() => (authed ? void navigate({ to: hasEvents || !canCreate ? '/my' : '/new' }) : startLogin('/my'))}
       onLogin={() => startLogin(location.pathname)}
       onLogout={() => void logout().catch((e: Error) => toast(e.message))}

@@ -211,6 +211,13 @@
       "when": 1794496532170,
       "tag": "20261112151532_account_daily_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794567455069,
+      "tag": "20261113105735_host_practices",
+      "breakpoints": true
     }
   ]
 }

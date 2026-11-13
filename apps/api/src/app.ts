@@ -80,6 +80,8 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     // До проверки входа: витрину собранных событий видит и анонимный посетитель.
     .get('/collected-events', async (c) => c.json(await s.listCollectedEvents(db)))
     .get('/collected-events/:id', async (c) => c.json(await s.getCollectedEvent(db, c.req.param('id'))))
+    .get('/hosts', async (c) => c.json(await s.listHosts(db)))
+    .get('/hosts/:id', async (c) => c.json(await s.getHost(db, c.req.param('id'))))
     // Фото из базы (ADR-0003). Открыто всем: <img> не шлёт заголовок входа, а id фото не угадать.
     .get('/photos/:id', async (c) => {
       const data = await getPhoto(db, c.req.param('id'));

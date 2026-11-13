@@ -8,6 +8,9 @@ import telegram from 'telegram';
 import postgres from 'postgres';
 import { looksLikeEvent } from '@yaswami/extract';
 import { connect } from './mtproto.mjs';
+import { contactsIn } from './offers.mjs';
+
+export { contactsIn };
 
 const TOPICS = {
   футбол: ['футбол', 'football'], мафия: ['мафия', 'mafia'], сёрф: ['серф', 'сёрф', 'surf'],
@@ -16,13 +19,6 @@ const TOPICS = {
   настолки: ['настолки', 'настольные игры', 'board games'], бег: ['бег', 'running'], квиз: ['квиз', 'quiz'],
 };
 const LOCAL = /данан|danang|da\s?nang|хойан|hoi\s?an|вьетнам|vietnam|vn\b/i;
-const NOT_PEOPLE = new Set(['joinchat', 'c', 's', 'addlist', 'share', 'proxy', 'iv']);
-
-/** @username и t.me/… из текста, в нижнем регистре, без повторов. */
-export const contactsIn = (text) => [...new Set(
-  [...text.matchAll(/(?:t\.me\/|@)([a-z][a-z0-9_]{3,31})/gi)].map((m) => m[1].toLowerCase()).filter((u) => !NOT_PEOPLE.has(u)),
-)];
-
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { TG_API_ID, TG_API_HASH, SCOUT_SESSION, DATABASE_URL } = process.env;
   if (!SCOUT_SESSION) throw new Error('SCOUT_SESSION пуст: npm run login SCOUT_SESSION');

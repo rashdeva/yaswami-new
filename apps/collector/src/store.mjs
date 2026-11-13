@@ -58,6 +58,15 @@ export function createStore(url) {
       insert into hosts ${sql(host)} on conflict (telegram_id) do update set username = excluded.username`
       // Пока все пользователи — из Telegram, users.id и есть Telegram id.
       .then(() => sql`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`),
+    /** Уже знаем, что этот человек ведёт (offers.mjs): объявление повторно в ИИ не отправляем. `who` — Telegram id или username. */
+    hasPractices: async (who) => (await sql`
+      select 1 from hosts where ${typeof who === 'number' ? sql`telegram_id = ${who}` : sql`username = ${who}`} and practices <> '[]'::jsonb`).length > 0,
+    /** Мастер по своему самопредставлению: Practice заменяем, сводку из профиля (если уже есть) не трогаем. */
+    saveOffer: ({ practices, ...host }) => sql`
+      insert into hosts ${sql({ ...host, practices: sql.json(practices) })}
+      on conflict (telegram_id) do update set practices = excluded.practices, username = excluded.username,
+        summary = coalesce(hosts.summary, excluded.summary)`
+      .then(() => sql`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`),
     /** Организаторы предстоящих событий с каналом, у которых фото сообщества не смотрели дольше `days` дней. */
     stalePhotos: (days, limit) => sql`
       select id, channel from hosts

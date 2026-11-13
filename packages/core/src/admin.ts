@@ -1,6 +1,6 @@
 // Операции команды над всем сервисом (`admin_*` в MCP, `/admin/*` в REST) и журнал этих действий: формы входа и ответа.
 import * as z from 'zod';
-import type { AdminCollectedEvent, EventView } from './api.ts';
+import type { AdminCollectedEvent, EventView, Practice } from './api.ts';
 import { dateTime, EventCreateInput, timeZone } from './api.ts';
 import type { Event, Guest, User } from './schema.ts';
 import { Feature, RsvpStatus, User as UserSchema } from './schema.ts';
@@ -115,6 +115,7 @@ export interface Host {
   bio: string | null;
   channel: string | null;
   summary: string | null;
+  practices: Practice[]; // что ведёт без даты; найдено по его самопредставлению в чате
   photos_checked_at: Date | null;
   created_at: Date;
 }
