@@ -174,10 +174,15 @@ async function pollChannel({ channel, host_username, city_id, city, timezone }, 
       event.telegram_username = contactFor(event, channel, host_username);
       const same = known.find((k) => k.city_id === city_id && isSameEvent(k.event, event));
       // Канал организатора в источники попал сам, без решения команды: событие, которое она уже проверила, он не меняет.
-      if (same && host_username && same.status !== 'pending') continue;
+      const decided = same && same.status !== 'pending';
+      if (decided && host_username) continue;
       // Событие без контакта не берём: записаться некуда. Появится контакт в другом посте — склеится или создастся там.
       if (!same && !event.telegram_username && !event.whatsapp_phone) continue;
-      const merged = same ? mergeEvents(same.event, event) : event;
+      // Проверенному событию анонс из общего источника дописывает сведения, но не контакт для записи: иначе чужой пост
+      // с похожим названием увёл бы «Записаться» к своему автору.
+      const merged = !same ? event : decided
+        ? { ...mergeEvents(same.event, event), telegram_username: same.event.telegram_username, whatsapp_phone: same.event.whatsapp_phone, url: same.event.url }
+        : mergeEvents(same.event, event);
       if (same && JSON.stringify(merged) === JSON.stringify(same.event)) continue; // повтор без новых сведений
       // Дубль дополняет запись первого анонса, а не создаёт вторую.
       const external_id = same?.external_id ?? `telegram:${announcement.id}#${i}`;

@@ -65,7 +65,7 @@ export function FeedScreen() {
                   onSave={(text) => saveDraft({ id: pending.id, text }, { onSuccess: () => setEdited(({ [pending.id]: _, ...rest }) => rest) })}
                   onSend={() => sendDraft({ id: pending.id, text: edited[pending.id], account_id: from(c).account })} onReject={() => rejectDraft(pending.id)} from={from(c)}
                 />
-              ) : <Reply from={from(c)} onSend={(text) => send({ id: c.id, text, account_id: from(c).account })} />}
+              ) : <Reply from={from(c)} onSend={(text, sent) => send({ id: c.id, text, account_id: from(c).account }, { onSuccess: sent })} />}
             </CardContent>
           </Card>
         );
@@ -86,11 +86,11 @@ export function FeedScreen() {
                 <ItemTitle>
                   {who(c, m, feed.me, feed.accounts)}
                   {c.mode === 'human' && <Badge variant="secondary">ведёте вы</Badge>}
-                  {m.status === 'queued' && <Badge variant="secondary">отправляется</Badge>}
+                  {(m.status === 'queued' || m.status === 'sending') && <Badge variant="secondary">отправляется</Badge>}
                   {m.status === 'failed' && <Badge variant="destructive">не доставлено</Badge>}
                 </ItemTitle>
                 <ItemDescription className="line-clamp-none whitespace-pre-wrap">{m.text}</ItemDescription>
-                {sel && <Reply from={from(c)} onSend={(text) => send({ id: c.id, text, account_id: from(c).account })} />}
+                {sel && <Reply from={from(c)} onSend={(text, sent) => send({ id: c.id, text, account_id: from(c).account }, { onSuccess: sent })} />}
               </ItemContent>
               <ItemDescription>{time(m.created_at)}</ItemDescription>
             </Item>
@@ -107,7 +107,7 @@ export function FeedScreen() {
               <SheetDescription>{cur.c.peer_username && `@${cur.c.peer_username} · `}{person(cur.c)} · пишет {via(cur.c, feed.accounts)} · {cur.c.mode === 'human' ? 'диалог ведёте вы' : 'отвечает агент'}</SheetDescription>
             </SheetHeader>
             <Thread conversation={cur.c} messages={thread} me={feed.me} accounts={feed.accounts} typing={typing.filter((t) => t.conversation_id === cur.c.id)} />
-            <Reply className="p-4" from={from(cur.c)} onSend={(text) => send({ id: cur.c.id, text, account_id: from(cur.c).account })} />
+            <Reply className="p-4" from={from(cur.c)} onSend={(text, sent) => send({ id: cur.c.id, text, account_id: from(cur.c).account }, { onSuccess: sent })} />
           </SheetContent>
         )}
       </Sheet>

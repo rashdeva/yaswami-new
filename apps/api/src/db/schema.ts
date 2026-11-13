@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostStatus, Message, Practice, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -199,10 +199,7 @@ export const hosts = pgTable(
     bio: text(),
     channel: text(), // username канала: личный канал из профиля или ссылка из «о себе»
     summary: text(),
-    // Что ведёт без даты (Practice): сборщик берёт из его самопредставления в чате (offers.mjs). У тех, кто найден
-    // только по событиям, пусто. ponytail: jsonb в строке, а не таблица — пока Practice не нужны свои ссылки и записи.
-    practices: jsonb().$type<Practice[]>().notNull().default([]),
-    // Модерация (HOST_STATUSES): новые — pending; в каталоге Practice видны только у published.
+    // Модерация (HOST_STATUSES): новые — pending; отклонённый не виден целиком. Что он ведёт без даты — в таблице practices.
     status: text().$type<HostStatus>().notNull().default('pending'),
     offer_url: text(), // сообщение, из которого сборщик взял мастера
     // Когда сборщик последний раз смотрел фото в канале; null — ещё не смотрел. Фото может и не оказаться.
@@ -248,17 +245,37 @@ export const collectedEventSignups = pgTable(
   (t) => [primaryKey({ columns: [t.external_id, t.user_id] }), index('collected_event_signups_user_idx').on(t.user_id)],
 );
 
-// «Записаться» на Practice мастера: фиксируем намерение и отправляем человека к мастеру. Practice — по названию:
-// своего id у неё нет (hosts.practices). ponytail: без статуса и подтверждения — пока мастера не входят в Ясвами.
+// Practice (@yaswami/core): что организатор ведёт без даты — занятия, услуга мастера. Сборщик берёт их из его
+// самопредставления в чате (offers.mjs); у тех, кто найден только по событиям, их нет. Каждую команда одобряет отдельно.
+export const practices = pgTable(
+  'practices',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    host_id: uuid().notNull().references(() => hosts.id, { onDelete: 'cascade' }),
+    title: text().notNull(),
+    topic: text().notNull(), // ключ TOPIC_GUIDES или OTHER_TOPIC
+    description: text(),
+    price: text(),
+    // Модерация (PRACTICE_STATUSES): в каталоге видна только published.
+    status: text().$type<PracticeStatus>().notNull().default('pending'),
+    position: integer().notNull().default(0), // порядок у организатора: как назвал сам или как расставила команда
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('practices_host_idx').on(t.host_id)],
+);
+
+// «Записаться» на Practice мастера: фиксируем намерение и отправляем человека к мастеру.
+// `host_id` повторяет practices.host_id: по нему записи входят в снимок организатора в журнале (audit.ts).
+// ponytail: без статуса и подтверждения — пока мастера не входят в Ясвами.
 export const practiceSignups = pgTable(
   'practice_signups',
   {
+    practice_id: uuid().notNull().references(() => practices.id, { onDelete: 'cascade' }),
     host_id: uuid().notNull().references(() => hosts.id, { onDelete: 'cascade' }),
     user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    title: text().notNull(),
     created_at: at('created_at').notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.host_id, t.user_id, t.title] }), index('practice_signups_user_idx').on(t.user_id)],
+  (t) => [primaryKey({ columns: [t.practice_id, t.user_id] }), index('practice_signups_user_idx').on(t.user_id), index('practice_signups_host_idx').on(t.host_id)],
 );
 
 // Аудитория организатора — contacts календаря в Luma API. Организатор у нас — пользователь (events.user_id).
@@ -334,8 +351,8 @@ export const tgAccounts = pgTable('tg_accounts', {
   cold_paused_until: at('cold_paused_until'),
   created_at: at('created_at').notNull().defaultNow(),
   session: text(),
-  // `sealed` — код или пароль, зашифрованные ключом сборщика (ACCOUNTS_KEY у API); `secret` — открыто, когда ключа у API нет.
-  login: jsonb().$type<{ secret?: string; sealed?: string }>(),
+  // `sealed` — код или пароль, зашифрованные ключом сборщика (ACCOUNTS_KEY у API). Открытым текстом API их не пишет.
+  login: jsonb().$type<{ sealed?: string }>(),
 });
 
 // Переписка с людьми (docs/agents-inbox.md): всё, что человек написал боту или на наш аккаунт и что мы ответили.
@@ -428,4 +445,5 @@ export const tablesMatchCore: [
   Same<typeof hosts.$inferSelect, Host>,
   Same<typeof adminActions.$inferSelect, AdminAction>,
   Same<typeof cities.$inferSelect, City>,
-] = [true, true, true, true, true, true, true, true, true, true];
+  Same<Omit<typeof practices.$inferSelect, 'host_id' | 'position' | 'created_at'>, Practice>,
+] = [true, true, true, true, true, true, true, true, true, true, true];

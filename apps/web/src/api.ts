@@ -67,7 +67,7 @@ export const api = {
   listHosts: () => request<HostListItem[]>('GET', '/hosts'),
   getHost: (id: string) => request<HostItem>('GET', `/hosts/${encodeURIComponent(id)}`),
   search: (query: string) => request<SearchResult>('GET', `/search?query=${encodeURIComponent(query)}`),
-  signUpForPractice: (id: string, title: string) => request<PracticeSignup>('POST', `/hosts/${encodeURIComponent(id)}/practices/signup`, { title }, true),
+  signUpForPractice: (id: string, practice_id: string) => request<PracticeSignup>('POST', `/hosts/${encodeURIComponent(id)}/practices/signup`, { practice_id }, true),
   claim: (id: string) => request<EventData>('POST', `/collected-events/${encodeURIComponent(id)}/claim`),
   signUp: (id: string) => request<CollectedEventItem>('POST', `/collected-events/${encodeURIComponent(id)}/signup`, undefined, true),
   visitCollected: (id: string) => request<void>('POST', `/collected-events/${encodeURIComponent(id)}/visit`, {} satisfies VisitInput),

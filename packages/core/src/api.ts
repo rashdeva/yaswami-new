@@ -93,26 +93,31 @@ export interface EventListItem {
   my_approval_status: Guest['approval_status'] | null;
 }
 
-/** Событие, собранное из Telegram-канала (apps/collector): хозяина в Ясвами у него ещё нет, данные извлечены ИИ. */
-export interface CollectedEvent {
-  title: string;
-  description: string;
-  starts_at: string; // ISO 8601 с offset часового пояса города
-  ends_at: string | null;
-  place: string | null;
-  address: string | null;
-  price: string | null;
-  tags: string[];
-  telegram_username: string | null;
-  whatsapp_phone: string | null;
-  url: string | null;
+const parsableDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'not a date');
+/**
+ * Событие, собранное из Telegram-канала (apps/collector): хозяина в Ясвами у него ещё нет, данные извлечены ИИ.
+ * Схемой проверяется ответ ИИ (packages/extract): событие, которое база не примет, отбрасывается до записи.
+ */
+export const CollectedEvent = z.object({
+  title: z.string().min(1),
+  description: z.string(),
+  starts_at: parsableDate, // ISO 8601 с offset часового пояса города
+  ends_at: parsableDate.nullable(),
+  place: z.string().nullable(),
+  address: z.string().nullable(),
+  price: z.string().nullable(),
+  tags: z.array(z.string()),
+  telegram_username: z.string().nullable(),
+  whatsapp_phone: z.string().nullable(),
+  url: z.string().nullable(),
   // Ниже — «что это мне даст»: поля появились позже остальных, у ранее собранных событий их нет.
-  topic?: string; // ключ TOPIC_GUIDES или OTHER_TOPIC
-  what_happens?: string[]; // что человек будет делать, по порядку публикации
-  for_whom?: string | null;
-  beginner_friendly?: boolean | null; // null — в анонсе не сказано
-  takeaway?: string | null; // только обещание самого организатора
-}
+  topic: z.string().optional(), // ключ TOPIC_GUIDES или OTHER_TOPIC
+  what_happens: z.array(z.string()).optional(), // что человек будет делать, по порядку публикации
+  for_whom: z.string().nullable().optional(),
+  beginner_friendly: z.boolean().nullable().optional(), // null — в анонсе не сказано
+  takeaway: z.string().nullable().optional(), // только обещание самого организатора
+});
+export type CollectedEvent = z.infer<typeof CollectedEvent>;
 
 /**
  * Организатор собранного события: профиль составлен автоматически по его Telegram и каналу. Имена — как у Host
@@ -140,6 +145,7 @@ export const PRACTICE_STATUSES = ['pending', 'published', 'rejected'] as const;
 export type PracticeStatus = (typeof PRACTICE_STATUSES)[number];
 
 export interface Practice {
+  id: string; // по нему на Practice записываются и команда принимает решение: название можно править
   title: string;
   topic: string; // ключ TOPIC_GUIDES или OTHER_TOPIC
   description: string | null;
@@ -147,8 +153,8 @@ export interface Practice {
   status: PracticeStatus; // модерация: в каталоге видна только published
 }
 
-/** Запись на Practice: какую именно, по названию — своего id у Practice нет (она строка в `hosts.practices`). В Luma такого нет. */
-export const PracticeSignupInput = z.object({ title: z.string().trim().min(1).max(200).describe('Practice title exactly as in `practices` of the organizer') });
+/** Запись на Practice — по её id. В Luma такого нет. */
+export const PracticeSignupInput = z.object({ practice_id: z.uuid().describe('Practice id from `practices` of the organizer') });
 export type PracticeSignupInput = z.infer<typeof PracticeSignupInput>;
 
 /** Ответ на запись: куда идти дальше — запись подтверждает сам мастер. */

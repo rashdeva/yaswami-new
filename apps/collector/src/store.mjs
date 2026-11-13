@@ -1,5 +1,6 @@
-// Хранилище сборщика в Postgres. Таблицы описаны в apps/api/src/db/schema.ts (collected_events, sources,
-// collector_cursors) и создаются миграциями API; здесь — только запросы.
+// Хранилище сборщика в Postgres. Таблицы описаны в apps/api/src/db/schema.ts и создаются миграциями API; здесь — только
+// запросы. Типы их не проверяют, поэтому каждый запрос прогоняет на настоящей базе apps/api/src/collector-store.test.ts:
+// переименовал колонку — упадёт тест, а не сборщик в проде. Новый запрос добавляй и туда.
 import postgres from 'postgres';
 
 export function createStore(url) {
@@ -84,13 +85,22 @@ export function createStore(url) {
     }),
     /** Уже знаем, что этот человек ведёт (offers.mjs): объявление повторно в ИИ не отправляем. `who` — Telegram id или username. */
     hasPractices: async (who) => (await sql`
-      select 1 from hosts where ${typeof who === 'number' ? sql`telegram_id = ${who}` : sql`username = ${who}`} and practices <> '[]'::jsonb`).length > 0,
-    /** Мастер по своему самопредставлению: Practice заменяем, сводку из профиля (если уже есть) не трогаем. Каждая Practice ждёт решения команды (status: pending). */
-    saveOffer: ({ practices, ...host }) => sql`
-      insert into hosts ${sql({ ...host, practices: sql.json(practices.map((p) => ({ ...p, status: 'pending' }))) })}
-      on conflict (telegram_id) do update set practices = excluded.practices, username = excluded.username, offer_url = excluded.offer_url,
-        summary = coalesce(hosts.summary, excluded.summary)`
-      .then(() => sql`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`),
+      select 1 from practices p join hosts h on h.id = p.host_id
+      where ${typeof who === 'number' ? sql`h.telegram_id = ${who}` : sql`h.username = ${who}`} limit 1`).length > 0,
+    /**
+     * Мастер по своему самопредставлению: сводку из профиля (если уже есть) не трогаем. Practice добавляем, только пока
+     * у него нет ни одной: дальше их правит и одобряет команда. Каждая новая ждёт её решения (status по умолчанию — pending).
+     */
+    saveOffer: ({ practices, ...host }) => sql.begin(async (tx) => {
+      const [{ id }] = await tx`
+        insert into hosts ${tx(host)}
+        on conflict (telegram_id) do update set username = excluded.username, offer_url = excluded.offer_url, summary = coalesce(hosts.summary, excluded.summary)
+        returning id`;
+      if (practices.length && !(await tx`select 1 from practices where host_id = ${id} limit 1`).length) {
+        await tx`insert into practices ${tx(practices.map(({ title, topic, description, price }, position) => ({ host_id: id, title, topic, description, price, position })))}`;
+      }
+      await tx`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`;
+    }),
     /** Организаторы предстоящих событий с каналом, у которых фото сообщества не смотрели дольше `days` дней. */
     stalePhotos: (days, limit) => sql`
       select id, channel from hosts
@@ -138,6 +148,9 @@ export function createStore(url) {
       from messages m join conversations c on c.id = m.conversation_id
       where m.status = 'queued' and c.channel = 'account' and c.account_id is not null
       order by m.created_at limit 20`,
+    /** Забрать сообщение из очереди на отправку; false — его уже забрали или отменили. */
+    claim: async (id) => (await sql`update messages set status = 'sending' where id = ${id} and status = 'queued' returning id`).length > 0,
+    failStuck: () => sql`update messages set status = 'failed' where status = 'sending'`,
     messageStatus: (id, status) => sql`update messages set status = ${status} where id = ${id}`,
     end: () => sql.end(),
   };

@@ -10,7 +10,7 @@
     "find-sources": "node --env-file-if-exists=.env src/find-sources.mjs",
     "find-masters": "node --env-file-if-exists=.env src/find-masters.mjs",
     "backfill-leads": "node --env-file-if-exists=.env src/backfill-leads.mjs",
-    "test": "node src/test.mjs"
+    "test": "node --test src/collector.test.mjs"
   },
   "dependencies": {
     "@yaswami/core": "workspace:*",

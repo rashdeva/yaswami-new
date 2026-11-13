@@ -55,7 +55,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast, editing }: Prop
   const event = editing?.event;
   const [date0, time0] = event ? wallParts(event.start_at, event.timezone) : [localDate(1), '19:30'];
   const schema = useMemo(() => makeSchema(!editing), [editing]);
-  const { register, control, handleSubmit, watch, setValue, formState: { errors, isValid, isSubmitting } } = useForm({
+  const { register, control, handleSubmit, watch, setValue, formState: { errors, isValid, isSubmitting, dirtyFields } } = useForm({
     resolver: zodResolver(schema),
     mode: 'onChange',
     defaultValues: event ? {
@@ -94,8 +94,9 @@ export function CreateScreen({ onBack, onCreated, onKind, toast, editing }: Prop
           name: v.name,
           description: v.description || null,
           start_at: fromWall(v.date, v.time, editing.event.timezone),
-          geo_address_json: v.place && !isUrl(v.place) ? { address: v.place } : null,
-          meeting_url: isUrl(v.place) ? v.place : null,
+          // Поле «где» одно на адрес и ссылку, а у события может быть и то и другое (админка правит их раздельно):
+          // шлём их, только если поле трогали, иначе сохранение стёрло бы то, что в поле не показано.
+          ...(dirtyFields.place ? { geo_address_json: v.place && !isUrl(v.place) ? { address: v.place } : null, meeting_url: isUrl(v.place) ? v.place : null } : {}),
           max_capacity: v.max_capacity || null,
           allow_plus_one: v.allow_plus_one,
         });

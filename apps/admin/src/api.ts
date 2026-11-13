@@ -2,7 +2,7 @@
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
   AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource,
-  AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHostListItem, Host, HostUpdateInput, InboxConversation, SourceUpdateInput,
+  AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, HostUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
 import { sseEvents } from '@yaswami/core';
@@ -24,6 +24,7 @@ const MESSAGES: Record<string, string> = {
   network: 'Нет связи с сервером',
   phone_taken: 'Аккаунт с таким номером уже добавлен',
   not_expected: 'Сейчас аккаунт не ждёт кода или пароля',
+  accounts_key_missing: 'У сервера нет ключа шифрования (ACCOUNTS_KEY): код не принят. Задайте ключ сервису API — тот же, что у сборщика',
   account_unavailable: 'Этот аккаунт сейчас не на связи: выберите другой или войдите в него в «Аккаунтах»',
   no_account: 'Отправлять не с чего: добавьте аккаунт Telegram в «Аккаунты»',
   daily_limit: 'Аккаунт уже отправил дневной лимит первых сообщений. Ответы тем, кто написал сам, уходят без лимита',
@@ -34,6 +35,7 @@ const MESSAGES: Record<string, string> = {
   city_not_found: 'Такого города нет: добавьте его в «Городах»',
   host_exists: 'Организатор с таким username уже есть',
   host_not_found: 'Такого организатора нет: возможно, его удалили',
+  practice_not_found: 'Одной из услуг уже нет: обновите страницу',
   not_delivered: 'Telegram не доставил сообщение: человек не открывал бота или заблокировал его',
   changed_since: 'Отменить нельзя: с тех пор запись меняли, отмена затёрла бы ту правку',
   already_undone: 'Это действие уже отменено',
@@ -162,8 +164,9 @@ export const api = {
   // Организаторы
   hosts: () => request<Wire<AdminHostListItem>[]>('GET', '/admin/hosts'),
   host: (host: string) => request<Wire<AdminHostView>>('GET', `/admin/hosts/${id(host)}`),
-  hostCreate: (input: HostCreateInput) => request<Wire<Host>>('POST', '/admin/hosts', input),
-  hostUpdate: (host: string, input: HostUpdateInput) => request<Wire<Host>>('PATCH', `/admin/hosts/${id(host)}`, input),
+  hostCreate: (input: HostCreateInput) => request<Wire<AdminHost>>('POST', '/admin/hosts', input),
+  hostUpdate: (host: string, input: HostUpdateInput) => request<Wire<AdminHost>>('PATCH', `/admin/hosts/${id(host)}`, input),
+  practiceUpdate: (practice: string, input: PracticeUpdateInput) => request<Practice>('PATCH', `/admin/practices/${id(practice)}`, input),
   hostDelete: (host: string) => request<void>('DELETE', `/admin/hosts/${id(host)}`),
 
   // Пользователи и контакты

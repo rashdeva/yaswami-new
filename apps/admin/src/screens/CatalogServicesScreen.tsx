@@ -45,7 +45,7 @@ export function CatalogServicesScreen({ status, query, onFilter, onKind }: Props
   const { data: hosts, error } = useHosts();
   const decide = usePracticeStatus();
   const q = query.trim().toLowerCase().replace(/^@/, '');
-  const all = (hosts ?? []).flatMap((h) => h.practices.map((p) => ({ h, p, signups: h.practice_signup_counts[p.title] ?? 0 })));
+  const all = (hosts ?? []).flatMap((h) => h.practices.map((p) => ({ h, p, signups: h.practice_signup_counts[p.id] ?? 0 })));
   const list = all
     .filter(({ h, p }) => (status === 'all' || p.status === status) && (!q || [p.title, p.topic, h.name, h.username].some((s) => s.toLowerCase().includes(q))))
     .sort((a, b) => b.signups - a.signups || a.p.title.localeCompare(b.p.title));
@@ -72,7 +72,7 @@ export function CatalogServicesScreen({ status, query, onFilter, onKind }: Props
           </TableHeader>
           <TableBody>
             {list.map(({ h, p, signups }) => (
-              <TableRow key={h.id + p.title}>
+              <TableRow key={p.id}>
                 <TableCell className="max-w-sm whitespace-normal">
                   <Item size="xs" className="p-0">
                     <ItemContent>
@@ -98,9 +98,9 @@ export function CatalogServicesScreen({ status, query, onFilter, onKind }: Props
                 </TableCell>
                 <TableCell>
                   <ButtonGroup className="justify-end">
-                    {p.status !== 'published' && <Button size="xs" onClick={() => decide({ host: h, title: p.title, status: 'published' })}>Одобрить</Button>}
+                    {p.status !== 'published' && <Button size="xs" onClick={() => decide({ host_id: h.id, practice_id: p.id, status: 'published' })}>Одобрить</Button>}
                     {p.status !== 'rejected' && (
-                      <Button size="xs" variant="outline" onClick={() => decide({ host: h, title: p.title, status: 'rejected' })}>{p.status === 'pending' ? 'Отклонить' : 'Снять'}</Button>
+                      <Button size="xs" variant="outline" onClick={() => decide({ host_id: h.id, practice_id: p.id, status: 'rejected' })}>{p.status === 'pending' ? 'Отклонить' : 'Снять'}</Button>
                     )}
                   </ButtonGroup>
                 </TableCell>

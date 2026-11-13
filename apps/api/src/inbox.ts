@@ -347,7 +347,7 @@ async function withStages(db: Db, rows: Conversation[]): Promise<InboxConversati
   const peers = rows.map((c) => c.peer_id);
   const organizers = new Map((await db.select({ id: hosts.telegram_id, user_id: hosts.user_id }).from(hosts).where(inArray(hosts.telegram_id, peers))).map((h) => [h.id, h.user_id]));
   const members = new Set((await db.select({ id: users.id }).from(users).where(inArray(users.id, peers))).map((u) => u.id));
-  const ours = sql`${messages.direction} = 'out' and ${messages.status} in ('sent', 'queued')`;
+  const ours = sql`${messages.direction} = 'out' and ${messages.status} in ('sent', 'queued', 'sending')`;
   const facts = new Map((await db
     .select({
       id: messages.conversation_id,
@@ -377,7 +377,7 @@ const agentKey = (author: string | null | undefined): AgentKey | null => {
 
 /** Разделы «Агенты» и «Организаторы» админки: что сделал каждый агент и кто такие организаторы каталога. */
 export async function adminOverview(db: Db): Promise<AdminOverview> {
-  const ours = sql`${messages.status} in ('sent', 'queued')`;
+  const ours = sql`${messages.status} in ('sent', 'queued', 'sending')`;
   const stats = await db
     .select({
       author: messages.author,
@@ -435,7 +435,7 @@ export async function inboxFeed(db: Db, actor: User): Promise<InboxFeed> {
 // Первое сообщение — наше исходящее, перед которым человек нам в этом диалоге не писал (и повторное без ответа тоже).
 const coldToday = sql<number>`(
   select count(*)::int from ${messages} m join ${conversations} c on c.id = m.conversation_id
-  where c.account_id = tg_accounts.id and m.direction = 'out' and m.status in ('sent', 'queued')
+  where c.account_id = tg_accounts.id and m.direction = 'out' and m.status in ('sent', 'queued', 'sending')
     and m.created_at > now() - interval '24 hours'
     and not exists (select 1 from ${messages} i where i.conversation_id = m.conversation_id and i.direction = 'in' and i.created_at < m.created_at)
 )`;
@@ -470,7 +470,9 @@ export const createAccount = (db: Db, ctx: Ctx, input: AccountCreateInput): Prom
 
 export const updateAccount = (db: Db, ctx: Ctx, id: string, input: AccountUpdateInput): Promise<TgAccount> =>
   audited(db, ctx, { action: 'admin_accounts_update', entity: 'account', id, input }, async (db) => {
-    const [account] = await db.update(tgAccounts).set(input).where(eq(tgAccounts.id, id)).returning(accountFields);
+    const [account] = Object.keys(input).length
+      ? await db.update(tgAccounts).set(input).where(eq(tgAccounts.id, id)).returning(accountFields)
+      : await db.select(accountFields).from(tgAccounts).where(eq(tgAccounts.id, id));
     if (!account) throw new AppError('not_found', 404);
     return account;
   });
@@ -484,7 +486,7 @@ function seal(key: string, text: string): string {
 }
 
 /**
- * Шаг входа: код или пароль. Сборщик заберёт значение, выполнит шаг и сотрёт его. В журнал — без секрета; не
+ * Шаг входа: код или пароль, зашифрованные ключом сборщика. Сборщик заберёт значение, выполнит шаг и сотрёт его. В журнал — без секрета; не
  * отменяется: шаг входа уже ушёл в Telegram.
  */
 export const submitAccountLogin = (db: Db, ctx: Ctx, id: string, secret: string) =>
@@ -492,7 +494,9 @@ export const submitAccountLogin = (db: Db, ctx: Ctx, id: string, secret: string)
     const [account] = await db.select(accountFields).from(tgAccounts).where(eq(tgAccounts.id, id));
     if (!account) throw new AppError('not_found', 404);
     if (account.status !== 'login_code' && account.status !== 'login_password') throw new AppError('not_expected', 409);
-    await db.update(tgAccounts).set({ login: settings.accountsKey ? { sealed: seal(settings.accountsKey, secret) } : { secret }, last_error: null }).where(eq(tgAccounts.id, id));
+    // Без ключа код и пароль двухэтапной проверки легли бы в базу открытым текстом — лучше отказать.
+    if (!settings.accountsKey) throw new AppError('accounts_key_missing', 409);
+    await db.update(tgAccounts).set({ login: { sealed: seal(settings.accountsKey, secret) }, last_error: null }).where(eq(tgAccounts.id, id));
   });
 
 /**
@@ -540,9 +544,11 @@ export const inboxSend = (db: Db, ctx: Ctx, id: string, input: InboxSendInput) =
 /** Режим, «готово» и скрытие диалога. Скрытый больше не ждёт нас: отвечать ему мы не собираемся. */
 export const inboxUpdate = (db: Db, ctx: Ctx, id: string, input: ConversationUpdateInput): Promise<Conversation> =>
   audited(db, ctx, { action: 'admin_conversations_update', entity: 'conversation', id, input }, async (db) => {
-    await conversationById(db, id);
+    const current = await conversationById(db, id);
     const { is_hidden, ...rest } = input;
     const hide = is_hidden === undefined ? {} : is_hidden ? { hidden_at: dbNow, attention: null } : { hidden_at: null };
-    const [conversation] = await db.update(conversations).set({ ...rest, ...hide }).where(eq(conversations.id, id)).returning();
+    const values = { ...rest, ...hide };
+    if (!Object.keys(values).length) return current;
+    const [conversation] = await db.update(conversations).set(values).where(eq(conversations.id, id)).returning();
     return conversation!;
   });

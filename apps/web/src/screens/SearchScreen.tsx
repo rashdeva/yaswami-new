@@ -55,11 +55,11 @@ export function SearchScreen({ query, onQuery, onOpen }: Props) {
             />
           ) : (
             // Услуга — как во вкладке «Услуги»: мастер и под ним она сама с записью
-            <div key={`p-${entry.host.id}-${entry.practice.title}`} className="group">
+            <div key={`p-${entry.practice.id}`} className="group">
               <button className="plain" onClick={() => open(entry)}>
                 <GuestRow name={entry.host.name} photo={entry.host.photo_url} sub={entry.host.summary ?? undefined} label="›" />
               </button>
-              <PracticeRow practice={entry.practice} onSignUp={() => signUp(entry.host, entry.practice.title)} />
+              <PracticeRow practice={entry.practice} onSignUp={() => signUp(entry.host, entry.practice)} />
             </div>
           ))}
         </div>

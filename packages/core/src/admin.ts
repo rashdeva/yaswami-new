@@ -131,25 +131,30 @@ export interface Host {
   bio: string | null;
   channel: string | null;
   summary: string | null;
-  practices: Practice[]; // что ведёт без даты; найдено по его самопредставлению в чате
   status: HostStatus;
   offer_url: string | null; // сообщение в чате, из которого сборщик взял мастера: по нему модератор сверяет Practice
   photos_checked_at: Date | null;
   created_at: Date;
 }
 
-export interface AdminHostView extends Host {
-  photos: { url: string; source_url: string }[]; // фото сообщества, новые сверху
-  practice_signups: { id: User['id']; first_name: string; username: string | null; title: string; at: Date }[]; // кто нажал «Записаться» на Practice, новые сверху
+/** Профиль организатора для команды: с его Practice любого статуса (что ведёт без даты; найдено по самопредставлению в чате). */
+export interface AdminHost extends Host {
+  practices: Practice[];
 }
 
-/** Организатор в списке админки: профиль и сколько раз нажали «Записаться» на каждую его Practice (ключ — её название). */
-export interface AdminHostListItem extends Host {
+export interface AdminHostView extends AdminHost {
+  photos: { url: string; source_url: string }[]; // фото сообщества, новые сверху
+  practice_signups: { id: User['id']; first_name: string; username: string | null; practice_id: string; title: string; at: Date }[]; // кто нажал «Записаться» на Practice, новые сверху
+}
+
+/** Организатор в списке админки: профиль и сколько раз нажали «Записаться» на каждую его Practice (ключ — её id). */
+export interface AdminHostListItem extends AdminHost {
   practice_signup_counts: Record<string, number>;
 }
 
 /** Practice, как её правит команда: то же, что извлекает сборщик. Тема — из наших Topic или «другое» (в каталоге не видна). */
 export const PracticeInput = z.object({
+  id: z.uuid().optional().describe('Id of an existing practice to keep or change; omit to add a new one'),
   title: text(200).min(1),
   topic: z.enum([...Object.keys(TOPIC_GUIDES), OTHER_TOPIC]).describe('Topic key; a practice with «другое» is hidden from the public catalogue'),
   description: text(500).nullable(),
@@ -173,12 +178,16 @@ export const HostUpdateInput = z
     summary: text(2000).nullable(),
     city_id: cityId,
     status: z.enum(HOST_STATUSES).describe('rejected — hide the organizer with all events and practices; published — checked by the team. Each practice is moderated by its own status'),
-    // Список целиком: чего в нём нет — удалено. Названия не повторяются: по названию Practice находит запись на неё.
-    practices: z.array(PracticeInput).max(30).refine((list) => new Set(list.map((p) => p.title)).size === list.length, 'duplicate titles')
-      .describe('Full list of practices and services the organizer runs; it replaces the stored one, so send every practice you want to keep. Titles must be unique'),
+    // Список целиком: чего в нём нет — удалено вместе с записями на неё. Practice с `id` правится на месте, без `id` — добавляется.
+    practices: z.array(PracticeInput).max(30)
+      .describe('Full list of practices and services the organizer runs; it replaces the stored one, so send every practice you want to keep, each with its `id`. An entry without `id` is added. To change one practice (e.g. approve it) use admin_practices_update instead'),
   })
   .partial();
 export type HostUpdateInput = z.infer<typeof HostUpdateInput>;
+
+/** Правка одной Practice: решение модератора (`status`) или её текст. Остальные Practice организатора не затрагивает. */
+export const PracticeUpdateInput = PracticeInput.omit({ id: true }).partial();
+export type PracticeUpdateInput = z.infer<typeof PracticeUpdateInput>;
 
 // --- Города (в Luma такого нет)
 

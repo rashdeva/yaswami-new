@@ -11,10 +11,9 @@ export const useHost = (id: string) => useQuery({ queryKey: keys.host(id), query
 /** Добавить организатора по username: профиль заполнит сборщик на следующем проходе. */
 export const useHostCreate = () => useAct(api.hostCreate, { undo: (_input, host) => ['host', host.id] });
 
-/** Решение по одной услуге из «Каталога»: список Practice мастера уходит целиком, меняется статус одной. */
+/** Решение по одной услуге из «Каталога»: меняется только она — два решения подряд по услугам одного мастера не мешают друг другу. */
 export const usePracticeStatus = () =>
-  useAct(({ host, title, status }: { host: Pick<Wire<AdminHostView>, 'id' | 'practices'>; title: string; status: PracticeStatus }) =>
-    api.hostUpdate(host.id, { practices: host.practices.map((p) => (p.title === title ? { ...p, status } : p)) }), { undo: ({ host }) => ['host', host.id] });
+  useAct(({ practice_id, status }: { host_id: string; practice_id: string; status: PracticeStatus }) => api.practiceUpdate(practice_id, { status }), { undo: ({ host_id }) => ['host', host_id] });
 
 export function useHostActions(id: string) {
   const client = useQueryClient();

@@ -74,7 +74,7 @@ export const person = (c: Conv) => `${c.kind === 'organizer' ? 'Организа
 
 /** Состояние сообщения или когда оно пришло; `clock` — только время: день уже подписан разделителем в переписке. */
 export const statusText = (m: Msg, clock = false) =>
-  m.status === 'failed' ? 'не доставлено' : m.status === 'queued' ? 'отправляется' : m.status === 'draft' ? 'черновик, не отправлено'
+  m.status === 'failed' ? 'не доставлено' : m.status === 'queued' || m.status === 'sending' ? 'отправляется' : m.status === 'draft' ? 'черновик, не отправлено'
     : clock ? new Date(m.created_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }) : time(m.created_at);
 
 /** Скрытые диалоги видны только под фильтром «Скрытые»: вернуть руками. */

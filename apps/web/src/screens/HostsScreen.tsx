@@ -58,7 +58,7 @@ export function HostsScreen({ city, onOpen }: Props) {
           <button className="plain" onClick={() => onOpen(host)}>
             <GuestRow name={host.name} photo={host.photo_url} sub={host.summary ?? undefined} label="›" />
           </button>
-          {practices.map((p) => <PracticeRow key={p.title} practice={p} onSignUp={() => signUp(host, p.title)} />)}
+          {practices.map((p) => <PracticeRow key={p.id} practice={p} onSignUp={() => signUp(host, p)} />)}
         </div>
       ))}
       <p className="note">Услуги собраны из открытых каналов и чатов. Записывает и отвечает сам мастер.</p>

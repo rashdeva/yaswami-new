@@ -19,6 +19,7 @@ export const ACTIONS: Record<string, string> = {
   admin_videos_request: 'Заказан ролик',
   admin_hosts_create: 'Добавлен организатор',
   admin_hosts_update: 'Изменён организатор',
+  admin_practices_update: 'Изменена услуга',
   admin_hosts_delete: 'Удалён организатор',
   admin_users_update: 'Изменён пользователь',
   admin_users_delete: 'Удалён пользователь',
@@ -80,7 +81,7 @@ export function entityLink(entity: AdminEntity, id: string): EntityLink {
 /** Подписи детей снимка (`KINDS` в apps/api/src/audit.ts). */
 export const CHILDREN: Record<string, string> = {
   ticket_types: 'Типы билетов', guests: 'Гости', shares: 'Отправленные карточки', feedback: 'Отзывы', cover: 'Обложка', signups: 'Записавшиеся',
-  photos: 'Фото', practice_signups: 'Заявки на услуги', collected_signups: 'Записи на события каталога', contacts: 'В контактах у организаторов', audience: 'Аудитория',
+  photos: 'Фото', practices: 'Услуги', practice_signups: 'Заявки на услуги', collected_signups: 'Записи на события каталога', contacts: 'В контактах у организаторов', audience: 'Аудитория',
 };
 
 type Snap = { row?: Record<string, unknown> } & Record<string, unknown>;

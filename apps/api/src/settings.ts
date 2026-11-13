@@ -49,6 +49,6 @@ export const settings = {
   botMessagesPerMinute: Number(process.env.BOT_MESSAGES_PER_MINUTE ?? 5),
   /** Сколько запросов к API в минуту делает один вошедший человек или токен; сверх — 429. */
   requestsPerMinute: Number(process.env.REQUESTS_PER_MINUTE ?? 300),
-  /** Ключ шифрования сборщика (тот же ACCOUNTS_KEY): им API шифрует код и пароль входа в наш аккаунт Telegram. Пусто — они ждут сборщика открытыми. */
+  /** Ключ шифрования сборщика (тот же ACCOUNTS_KEY): им API шифрует код и пароль входа в наш аккаунт Telegram. Пусто — шаг входа отклоняется (accounts_key_missing): открытым текстом секреты в базу не кладём. */
   accountsKey: process.env.ACCOUNTS_KEY ?? '',
 };

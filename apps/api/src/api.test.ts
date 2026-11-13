@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminHostListItem, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, PracticeSignup, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
+import type { AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, PracticeSignup, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -14,7 +14,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, collectedEvents, contacts, conversations, guests, hosts, messages, photos, practiceSignups, sources, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, collectedEvents, contacts, conversations, guests, hosts, messages, photos, practices as practicesTable, practiceSignups, sources, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { saveUserPhoto } from './photos.ts';
@@ -64,6 +64,8 @@ Object.assign(bot.pace, { globalMs: 0, chatMs: 0 });
 settings.featuresOn = ['event_create'];
 // Лимит запросов в минуту тестам мешал бы: один «пользователь» делает их сотни. Сам лимит проверяет тест «безопасность».
 settings.requestsPerMinute = Infinity;
+// Ключ шифрования шагов входа в наши аккаунты Telegram: без него API код и пароль не принимает.
+settings.accountsKey = 'ab'.repeat(32);
 
 function initData(id: number, first_name: string, authDate = Math.floor(Date.now() / 1000)) {
   const params = new URLSearchParams({ auth_date: String(authDate), user: JSON.stringify({ id, first_name, username: `u${id}` }) });
@@ -73,6 +75,15 @@ function initData(id: number, first_name: string, authDate = Math.floor(Date.now
   return params.toString();
 }
 const tma = (id: number, name: string) => `tma ${initData(id, name)}`;
+
+type NewPractice = Pick<typeof practicesTable.$inferInsert, 'title' | 'topic' | 'description' | 'price' | 'status'>;
+/** Профили организаторов вместе с их Practice (у кого они есть) — по порядку списка. */
+async function insertHosts(list: (typeof hosts.$inferInsert & { practices?: NewPractice[] })[]) {
+  for (const { practices: offered = [], ...host } of list) {
+    const [row] = await db.insert(hosts).values(host).returning({ id: hosts.id });
+    if (offered.length) await db.insert(practicesTable).values(offered.map((p, position) => ({ ...p, host_id: row!.id, position })));
+  }
+}
 const call = (auth: string, method: string, path: string, body?: unknown) =>
   app.request(path, {
     method,
@@ -315,7 +326,7 @@ test('каталог организаторов: с событиями или Pr
     { external_id: 'telegram:mafia/1#0', channel: 'mafia', status: 'published' as const, starts_at, signup_url: '', announcement: { url: 'https://t.me/mafia/1' }, event: event('Мафия', 'игры', 'club'), telegram_username: 'club' },
     { external_id: 'telegram:mafia/2#0', channel: 'mafia', status: 'pending' as const, starts_at, signup_url: '', announcement: { url: 'https://t.me/mafia/2' }, event: event('Скрытое', 'игры', 'club'), telegram_username: 'club' },
   ]);
-  await db.insert(hosts).values([
+  await insertHosts([
     { telegram_id: 40, username: 'club', name: 'Клуб мафии', summary: 'Играют по пятницам.' },
     { telegram_id: 41, username: 'dasha_yoga', name: 'Даша', summary: 'Ведёт йогу.', status: 'published' as const, practices: [
       { title: 'Утренняя йога', topic: 'йога', description: 'Группа у моря.', price: '150k', status: 'published' as const },
@@ -342,12 +353,15 @@ test('каталог организаторов: с событиями или Pr
 
   // запись на Practice: намерение записано, человек получает ссылку на чат мастера; повтор ничего не меняет
   const dasha = list[1]!;
-  const signup = () => call(tma(90, 'Оля'), 'POST', `/hosts/${dasha.id}/practices/signup`, { title: 'Утренняя йога' });
+  const yoga = dasha.practices[0]!;
+  const signup = () => call(tma(90, 'Оля'), 'POST', `/hosts/${dasha.id}/practices/signup`, { practice_id: yoga.id });
   const { signup_url } = (await (await signup()).json()) as PracticeSignup;
   assert.match(signup_url, /^https:\/\/t\.me\/dasha_yoga\?text=/);
   assert.equal((await signup()).status, 200);
   assert.equal((await db.select().from(practiceSignups)).length, 1);
-  assert.equal((await call(tma(90, 'Оля'), 'POST', `/hosts/${dasha.id}/practices/signup`, { title: 'Ремонт телефонов' })).status, 404); // не наша тема
+  const [repair] = await db.select().from(practicesTable).where(eq(practicesTable.title, 'Ремонт телефонов'));
+  assert.equal((await call(tma(90, 'Оля'), 'POST', `/hosts/${dasha.id}/practices/signup`, { practice_id: repair!.id })).status, 404); // не наша тема
+  assert.equal((await call(tma(90, 'Оля'), 'POST', `/hosts/${list[0]!.id}/practices/signup`, { practice_id: yoga.id })).status, 404); // услуга другого организатора
   assert.equal((await app.request(`/hosts/${dasha.id}/practices/signup`, { method: 'POST' })).status, 401);
 
   // модерация: одобренная Practice появляется в каталоге, отклонённая пропадает; отклонённый организатор пропадает даже с событиями
@@ -355,15 +369,22 @@ test('каталог организаторов: с событиями или Pr
   const admins = settings.adminIds;
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
-  // команда правит Practice: список заменяется целиком, заявки видны в списке админки по названию
-  const fixed = [{ title: 'Утренняя йога', topic: 'йога', description: 'Группа у моря.', price: '200k', status: 'published' }];
+  // команда правит список Practice целиком: с id — правка на месте (запись на неё остаётся даже после переименования),
+  // без id — новая, чего в списке нет — удалено; заявки видны в списке админки по id
+  const fixed = [{ id: yoga.id, title: 'Йога на рассвете', topic: 'йога', description: 'Группа у моря.', price: '200k', status: 'published' }];
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: fixed })).status, 200);
   assert.deepEqual(((await (await app.request(`/hosts/${dasha.id}`)).json()) as HostItem).practices, fixed);
-  assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: [...fixed, ...fixed] })).status, 400); // названия не повторяются
+  assert.equal((await db.select().from(practicesTable).where(eq(practicesTable.host_id, dasha.id))).length, 1, '«Ремонт телефонов» в список не вошёл — удалён');
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: [{ ...fixed[0], topic: 'нет такой' }] })).status, 400);
+  assert.deepEqual(await (await call(admin, 'PATCH', `/admin/hosts/${list[0]!.id}`, { practices: fixed })).json(), { error: 'practice_not_found' }); // чужой id
   const listed = (await (await call(admin, 'GET', '/admin/hosts')).json()) as AdminHostListItem[];
-  assert.deepEqual(listed.find((h) => h.id === dasha.id)!.practice_signup_counts, { 'Утренняя йога': 1 });
-  const decide = (status: string) => call(admin, 'PATCH', `/admin/hosts/${master!.id}`, { practices: master!.practices.map((p) => ({ ...p, status })) });
+  assert.deepEqual(listed.find((h) => h.id === dasha.id)!.practice_signup_counts, { [yoga.id]: 1 });
+  assert.deepEqual(((await (await call(admin, 'GET', `/admin/hosts/${dasha.id}`)).json()) as AdminHostView).practice_signups.map((r) => [r.id, r.practice_id, r.title]), [[90, yoga.id, 'Йога на рассвете']]);
+  // решение по одной Practice — своей операцией: остальные Practice мастера она не трогает
+  const [massage] = listed.find((h) => h.id === master!.id)!.practices;
+  const decide = (status: string) => call(admin, 'PATCH', `/admin/practices/${massage!.id}`, { status });
+  assert.equal((await call(admin, 'PATCH', '/admin/practices/not-an-id', { status: 'published' })).status, 404);
+  assert.equal((await call(admin, 'PATCH', `/admin/practices/${massage!.id}`, {})).status, 200);
   const catalog = async () => ((await (await app.request('/hosts')).json()) as HostListItem[]).map((h) => h.username);
   assert.equal((await decide('published')).status, 200);
   assert.deepEqual(await catalog(), ['club', 'dasha_yoga', 'new_master']);
@@ -591,7 +612,7 @@ test('поиск: события и Practice одним запросом; фор
     row(4, 'Йога, которой не видно', { status: 'pending' }),
     row(5, 'Йога, которая прошла', { days: -2 }),
   ]);
-  await db.insert(hosts).values([
+  await insertHosts([
     { telegram_id: 51, username: 'dasha_yoga', name: 'Даша Морская', summary: 'Ведёт занятия у моря.', status: 'published' as const, practices: [
       { title: 'Тайский массаж', topic: 'телесные практики', description: 'Час или два, с выездом.', price: '500k', status: 'published' as const },
       { title: 'Массаж телефонов', topic: 'другое', description: null, price: null, status: 'published' as const }, // не наша тема
@@ -616,7 +637,7 @@ test('поиск: события и Practice одним запросом; фор
   // другой город: ни его событий, ни услуг его мастеров в поиске нет — как в витрине
   await db.execute(sql`insert into cities (id, name, timezone) values ('nhatrang', 'Нячанг', 'Asia/Ho_Chi_Minh')`);
   await db.insert(collectedEvents).values({ ...row(6, 'Сёрфинг в Нячанге'), city_id: 'nhatrang' });
-  await db.insert(hosts).values({ telegram_id: 54, username: 'surf_nt', name: 'Сёрф-школа', city_id: 'nhatrang', status: 'published' as const, practices: [{ title: 'Урок сёрфинга', topic: 'спорт', description: null, price: null, status: 'published' as const }] });
+  await insertHosts([{ telegram_id: 54, username: 'surf_nt', name: 'Сёрф-школа', city_id: 'nhatrang', status: 'published' as const, practices: [{ title: 'Урок сёрфинга', topic: 'спорт', description: null, price: null, status: 'published' as const }] }]);
   assert.deepEqual(names(await find('серфинг')), []);
   await db.execute(sql`delete from collected_events where city_id = 'nhatrang'`);
   await db.execute(sql`delete from hosts where city_id = 'nhatrang'`);
@@ -1122,7 +1143,7 @@ test('аккаунты Telegram: вход по шагам из админки, �
   await db.update(tgAccounts).set({ status: 'login_code', session: 'sealed' }).where(eq(tgAccounts.id, account.id));
   assert.equal((await call(admin, 'POST', `/admin/accounts/${account.id}/login`, { secret: '12345' })).status, 204);
   const [row] = await db.select().from(tgAccounts);
-  assert.deepEqual(row!.login, { secret: '12345' });
+  assert.deepEqual(Object.keys(row!.login!), ['sealed'], 'код лежит в базе только зашифрованным');
   assert.deepEqual(Object.keys((await inbox()).accounts[0]!).sort(), ['cold_paused_until', 'cold_today', 'created_at', 'daily_limit', 'id', 'label', 'last_error', 'phone', 'status']);
 
   // Сборщик сообщает о личном сообщении на аккаунте: без секрета — отказ.
@@ -1693,6 +1714,7 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_hosts_create: 'POST /admin/hosts',
   admin_hosts_get: 'GET /admin/hosts/:id',
   admin_hosts_update: 'PATCH /admin/hosts/:id',
+  admin_practices_update: 'PATCH /admin/practices/:id',
   admin_hosts_delete: 'DELETE /admin/hosts/:id',
   admin_users_search: 'GET /admin/users',
   admin_users_get: 'GET /admin/users/:id',
@@ -1834,8 +1856,8 @@ test('города: всё прежнее — Дананг; новый горо�
   assert.equal(((await (await call(admin, 'PATCH', `/admin/hosts/${gio!.id}`, { city_id: 'danang' })).json()) as Host).city_id, 'danang');
   assert.equal(((await tool('admin_hosts_create', { username: 'nino_wine', city_id: 'tbilisi' })) as Host).city_id, 'tbilisi');
   // Услуги (Practice) живут в профиле мастера и идут за его городом: мастер другого города во вкладку «Услуги» не попадает.
-  const practices = [{ title: 'Дегустация', topic: Object.keys(TOPIC_GUIDES)[0]!, description: null, price: null, status: 'published' as const }];
-  await db.update(hosts).set({ status: 'published', practices }).where(eq(hosts.username, 'nino_wine'));
+  const [nino] = await db.update(hosts).set({ status: 'published' }).where(eq(hosts.username, 'nino_wine')).returning({ id: hosts.id });
+  await db.insert(practicesTable).values({ host_id: nino!.id, title: 'Дегустация', topic: Object.keys(TOPIC_GUIDES)[0]!, status: 'published' });
   const services = async () => ((await (await call(admin, 'GET', '/hosts')).json()) as HostListItem[]).filter((h) => h.username === 'nino_wine').length;
   assert.equal(await services(), 0);
   await db.update(hosts).set({ city_id: 'danang' }).where(eq(hosts.username, 'nino_wine'));
@@ -1924,13 +1946,14 @@ async function world() {
     event: { title: 'Баня', description: '', starts_at: starts.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null },
   });
   const [profile] = await db.insert(hosts).values({ telegram_id: base + 5, username: `host${n}`, name: 'Орг' }).returning();
+  const [practice] = await db.insert(practicesTable).values({ host_id: profile!.id, title: 'Массаж', topic: 'телесные практики' }).returning();
   const [account] = await db.insert(tgAccounts).values({ label: 'Основной', phone: `+7900${base}` }).returning();
   const source = `auditsrc${n}`;
   await db.insert(sources).values({ channel: source });
   const [conversation] = await db.insert(conversations).values({ channel: 'bot', peer_id: guestId, peer_name: 'Гость' }).returning();
   const [draft] = await db.insert(messages).values({ conversation_id: conversation!.id, direction: 'out', author: 'agent:host', text: 'Привет', status: 'draft' }).returning();
   return {
-    n, hostId, guestId, otherId, eventId, t1: t1!.id, t2: t2!.id, slug: `auditchan-${n}-0`, profileId: profile!.id, accountId: account!.id,
+    n, hostId, guestId, otherId, eventId, t1: t1!.id, t2: t2!.id, slug: `auditchan-${n}-0`, profileId: profile!.id, practiceId: practice!.id, accountId: account!.id,
     conversationId: conversation!.id, draftId: draft!.id, contactId: contact!.id, source,
   };
 }
@@ -1961,6 +1984,7 @@ const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
   admin_videos_request: (w) => ({ args: { id: w.slug }, params: { id: w.slug }, entity_id: w.slug }),
   admin_hosts_create: (w) => ({ args: { username: `@newhost${w.n}` }, body: { username: `t.me/newhost${w.n}` }, entity_id: (r) => r.id }),
   admin_hosts_update: (w) => ({ args: { host_id: w.profileId, name: 'Игорь' }, params: { id: w.profileId }, body: { name: 'Игорь' }, entity_id: w.profileId }),
+  admin_practices_update: (w) => ({ args: { practice_id: w.practiceId, status: 'published' }, params: { id: w.practiceId }, body: { status: 'published' }, entity_id: w.profileId }),
   admin_hosts_delete: (w) => ({ args: { host_id: w.profileId }, params: { id: w.profileId }, entity_id: w.profileId }),
   admin_users_update: (w) => ({ args: { user_id: w.otherId, first_name: 'Иван' }, params: { id: w.otherId }, body: { first_name: 'Иван' }, entity_id: String(w.otherId) }),
   admin_users_delete: (w) => ({ args: { user_id: w.guestId }, params: { id: w.guestId }, entity_id: String(w.guestId) }),
@@ -2100,10 +2124,24 @@ test('отмена: правка и удаление возвращаются ц
   assert.equal((await call(admin, 'DELETE', `/admin/users/${u.guestId}`)).status, 204);
   assert.equal((await undo((await lastAction())!.id)).status, 201);
   assert.deepEqual(((await (await call(admin, 'GET', `/admin/events/${u.eventId}/guests`)).json()) as AdminGuest[]).map((g) => g.user_id), [u.guestId]);
+  // Сборщик обновил отклик на публикацию — это не правка: отмена по-прежнему проходит.
+  await call(admin, 'PATCH', `/admin/collected-events/${u.slug}`, { title: 'Поправили' });
+  await db.update(collectedEvents).set({ views: 100, reactions: 5 }).where(eq(collectedEvents.external_id, `telegram:auditchan/${u.n}#0`));
+  assert.equal((await undo((await lastAction())!.id)).status, 201);
   assert.equal((await call(admin, 'DELETE', `/admin/collected-events/${u.slug}`)).status, 204);
   assert.equal((await undo((await lastAction())!.id)).status, 201);
   const [cover] = await db.select().from(photos).where(eq(photos.collected_external_id, `telegram:auditchan/${u.n}#0`));
   assert.deepEqual(cover!.data, Buffer.from([0xff, 0xd8, 9]));
+
+  // Организатор удаляется и возвращается вместе с Practice и записями на них; решение по одной Practice отменяется.
+  await db.insert(practiceSignups).values({ practice_id: u.practiceId, host_id: u.profileId, user_id: u.otherId });
+  assert.equal((await call(admin, 'PATCH', `/admin/practices/${u.practiceId}`, { status: 'published' })).status, 200);
+  assert.equal((await undo((await lastAction())!.id)).status, 201);
+  assert.equal((await db.select().from(practicesTable).where(eq(practicesTable.id, u.practiceId)))[0]!.status, 'pending');
+  assert.equal((await call(admin, 'DELETE', `/admin/hosts/${u.profileId}`)).status, 204);
+  assert.equal((await db.select().from(practiceSignups).where(eq(practiceSignups.host_id, u.profileId))).length, 0);
+  assert.equal((await undo((await lastAction())!.id)).status, 201);
+  assert.deepEqual((await db.select().from(practiceSignups).where(eq(practiceSignups.host_id, u.profileId))).map((r) => [r.practice_id, r.user_id]), [[u.practiceId, u.otherId]]);
 
   // Неотменяемое: ушло в Telegram.
   await call(admin, 'POST', `/admin/conversations/${u.conversationId}/messages`, { text: 'Привет' });
@@ -2188,8 +2226,7 @@ test('безопасность: чужой контакт не даёт прав
   const going = await call(guest, 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved', event_ticket_type_id: ticket_types[0]!.id });
   assert.equal(((await going.json()) as EventView).event.meeting_url, 'https://meet.example/x');
 
-  // Код входа в наш аккаунт Telegram лежит в базе зашифрованным, когда у API есть ключ сборщика.
-  settings.accountsKey = 'ab'.repeat(32);
+  // Код входа в наш аккаунт Telegram лежит в базе зашифрованным; без ключа сборщика API его не принимает вовсе.
   const [account] = await db.insert(tgAccounts).values({ label: 'Шифр', phone: '+84900000077', status: 'login_code' }).returning();
   assert.equal((await call(tma(70, 'Админ'), 'POST', `/admin/accounts/${account!.id}/login`, { secret: '54321' })).status, 204);
   const [{ login }] = await db.select({ login: tgAccounts.login }).from(tgAccounts).where(eq(tgAccounts.id, account!.id)) as [{ login: { secret?: string; sealed?: string } }];
@@ -2197,6 +2234,13 @@ test('безопасность: чужой контакт не даёт прав
   const decipher = createDecipheriv('aes-256-gcm', Buffer.from(settings.accountsKey, 'hex'), iv!).setAuthTag(tag!);
   assert.deepEqual([login.secret, Buffer.concat([decipher.update(body!), decipher.final()]).toString()], [undefined, '54321']);
   settings.accountsKey = '';
+  await db.update(tgAccounts).set({ login: null }).where(eq(tgAccounts.id, account!.id));
+  assert.deepEqual(await (await call(tma(70, 'Админ'), 'POST', `/admin/accounts/${account!.id}/login`, { secret: '54321' })).json(), { error: 'accounts_key_missing' });
+  assert.equal((await db.select({ login: tgAccounts.login }).from(tgAccounts).where(eq(tgAccounts.id, account!.id)))[0]!.login, null);
+  settings.accountsKey = 'ab'.repeat(32);
+  // Пустая правка ничего не меняет и не падает.
+  assert.equal((await call(tma(70, 'Админ'), 'PATCH', `/admin/accounts/${account!.id}`, {})).status, 200);
+  assert.equal((await call(tma(7003, 'Хост'), 'PATCH', `/ticket-types/${ticket_types[0]!.id}`, {})).status, 200);
 
   // Лимит запросов в минуту на человека и размер тела запроса.
   settings.requestsPerMinute = 1;

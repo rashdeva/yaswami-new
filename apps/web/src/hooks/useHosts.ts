@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { HostItem, HostListItem } from '@yaswami/core';
+import type { HostItem, HostListItem, Practice } from '@yaswami/core';
 import { practiceSignupUrl } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { api } from '../api.ts';
@@ -37,9 +37,9 @@ export function useHost(id: string) {
  */
 export function usePracticeSignup() {
   const { authed } = useSession();
-  return (host: Pick<HostListItem, 'id' | 'username'>, title: string) => {
-    track('practice_signup_clicked', { host_id: host.id, title, authed });
-    if (authed) api.signUpForPractice(host.id, title).catch(() => {});
-    openExternal(practiceSignupUrl(host.username, title));
+  return (host: Pick<HostListItem, 'id' | 'username'>, practice: Pick<Practice, 'id' | 'title'>) => {
+    track('practice_signup_clicked', { host_id: host.id, title: practice.title, authed });
+    if (authed) api.signUpForPractice(host.id, practice.id).catch(() => {});
+    openExternal(practiceSignupUrl(host.username, practice.title));
   };
 }
