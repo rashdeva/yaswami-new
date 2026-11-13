@@ -86,7 +86,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/photos/:id', async (c) => {
       const data = await getPhoto(db, c.req.param('id'));
       if (!data) return c.json({ error: 'not_found' }, 404);
-      // Превью Telegram — JPEG, нарисованные обложки — PNG.
+      // Всё хранится JPEG; PNG — только старые необработанные обложки.
       return c.body(new Uint8Array(data), 200, { 'content-type': data[0] === 0x89 ? 'image/png' : 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' });
     })
     .post('/telegram/webhook', async (c) => {

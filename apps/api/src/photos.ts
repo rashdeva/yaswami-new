@@ -1,5 +1,6 @@
 // Фото, которые храним у себя, — в Postgres (ADR-0003). Сюда попадают только готовые превью Telegram, оригиналов нет.
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt, sql } from 'drizzle-orm';
+import sharp from 'sharp';
 import type { Db } from './db/client.ts';
 import { photos } from './db/schema.ts';
 import { settings } from './settings.ts';
@@ -12,6 +13,32 @@ export async function getPhoto(db: Db, id: string): Promise<Buffer | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [row] = await db.select({ data: photos.data }).from(photos).where(eq(photos.id, id));
   return row?.data ?? null;
+}
+
+const COVER_SIDE = 1000; // обложка показывается на всю ширину шапки; больше телефону не нужно
+const COVER_QUALITY = 78;
+
+/** Перекодирует картинку в JPEG не шире COVER_SIDE: нарисованные обложки приходят PNG на 1–3 МБ, после — 60–150 КБ. */
+export const optimizeImage = (data: Buffer): Promise<Buffer> =>
+  sharp(data).rotate().resize({ width: COVER_SIDE, height: COVER_SIDE, fit: 'inside', withoutEnlargement: true })
+    .flatten({ background: '#ffffff' }).jpeg({ quality: COVER_QUALITY, mozjpeg: true }).toBuffer();
+
+/**
+ * Сжимает уже сохранённые фото тяжелее `minBytes` (скрипт `optimize-photos.ts`). Строка меняется на месте:
+ * адрес фото тот же, но браузеры, уже скачавшие тяжёлую версию, держат её в кэше (immutable) — новую увидят новые посетители.
+ */
+export async function optimizeStoredPhotos(db: Db, minBytes = 200_000): Promise<{ count: number; before: number; after: number }> {
+  const heavy = await db.select({ id: photos.id }).from(photos).where(gt(sql<number>`length(${photos.data})`, minBytes));
+  const total = { count: 0, before: 0, after: 0 };
+  for (const { id } of heavy) {
+    const [row] = await db.select({ data: photos.data }).from(photos).where(eq(photos.id, id));
+    if (!row) continue;
+    const data = await optimizeImage(row.data).catch(() => null);
+    if (!data || data.length >= row.data.length) continue;
+    await db.update(photos).set({ data }).where(eq(photos.id, id));
+    total.count++; total.before += row.data.length; total.after += data.length;
+  }
+  return total;
 }
 
 interface PhotoSize { file_id: string; file_unique_id: string; width: number; height: number }

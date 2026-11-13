@@ -139,7 +139,8 @@ test('обложка события: без своей рисует иллюст
     const view = (await (await call(host, 'GET', `/events/${created.event.id}`)).json()) as EventView;
     assert.match(view.cover_url ?? '', /\/api\/photos\//);
     assert.equal(view.cover_pending, false);
-    assert.equal((await app.request(new URL(view.cover_url!).pathname.replace(/^\/api/, ''))).status, 200, 'картинка отдаётся');
+    const img = await app.request(new URL(view.cover_url!).pathname.replace(/^\/api/, ''));
+    assert.deepEqual([img.status, img.headers.get('content-type')], [200, 'image/jpeg'], 'картинка отдаётся, PNG перекодирован в JPEG');
   } finally {
     illustrator.ask = draw;
     settings.illustratorUrl = '';
