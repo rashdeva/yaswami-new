@@ -1,4 +1,5 @@
 // «Организаторы»: профили, собранные по открытым анонсам, и на каком шаге переписка с каждым.
+import { BanIcon, CheckIcon } from 'lucide-react';
 import { INBOX_STAGES } from '@yaswami/core';
 import { useState } from 'react';
 import { EntityLink, TelegramLink } from '@/components/EntityLink';
@@ -9,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Item, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useHostCreate, useHosts } from '@/hooks/useHosts';
+import { useHostCreate, useHosts, useHostStatus } from '@/hooks/useHosts';
 import { useOverview } from '@/hooks/useOverview';
 import { HOST_LABELS } from '@/lib/catalog';
 
@@ -26,6 +27,7 @@ interface Props {
 
 export function HostsScreen({ query, queue, onQueue, onQuery, onOpen, onCreated }: Props) {
   const create = useHostCreate();
+  const decide = useHostStatus();
   const [username, setUsername] = useState('');
   const { data: hosts, error } = useHosts();
   const overview = useOverview();
@@ -46,7 +48,7 @@ export function HostsScreen({ query, queue, onQueue, onQuery, onOpen, onCreated 
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant={queue ? 'outline' : 'default'} onClick={() => onQueue(false)}>Все</Button>
         <Button size="sm" variant={queue ? 'default' : 'outline'} onClick={() => onQueue(true)}>Ждут решения <Badge variant="secondary">{waiting.length}</Badge></Button>
-        <Hint>Мастера из чатов попадают в каталог только после «Опубликовать» в их карточке.</Hint>
+        <Hint>Мастера из чатов попадают в каталог только после «Опубликовать» — здесь или в их карточке.</Hint>
       </div>
       <Search value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Имя, @username или канал" />
       {!hosts && !error && <Loading />}
@@ -69,7 +71,15 @@ export function HostsScreen({ query, queue, onQueue, onQuery, onOpen, onCreated 
                     </ItemContent>
                   </Item>
                 </TableCell>
-                <TableCell className="align-top"><Badge variant={h.status === 'published' ? 'default' : 'secondary'}>{HOST_LABELS[h.status]}</Badge>{!h.telegram_id && h.status === 'pending' && <> <Badge variant="outline">проверяется</Badge></>}</TableCell>
+                <TableCell className="align-top"><Badge variant={h.status === 'published' ? 'default' : 'secondary'}>{HOST_LABELS[h.status]}</Badge>{!h.telegram_id && h.status === 'pending' && <> <Badge variant="outline">проверяется</Badge></>}
+                  {/* Решение — сразу из списка; пока сборщик не нашёл его в Telegram, решать не по чему. */}
+                  {h.telegram_id && h.status === 'pending' && (
+                    <div className="mt-1.5 flex gap-1">
+                      <Button size="xs" onClick={() => decide({ id: h.id, status: 'published' })}><CheckIcon />Опубликовать</Button>
+                      <Button size="xs" variant="outline" onClick={() => decide({ id: h.id, status: 'rejected' })}><BanIcon />Отклонить</Button>
+                    </div>
+                  )}
+                </TableCell>
                 <TableCell className="max-w-md align-top whitespace-normal"><Hint>{h.practices.length ? h.practices.map((p) => p.title).join(' · ') : h.summary ?? '—'}</Hint></TableCell>
                 <TableCell>{s?.events ?? 0}</TableCell>
                 <TableCell>{s?.signups ?? 0}</TableCell>
