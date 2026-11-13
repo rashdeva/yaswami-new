@@ -211,9 +211,6 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 /* витрина собранных событий */
 a.item { text-decoration: none; color: inherit; }
 .item i.t { font-size: 13px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
-.top .tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
-.top .tabs .chip { margin-bottom: 0; }
-.top .tabs .chip.end { margin-left: auto; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .tags span { font-size: 13px; color: #fff; background: rgba(255, 255, 255, .2); border: .5px solid rgba(255, 255, 255, .4); border-radius: 99px; padding: 4px 10px; }
 .note a { color: var(--btn); text-decoration: none; }
@@ -314,4 +311,5 @@ h2.today { color: var(--btn); }
 @keyframes tabbar-in { from { transform: translateY(120%); opacity: 0; } }
 @keyframes tab-pop { 0% { transform: scale(.82); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .tabbar, .tabbar .pill, .tabbar button, .tabbar svg { animation: none !important; transition: none !important; } }
-.top .tabs:empty { display: none; }
+/* Кнопка действия внизу экрана («Новое событие») — над таббаром, а не под ним. */
+.with-tabbar .main > div { padding-bottom: calc(86px + var(--inset-bottom, env(safe-area-inset-bottom))); }

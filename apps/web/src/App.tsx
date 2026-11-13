@@ -2,7 +2,6 @@
 import { Outlet, useLocation, useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { createContext, useContext, useState } from 'react';
 import type { CollectedEventItem, Event } from '@yaswami/core';
-import { startLogin } from './api.ts';
 import { tint } from './format.ts';
 import { useFeature } from './hooks/useFeature.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
@@ -10,10 +9,9 @@ import { useSession } from './hooks/useSession.ts';
 import { useTelegramBack } from './hooks/useTelegramBack.ts';
 import { useToast } from './hooks/useToast.ts';
 import { ClaimBanner } from './screens/ClaimBanner.tsx';
-import { Tabs } from './screens/Tabs.tsx';
 import type { Tab } from './components/TabBar.tsx';
 import { TabBar } from './components/TabBar.tsx';
-import { haptic, nativeBack } from './tg.ts';
+import { haptic, inTelegram, nativeBack } from './tg.ts';
 
 interface Shell {
   toast: (text: string) => void;
@@ -54,14 +52,15 @@ export function App() {
             ? () => void navigate({ to: hasEvents ? '/my' : '/' })
             : null;
   useTelegramBack(back);
+  const withTabBar = pathname === '/' || pathname === '/hosts' || pathname === '/my';
 
   return (
     <ShellContext value={{ toast: showToast, onKind: setKind, onBack: nativeBack ? null : back }}>
-      <div style={tint(kind)}>
+      <div style={tint(kind)} className={withTabBar ? 'with-tabbar' : undefined}>
         <div className="air" />
         <Outlet />
         {/* Таббар — на корневых разделах; у страниц события и организатора внизу своя кнопка действия и «назад». */}
-        {(pathname === '/' || pathname === '/hosts' || pathname === '/my') && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/hosts' ? 'hosts' : 'mine'} />}
+        {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/hosts' ? 'hosts' : 'mine'} />}
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </ShellContext>
@@ -75,22 +74,15 @@ function AppTabBar({ current }: { current: Tab }) {
   const { hasEvents } = useMyEvents();
   const canCreate = useFeature('event_create');
   const tabs: [Tab, () => void][] = [['feed', () => void navigate({ to: '/' })], ['hosts', () => void navigate({ to: '/hosts' })]];
-  if (me || canLogin) tabs.push(['mine', () => (authed ? void navigate({ to: hasEvents || !canCreate ? '/my' : '/new' }) : startLogin('/my'))]);
+  if (me || canLogin) tabs.push(['mine', () => void navigate({ to: authed && !hasEvents && canCreate ? '/new' : '/my' })]);
   return <TabBar current={current} tabs={tabs} />;
 }
 
-/** Вход и выход на сайте; страница ставит его в свою шапку. В Telegram пусто: человек уже опознан. */
-export function AppTabs() {
-  const { me, canLogin, logout } = useSession();
+/** Выйти на сайте; null — в Telegram, там человек опознан самим Telegram. */
+export function useLogout(): (() => void) | null {
+  const { logout } = useSession();
   const { toast } = useShell();
-  return (
-    <Tabs
-      me={me ?? null}
-      canLogin={canLogin}
-      onLogin={() => startLogin(location.pathname)}
-      onLogout={() => void logout().catch((e: Error) => toast(e.message))}
-    />
-  );
+  return inTelegram ? null : () => void logout().catch((e: Error) => toast(e.message));
 }
 
 /** «Это моё событие»: подтвердить собранное событие; удалось — открывается событие Ясвами. */
