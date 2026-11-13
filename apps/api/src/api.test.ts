@@ -1184,6 +1184,40 @@ test('охотник: вопрос из чата становится черно
   assert.deepEqual([feed.messages[0]!.status, feed.messages[0]!.text, feed.messages[0]!.meta?.reply_to?.message_id, feed.conversations[0]!.attention], ['queued', 'Сегодня бачата в 19:00', 3, null]);
   assert.equal((await call(admin, 'POST', `/admin/messages/${draft.id}/send`, {})).status, 409, 'второй раз не отправить');
 
+  // Человек ответил на наш ответ в чате — охотник продолжает разговор: черновик по всей переписке, ответ уйдёт в тот же чат.
+  const report = (peer: { id: number; name: string; username: string | null }, text: string, reply_to?: { chat: string; message_id: number }) =>
+    app.request('/internal/account-message', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-collector-secret': 'collector-secret' },
+      body: JSON.stringify({ account_id: account!.id, peer, direction: 'in', text, reply_to }),
+    });
+  const waitDraft = async () => {
+    for (let i = 0; i < 50; i++) {
+      const found = (await inbox()).messages.find((m) => m.status === 'draft');
+      if (found) return found;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return assert.fail('черновик ответа не появился');
+  };
+  const reply = hunter.reply;
+  let history: { role: string; content: string }[] = [];
+  hunter.reply = async (turns) => ((history = turns), parseSupportReply('150k, записаться можно на странице:\nhttps://yaswami.com/e/x'));
+  assert.equal((await report(lead.author, 'А сколько стоит?', { chat: 'danang_chat', message_id: 7 })).status, 204);
+  const next = await waitDraft();
+  assert.deepEqual([next.author, next.text, next.meta], ['agent:hunter', '150k, записаться можно на странице:\nhttps://yaswami.com/e/x', { reason: 'Ответ в чат', reply_to: { chat: 'danang_chat', message_id: 7 } }]);
+  assert.equal((await inbox()).conversations[0]!.attention, 'Черновик ответа в чат');
+  assert.match(history[0]!.content, /ещё не заходил/);
+  assert.deepEqual(history.slice(1).map((t) => [t.role, t.content]), [
+    ['user', '[чат danang_chat] Куда сегодня сходить потанцевать?'], ['assistant', 'Сегодня бачата в 19:00'], ['user', '[чат danang_chat] А сколько стоит?'],
+  ]);
+  // Написал в личку — ответ тоже в личку. Чужой человек, ответивший нашему аккаунту в чате, в переписку не попадает.
+  assert.equal((await report(lead.author, 'А где это?')).status, 204);
+  for (let i = 0; i < 50 && (await inbox()).messages.find((m) => m.status === 'draft')?.id === next.id; i++) await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual((await waitDraft()).meta, { reason: 'Ответ человеку' });
+  await report({ id: 999, name: 'Прохожий', username: null }, 'вы кто?', { chat: 'danang_chat', message_id: 8 });
+  assert.equal((await inbox()).conversations.length, 1);
+  await call(admin, 'DELETE', `/admin/messages/${(await waitDraft()).id}`);
+  hunter.reply = reply;
+
   // Через неделю тому же человеку можно ответить снова; отклонённый черновик пропадает.
   await db.execute(sql`update messages set created_at = now() - interval '8 days'`);
   await recordLead(db, { ...lead, message_id: 5 });

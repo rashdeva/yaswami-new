@@ -131,6 +131,11 @@ export const hunter = {
     const content = await askRole(settings.hunterUrl, settings.hunterKey, [{ role: 'user', content: question }]);
     return content === null || SKIP_MARK.test(content) ? null : content;
   },
+  /** Человек ответил на наш ответ: роль продолжает разговор по всей переписке. null — недоступна или решила промолчать. */
+  async reply(history: SupportTurn[], onText?: (text: string) => void): Promise<SupportReply | null> {
+    const content = await askRole(settings.hunterUrl, settings.hunterKey, history, undefined, onText && ((raw) => onText(visibleSoFar(raw))));
+    return content === null || SKIP_MARK.test(content) ? null : parseSupportReply(content);
+  },
 };
 
 // Обложку и ролик роль кладёт в хранилище xAI и отвечает ссылками на них; другие адреса не принимаем.
