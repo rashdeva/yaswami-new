@@ -114,6 +114,14 @@ export function createStore(url) {
       where coalesce(ends_at, starts_at) >= now() and not (event ? 'topic')`,
     setEvent: (external_id, event) => sql`
       update collected_events set event = ${sql.json(event)}, updated_at = now() where external_id = ${external_id}`,
+    /** Предстоящие события, чью публикацию ещё не разбирали с фото и видео (refresh.mjs). */
+    withoutMedia: () => sql`
+      select external_id, announcement, event from collected_events
+      where coalesce(ends_at, starts_at) >= now() and status <> 'rejected' and not (announcement ? 'media')
+      order by starts_at`,
+    refreshed: (external_id, event, media) => sql`
+      update collected_events set event = ${sql.json(event)}, announcement = announcement || ${sql.json({ media })}, updated_at = now()
+      where external_id = ${external_id}`,
     /** Отклик на публикацию-источник — всем событиям из неё (`prefix` — telegram:<канал>/<публикация>#). */
     setStats: (prefix, { views, reactions }) => sql`
       update collected_events set views = ${views}, reactions = ${reactions} where starts_with(external_id, ${prefix})`,

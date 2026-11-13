@@ -2,7 +2,8 @@ import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createExtractor, createOfferExtractor, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
-import { connect, downloadCover, downloadPhotos, downloadVideos, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
+import { connect, downloadCover, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
+import { refreshOld } from './refresh.mjs';
 import { createBucket } from './bucket.mjs';
 import { createStore } from './store.mjs';
 import { contactFor, fetchChannelPhotos, fetchProfile } from './host.mjs';
@@ -182,7 +183,7 @@ async function pollChannel({ channel, host_username, city_id, city, timezone }, 
       const external_id = same?.external_id ?? `telegram:${announcement.id}#${i}`;
       if (!same && bucket) media ??= await saveMedia(announcement, photos, album);
       await store.upsert({
-        external_id, channel, city_id, announcement: media?.length ? { ...announcement, media } : announcement, event: merged,
+        external_id, channel, city_id, announcement: media ? { ...announcement, media } : announcement, event: merged,
         signup_url: signupUrl(merged, announcement, signupMessage),
       });
       if (same) same.event = merged; else known.push({ external_id, city_id, event, status: 'pending' });
@@ -196,7 +197,7 @@ async function pollChannel({ channel, host_username, city_id, city, timezone }, 
 
 /**
  * Фото и видео публикации в бакете по порядку альбома: [{ type, url }]. Ключ — канал/публикация/сообщение, повторная
- * заливка перезаписывает тот же файл. Сбой бакета событие не останавливает: оно сохранится без медиа.
+ * заливка перезаписывает тот же файл. Сбой бакета событие не останавливает: оно сохранится без медиа (null).
  */
 async function saveMedia(announcement, photos, album) {
   const files = [
@@ -210,7 +211,7 @@ async function saveMedia(announcement, photos, album) {
     return media;
   } catch (e) {
     console.error(`медиа ${announcement.id}: ${e.message}`);
-    return [];
+    return null;
   }
 }
 
@@ -229,6 +230,11 @@ do {
     await sleep(2000);
   }
   await refreshPosts().catch((e) => console.error(`публикации: ${e.message}`));
+  // Старые события — по REFRESH_PER_PASS публикаций за проход; без бакета не трогаем: медиа некуда класть.
+  if (bucket) await refreshOld({
+    store, extract, saveMedia, limit: Number(env.REFRESH_PER_PASS ?? 15), pause: () => sleep(llmPauseMs),
+    fetchAlbum: (id) => fetchAlbum(userbot, id), downloadPhotos: (album) => downloadPhotos(userbot, album),
+  }).catch((e) => console.error(`повторный разбор: ${e.message}`));
   await profileHosts().catch((e) => console.error(`профили: ${e.message}`));
   await refreshPhotos().catch((e) => console.error(`фото: ${e.message}`));
   if (pollMinutes) await sleep(pollMinutes * 60_000);
