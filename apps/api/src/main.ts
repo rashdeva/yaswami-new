@@ -3,7 +3,6 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
-import { createExtractor } from '@yaswami/extract';
 import { createApp } from './app.ts';
 import { createDb } from './db/client.ts';
 import { eventPage, feedPage, inject, notFoundPage, sitemap } from './pages.ts';
@@ -13,7 +12,7 @@ import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 import { startFeedbackLoop } from './feedback.ts';
 
-const { DATABASE_URL, BOT_TOKEN, APP_NAME = 'app', PORT = '3000', TG_CLIENT_SECRET = '', TELEGRAM_WEBHOOK_SECRET = '', GEMINI_API_KEY } = process.env;
+const { DATABASE_URL, BOT_TOKEN, APP_NAME = 'app', PORT = '3000', TG_CLIENT_SECRET = '', TELEGRAM_WEBHOOK_SECRET = '' } = process.env;
 const { publicUrl: PUBLIC_URL, city: CITY } = settings;
 if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
 if (!TG_CLIENT_SECRET) console.warn('TG_CLIENT_SECRET is not set: login on the website is disabled');
@@ -31,7 +30,6 @@ async function botUsername(token: string): Promise<string | null> {
 }
 
 if (!TELEGRAM_WEBHOOK_SECRET) console.warn('TELEGRAM_WEBHOOK_SECRET is not set: the bot webhook is closed');
-if (!GEMINI_API_KEY) console.warn('GEMINI_API_KEY is not set: the bot cannot turn messages into events');
 
 const db = createDb(DATABASE_URL);
 Object.assign(bot, { token: BOT_TOKEN ?? '', username: BOT_TOKEN ? await botUsername(BOT_TOKEN) : null, appName: APP_NAME });
@@ -40,13 +38,7 @@ const api = createApp({
   botToken: bot.token,
   config: { bot_username: bot.username, app_name: APP_NAME },
   webLogin: { clientSecret: TG_CLIENT_SECRET, publicUrl: PUBLIC_URL },
-  telegram: {
-    webhookSecret: TELEGRAM_WEBHOOK_SECRET,
-    // Тот же разбор, что у сборщика каналов: модель, город и часовой пояс должны совпадать с его настройками.
-    extract: GEMINI_API_KEY
-      ? createExtractor({ model: process.env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite', city: CITY, timezone: settings.timezone })
-      : undefined,
-  },
+  telegram: { webhookSecret: TELEGRAM_WEBHOOK_SECRET },
 });
 
 // После событий бот просит у гостей отзыв и шлёт организаторам сводки. Без токена отправлять нечем.

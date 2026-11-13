@@ -8,7 +8,6 @@ import type {
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
-import { isSameEvent, mergeEvents } from '@yaswami/extract';
 import { ADDRESS_MAX, Feature, normalUsername, collectedPath, collectedSignupUrl, popularIds, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
@@ -484,57 +483,6 @@ async function assertCanCreate(tx: Tx, actor: User) {
   assertFeature(actor, 'event_create');
   const [mine] = await tx.select({ n: count() }).from(events).where(eq(events.user_id, actor.id));
   if (mine!.n >= settings.freeEventsLimit) throw new AppError('events_limit', 403);
-}
-
-/**
- * Чужой анонс, пересланный боту, попадает на витрину как собранное событие — так же, как из каналов сборщика.
- * Повтор уже известного события (isSameEvent) дополняет его запись, а не создаёт вторую.
- */
-export async function addCollectedEvent(
-  db: Db, source: { channel: string; number: number; url: string }, index: number, extracted: CollectedEvent,
-): Promise<CollectedEventItem> {
-  return db.transaction(async (tx) => {
-    const known = await tx.select().from(collectedEvents).where(upcomingCollected).for('update');
-    const same = known.find((r) => isSameEvent(r.event, extracted));
-    // Событие, по которому команда уже приняла решение, присланный боту анонс не меняет: иначе пересланным
-    // сообщением можно переписать опубликованное и подставить в него свой контакт.
-    if (same && same.status !== 'pending') return toCollectedItem(same);
-    const event = same ? mergeEvents(same.event, extracted) : extracted;
-    const values = {
-      event, starts_at: new Date(event.starts_at), ends_at: event.ends_at ? new Date(event.ends_at) : null,
-      telegram_username: normalUsername(event.telegram_username) ?? null, updated_at: new Date(),
-    };
-    const [row] = await tx
-      .insert(collectedEvents)
-      .values({
-        ...values, channel: source.channel, announcement: { url: source.url }, signup_url: source.url,
-        external_id: same?.external_id ?? `telegram:${source.channel}/${source.number}#${index}`,
-      })
-      .onConflictDoUpdate({ target: collectedEvents.external_id, set: values })
-      .returning();
-    return toCollectedItem(row!);
-  });
-}
-
-/**
- * Событие из анонса, который человек прислал боту: он считается организатором. Если то же событие уже собрано
- * из каналов и контактом в нём указан он же — оно подтверждается за ним (правило то же, что в claimCollectedEvent).
- */
-export async function createEventFromAnnouncement(db: Db, actor: User, extracted: CollectedEvent): Promise<EventView> {
-  return db.transaction(async (tx) => {
-    await assertCanCreate(tx, actor);
-    const id = await insertExtractedEvent(tx, actor, extracted);
-    if (actor.username) {
-      const rows = await tx
-        .select()
-        .from(collectedEvents)
-        .where(and(eq(collectedEvents.telegram_username, actor.username.toLowerCase()), isNull(collectedEvents.claimed_event_id), upcomingCollected))
-        .for('update');
-      const same = rows.find((r) => isSameEvent(r.event, extracted));
-      if (same) await tx.update(collectedEvents).set({ claimed_event_id: id }).where(eq(collectedEvents.external_id, same.external_id));
-    }
-    return getEvent(tx, actor, id);
-  });
 }
 
 /**
