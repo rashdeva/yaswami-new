@@ -1,6 +1,6 @@
 // Организаторы собранных событий: список, профиль и правки команды.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AdminHostView, HostUpdateInput, Wire } from '@yaswami/core';
+import type { AdminHostView, HostUpdateInput, PracticeStatus, Wire } from '@yaswami/core';
 import { api } from '../api.ts';
 import { keys } from './keys.ts';
 import { useAct } from './useAct.ts';
@@ -11,9 +11,10 @@ export const useHost = (id: string) => useQuery({ queryKey: keys.host(id), query
 /** Добавить организатора по username: профиль заполнит сборщик на следующем проходе. */
 export const useHostCreate = () => useAct(api.hostCreate, { undo: (_input, host) => ['host', host.id] });
 
-/** Решение по организатору прямо из списка: опубликовать или отклонить, не открывая карточку. */
-export const useHostStatus = () =>
-  useAct(({ id, status }: { id: string; status: NonNullable<HostUpdateInput['status']> }) => api.hostUpdate(id, { status }), { undo: ({ id }) => ['host', id] });
+/** Решение по одной услуге из «Каталога»: список Practice мастера уходит целиком, меняется статус одной. */
+export const usePracticeStatus = () =>
+  useAct(({ host, title, status }: { host: Pick<Wire<AdminHostView>, 'id' | 'practices'>; title: string; status: PracticeStatus }) =>
+    api.hostUpdate(host.id, { practices: host.practices.map((p) => (p.title === title ? { ...p, status } : p)) }), { undo: ({ host }) => ['host', host.id] });
 
 export function useHostActions(id: string) {
   const client = useQueryClient();
@@ -23,7 +24,7 @@ export function useHostActions(id: string) {
       undo,
       onSuccess: (host) => {
         client.setQueryData<Wire<AdminHostView>>(keys.host(id), (old) => old && { ...old, ...host });
-        void client.invalidateQueries({ queryKey: keys.hosts }); // статус меняет очередь «Ждут решения» в списке
+        void client.invalidateQueries({ queryKey: keys.hosts });
       },
     }),
     remove: useAct(() => api.hostDelete(id), { undo }),

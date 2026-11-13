@@ -318,12 +318,12 @@ test('каталог организаторов: с событиями или Pr
   await db.insert(hosts).values([
     { telegram_id: 40, username: 'club', name: 'Клуб мафии', summary: 'Играют по пятницам.' },
     { telegram_id: 41, username: 'dasha_yoga', name: 'Даша', summary: 'Ведёт йогу.', status: 'published' as const, practices: [
-      { title: 'Утренняя йога', topic: 'йога', description: 'Группа у моря.', price: '150k' },
-      { title: 'Ремонт телефонов', topic: 'другое', description: null, price: null }, // не наша тема — не показываем
+      { title: 'Утренняя йога', topic: 'йога', description: 'Группа у моря.', price: '150k', status: 'published' as const },
+      { title: 'Ремонт телефонов', topic: 'другое', description: null, price: null, status: 'published' as const }, // не наша тема — не показываем
     ] },
     { telegram_id: 42, username: 'nobody', name: 'Без всего' }, // ни событий, ни Practice — не в каталоге
     // мастер ждёт модерации: Practice есть, но в каталоге его нет, пока команда не одобрит
-    { telegram_id: 43, username: 'new_master', name: 'Новый мастер', practices: [{ title: 'Массаж', topic: 'телесные практики', description: null, price: null }] },
+    { telegram_id: 43, username: 'new_master', name: 'Новый мастер', practices: [{ title: 'Массаж', topic: 'телесные практики', description: null, price: null, status: 'pending' as const }] },
   ]);
 
   const list = (await (await app.request('/hosts')).json()) as HostListItem[];
@@ -350,21 +350,26 @@ test('каталог организаторов: с событиями или Pr
   assert.equal((await call(tma(90, 'Оля'), 'POST', `/hosts/${dasha.id}/practices/signup`, { title: 'Ремонт телефонов' })).status, 404); // не наша тема
   assert.equal((await app.request(`/hosts/${dasha.id}/practices/signup`, { method: 'POST' })).status, 401);
 
-  // модерация: одобренный мастер появляется в каталоге, отклонённый организатор пропадает даже с событиями
+  // модерация: одобренная Practice появляется в каталоге, отклонённая пропадает; отклонённый организатор пропадает даже с событиями
   const [master] = await db.select().from(hosts).where(eq(hosts.username, 'new_master'));
   const admins = settings.adminIds;
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
   // команда правит Practice: список заменяется целиком, заявки видны в списке админки по названию
-  const fixed = [{ title: 'Утренняя йога', topic: 'йога', description: 'Группа у моря.', price: '200k' }];
+  const fixed = [{ title: 'Утренняя йога', topic: 'йога', description: 'Группа у моря.', price: '200k', status: 'published' }];
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: fixed })).status, 200);
   assert.deepEqual(((await (await app.request(`/hosts/${dasha.id}`)).json()) as HostItem).practices, fixed);
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: [...fixed, ...fixed] })).status, 400); // названия не повторяются
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: [{ ...fixed[0], topic: 'нет такой' }] })).status, 400);
   const listed = (await (await call(admin, 'GET', '/admin/hosts')).json()) as AdminHostListItem[];
   assert.deepEqual(listed.find((h) => h.id === dasha.id)!.practice_signup_counts, { 'Утренняя йога': 1 });
-  assert.equal((await call(admin, 'PATCH', `/admin/hosts/${master!.id}`, { status: 'published' })).status, 200);
-  assert.deepEqual(((await (await app.request('/hosts')).json()) as HostListItem[]).map((h) => h.username), ['club', 'dasha_yoga', 'new_master']);
+  const decide = (status: string) => call(admin, 'PATCH', `/admin/hosts/${master!.id}`, { practices: master!.practices.map((p) => ({ ...p, status })) });
+  const catalog = async () => ((await (await app.request('/hosts')).json()) as HostListItem[]).map((h) => h.username);
+  assert.equal((await decide('published')).status, 200);
+  assert.deepEqual(await catalog(), ['club', 'dasha_yoga', 'new_master']);
+  assert.equal((await decide('rejected')).status, 200);
+  assert.deepEqual(await catalog(), ['club', 'dasha_yoga']);
+  assert.equal((await decide('published')).status, 200);
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${list[0]!.id}`, { status: 'rejected' })).status, 200);
   assert.deepEqual(((await (await app.request('/hosts')).json()) as HostListItem[]).map((h) => h.username), ['dasha_yoga', 'new_master']);
   assert.equal((await app.request(`/hosts/${list[0]!.id}`)).status, 404);
@@ -588,10 +593,10 @@ test('поиск: события и Practice одним запросом; фор
   ]);
   await db.insert(hosts).values([
     { telegram_id: 51, username: 'dasha_yoga', name: 'Даша Морская', summary: 'Ведёт занятия у моря.', status: 'published' as const, practices: [
-      { title: 'Тайский массаж', topic: 'телесные практики', description: 'Час или два, с выездом.', price: '500k' },
-      { title: 'Массаж телефонов', topic: 'другое', description: null, price: null }, // не наша тема
+      { title: 'Тайский массаж', topic: 'телесные практики', description: 'Час или два, с выездом.', price: '500k', status: 'published' as const },
+      { title: 'Массаж телефонов', topic: 'другое', description: null, price: null, status: 'published' as const }, // не наша тема
     ] },
-    { telegram_id: 52, username: 'hidden_master', name: 'Скрытый мастер', practices: [{ title: 'Массаж спины', topic: 'телесные практики', description: null, price: null }] }, // ждёт модерации
+    { telegram_id: 52, username: 'hidden_master', name: 'Скрытый мастер', practices: [{ title: 'Массаж спины', topic: 'телесные практики', description: null, price: null, status: 'pending' as const }] }, // ждёт модерации
     { telegram_id: 53, username: 'nobody', name: 'Даша без всего' }, // ни событий, ни Practice — не в каталоге
   ]);
   const find = async (query: string, limit?: number) =>
@@ -611,7 +616,7 @@ test('поиск: события и Practice одним запросом; фор
   // другой город: ни его событий, ни услуг его мастеров в поиске нет — как в витрине
   await db.execute(sql`insert into cities (id, name, timezone) values ('nhatrang', 'Нячанг', 'Asia/Ho_Chi_Minh')`);
   await db.insert(collectedEvents).values({ ...row(6, 'Сёрфинг в Нячанге'), city_id: 'nhatrang' });
-  await db.insert(hosts).values({ telegram_id: 54, username: 'surf_nt', name: 'Сёрф-школа', city_id: 'nhatrang', status: 'published' as const, practices: [{ title: 'Урок сёрфинга', topic: 'спорт', description: null, price: null }] });
+  await db.insert(hosts).values({ telegram_id: 54, username: 'surf_nt', name: 'Сёрф-школа', city_id: 'nhatrang', status: 'published' as const, practices: [{ title: 'Урок сёрфинга', topic: 'спорт', description: null, price: null, status: 'published' as const }] });
   assert.deepEqual(names(await find('серфинг')), []);
   await db.execute(sql`delete from collected_events where city_id = 'nhatrang'`);
   await db.execute(sql`delete from hosts where city_id = 'nhatrang'`);
@@ -1820,7 +1825,7 @@ test('города: всё прежнее — Дананг; новый горо�
   assert.equal(((await (await call(admin, 'PATCH', `/admin/hosts/${gio!.id}`, { city_id: 'danang' })).json()) as Host).city_id, 'danang');
   assert.equal(((await tool('admin_hosts_create', { username: 'nino_wine', city_id: 'tbilisi' })) as Host).city_id, 'tbilisi');
   // Услуги (Practice) живут в профиле мастера и идут за его городом: мастер другого города во вкладку «Услуги» не попадает.
-  const practices = [{ title: 'Дегустация', topic: Object.keys(TOPIC_GUIDES)[0]!, description: null, price: null }];
+  const practices = [{ title: 'Дегустация', topic: Object.keys(TOPIC_GUIDES)[0]!, description: null, price: null, status: 'published' as const }];
   await db.update(hosts).set({ status: 'published', practices }).where(eq(hosts.username, 'nino_wine'));
   const services = async () => ((await (await call(admin, 'GET', '/hosts')).json()) as HostListItem[]).filter((h) => h.username === 'nino_wine').length;
   assert.equal(await services(), 0);

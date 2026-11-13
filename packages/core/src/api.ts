@@ -132,11 +132,19 @@ export interface CollectedHost {
  * Practice: устойчивое предложение организатора без даты — регулярные занятия, услуга мастера (CONTEXT.md).
  * Сборщик извлекает его из самопредставления в чате. В Luma такого нет.
  */
+/**
+ * Модерация Practice — как у собранных событий, но без шага обработки: pending — ждёт решения команды,
+ * published — видна в каталоге, rejected — не показываем. В Luma такого нет.
+ */
+export const PRACTICE_STATUSES = ['pending', 'published', 'rejected'] as const;
+export type PracticeStatus = (typeof PRACTICE_STATUSES)[number];
+
 export interface Practice {
   title: string;
   topic: string; // ключ TOPIC_GUIDES или OTHER_TOPIC
   description: string | null;
   price: string | null; // как написал сам организатор
+  status: PracticeStatus; // модерация: в каталоге видна только published
 }
 
 /** Запись на Practice: какую именно, по названию — своего id у Practice нет (она строка в `hosts.practices`). В Luma такого нет. */
