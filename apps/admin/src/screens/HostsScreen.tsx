@@ -1,13 +1,15 @@
 // «Организаторы»: профили, собранные по открытым анонсам, и на каком шаге переписка с каждым.
 import { INBOX_STAGES } from '@yaswami/core';
+import { useState } from 'react';
 import { EntityLink, TelegramLink } from '@/components/EntityLink';
 import { Failed, Hint, Loading, Nothing, Page } from '@/components/Page';
 import { Search } from '@/components/Search';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Item, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useHosts } from '@/hooks/useHosts';
+import { useHostCreate, useHosts } from '@/hooks/useHosts';
 import { useOverview } from '@/hooks/useOverview';
 import { HOST_LABELS } from '@/lib/catalog';
 
@@ -18,21 +20,29 @@ interface Props {
   onQueue: (queue: boolean) => void;
   onQuery: (query: string) => void;
   onOpen: (conversation: string) => void;
+  /** Организатора добавили по username — открыть его карточку. */
+  onCreated: (id: string) => void;
 }
 
-export function HostsScreen({ query, queue, onQueue, onQuery, onOpen }: Props) {
+export function HostsScreen({ query, queue, onQueue, onQuery, onOpen, onCreated }: Props) {
+  const create = useHostCreate();
+  const [username, setUsername] = useState('');
   const { data: hosts, error } = useHosts();
   const overview = useOverview();
-  const stats = new Map(overview?.hosts.map((h) => [h.telegram_id, h]));
+  const stats = new Map(overview?.hosts.map((h) => [h.username, h]));
   const q = query.trim().toLowerCase().replace(/^@/, '');
   const waiting = (hosts ?? []).filter((h) => h.status === 'pending' && h.practices.length > 0);
   const rows = (queue ? waiting : hosts ?? [])
     .filter((h) => !q || [h.name, h.username, h.channel].some((s) => s?.toLowerCase().includes(q)))
-    .map((h) => ({ h, s: stats.get(h.telegram_id) }))
+    .map((h) => ({ h, s: stats.get(h.username) }))
     .sort((a, b) => (b.s?.signups ?? 0) - (a.s?.signups ?? 0) || (b.s?.events ?? 0) - (a.s?.events ?? 0));
 
   return (
-    <Page title={<>Организаторы <Badge>{hosts?.length ?? '…'}</Badge></>} description="Профили собраны по открытым анонсам. «Записей» — сколько раз на предстоящие события организатора нажали «Записаться» у нас.">
+    <Page title={<>Организаторы <Badge>{hosts?.length ?? '…'}</Badge></>} description="Профили собраны по открытым анонсам. «Записей» — сколько раз на предстоящие события организатора нажали «Записаться» у нас. Нужного нет — добавьте по username: сборщик найдёт его в Telegram и на следующем проходе заполнит имя, «о себе», канал и сводку.">
+      <form className="flex max-w-md gap-2" onSubmit={(e) => (e.preventDefault(), username.trim() && create(username.trim(), { onSuccess: (h) => (setUsername(''), onCreated(h.id)) }))}>
+        <Input placeholder="@username или t.me/username" value={username} onChange={(e) => setUsername(e.target.value)} />
+        <Button type="submit" variant="outline">Добавить</Button>
+      </form>
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant={queue ? 'outline' : 'default'} onClick={() => onQueue(false)}>Все</Button>
         <Button size="sm" variant={queue ? 'default' : 'outline'} onClick={() => onQueue(true)}>Ждут решения <Badge variant="secondary">{waiting.length}</Badge></Button>
@@ -59,7 +69,7 @@ export function HostsScreen({ query, queue, onQueue, onQuery, onOpen }: Props) {
                     </ItemContent>
                   </Item>
                 </TableCell>
-                <TableCell className="align-top"><Badge variant={h.status === 'published' ? 'default' : 'secondary'}>{HOST_LABELS[h.status]}</Badge></TableCell>
+                <TableCell className="align-top"><Badge variant={h.status === 'published' ? 'default' : 'secondary'}>{HOST_LABELS[h.status]}</Badge>{!h.telegram_id && h.status === 'pending' && <> <Badge variant="outline">проверяется</Badge></>}</TableCell>
                 <TableCell className="max-w-md align-top whitespace-normal"><Hint>{h.practices.length ? h.practices.map((p) => p.title).join(' · ') : h.summary ?? '—'}</Hint></TableCell>
                 <TableCell>{s?.events ?? 0}</TableCell>
                 <TableCell>{s?.signups ?? 0}</TableCell>

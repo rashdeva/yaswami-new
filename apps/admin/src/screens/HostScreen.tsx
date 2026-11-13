@@ -32,14 +32,14 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
 
   if (error) return <Page title="Организатор"><Failed error={error} /></Page>;
   if (!h) return <Page title="Организатор"><Loading rows={6} /></Page>;
-  const row = overview?.hosts.find((r) => r.telegram_id === h.telegram_id);
+  const row = overview?.hosts.find((r) => r.username === h.username);
   const events = hostEvents(h, catalog ?? []);
 
   return (
     <Page
       title={<>{h.name} <Badge variant={h.status === 'published' ? 'default' : 'secondary'}>{HOST_LABELS[h.status]}</Badge></>}
       description={<>
-        <TelegramLink username={h.username} /> · Telegram id {h.telegram_id}
+        <TelegramLink username={h.username} /> · {h.telegram_id ? `Telegram id ${h.telegram_id}` : h.status === 'pending' ? 'добавлен по username: сборщик проверит его в Telegram и заполнит профиль на следующем проходе' : 'сборщик не нашёл его в Telegram; исправьте username и верните «Ждёт решения» — проверит снова'}
         {h.user_id ? <> · в сервисе: <EntityLink entity="user" id={h.user_id}>карточка пользователя</EntityLink></> : ' · в сервис не входил'}
         {row && ` · предстоящих событий ${row.events}, записей ${row.signups}`}
       </>}

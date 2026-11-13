@@ -2,7 +2,7 @@
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
   AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventView, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource,
-  AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventUpdateInput, EventView, Host, HostUpdateInput, InboxConversation,
+  AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventUpdateInput, EventView, Host, HostUpdateInput, InboxConversation, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
 import { sseEvents } from '@yaswami/core';
@@ -29,6 +29,8 @@ const MESSAGES: Record<string, string> = {
   daily_limit: 'Аккаунт уже отправил дневной лимит первых сообщений. Ответы тем, кто написал сам, уходят без лимита',
   not_draft: 'Черновик уже отправлен или отклонён',
   source_exists: 'Этот канал уже есть в источниках',
+  host_exists: 'Организатор с таким username уже есть',
+  host_not_found: 'Такого организатора нет: возможно, его удалили',
   not_delivered: 'Telegram не доставил сообщение: человек не открывал бота или заблокировал его',
   changed_since: 'Отменить нельзя: с тех пор запись меняли, отмена затёрла бы ту правку',
   already_undone: 'Это действие уже отменено',
@@ -157,6 +159,7 @@ export const api = {
   // Организаторы
   hosts: () => request<Wire<Host>[]>('GET', '/admin/hosts'),
   host: (host: string) => request<Wire<AdminHostView>>('GET', `/admin/hosts/${id(host)}`),
+  hostCreate: (username: string) => request<Wire<Host>>('POST', '/admin/hosts', { username }),
   hostUpdate: (host: string, input: HostUpdateInput) => request<Wire<Host>>('PATCH', `/admin/hosts/${id(host)}`, input),
   hostDelete: (host: string) => request<void>('DELETE', `/admin/hosts/${id(host)}`),
 
@@ -177,5 +180,5 @@ export const api = {
   // Источники сборщика
   sources: () => request<Wire<AdminSource>[]>('GET', '/admin/sources'),
   sourceCreate: (channel: string) => request<Wire<AdminSource>>('POST', '/admin/sources', { channel }),
-  sourceUpdate: (channel: string, enabled: boolean) => request<Wire<AdminSource>>('PATCH', `/admin/sources/${id(channel)}`, { enabled }),
+  sourceUpdate: (channel: string, input: SourceUpdateInput) => request<Wire<AdminSource>>('PATCH', `/admin/sources/${id(channel)}`, input),
 };

@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  EventUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
+  EventUpdateInput, HostCreateInput, HostUpdateInput, InboxSendInput, LeadInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -259,6 +259,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .post('/admin/covers/:id', json(CoverSetInput), async (c) => c.json(await admin.setCollectedCover(db, ctx(c), c.req.param('id'), c.req.valid('json').image_url)))
     .post('/admin/videos/:id', async (c) => c.json(await admin.requestCollectedVideo(db, ctx(c), c.req.param('id')), 202))
     .get('/admin/hosts', async (c) => c.json(await admin.listHosts(db)))
+    .post('/admin/hosts', json(HostCreateInput), async (c) => c.json(await admin.createHost(db, ctx(c), c.req.valid('json')), 201))
     .get('/admin/hosts/:id', async (c) => c.json(await admin.getHost(db, c.req.param('id'))))
     .patch('/admin/hosts/:id', json(HostUpdateInput), async (c) => c.json(await admin.updateHost(db, ctx(c), c.req.param('id'), c.req.valid('json'))))
     .delete('/admin/hosts/:id', async (c) => {
