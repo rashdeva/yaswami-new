@@ -2,7 +2,7 @@
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
   AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource,
-  AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, Host, HostUpdateInput, InboxConversation, SourceUpdateInput,
+  AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHostListItem, Host, HostUpdateInput, InboxConversation, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
 import { sseEvents } from '@yaswami/core';
@@ -159,7 +159,7 @@ export const api = {
   videoRequest: (event: string) => request<unknown>('POST', `/admin/videos/${id(event)}`),
 
   // Организаторы
-  hosts: () => request<Wire<Host>[]>('GET', '/admin/hosts'),
+  hosts: () => request<Wire<AdminHostListItem>[]>('GET', '/admin/hosts'),
   host: (host: string) => request<Wire<AdminHostView>>('GET', `/admin/hosts/${id(host)}`),
   hostCreate: (input: HostCreateInput) => request<Wire<Host>>('POST', '/admin/hosts', input),
   hostUpdate: (host: string, input: HostUpdateInput) => request<Wire<Host>>('PATCH', `/admin/hosts/${id(host)}`, input),

@@ -4,6 +4,7 @@ import type { AdminCollectedEvent, EventView, Practice } from './api.ts';
 import { cityId, dateTime, EventCreateInput, EventUpdateInput, timeZone } from './api.ts';
 import type { Event, Guest, User } from './schema.ts';
 import { City, Feature, RsvpStatus, User as UserSchema } from './schema.ts';
+import { OTHER_TOPIC, TOPIC_GUIDES } from './topics.ts';
 
 const text = (max: number) => z.string().trim().max(max);
 // Сервис сам убирает @ и приводит к нижнему регистру (normalUsername): преобразование в схеме не описать в JSON Schema для MCP.
@@ -142,6 +143,19 @@ export interface AdminHostView extends Host {
   practice_signups: { id: User['id']; first_name: string; username: string | null; title: string; at: Date }[]; // кто нажал «Записаться» на Practice, новые сверху
 }
 
+/** Организатор в списке админки: профиль и сколько раз нажали «Записаться» на каждую его Practice (ключ — её название). */
+export interface AdminHostListItem extends Host {
+  practice_signup_counts: Record<string, number>;
+}
+
+/** Practice, как её правит команда: то же, что извлекает сборщик. Тема — из наших Topic или «другое» (в каталоге не видна). */
+export const PracticeInput = z.object({
+  title: text(200).min(1),
+  topic: z.enum([...Object.keys(TOPIC_GUIDES), OTHER_TOPIC]).describe('Topic key; a practice with «другое» is hidden from the public catalogue'),
+  description: text(500).nullable(),
+  price: text(100).nullable().describe('Price as the organizer states it, e.g. «500k»; null — on request'),
+});
+
 /** Добавить организатора по username: профиль (имя, «о себе», канал, сводку) соберёт сборщик. В Luma такого нет. */
 export const HostCreateInput = z.object({
   username: z.string().trim().regex(/^(?:https?:\/\/)?(?:t\.me\/|@)?\w{4,32}\/?$/, 'telegram username').describe('Telegram username, @username or t.me link of a person or a venue channel'),
@@ -158,6 +172,9 @@ export const HostUpdateInput = z
     summary: text(2000).nullable(),
     city_id: cityId,
     status: z.enum(HOST_STATUSES).describe('Moderation: published — show in the public catalogue of organizers, rejected — never show'),
+    // Список целиком: чего в нём нет — удалено. Названия не повторяются: по названию Practice находит запись на неё.
+    practices: z.array(PracticeInput).max(30).refine((list) => new Set(list.map((p) => p.title)).size === list.length, 'duplicate titles')
+      .describe('Full list of practices and services the organizer runs; it replaces the stored one, so send every practice you want to keep. Titles must be unique'),
   })
   .partial();
 export type HostUpdateInput = z.infer<typeof HostUpdateInput>;

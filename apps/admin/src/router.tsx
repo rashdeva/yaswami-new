@@ -58,14 +58,18 @@ function AgentsPage() {
 }
 const agents = createRoute({ getParentRoute: () => root, path: '/agents', component: AgentsPage });
 
-// --- Организаторы
+// --- Мастера и услуги
 
 function HostsPage() {
-  const { q, queue } = hosts.useSearch();
+  const search = hosts.useSearch();
+  const { q, queue, services, topic } = search;
   const navigate = useNavigate();
-  return <HostsScreen query={q ?? ''} queue={!!queue} onQueue={(next) => void navigate({ to: '/hosts', search: { q, queue: next || undefined }, replace: true })} onQuery={(query) => void navigate({ to: '/hosts', search: { q: query || undefined, queue }, replace: true })} onOpen={(c) => void navigate({ to: '/', search: { c } })} onCreated={(id) => void navigate({ to: '/hosts/$id', params: { id } })} />;
+  const go = (next: Partial<typeof search>) => void navigate({ to: '/hosts', search: { ...search, ...next }, replace: true });
+  return <HostsScreen query={q ?? ''} tab={services ? 'services' : queue ? 'queue' : 'all'} topic={topic ?? null}
+    onTab={(tab) => go({ queue: tab === 'queue' || undefined, services: tab === 'services' || undefined, topic: undefined })}
+    onTopic={(next) => go({ topic: next ?? undefined })} onQuery={(query) => go({ q: query || undefined })} onOpen={(c) => void navigate({ to: '/', search: { c } })} onCreated={(id) => void navigate({ to: '/hosts/$id', params: { id } })} />;
 }
-const hosts = createRoute({ getParentRoute: () => root, path: '/hosts', component: HostsPage, validateSearch: (s: Record<string, unknown>): { q?: string; queue?: boolean } => ({ q: str(s.q), queue: s.queue === true || s.queue === 'true' || undefined }) });
+const hosts = createRoute({ getParentRoute: () => root, path: '/hosts', component: HostsPage, validateSearch: (s: Record<string, unknown>): { q?: string; queue?: boolean; services?: boolean; topic?: string } => ({ q: str(s.q), queue: s.queue === true || s.queue === 'true' || undefined, services: s.services === true || s.services === 'true' || undefined, topic: str(s.topic) }) });
 
 function HostPage() {
   const { id } = host.useParams();

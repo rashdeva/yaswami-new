@@ -1,20 +1,21 @@
 // Карточка организатора: профиль, фото сообщества, его события в каталоге, переход в диалог, история.
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { Host, HostUpdateInput as Input, Wire } from '@yaswami/core';
-import { collectedWhen, HostUpdateInput, INBOX_STAGES } from '@yaswami/core';
-import { BanIcon, CheckIcon, MessagesSquareIcon, Trash2Icon } from 'lucide-react';
+import { collectedWhen, HostUpdateInput, INBOX_STAGES, OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
+import { BanIcon, CheckIcon, MessagesSquareIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useFieldArray, useForm } from 'react-hook-form';
 import { CityField } from '@/components/City';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
 import { EntityLink, ExternalLink, TelegramLink } from '@/components/EntityLink';
-import { AreaField, SaveBar, saveDirty, TextField } from '@/components/Fields';
+import { AreaField, SaveBar, saveDirty, SelectField, showIssues, TextField } from '@/components/Fields';
 import { History } from '@/components/History';
 import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
 import { AspectRatio } from '@/components/ui/aspect-ratio';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
+import { Separator } from '@/components/ui/separator';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item';
 import { useCollectedEvents } from '@/hooks/useCollectedEvents';
 import { useHost, useHostActions } from '@/hooks/useHosts';
@@ -23,6 +24,9 @@ import { COLLECTED_LABELS, HOST_LABELS, hostEvents } from '@/lib/catalog';
 
 const values = (h: Wire<Host>): Input => ({ name: h.name, city_id: h.city_id, username: h.username, bio: h.bio, channel: h.channel, summary: h.summary });
 
+const TOPIC_OPTIONS = [...Object.keys(TOPIC_GUIDES), OTHER_TOPIC].map((t) => [t, t] as const);
+const PracticesInput = HostUpdateInput.required({ practices: true }).pick({ practices: true });
+
 export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (conversation: string) => void; onDeleted: () => void }) {
   const { data: h, error } = useHost(id);
   const { update, remove } = useHostActions(id);
@@ -30,6 +34,10 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
   const overview = useOverview();
   const initial = useMemo(() => h && values(h), [h]);
   const form = useForm({ resolver: zodResolver(HostUpdateInput), values: initial, resetOptions: { keepDirtyValues: true } });
+  // Услуги — отдельной формой: список уходит целиком, а не по изменённым полям, как профиль.
+  const listed = useMemo(() => h && { practices: h.practices }, [h]);
+  const practicesForm = useForm({ resolver: zodResolver(PracticesInput), values: listed });
+  const practices = useFieldArray({ control: practicesForm.control, name: 'practices' });
 
   if (error) return <Page title="Организатор"><Failed error={error} /></Page>;
   if (!h) return <Page title="Организатор"><Loading rows={6} /></Page>;
@@ -71,20 +79,27 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
         </form>
       </Section>
 
-      <Section title={<>Что ведёт <Badge variant="secondary">{h.practices.length}</Badge></>}>
-        {h.practices.length === 0 && <Hint>Пусто: организатор найден по событиям, а не по самопредставлению.</Hint>}
+      <Section title={<>Услуги <Badge variant="secondary">{h.practices.length}</Badge></>} description="Что мастер ведёт без даты. Во вкладке «Услуги» видны только услуги из наших тем и только у опубликованного мастера; «другое» остаётся здесь.">
         {h.offer_url && <Hint>Из сообщения: <ExternalLink href={h.offer_url}>{h.offer_url.replace('https://', '')}</ExternalLink>. Сверь, что это сам мастер и его занятия.</Hint>}
-        <ItemGroup className="gap-1">
-          {h.practices.map((p) => (
-            <Item key={p.title} size="xs" variant="muted">
-              <ItemContent>
-                <ItemTitle>{p.title}</ItemTitle>
-                {p.description && <ItemDescription>{p.description}</ItemDescription>}
-              </ItemContent>
-              <ItemActions><Badge variant="secondary">{p.topic}</Badge>{p.price && <Badge variant="outline">{p.price}</Badge>}</ItemActions>
-            </Item>
+        <form onSubmit={practicesForm.handleSubmit((v) => update({ practices: v.practices }, { onSuccess: () => practicesForm.reset(v), onError: (e) => showIssues(practicesForm, e) }))} className="flex flex-col gap-4">
+          {practices.fields.length === 0 && <Hint>Пусто: организатор найден по событиям, а не по самопредставлению.</Hint>}
+          {practices.fields.map((f, i) => (
+            <FieldGroup key={f.id}>
+              {i > 0 && <Separator />}
+              <div className="grid items-end gap-4 md:grid-cols-[2fr_1fr_1fr_auto]">
+                <TextField form={practicesForm} name={`practices.${i}.title`} label="Название" />
+                <SelectField form={practicesForm} name={`practices.${i}.topic`} label="Тема" options={TOPIC_OPTIONS} />
+                <TextField form={practicesForm} name={`practices.${i}.price`} label="Цена" nullable placeholder="по запросу" />
+                <Button type="button" variant="outline" size="icon" aria-label="Убрать услугу" onClick={() => practices.remove(i)}><Trash2Icon /></Button>
+              </div>
+              <TextField form={practicesForm} name={`practices.${i}.description`} label="Описание" nullable />
+            </FieldGroup>
           ))}
-        </ItemGroup>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" onClick={() => practices.append({ title: '', topic: TOPIC_OPTIONS[0]![0], description: null, price: null })}><PlusIcon />Добавить услугу</Button>
+            <SaveBar form={practicesForm} />
+          </div>
+        </form>
       </Section>
 
       {h.practice_signups.length > 0 && (
