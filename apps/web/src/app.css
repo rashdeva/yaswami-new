@@ -336,7 +336,7 @@ h2.today { color: var(--btn); }
 
 /* поиск: круглая кнопка справа от таббара, как в iOS, и поле на экране поиска */
 .tabbar > div { width: min(calc(var(--n) * 120px), calc(100vw - 32px - 68px)); margin-right: 10px; }
-.tabbar > .find { flex: none; width: 65px; justify-content: center; padding: 0; margin: 0 16px calc(10px + var(--inset-bottom, env(safe-area-inset-bottom))) 0; pointer-events: auto; color: var(--text);
+.tabbar > .find { flex: none; width: 65px; justify-content: center; padding: 0; margin: 0 16px calc(10px + var(--inset-bottom, env(safe-area-inset-bottom))) 0; pointer-events: auto;
   background: var(--mat); border: .5px solid var(--stroke); -webkit-backdrop-filter: blur(24px) saturate(190%); backdrop-filter: blur(24px) saturate(190%); box-shadow: inset 0 1px 0 var(--shine), 0 8px 28px rgba(0, 0, 0, .16);
   animation: tabbar-in .45s cubic-bezier(.2, .9, .3, 1.15) backwards; }
 .search { margin: 14px 16px; }
