@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import type { AppConfig, Event } from '@yaswami/core';
+import type { AppConfig, Event, HostListItem } from '@yaswami/core';
 import { collectedDay, collectedDayKey, collectedPath, TEMPLATES } from '@yaswami/core';
 
 /** «пт, 20 ноября, 19:00» — во времени самого события, а не устройства. */
@@ -66,3 +66,7 @@ export function dayLabel(wall: string): string {
   const key = collectedDayKey(wall);
   return key === localDate() ? 'Сегодня' : key === localDate(1) ? 'Завтра' : collectedDay(wall);
 }
+
+/** Что организатор ведёт — одной строкой: Practice, иначе темы событий; и сколько у него предстоящих событий. */
+export const hostLine = (h: HostListItem) =>
+  [...(h.practices.length ? h.practices.map((p) => p.title) : h.topics), h.upcoming_count && `событий: ${h.upcoming_count}`].filter(Boolean).join(' · ');

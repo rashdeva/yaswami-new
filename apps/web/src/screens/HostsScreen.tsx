@@ -5,18 +5,16 @@ import { track } from '../analytics.ts';
 import { GuestRow } from '../components/GuestRow.tsx';
 import { useHosts } from '../hooks/useHosts.ts';
 import { useViewed } from '../hooks/useViewed.ts';
+import { hostLine } from '../format.ts';
 
 interface Props {
   city: string;
   onOpen: (host: HostListItem) => void;
+  onSearch: () => void;
 }
 
-/** Что человек ведёт — одной строкой: Practice, иначе темы событий; и сколько у него предстоящих событий. */
-const doesLine = (h: HostListItem) =>
-  [...(h.practices.length ? h.practices.map((p) => p.title) : h.topics), h.upcoming_count && `событий: ${h.upcoming_count}`].filter(Boolean).join(' · ');
-
 /** Каталог организаторов и мастеров города с фильтром по темам. Открыт без входа. */
-export function HostsScreen({ city, onOpen }: Props) {
+export function HostsScreen({ city, onOpen, onSearch }: Props) {
   const { hosts, failed } = useHosts();
   const [topic, pickTopic] = useState<string | null>(null);
   useViewed('hosts_viewed');
@@ -37,6 +35,7 @@ export function HostsScreen({ city, onOpen }: Props) {
           <p>📍 {city} · ведущие, мастера и площадки</p>
         </div>
       </div>
+      <button className="group search" onClick={onSearch}><span className="row">🔍 Найти событие или мастера</span></button>
       {topics.length > 1 && (
         <div className="chips">
           <button className="chip" aria-pressed={!topic} onClick={() => setTopic(null)}>Все</button>
@@ -54,7 +53,7 @@ export function HostsScreen({ city, onOpen }: Props) {
         <div className="group">
           {shown.map((h) => (
             <button key={h.id} className="plain" onClick={() => onOpen(h)}>
-              <GuestRow name={h.name} photo={h.photo_url} sub={doesLine(h)} label="›" />
+              <GuestRow name={h.name} photo={h.photo_url} sub={hostLine(h)} label="›" />
             </button>
           ))}
         </div>

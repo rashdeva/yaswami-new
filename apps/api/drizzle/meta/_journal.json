@@ -239,6 +239,13 @@
       "when": 1794589063752,
       "tag": "20261113165743_host_by_username",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794600864598,
+      "tag": "20261113201424_search_trgm",
+      "breakpoints": true
     }
   ]
 }

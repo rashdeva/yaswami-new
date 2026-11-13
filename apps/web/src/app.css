@@ -331,3 +331,10 @@ h2.today { color: var(--btn); }
 @media (prefers-reduced-motion: reduce) { .tabbar, .tabbar .pill, .tabbar button, .tabbar svg { animation: none !important; transition: none !important; } }
 /* Кнопка действия внизу экрана («Новое событие») — над таббаром, а не под ним. */
 .with-tabbar .main > div { padding-bottom: calc(86px + var(--inset-bottom, env(safe-area-inset-bottom))); }
+
+/* поиск: поле на экране поиска и кнопка-поле, которая ведёт к нему с витрины и из каталога */
+.search { display: block; width: calc(100% - 32px); margin: 14px 16px; padding: 0; font: inherit; color: var(--hint); text-align: left; }
+button.search { cursor: pointer; }
+.search input { color: var(--text); outline: none; }
+.search + .note { margin-bottom: 12px; }
+.feed .group { margin: 0; }

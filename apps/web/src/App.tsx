@@ -32,13 +32,13 @@ export function App() {
   const [kind, setKind] = useState<Event['kind']>('o');
 
   // У публичных экранов свой нейтральный цвет; личные выставляют цвет шаблона события сами.
-  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/hosts')) && kind !== 'o') setKind('o');
+  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/hosts') || pathname === '/search') && kind !== 'o') setKind('o');
 
-  // Куда ведёт «назад»: событие → свой список, организатор → каталог, создание → список или витрина. null — корень.
+  // Куда ведёт «назад»: событие и поиск → витрина, организатор → каталог, создание → список или витрина. null — корень.
   const here = { includeSearch: false } as const; // ?signup, ?startapp в адресе маршрут не меняют
   const section = matchRoute({ to: '/events/$id/edit/$section', ...here });
   const edit = matchRoute({ to: '/events/$id/edit', ...here });
-  const back = matchRoute({ to: '/e/$id', ...here })
+  const back = matchRoute({ to: '/e/$id', ...here }) || matchRoute({ to: '/search', ...here })
     ? () => void navigate({ to: '/' })
     : matchRoute({ to: '/hosts/$id', ...here })
       ? () => void navigate({ to: '/hosts' })

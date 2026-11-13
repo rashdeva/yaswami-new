@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNot
 import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedStatus, CollectedUpdateInput,
-  CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, TicketType,
+  CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
@@ -486,6 +486,71 @@ export async function getHost(db: Db, id: string): Promise<HostItem> {
   if (!item) throw new AppError('not_found', 404);
   const rows = await collectedWithCover(db).where(and(upcomingCollected, published, eq(collectedEvents.telegram_username, h!.username))).orderBy(asc(collectedEvents.starts_at));
   return { ...item, photos: await hostPhotos(db, h!.id), events: rows.map(toCollectedItem) };
+}
+
+const SEARCH_LIMIT = 20;
+/**
+ * С какой похожести названия считаем запрос опечаткой, а не другим словом (word_similarity из pg_trgm, 0…1).
+ * Подобрано по замерам: «масаж» ↔ «массаж» 0.63, «медетация» ↔ «медитация» 0.54, а «масаж» ↔ «Мастер-класс» ровно 0.50.
+ */
+const TYPO = 0.52;
+const searchVector = (...parts: SQL[]) => sql`to_tsvector('russian', translate(concat_ws(' ', ${sql.join(parts, sql`, `)}), 'ёЁ', 'еЕ'))`;
+
+/**
+ * Условие и оценка поиска по одной таблице: `title` весит больше всего, затем `b`, затем `c`. Слова сводятся к основе
+ * («йогой» = «йога»), каждое ищется и как начало слова («рет» → «ретрит»), «ё» = «е»; опечатку ловит похожесть названия.
+ * null — в запросе нет ни буквы, ни цифры.
+ * ponytail: tsvector считается на каждый запрос, индекса нет — на тысячах строк это миллисекунды. Десятки тысяч —
+ * хранимая колонка tsvector с GIN и отдельная ветка для опечаток с индексом gin_trgm_ops.
+ */
+function searchMatch(query: string, title: SQL, b: SQL[], c: SQL[]) {
+  const words = query.toLowerCase().replaceAll('ё', 'е').match(/[\p{L}\p{N}]+/gu);
+  if (!words) return null;
+  const doc = sql`(setweight(${searchVector(title)}, 'A') || setweight(${searchVector(...b)}, 'B') || setweight(${searchVector(...c)}, 'C'))`;
+  const tsquery = sql`to_tsquery('russian', ${words.map((w) => `${w}:*`).join(' & ')})`;
+  const similar = sql`word_similarity(${words.join(' ')}, translate(${title}, 'ёЁ', 'еЕ'))`;
+  return { where: sql`(${doc} @@ ${tsquery} or ${similar} >= ${TYPO})`, score: sql<number>`(ts_rank_cd(${doc}, ${tsquery}) + ${similar})::float8` };
+}
+const jsonText = (column: SQL | typeof collectedEvents.event, key: string) => sql`${column}->>'${sql.raw(key)}'`;
+
+/** Единый поиск по публичному каталогу: то же, что видно в ленте и у организаторов, самое подходящее первым. Открыт всем. */
+export async function search(db: Db, { query, pagination_limit: limit = SEARCH_LIMIT }: SearchInput): Promise<SearchResult> {
+  const e = (key: string) => jsonText(collectedEvents.event, key);
+  const p = (key: string) => jsonText(sql`p.value`, key);
+  const event = searchMatch(query, e('title'), [e('place'), e('address'), e('tags'), e('topic'), e('for_whom')], [e('description'), e('what_happens'), e('takeaway')]);
+  const host = searchMatch(query, sql`${hosts.name}`, [sql`${hosts.username}`], [sql`${hosts.summary}`]);
+  const practice = searchMatch(query, p('title'), [p('topic')], [p('description')]);
+  if (!event || !host || !practice) return { entries: [] };
+
+  // ponytail: среди одинаково подходящих событий ближайшее чуть выше — надбавка на глаз, до 0.1 и тает за недели
+  const eventScore = sql<number>`${event.score} + 0.1 / (1 + greatest(0, extract(epoch from ${collectedEvents.starts_at} - now())) / 604800)`;
+
+  const [events, people, offers, topics] = await Promise.all([
+    db.select({ ...getTableColumns(collectedEvents), cover_id: photos.id, score: eventScore })
+      .from(collectedEvents).leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id))
+      .where(and(upcomingCollected, published, event.where)).orderBy(desc(eventScore)).limit(limit),
+    // ponytail: без limit — видимость организатора решает toHostListItem, а их сотни
+    db.select({ host: hosts, score: host.score }).from(hosts).where(and(ne(hosts.status, 'rejected'), host.where)),
+    db.select({ host: hosts, n: sql<number>`p.n::int`, score: practice.score })
+      .from(hosts).innerJoin(sql`jsonb_array_elements(${hosts.practices}) with ordinality as p(value, n)`, sql`true`)
+      .where(and(eq(hosts.status, 'published'), practice.where)),
+    upcomingTopicsByHost(db),
+  ]);
+  const hostItem = (h: HostRecord) => toHostListItem(h, topics.get(h.username) ?? []);
+  const found: (SearchEntry & { score: number })[] = [
+    ...events.map((r) => ({ type: 'event' as const, event: toCollectedItem(r), score: r.score })),
+    ...people.flatMap((r) => {
+      const item = hostItem(r.host);
+      return item ? [{ type: 'host' as const, host: item, score: r.score }] : [];
+    }),
+    ...offers.flatMap((r) => {
+      const item = hostItem(r.host);
+      const practice = r.host.practices[r.n - 1];
+      // Practice вне наших Topic не показываем — как в каталоге
+      return item && practice && practice.topic in TOPIC_GUIDES ? [{ type: 'practice' as const, practice, host: item, score: r.score }] : [];
+    }),
+  ];
+  return { entries: found.sort((a, b) => b.score - a.score).slice(0, limit).map(({ score: _, ...entry }) => entry as SearchEntry) };
 }
 
 /** Фиксирует, что человек собрался на событие. Повторный вызов ничего не меняет. */

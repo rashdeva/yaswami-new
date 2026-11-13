@@ -13,13 +13,14 @@ interface Props {
   /** Блок над списком: предложение организатору подтвердить свои события. */
   lead?: ReactNode;
   onOpen: (event: CollectedEventItem) => void;
+  onSearch: () => void;
 }
 
 /** Значение фильтра «Популярное»: стоит в одном ряду с темами, но темой не является. */
 const POPULAR = '🔥';
 
 /** Витрина: все предстоящие события города. Открыта без входа. */
-export function FeedScreen({ city, lead, onOpen }: Props) {
+export function FeedScreen({ city, lead, onOpen, onSearch }: Props) {
   const { items, failed } = useCollectedFeed();
   const [topic, pickTopic] = useState<string | null>(null);
   const setTopic = (next: string | null) => {
@@ -51,6 +52,7 @@ export function FeedScreen({ city, lead, onOpen }: Props) {
           <p>📍 {city}</p>
         </div>
       </div>
+      <button className="group search" onClick={onSearch}><span className="row">🔍 Найти событие или мастера</span></button>
       {(topics.length > 1 || items?.some((e) => e.popular)) && (
         <div className="chips">
           <button className="chip" aria-pressed={!topic} onClick={() => setTopic(null)}>Все</button>

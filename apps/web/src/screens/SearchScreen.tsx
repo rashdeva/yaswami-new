@@ -1,0 +1,70 @@
+import { useEffect } from 'react';
+import type { SearchEntry } from '@yaswami/core';
+import { collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
+import { track } from '../analytics.ts';
+import { EventRow } from '../components/EventRow.tsx';
+import { GuestRow } from '../components/GuestRow.tsx';
+import { dayLabel, hostLine } from '../format.ts';
+import { useSearch } from '../hooks/useSearch.ts';
+import { useViewed } from '../hooks/useViewed.ts';
+
+interface Props {
+  query: string;
+  onQuery: (query: string) => void;
+  onOpen: (entry: SearchEntry) => void;
+  onBack: (() => void) | null;
+}
+
+/** Единый поиск: события, организаторы и их услуги одним списком, самое подходящее первым. Открыт без входа. */
+export function SearchScreen({ query, onQuery, onOpen, onBack }: Props) {
+  const { ready, entries, failed } = useSearch(query);
+  useViewed('search_viewed');
+  useEffect(() => { document.title = 'Поиск — Я с вами'; }, []);
+  const open = (entry: SearchEntry) => {
+    track('search_result_opened', { type: entry.type });
+    onOpen(entry);
+  };
+
+  return (
+    <>
+      <div className="top">
+        {onBack && <button className="chip" onClick={onBack}>← События</button>}
+        <div className="head"><h1>Поиск</h1></div>
+      </div>
+      <div className="group search">
+        <label className="row">
+          <input type="search" autoFocus enterKeyHint="search" placeholder="Йога, массаж, имя ведущего" aria-label="Что ищем" value={query} onChange={(e) => onQuery(e.target.value)} />
+        </label>
+      </div>
+      {!ready && <p className="note">События, ведущие, мастера и их услуги. Окончания и мелкие опечатки не страшны.</p>}
+      {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}
+      {ready && !entries && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
+      {entries?.length === 0 && <div className="state"><b>🌿</b><p>Ничего не нашлось. Попробуйте другое слово.</p></div>}
+      {!!entries?.length && (
+        <div className="feed">
+          {entries.map((entry) => entry.type === 'event' ? (
+            <EventRow
+              key={`e-${entry.event.id}`}
+              href={collectedPath(entry.event.id)}
+              time={[dayLabel(entry.event.starts_at), collectedTime(entry.event.starts_at)].filter(Boolean).join(', ')}
+              title={entry.event.title}
+              sub={[entry.event.place, entry.event.price].filter(Boolean).join(' · ')}
+              cover_url={entry.event.cover_url}
+              icon={topicIcon(entry.event.topic)}
+              topic={topicSlug(entry.event.topic)}
+              onOpen={() => open(entry)}
+            />
+          ) : (
+            <div key={entry.type === 'host' ? `h-${entry.host.id}` : `p-${entry.host.id}-${entry.practice.title}`} className="group">
+              <button className="plain" onClick={() => open(entry)}>
+                {entry.type === 'host'
+                  ? <GuestRow name={entry.host.name} photo={entry.host.photo_url} sub={hostLine(entry.host)} label="›" />
+                  : <GuestRow name={entry.practice.title} photo={entry.host.photo_url} sub={[entry.host.name, entry.practice.price].filter(Boolean).join(' · ')} label="›" />}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
