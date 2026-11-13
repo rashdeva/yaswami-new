@@ -386,7 +386,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
 
     tool('admin_hosts_update', {
       title: 'Edit organizer profile', shape: { host_id, ...HostUpdateInput.shape },
-      description: `Change an organizer profile: name, username, channel, summary, bio, city, and practices — the services they run (fix a title, price or topic, remove or add one; the list is replaced as a whole). Only passed fields change. ${ONLY_TEAM} Errors: city_not_found.`,
+      description: `Change an organizer profile: name, username, channel, summary, bio, city, and practices — the services they run (fix a title, price or topic, approve or reject one via its status, remove or add one; the list is replaced as a whole). Only passed fields change. ${ONLY_TEAM} Errors: city_not_found.`,
     }, ({ host_id: id, ...input }) => admin.updateHost(db, ctx, id, input));
 
     tool('admin_hosts_delete', {

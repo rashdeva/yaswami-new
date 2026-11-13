@@ -7,7 +7,7 @@ import { OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
 
 export interface Offer {
   summary: string; // 1–2 предложения от третьего лица: кто это и что ведёт
-  practices: Practice[];
+  practices: Omit<Practice, 'status'>[]; // статус ставит сборщик: новая Practice ждёт решения команды
 }
 
 const TOPICS = [...Object.keys(TOPIC_GUIDES), OTHER_TOPIC];

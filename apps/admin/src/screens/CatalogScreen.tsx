@@ -16,6 +16,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCatalogActions, useCollectedEvents, useCovers } from '@/hooks/useCollectedEvents';
 import { CatalogQueueScreen } from '@/screens/CatalogQueueScreen';
+import type { CatalogKind } from '@/screens/CatalogServicesScreen';
+import { KindToggle } from '@/screens/CatalogServicesScreen';
 import { COLLECTED_LABELS, matchCollected } from '@/lib/catalog';
 
 export type CatalogFilter = 'all' | CollectedStatus | 'covers' | 'queue';
@@ -34,9 +36,11 @@ interface Props {
   status: CatalogFilter;
   query: string;
   onFilter: (filter: { status: CatalogFilter; query: string }) => void;
+  /** Переключить каталог на услуги мастеров. */
+  onKind: (kind: CatalogKind) => void;
 }
 
-export function CatalogScreen({ status, query, onFilter }: Props) {
+export function CatalogScreen({ status, query, onFilter, onKind }: Props) {
   const { data: items, error } = useCollectedEvents();
   const { data: covers } = useCovers();
   const { update } = useCatalogActions();
@@ -47,6 +51,7 @@ export function CatalogScreen({ status, query, onFilter }: Props) {
 
   return (
     <Page title="Каталог" description={HINTS[status]}>
+      <KindToggle kind="events" onKind={onKind} />
       <Tabs value={status} onValueChange={(v) => onFilter({ status: v as CatalogFilter, query })}>
         <TabsList className="h-auto flex-wrap">
           {tabs.map(([key, label]) => (

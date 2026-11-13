@@ -458,10 +458,10 @@ async function hostPhotos(db: Db, hostId: string): Promise<CollectedHost['photos
  * `eventTopics` — темы его предстоящих опубликованных событий, по одной на событие.
  */
 function toHostListItem(h: HostRecord, eventTopics: (string | undefined)[]): HostListItem | null {
-  // Модерация (HOST_STATUSES): отклонённого не показываем; Practice — только у одобренного. Организатора с опубликованными
-  // событиями видно и до решения: его события команда уже одобрила.
+  // Отклонённого организатора не показываем целиком. Остальное решается по отдельности: события — своим статусом,
+  // Practice — своим (PRACTICE_STATUSES).
   if (h.status === 'rejected') return null;
-  const practices = h.status === 'published' ? h.practices.filter((p) => p.topic in TOPIC_GUIDES) : [];
+  const practices = h.practices.filter((p) => p.status === 'published' && p.topic in TOPIC_GUIDES);
   if (!practices.length && !eventTopics.length) return null;
   const mentioned = new Set([...practices.map((p) => p.topic), ...eventTopics]);
   return {
@@ -543,7 +543,7 @@ export async function search(db: Db, { query, pagination_limit: limit = SEARCH_L
       .where(and(upcomingCollected, published, eq(collectedEvents.city_id, DEFAULT_CITY_ID), event.where)).orderBy(desc(eventScore)).limit(limit),
     db.select({ host: hosts, n: sql<number>`p.n::int`, score: practice.score })
       .from(hosts).innerJoin(sql`jsonb_array_elements(${hosts.practices}) with ordinality as p(value, n)`, sql`true`)
-      .where(and(eq(hosts.status, 'published'), eq(hosts.city_id, DEFAULT_CITY_ID), practice.where)),
+      .where(and(ne(hosts.status, 'rejected'), eq(hosts.city_id, DEFAULT_CITY_ID), practice.where)),
     upcomingTopicsByHost(db),
   ]);
   const hostItem = (h: HostRecord) => toHostListItem(h, topics.get(h.username) ?? []);
@@ -552,8 +552,8 @@ export async function search(db: Db, { query, pagination_limit: limit = SEARCH_L
     ...offers.flatMap((r) => {
       const item = hostItem(r.host);
       const practice = r.host.practices[r.n - 1];
-      // Practice вне наших Topic не показываем — как в каталоге
-      return item && practice && practice.topic in TOPIC_GUIDES ? [{ type: 'practice' as const, practice, host: item, score: r.score }] : [];
+      // Только то, что видно в каталоге: одобренная Practice из наших Topic
+      return item && practice && item.practices.includes(practice) ? [{ type: 'practice' as const, practice, host: item, score: r.score }] : [];
     }),
   ];
   return { entries: found.sort((a, b) => b.score - a.score).slice(0, limit).map(({ score: _, ...entry }) => entry as SearchEntry) };

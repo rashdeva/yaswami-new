@@ -1,8 +1,8 @@
 // Все маршруты админки. Страница здесь — тонкая связка: берёт адрес и раздаёт экрану props; экраны про адреса не знают.
 // Ссылки на карточки сущностей рисует components/EntityLink.tsx — второе и последнее место, где известны адреса.
 import { createRootRoute, createRoute, createRouter, useNavigate } from '@tanstack/react-router';
-import type { AdminEntity, AgentKey, CollectedStatus } from '@yaswami/core';
-import { ADMIN_ENTITIES, AGENTS, COLLECTED_STATUSES } from '@yaswami/core';
+import type { AdminEntity, AgentKey, CollectedStatus, PracticeStatus } from '@yaswami/core';
+import { ADMIN_ENTITIES, AGENTS, COLLECTED_STATUSES, PRACTICE_STATUSES } from '@yaswami/core';
 import { App } from '@/App';
 import type { EventsWhen } from '@/hooks/useEvents';
 import { AccountsScreen } from '@/screens/AccountsScreen';
@@ -12,6 +12,8 @@ import { AgentsScreen } from '@/screens/AgentsScreen';
 import type { CatalogFilter } from '@/screens/CatalogScreen';
 import { CatalogItemScreen } from '@/screens/CatalogItemScreen';
 import { CatalogScreen } from '@/screens/CatalogScreen';
+import type { CatalogKind } from '@/screens/CatalogServicesScreen';
+import { CatalogServicesScreen } from '@/screens/CatalogServicesScreen';
 import { EventNewScreen } from '@/screens/EventNewScreen';
 import { EventScreen } from '@/screens/EventScreen';
 import { EventsScreen } from '@/screens/EventsScreen';
@@ -58,18 +60,14 @@ function AgentsPage() {
 }
 const agents = createRoute({ getParentRoute: () => root, path: '/agents', component: AgentsPage });
 
-// --- Мастера и услуги
+// --- Мастера
 
 function HostsPage() {
-  const search = hosts.useSearch();
-  const { q, queue, services, topic } = search;
+  const { q } = hosts.useSearch();
   const navigate = useNavigate();
-  const go = (next: Partial<typeof search>) => void navigate({ to: '/hosts', search: { ...search, ...next }, replace: true });
-  return <HostsScreen query={q ?? ''} tab={services ? 'services' : queue ? 'queue' : 'all'} topic={topic ?? null}
-    onTab={(tab) => go({ queue: tab === 'queue' || undefined, services: tab === 'services' || undefined, topic: undefined })}
-    onTopic={(next) => go({ topic: next ?? undefined })} onQuery={(query) => go({ q: query || undefined })} onOpen={(c) => void navigate({ to: '/', search: { c } })} onCreated={(id) => void navigate({ to: '/hosts/$id', params: { id } })} />;
+  return <HostsScreen query={q ?? ''} onQuery={(query) => void navigate({ to: '/hosts', search: { q: query || undefined }, replace: true })} onOpen={(c) => void navigate({ to: '/', search: { c } })} onCreated={(id) => void navigate({ to: '/hosts/$id', params: { id } })} />;
 }
-const hosts = createRoute({ getParentRoute: () => root, path: '/hosts', component: HostsPage, validateSearch: (s: Record<string, unknown>): { q?: string; queue?: boolean; services?: boolean; topic?: string } => ({ q: str(s.q), queue: s.queue === true || s.queue === 'true' || undefined, services: s.services === true || s.services === 'true' || undefined, topic: str(s.topic) }) });
+const hosts = createRoute({ getParentRoute: () => root, path: '/hosts', component: HostsPage, validateSearch: (s: Record<string, unknown>): { q?: string } => ({ q: str(s.q) }) });
 
 function HostPage() {
   const { id } = host.useParams();
@@ -114,20 +112,20 @@ const event = createRoute({ getParentRoute: () => root, path: '/events/$id', com
 // --- Каталог: собранные события на модерации и в ленте
 
 function CatalogPage() {
-  const { status, q } = catalog.useSearch();
+  const { kind, status, q } = catalog.useSearch();
   const navigate = useNavigate();
-  return (
-    <CatalogScreen
-      status={status ?? 'all'} query={q ?? ''}
-      onFilter={(f) => void navigate({ to: '/catalog', search: { status: f.status === 'all' ? undefined : f.status, q: f.query || undefined }, replace: true })}
-    />
-  );
+  const onKind = (next: CatalogKind) => void navigate({ to: '/catalog', search: { kind: next === 'services' ? next : undefined } });
+  const onFilter = (f: { status: CatalogFilter; query: string }) => void navigate({ to: '/catalog', search: { kind, status: f.status === 'all' ? undefined : f.status, q: f.query || undefined }, replace: true });
+  // У услуг шага обработки нет: отбор только по их статусам (PRACTICE_STATUSES).
+  if (kind === 'services') return <CatalogServicesScreen status={oneOf<PracticeStatus>(status, [...PRACTICE_STATUSES]) ?? 'all'} query={q ?? ''} onFilter={onFilter} onKind={onKind} />;
+  return <CatalogScreen status={status ?? 'all'} query={q ?? ''} onFilter={onFilter} onKind={onKind} />;
 }
 const catalog = createRoute({
   getParentRoute: () => root,
   path: '/catalog',
   component: CatalogPage,
-  validateSearch: (s: Record<string, unknown>): { status?: CatalogFilter; q?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { kind?: 'services'; status?: CatalogFilter; q?: string } => ({
+    kind: oneOf<'services'>(s.kind, ['services']),
     status: oneOf<CatalogFilter>(s.status, [...COLLECTED_STATUSES, 'covers', 'queue'] as (CollectedStatus | 'covers' | 'queue')[]),
     q: str(s.q),
   }),

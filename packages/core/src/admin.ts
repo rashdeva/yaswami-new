@@ -1,7 +1,7 @@
 // Операции команды над всем сервисом (`admin_*` в MCP, `/admin/*` в REST) и журнал этих действий: формы входа и ответа.
 import * as z from 'zod';
 import type { AdminCollectedEvent, EventView, Practice } from './api.ts';
-import { cityId, dateTime, EventCreateInput, EventUpdateInput, timeZone } from './api.ts';
+import { cityId, dateTime, EventCreateInput, EventUpdateInput, PRACTICE_STATUSES, timeZone } from './api.ts';
 import type { Event, Guest, User } from './schema.ts';
 import { City, Feature, RsvpStatus, User as UserSchema } from './schema.ts';
 import { OTHER_TOPIC, TOPIC_GUIDES } from './topics.ts';
@@ -115,8 +115,8 @@ export interface AdminCollectedEventView extends AdminCollectedEvent {
  */
 /**
  * Модерация организатора, как у собранных событий. pending — ждёт решения, published — в каталоге, rejected — не показываем.
- * Организатор с опубликованными событиями виден в каталоге и в pending: его события команда уже одобрила;
- * Practice же показываются только у published. В Luma такого нет.
+ * Организатор виден в каталоге, пока не отклонён: его события и Practice команда одобряет по отдельности
+ * (у Practice свой статус — PRACTICE_STATUSES); rejected прячет его целиком. В Luma такого нет.
  */
 export const HOST_STATUSES = ['pending', 'published', 'rejected'] as const;
 export type HostStatus = (typeof HOST_STATUSES)[number];
@@ -154,6 +154,7 @@ export const PracticeInput = z.object({
   topic: z.enum([...Object.keys(TOPIC_GUIDES), OTHER_TOPIC]).describe('Topic key; a practice with «другое» is hidden from the public catalogue'),
   description: text(500).nullable(),
   price: text(100).nullable().describe('Price as the organizer states it, e.g. «500k»; null — on request'),
+  status: z.enum(PRACTICE_STATUSES).describe('Moderation: pending — waits for the team, published — shown in the public catalogue, rejected — never shown'),
 });
 
 /** Добавить организатора по username: профиль (имя, «о себе», канал, сводку) соберёт сборщик. В Luma такого нет. */
@@ -171,7 +172,7 @@ export const HostUpdateInput = z
     channel: username.nullable().describe('Channel username, without @'),
     summary: text(2000).nullable(),
     city_id: cityId,
-    status: z.enum(HOST_STATUSES).describe('Moderation: published — show in the public catalogue of organizers, rejected — never show'),
+    status: z.enum(HOST_STATUSES).describe('rejected — hide the organizer with all events and practices; published — checked by the team. Each practice is moderated by its own status'),
     // Список целиком: чего в нём нет — удалено. Названия не повторяются: по названию Practice находит запись на неё.
     practices: z.array(PracticeInput).max(30).refine((list) => new Set(list.map((p) => p.title)).size === list.length, 'duplicate titles')
       .describe('Full list of practices and services the organizer runs; it replaces the stored one, so send every practice you want to keep. Titles must be unique'),

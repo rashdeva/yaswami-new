@@ -31,7 +31,7 @@ const NAV = [
   ] },
   { group: 'Сбор анонсов', items: [
     { to: '/catalog', label: 'Каталог', icon: LayoutListIcon },
-    { to: '/hosts', label: 'Мастера и услуги', icon: MegaphoneIcon },
+    { to: '/hosts', label: 'Мастера', icon: MegaphoneIcon },
     { to: '/sources', label: 'Источники', icon: RadioTowerIcon },
     { to: '/cities', label: 'Города', icon: MapPinIcon },
   ] },
