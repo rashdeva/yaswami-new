@@ -62,6 +62,13 @@ test('сборщик: события, источники и отметки', asy
   await store.setEvent(external_id, { ...event, topic: 'йога' });
   assert.equal((await store.withoutTopic()).length, 0);
 
+  // Повторный разбор старых событий (refresh.mjs): публикация без media ждёт, после разбора — отмечена.
+  assert.deepEqual((await store.withoutMedia()).map((e: any) => e.external_id), [external_id]);
+  await store.refreshed(external_id, { ...event, topic: 'йога', description: 'Полное описание' }, [{ type: 'photo', url: 'https://m/1.jpg' }]);
+  assert.equal((await store.withoutMedia()).length, 0);
+  const [again] = await sql`select event->>'description' as description, announcement->'media' as media, announcement->>'url' as url from collected_events`;
+  assert.deepEqual([again!.description, again!.media, again!.url], ['Полное описание', [{ type: 'photo', url: 'https://m/1.jpg' }], 'https://t.me/danang/42']);
+
   // Профиль собираем только по одобренным событиям.
   assert.equal((await store.unprofiled()).length, 0);
   await sql`update collected_events set status = 'approved'`;
