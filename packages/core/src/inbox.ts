@@ -191,7 +191,14 @@ export const LeadInput = z.object({
   author: z.object({ id: z.number().int(), name: z.string().min(1).max(200), username: z.string().nullable() }),
   text: z.string().min(1).max(1000),
   context: z.array(z.string().max(1000)).max(5),
+  // Когда человек написал. Старше LEAD_REPLY_HOURS — отвечать в чат поздно, охотник пишет ему в личку. Нет — сообщение свежее.
+  sent_at: z.iso.datetime({ offset: true }).optional(),
+  // Что за сигнал нашёл сборщик: ask — спрашивает, куда сходить; seek — ищет компанию или партнёра на занятие;
+  // newcomer — только приехал, хочет знакомиться. Нет — ask.
+  signal: z.enum(['ask', 'seek', 'newcomer']).optional(),
 });
+/** Сколько часов после сообщения в чате на него ещё уместно ответить в самом чате; позже — только в личку. */
+export const LEAD_REPLY_HOURS = 2;
 export type LeadInput = z.infer<typeof LeadInput>;
 
 /** Отправить черновик агента, при желании — с исправленным текстом. */

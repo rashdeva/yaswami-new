@@ -5,7 +5,7 @@ import type {
   AccountCreateInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminOverview, AgentKey, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message, MessageMeta,
   TgAccount, User,
 } from '@yaswami/core';
-import { AGENTS, collectedPath, collectedWhen } from '@yaswami/core';
+import { AGENTS, collectedPath, collectedWhen, LEAD_REPLY_HOURS } from '@yaswami/core';
 import type { Ctx } from './audit.ts';
 import { audited } from './audit.ts';
 import type { Db } from './db/client.ts';
@@ -218,17 +218,26 @@ export async function recordLead(db: Db, lead: LeadInput): Promise<void> {
   const account = await activeAccount(db);
 
   const before = lead.context.length ? `Перед этим в чате писали:\n${lead.context.map((t) => `- ${t}`).join('\n')}\n\n` : '';
-  const text = await hunter.ask(`Чат: ${lead.chat}\n\n${before}Вопрос (${lead.author.name}):\n${lead.text}`);
+  // Свежий вопрос — ответ в чат реплаем; старый — в чате отвечать поздно, пишем в личку (раздел «Личное сообщение» в SOUL роли).
+  const hoursAgo = lead.sent_at ? (Date.now() - Date.parse(lead.sent_at)) / 3600e3 : 0;
+  const direct = hoursAgo > LEAD_REPLY_HOURS;
+  const when = hoursAgo < 24 ? 'сегодня' : `${Math.round(hoursAgo / 24)} дн. назад`;
+  const what = { ask: 'Вопрос', seek: 'Ищет компанию', newcomer: 'Недавно приехал' }[lead.signal ?? 'ask'];
+  const text = await hunter.ask(direct
+    ? `Личное сообщение. Человек писал в чате ${lead.chat} ${when}.\n\n${before}${what} (${lead.author.name}):\n${lead.text}`
+    : `Чат: ${lead.chat}\n\n${before}${what} (${lead.author.name}):\n${lead.text}`);
   // В журнал — чтобы было видно, что охотник делает с найденными вопросами (сам текст вопроса не пишем).
-  console.log(`охотник: ${lead.url} — ${text ? 'черновик' : 'пропустил или роль недоступна'}`);
+  console.log(`охотник: ${lead.url} — ${text ? (direct ? 'черновик в личку' : 'черновик') : 'пропустил или роль недоступна'}`);
   if (!text) return;
 
-  const reason = 'Черновик ответа в чат';
+  const reason = direct ? 'Черновик в личку' : 'Черновик ответа в чат';
   const peer = { ...lead.author, account_id: account?.id ?? null };
   const conversation = await record(db, peer, { direction: 'in', author: 'user', text: `[чат ${lead.chat}] ${lead.text}`, status: 'received' }, reason);
   await db.insert(messages).values({
     conversation_id: conversation.id, direction: 'out', author: 'agent:hunter', text, status: 'draft',
-    meta: { reason: `Вопрос в чате ${lead.chat}`, source_url: lead.url, reply_to: { chat: lead.chat, message_id: lead.message_id } },
+    meta: direct
+      ? { reason: `Писал в чате ${lead.chat} ${when}`, source_url: lead.url }
+      : { reason: `Вопрос в чате ${lead.chat}`, source_url: lead.url, reply_to: { chat: lead.chat, message_id: lead.message_id } },
   });
   live.changed();
   await alertAdmins(conversation, reason);

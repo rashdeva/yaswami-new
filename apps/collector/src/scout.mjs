@@ -6,17 +6,12 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import telegram from 'telegram';
 import { connect } from './mtproto.mjs';
-import { looksLikeLead } from './lead.mjs';
+import { signalOf, TOPIC } from './lead.mjs';
 
 const MAX_PER_CHAT = 5000; // ponytail: болтливый чат обрезается; если важен — искать в нём по словам (messages.Search)
 
-// Чем занимается человек: первое совпавшее слово — тема, по ней ищем событие в каталоге.
-const TOPIC = /(?<![а-яёa-z])(бачат|сальс|кизомб|танц|йог|медитац|квиз|настолк|покер|мафи[яюи]|волейбол|футбол|падел|теннис|бег|пробежк|сёрф|серф|фридайв|дайв|нетворкинг|митап|лекци|мастер[- ]класс|экскурси|вечеринк|тусовк|концерт|караоке|стендап|кино|bachata|salsa|yoga|quiz|poker|volleyball|surf|party|meetup)[а-яёa-z]*/i;
-
-// Сигналы интереса: «ищу партнёра на бачату» (3) теплее вопроса «куда сходить» (2), а тот — «только приехал» (1).
-const SEEK = /(ищу|ищем|нужен|нужна)\s+(партн[её]р|пару|компани|напарни|с\s+кем)|кто\s+(играет|ходит|танцует|занимается|катает|бегает|со\s+мной|хочет|пойд[её]т|ид[её]т)|с\s+кем\s+(можно\s+|бы\s+)?(сходить|пойти|поиграть|потанцевать)|looking\s+for\s+(a\s+)?(partner|buddy|company)|anyone\s+(play|going|want)/i;
-const NEWCOMER = /(только|недавно)\s+(приехал|переехал|прилетел)|хочу\s+(познакомиться|найти\s+друзей)|new\s+(here|in\s+town)|just\s+(moved|arrived)/i;
-const signalOf = (text) => (SEEK.test(text) && TOPIC.test(text) ? 3 : looksLikeLead(text) ? 2 : NEWCOMER.test(text) ? 1 : 0);
+const WEIGHT = { seek: 3, ask: 2, newcomer: 1 }; // «ищу партнёра на бачату» теплее вопроса «куда сходить», а тот — «только приехал»
+const signalWeight = (text) => WEIGHT[signalOf(text)] ?? 0;
 
 /**
  * Люди с интересом к досугу среди сообщений чата за `days` дней до `now`, по одному на человека, лучшие первыми.
@@ -28,7 +23,7 @@ export function pickCandidates(chat, messages, days, now = Date.now()) {
   for (const m of messages) {
     const s = m.sender;
     if (!m.message || m.date < since || s?.className !== 'User' || s.bot || m.message.length > 500) continue;
-    const signal = signalOf(m.message);
+    const signal = signalWeight(m.message);
     if (!signal) continue;
     const age = (now / 1000 - m.date) / 86400;
     const score = signal * (age <= 3 ? 3 : age <= 14 ? 2 : 1);

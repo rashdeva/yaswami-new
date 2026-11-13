@@ -24,24 +24,44 @@ export const looksLikeLead = (text) =>
 
 import { pickOffers } from './offers.mjs';
 
-const MAX_AGE_MS = 2 * 3600e3; // отвечать на вопрос двухчасовой давности поздно
+// Чем занимается человек: первое совпавшее слово — тема (по корню).
+export const TOPIC = /(?<![а-яёa-z])(бачат|сальс|кизомб|танц|йог|медитац|квиз|настолк|покер|мафи[яюи]|волейбол|футбол|баскетбол|падел|теннис|бег|пробежк|сёрф|серф|фридайв|дайв|нетворкинг|митап|лекци|мастер[- ]класс|экскурси|вечеринк|тусовк|концерт|караоке|стендап|кино|bachata|salsa|yoga|quiz|poker|volleyball|basketball|tennis|surf|party|meetup)[а-яёa-z]*/i;
+// Ищет компанию или партнёра на занятие: вместе с темой — самый тёплый сигнал.
+const SEEK = /(ищу|ищем|нужен|нужна)\s+(партн[её]р|пару|компани|напарни|с\s+кем)|кто\s+(играет|ходит|танцует|занимается|катает|бегает|со\s+мной|хочет|пойд[её]т|ид[её]т)|с\s+кем\s+(можно\s+|бы\s+)?(сходить|пойти|поиграть|потанцевать)|looking\s+for\s+(a\s+)?(partner|buddy|company)|anyone\s+(play|going|want)/i;
+// Только приехал, хочет знакомиться: слабый сигнал, роль пишет, только если есть что-то по теме.
+const NEWCOMER = /(только|недавно)\s+(приехал|переехал|прилетел)|хочу\s+(познакомиться|найти\s+друзей)|new\s+(here|in\s+town)|just\s+(moved|arrived)/i;
+
+/** Какой сигнал интереса в сообщении: seek, ask, newcomer или null. Длинное (объявления, истории) — не сигнал. */
+export function signalOf(text) {
+  if (text.length > 500) return null;
+  if (SEEK.test(text) && TOPIC.test(text)) return 'seek';
+  if (looksLikeLead(text)) return 'ask';
+  return NEWCOMER.test(text) ? 'newcomer' : null;
+}
+
+// Сборщик видит сообщения раз в проход, обычно свежие. Старше суток — уже не ловим: для истории есть backfill-leads.mjs.
+// Свежее ли оно для ответа в чат, решает API (LEAD_REPLY_HOURS): старое уйдёт черновиком в личку.
+const MAX_AGE_MS = 24 * 3600e3;
 const CONTEXT = 3;
 
 /**
- * Вопросы среди сообщений чата (от старых к новым). Берём только свежие и только от людей;
+ * Люди с интересом к досугу среди сообщений чата (от старых к новым), не старше `maxAgeMs`, только от людей;
  * к каждому прикладываем несколько сообщений перед ним — по ним роль поймёт, о чём шёл разговор.
  */
-export function pickLeads(chat, messages, now = Date.now()) {
+export function pickLeads(chat, messages, now = Date.now(), maxAgeMs = MAX_AGE_MS) {
   return messages.flatMap((msg, i) => {
     const sender = msg.sender;
     if (!msg.message || sender?.className !== 'User' || sender.bot) return [];
-    if (now - msg.date * 1000 > MAX_AGE_MS || !looksLikeLead(msg.message)) return [];
+    const signal = now - msg.date * 1000 <= maxAgeMs && signalOf(msg.message);
+    if (!signal) return [];
     return [{
+      signal,
+      sent_at: new Date(msg.date * 1000).toISOString(),
       chat,
       message_id: msg.id,
       url: /^-?\d+$/.test(chat) ? `https://t.me/c/${chat.replace(/^-100/, '')}/${msg.id}` : `https://t.me/${chat}/${msg.id}`,
       author: { id: Number(sender.id), name: [sender.firstName, sender.lastName].filter(Boolean).join(' ') || String(sender.id), username: sender.username ?? null },
-      text: msg.message,
+      text: msg.message.slice(0, 1000),
       context: messages.slice(Math.max(0, i - CONTEXT), i).map((m) => m.message).filter(Boolean).map((t) => t.slice(0, 1000)),
     }];
   });
