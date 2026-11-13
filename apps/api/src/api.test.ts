@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, PracticeSignup, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
+import type { AdminHostListItem, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, PracticeSignup, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -355,6 +355,14 @@ test('каталог организаторов: с событиями или Pr
   const admins = settings.adminIds;
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
+  // команда правит Practice: список заменяется целиком, заявки видны в списке админки по названию
+  const fixed = [{ title: 'Утренняя йога', topic: 'йога', description: 'Группа у моря.', price: '200k' }];
+  assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: fixed })).status, 200);
+  assert.deepEqual(((await (await app.request(`/hosts/${dasha.id}`)).json()) as HostItem).practices, fixed);
+  assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: [...fixed, ...fixed] })).status, 400); // названия не повторяются
+  assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: [{ ...fixed[0], topic: 'нет такой' }] })).status, 400);
+  const listed = (await (await call(admin, 'GET', '/admin/hosts')).json()) as AdminHostListItem[];
+  assert.deepEqual(listed.find((h) => h.id === dasha.id)!.practice_signup_counts, { 'Утренняя йога': 1 });
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${master!.id}`, { status: 'published' })).status, 200);
   assert.deepEqual(((await (await app.request('/hosts')).json()) as HostListItem[]).map((h) => h.username), ['club', 'dasha_yoga', 'new_master']);
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${list[0]!.id}`, { status: 'rejected' })).status, 200);

@@ -1,6 +1,6 @@
 // Каталог из анонсов глазами команды: собранные события любого статуса и профили их организаторов (hosts).
-import { asc, desc, eq } from 'drizzle-orm';
-import type { AdminCollectedEvent, AdminCollectedEventView, AdminHostView, CollectedUpdateInput, Host, HostCreateInput, HostUpdateInput } from '@yaswami/core';
+import { asc, count, desc, eq } from 'drizzle-orm';
+import type { AdminCollectedEvent, AdminCollectedEventView, AdminHostListItem, AdminHostView, CollectedUpdateInput, Host, HostCreateInput, HostUpdateInput } from '@yaswami/core';
 import { normalUsername } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
@@ -44,7 +44,11 @@ export const requestCollectedVideo = (db: Db, ctx: Ctx, slug: string) =>
   audited(db, ctx, { action: 'admin_videos_request', entity: 'collected_event', id: slug, undoable: false }, (tx) => s.requestCollectedVideo(tx, slug));
 
 /** Профили организаторов собранных событий. `user_id` появляется, когда человек вошёл в сервис. */
-export const listHosts = (db: Db): Promise<Host[]> => db.select().from(hosts).orderBy(asc(hosts.name)).limit(300); // ponytail: без страниц
+export async function listHosts(db: Db): Promise<AdminHostListItem[]> {
+  const rows = await db.select().from(hosts).orderBy(asc(hosts.name)).limit(300); // ponytail: без страниц
+  const counts = await db.select({ host_id: practiceSignups.host_id, title: practiceSignups.title, n: count() }).from(practiceSignups).groupBy(practiceSignups.host_id, practiceSignups.title);
+  return rows.map((h) => ({ ...h, practice_signup_counts: Object.fromEntries(counts.filter((c) => c.host_id === h.id).map((c) => [c.title, c.n])) }));
+}
 
 export async function getHost(db: Db, id: string): Promise<AdminHostView> {
   const [host] = await db.select().from(hosts).where(eq(hosts.id, id));
