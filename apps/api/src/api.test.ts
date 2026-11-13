@@ -556,7 +556,7 @@ test('сообщение боту: /start — приветствие с карт
 
 });
 
-test('поиск: события, организаторы и Practice одним запросом; формы слова, начало слова, опечатки; только публичное', async () => {
+test('поиск: события и Practice одним запросом; формы слова, начало слова, опечатки; только публичное', async () => {
   await db.delete(collectedEvents);
   await db.delete(hosts);
   const day = (n: number) => new Date(Date.now() + n * 86_400_000);
@@ -585,7 +585,7 @@ test('поиск: события, организаторы и Practice одни�
   ]);
   const find = async (query: string, limit?: number) =>
     ((await (await app.request(`/search?query=${encodeURIComponent(query)}${limit ? `&pagination_limit=${limit}` : ''}`)).json()) as SearchResult).entries;
-  const names = (entries: SearchEntry[]) => entries.map((e) => (e.type === 'event' ? e.event.title : e.type === 'host' ? `@${e.host.username}` : `${e.practice.title} @${e.host.username}`));
+  const names = (entries: SearchEntry[]) => entries.map((e) => (e.type === 'event' ? e.event.title : `${e.practice.title} @${e.host.username}`));
 
   // форма слова и «ё»: название важнее описания, из равных ближайшее выше; скрытое и прошедшее не находятся
   assert.deepEqual(names(await find('йогой')), ['Ещё одна йога', 'Йога на рассвете', 'Ретрит в горах']);
@@ -597,9 +597,8 @@ test('поиск: события, организаторы и Practice одни�
   assert.deepEqual(names(await find('медитации')), ['Ретрит в горах']);
   // опечатка; Practice — только у одобренного организатора и только из наших тем
   assert.deepEqual(names(await find('масаж')), ['Тайский массаж @dasha_yoga']);
-  // организатор — по имени и по username; того, кого нет в каталоге, нет и в поиске
-  assert.deepEqual(names(await find('даша')), ['@dasha_yoga']);
-  assert.deepEqual(names(await find('@dasha_yoga')), ['@dasha_yoga']);
+  // самих организаторов поиск не выдаёт — только события и услуги
+  assert.deepEqual(names(await find('даша')), []);
   // лишние знаки запрос не ломают; пусто и один символ — ошибка входа
   assert.deepEqual(names(await find("йога' & | ! :* (")), names(await find('йога')));
   assert.deepEqual(await find('!!!'), []);

@@ -513,24 +513,21 @@ function searchMatch(query: string, title: SQL, b: SQL[], c: SQL[]) {
 }
 const jsonText = (column: SQL | typeof collectedEvents.event, key: string) => sql`${column}->>'${sql.raw(key)}'`;
 
-/** Единый поиск по публичному каталогу: то же, что видно в ленте и у организаторов, самое подходящее первым. Открыт всем. */
+/** Единый поиск по публичному каталогу: события из ленты и услуги из вкладки «Услуги», самое подходящее первым. Открыт всем. */
 export async function search(db: Db, { query, pagination_limit: limit = SEARCH_LIMIT }: SearchInput): Promise<SearchResult> {
   const e = (key: string) => jsonText(collectedEvents.event, key);
   const p = (key: string) => jsonText(sql`p.value`, key);
   const event = searchMatch(query, e('title'), [e('place'), e('address'), e('tags'), e('topic'), e('for_whom')], [e('description'), e('what_happens'), e('takeaway')]);
-  const host = searchMatch(query, sql`${hosts.name}`, [sql`${hosts.username}`], [sql`${hosts.summary}`]);
   const practice = searchMatch(query, p('title'), [p('topic')], [p('description')]);
-  if (!event || !host || !practice) return { entries: [] };
+  if (!event || !practice) return { entries: [] };
 
   // ponytail: среди одинаково подходящих событий ближайшее чуть выше — надбавка на глаз, до 0.1 и тает за недели
   const eventScore = sql<number>`${event.score} + 0.1 / (1 + greatest(0, extract(epoch from ${collectedEvents.starts_at} - now())) / 604800)`;
 
-  const [events, people, offers, topics] = await Promise.all([
+  const [events, offers, topics] = await Promise.all([
     db.select({ ...getTableColumns(collectedEvents), cover_id: photos.id, score: eventScore })
       .from(collectedEvents).leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id))
       .where(and(upcomingCollected, published, event.where)).orderBy(desc(eventScore)).limit(limit),
-    // ponytail: без limit — видимость организатора решает toHostListItem, а их сотни
-    db.select({ host: hosts, score: host.score }).from(hosts).where(and(ne(hosts.status, 'rejected'), host.where)),
     db.select({ host: hosts, n: sql<number>`p.n::int`, score: practice.score })
       .from(hosts).innerJoin(sql`jsonb_array_elements(${hosts.practices}) with ordinality as p(value, n)`, sql`true`)
       .where(and(eq(hosts.status, 'published'), practice.where)),
@@ -539,10 +536,6 @@ export async function search(db: Db, { query, pagination_limit: limit = SEARCH_L
   const hostItem = (h: HostRecord) => toHostListItem(h, topics.get(h.username) ?? []);
   const found: (SearchEntry & { score: number })[] = [
     ...events.map((r) => ({ type: 'event' as const, event: toCollectedItem(r), score: r.score })),
-    ...people.flatMap((r) => {
-      const item = hostItem(r.host);
-      return item ? [{ type: 'host' as const, host: item, score: r.score }] : [];
-    }),
     ...offers.flatMap((r) => {
       const item = hostItem(r.host);
       const practice = r.host.practices[r.n - 1];

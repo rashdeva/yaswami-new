@@ -51,7 +51,7 @@ function FeedPage() {
     if (me && mine.total === null) return <Spinner />;
     if (mine.total) return <Navigate to="/my" replace />;
   }
-  return <FeedScreen city={city} lead={<Claims />} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} onSearch={() => void navigate({ to: '/search' })} />;
+  return <FeedScreen city={city} lead={<Claims />} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
 }
 const feed = createRoute({ getParentRoute: () => app, path: '/', component: FeedPage });
 
@@ -82,7 +82,7 @@ const collected = createRoute({ getParentRoute: () => app, path: '/e/$id', compo
 function HostsPage() {
   const navigate = useNavigate();
   const { city } = useSession();
-  return <HostsScreen city={city} onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} onSearch={() => void navigate({ to: '/search' })} />;
+  return <HostsScreen city={city} onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} />;
 }
 const hostsRoute = createRoute({ getParentRoute: () => app, path: '/services', component: HostsPage });
 // Старый адрес вкладки: раньше она называлась «Организаторы». Страница мастера осталась на /hosts/$id — это Host.
@@ -101,7 +101,6 @@ const hostRoute = createRoute({ getParentRoute: () => app, path: '/hosts/$id', c
 function SearchPage() {
   const { q = '' } = searchRoute.useSearch();
   const navigate = useNavigate();
-  const { onBack } = useShell();
   return (
     <SearchScreen
       query={q}
@@ -109,7 +108,6 @@ function SearchPage() {
       onOpen={(entry) => void (entry.type === 'event'
         ? navigate({ to: '/e/$id', params: { id: entry.event.id } })
         : navigate({ to: '/hosts/$id', params: { id: entry.host.id } }))}
-      onBack={onBack}
     />
   );
 }

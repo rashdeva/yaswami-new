@@ -334,9 +334,12 @@ h2.today { color: var(--btn); }
 /* Кнопка действия внизу экрана («Новое событие») — над таббаром, а не под ним. */
 .with-tabbar .main > div { padding-bottom: calc(86px + var(--inset-bottom, env(safe-area-inset-bottom))); }
 
-/* поиск: поле на экране поиска и кнопка-поле, которая ведёт к нему с витрины и из каталога */
-.search { display: block; width: calc(100% - 32px); margin: 14px 16px; padding: 0; font: inherit; color: var(--hint); text-align: left; }
-button.search { cursor: pointer; }
-.search input { color: var(--text); outline: none; }
+/* поиск: круглая кнопка справа от таббара, как в iOS, и поле на экране поиска */
+.tabbar > div { width: min(calc(var(--n) * 120px), calc(100vw - 32px - 68px)); margin-right: 10px; }
+.tabbar > .find { flex: none; width: 65px; justify-content: center; padding: 0; margin: 0 16px calc(10px + var(--inset-bottom, env(safe-area-inset-bottom))) 0; pointer-events: auto; color: var(--text);
+  background: var(--mat); border: .5px solid var(--stroke); -webkit-backdrop-filter: blur(24px) saturate(190%); backdrop-filter: blur(24px) saturate(190%); box-shadow: inset 0 1px 0 var(--shine), 0 8px 28px rgba(0, 0, 0, .16);
+  animation: tabbar-in .45s cubic-bezier(.2, .9, .3, 1.15) backwards; }
+.search { margin: 14px 16px; }
+.search input { outline: none; }
 .search + .note { margin-bottom: 12px; }
 .feed .group { margin: 0; }

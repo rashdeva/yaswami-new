@@ -4,7 +4,9 @@ import { collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/cor
 import { track } from '../analytics.ts';
 import { EventRow } from '../components/EventRow.tsx';
 import { GuestRow } from '../components/GuestRow.tsx';
-import { dayLabel, hostLine } from '../format.ts';
+import { PracticeRow } from '../components/PracticeRow.tsx';
+import { dayLabel } from '../format.ts';
+import { usePracticeSignup } from '../hooks/useHosts.ts';
 import { useSearch } from '../hooks/useSearch.ts';
 import { useViewed } from '../hooks/useViewed.ts';
 
@@ -12,12 +14,12 @@ interface Props {
   query: string;
   onQuery: (query: string) => void;
   onOpen: (entry: SearchEntry) => void;
-  onBack: (() => void) | null;
 }
 
-/** Единый поиск: события, организаторы и их услуги одним списком, самое подходящее первым. Открыт без входа. */
-export function SearchScreen({ query, onQuery, onOpen, onBack }: Props) {
+/** Единый поиск: события и услуги мастеров одним списком, самое подходящее первым. Открыт без входа. */
+export function SearchScreen({ query, onQuery, onOpen }: Props) {
   const { ready, entries, failed } = useSearch(query);
+  const signUp = usePracticeSignup();
   useViewed('search_viewed');
   useEffect(() => { document.title = 'Поиск — Я с вами'; }, []);
   const open = (entry: SearchEntry) => {
@@ -27,16 +29,13 @@ export function SearchScreen({ query, onQuery, onOpen, onBack }: Props) {
 
   return (
     <>
-      <div className="top">
-        {onBack && <button className="chip" onClick={onBack}>← События</button>}
-        <div className="head"><h1>Поиск</h1></div>
-      </div>
+      <div className="top"><div className="head"><h1>Поиск</h1></div></div>
       <div className="group search">
         <label className="row">
-          <input type="search" autoFocus enterKeyHint="search" placeholder="Йога, массаж, имя ведущего" aria-label="Что ищем" value={query} onChange={(e) => onQuery(e.target.value)} />
+          <input type="search" autoFocus enterKeyHint="search" placeholder="Йога, массаж, ретрит" aria-label="Что ищем" value={query} onChange={(e) => onQuery(e.target.value)} />
         </label>
       </div>
-      {!ready && <p className="note">События, ведущие, мастера и их услуги. Окончания и мелкие опечатки не страшны.</p>}
+      {!ready && <p className="note">События и услуги мастеров. Окончания и мелкие опечатки не страшны.</p>}
       {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}
       {ready && !entries && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
       {entries?.length === 0 && <div className="state"><b>🌿</b><p>Ничего не нашлось. Попробуйте другое слово.</p></div>}
@@ -55,12 +54,12 @@ export function SearchScreen({ query, onQuery, onOpen, onBack }: Props) {
               onOpen={() => open(entry)}
             />
           ) : (
-            <div key={entry.type === 'host' ? `h-${entry.host.id}` : `p-${entry.host.id}-${entry.practice.title}`} className="group">
+            // Услуга — как во вкладке «Услуги»: мастер и под ним она сама с записью
+            <div key={`p-${entry.host.id}-${entry.practice.title}`} className="group">
               <button className="plain" onClick={() => open(entry)}>
-                {entry.type === 'host'
-                  ? <GuestRow name={entry.host.name} photo={entry.host.photo_url} sub={hostLine(entry.host)} label="›" />
-                  : <GuestRow name={entry.practice.title} photo={entry.host.photo_url} sub={[entry.host.name, entry.practice.price].filter(Boolean).join(' · ')} label="›" />}
+                <GuestRow name={entry.host.name} photo={entry.host.photo_url} sub={entry.host.summary ?? undefined} label="›" />
               </button>
+              <PracticeRow practice={entry.practice} onSignUp={() => signUp(entry.host, entry.practice.title)} />
             </div>
           ))}
         </div>

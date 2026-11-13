@@ -10,11 +10,10 @@ import { useViewed } from '../hooks/useViewed.ts';
 interface Props {
   city: string;
   onOpen: (host: HostListItem) => void;
-  onSearch: () => void;
 }
 
 /** Вкладка «Услуги»: мастера города и под каждым — его услуги (Practice) с записью; фильтр по темам. Открыта без входа. */
-export function HostsScreen({ city, onOpen, onSearch }: Props) {
+export function HostsScreen({ city, onOpen }: Props) {
   const { hosts, failed } = useHosts();
   const signUp = usePracticeSignup();
   const [topic, pickTopic] = useState<string | null>(null);
@@ -41,7 +40,6 @@ export function HostsScreen({ city, onOpen, onSearch }: Props) {
           <p>📍 {city} · мастера и частные занятия</p>
         </div>
       </div>
-      <button className="group search" onClick={onSearch}><span className="row">🔍 Найти услугу, мастера или событие</span></button>
       {topics.length > 1 && (
         <div className="chips">
           <button className="chip" aria-pressed={!topic} onClick={() => setTopic(null)}>Все</button>

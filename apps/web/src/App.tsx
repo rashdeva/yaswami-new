@@ -52,7 +52,7 @@ export function App() {
             ? () => void navigate({ to: hasEvents ? '/my' : '/' })
             : null;
   useTelegramBack(back);
-  const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/my';
+  const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/my' || pathname === '/search';
 
   return (
     <ShellContext value={{ toast: showToast, onKind: setKind, onBack: nativeBack ? null : back }}>
@@ -60,7 +60,7 @@ export function App() {
         <div className="air" />
         <Outlet />
         {/* Таббар — на корневых разделах; у страниц события и организатора внизу своя кнопка действия и «назад». */}
-        {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/services' ? 'hosts' : 'mine'} />}
+        {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/services' ? 'hosts' : pathname === '/my' ? 'mine' : null} />}
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </ShellContext>
@@ -68,14 +68,14 @@ export function App() {
 }
 
 /** Нижний таббар разделов. «Мои» — тому, кто вошёл или может войти на сайте; организатору без событий — сразу создание. */
-function AppTabBar({ current }: { current: Tab }) {
+function AppTabBar({ current }: { current: Tab | null }) {
   const navigate = useNavigate();
   const { me, authed, canLogin } = useSession();
   const { hasEvents } = useMyEvents();
   const canCreate = useFeature('event_create');
   const tabs: [Tab, () => void][] = [['feed', () => void navigate({ to: '/' })], ['hosts', () => void navigate({ to: '/services' })]];
   if (me || canLogin) tabs.push(['mine', () => void navigate({ to: authed && !hasEvents && canCreate ? '/new' : '/my' })]);
-  return <TabBar current={current} tabs={tabs} />;
+  return <TabBar current={current} tabs={tabs} searching={current === null} onSearch={() => void navigate({ to: '/search' })} />;
 }
 
 /** Выйти на сайте; null — в Telegram, там человек опознан самим Telegram. */
