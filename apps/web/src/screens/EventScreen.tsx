@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { Event, RsvpStatus } from '@yaswami/core';
-import { TEMPLATES } from '@yaswami/core';
 import { useEvent, useEventVisit } from '../hooks/useEvent.ts';
+import { useScrolledPast } from '../hooks/useScrolledPast.ts';
 import { hue, kindIcon, when } from '../format.ts';
 import { haptic } from '../tg.ts';
 import { shareEvent } from '../share.ts';
 import { About } from '../components/About.tsx';
 import { GuestRow } from '../components/GuestRow.tsx';
+import { ShareButton } from '../components/ShareButton.tsx';
 
 const ANSWERS: [RsvpStatus, string][] = [['approved', 'Пойду'], ['maybe', 'Думаю'], ['declined', 'Не пойду']];
 const GUEST_LABEL = { approved: 'пойдёт', maybe: 'думает', declined: 'не пойдёт', waitlist: 'в листе ожидания' } as const;
@@ -26,6 +27,7 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
   const { view, failed, reload, rsvp } = useEvent(id);
   const [pending, setPending] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
+  const [watch, barShown] = useScrolledPast();
 
   useEventVisit(id);
 
@@ -45,8 +47,9 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
   }
 
   const { event, ticket_types: types, guests, guest_counts: counts, me, is_host } = view;
-  const template = TEMPLATES[event.kind];
   const open = event.status === 'published';
+  const share = () => shareEvent(view.event, userId, toast);
+  const price = types.length === 1 ? types[0]!.price_text : null;
   const selected = picked ?? me?.event_ticket_type_id ?? (types.length === 1 ? types[0]!.id : null);
   const taken = (typeId: string) =>
     guests.filter((g) => g.approval_status === 'approved' && g.event_ticket_type_id === typeId).reduce((n, g) => n + 1 + g.plus_ones, 0);
@@ -69,6 +72,31 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
     }
   }
 
+  // Кнопки сначала лежат в шапке; когда её прокрутили, их копия выезжает снизу.
+  const actions = (
+    <>
+      {is_host ? (
+        <div className="cta-row">
+          <ShareButton onClick={share} />
+          <button className="cta" onClick={onEdit}>Редактировать</button>
+        </div>
+      ) : open ? (
+        <div className="cta-row">
+          <ShareButton onClick={share} />
+          <div className="rsvp bar" role="group" aria-label="Ваш ответ">
+            {ANSWERS.map(([status, label]) => (
+              <button key={status} className={status === 'approved' ? 'go' : undefined} aria-pressed={me?.approval_status === status} disabled={pending} onClick={() => void respond(status)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <button className="cta" onClick={share}>Поделиться</button>
+      )}
+    </>
+  );
+
   function pickTicket(ticketId: string) {
     setPicked(ticketId);
     if (me?.approval_status === 'approved') void respond('approved', ticketId); // уже идёт — меняем билет сразу
@@ -83,16 +111,19 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
         {view.cover_url && <img className="mark" src="/mark.svg" alt="" />}
         {onBack && <button className="back" onClick={onBack}>← Мои события</button>}
         {!view.cover_url && <img className="emo" src={kindIcon(event.kind)} alt="" />}
-        <small>{event.status === 'cancelled' ? 'Отменено' : event.status === 'draft' ? 'Черновик' : template.label}</small>
-        <h1>{event.name}</h1>
+        <div className="sum">
+          {event.status !== 'published' && <small>{event.status === 'cancelled' ? 'Отменено' : 'Черновик'}</small>}
+          <h1>{event.name}</h1>
+          <p className="when">{when(event.start_at, event.timezone)}</p>
+          {event.geo_address_json && <p className="where">📍 {event.geo_address_json.address}</p>}
+        </div>
+        <div className="acts" ref={watch}>{actions}</div>
       </div>
 
-      <div className="group"><div className="meta">
-        <div><span>🗓</span><span>{when(event.start_at, event.timezone)}</span></div>
-        {event.geo_address_json && <div><span>📍</span><span>{event.geo_address_json.address}</span></div>}
+      {(event.meeting_url || price) && <div className="group"><div className="meta">
         {event.meeting_url && <div><span>🔗</span><a href={event.meeting_url} target="_blank" rel="noreferrer">{event.meeting_url.replace(/^https?:\/\//, '')}</a></div>}
-        {types.length === 1 && types[0]!.price_text && <div><span>🎟</span><span>{types[0]!.price_text}</span></div>}
-      </div></div>
+        {price && <div><span>🎟</span><span>{price}</span></div>}
+      </div></div>}
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
 
       <About topic={event.topic} what_happens={event.what_happens} for_whom={event.for_whom} beginner_friendly={event.beginner_friendly}
@@ -155,25 +186,7 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
         </>
       )}
 
-      <div className="main"><div>
-        {!is_host && open && (
-          <div className="rsvp bar" role="group" aria-label="Ваш ответ">
-            {ANSWERS.map(([status, label]) => (
-              <button key={status} className={status === 'approved' ? 'go' : undefined} aria-pressed={me?.approval_status === status} disabled={pending} onClick={() => void respond(status)}>
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-        {is_host ? (
-          <div className="cta-row">
-            <button className="cta alt" onClick={onEdit}>Редактировать</button>
-            <button className="cta" onClick={() => shareEvent(view.event, userId, toast)}>Поделиться</button>
-          </div>
-        ) : (
-          <button className={open ? 'cta alt' : 'cta'} onClick={() => shareEvent(view.event, userId, toast)}>Поделиться</button>
-        )}
-      </div></div>
+      <div className="main" data-off={!barShown || undefined} inert={!barShown}><div>{actions}</div></div>
     </>
   );
 }

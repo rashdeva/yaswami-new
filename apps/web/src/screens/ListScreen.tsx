@@ -41,13 +41,14 @@ export function ListScreen({ events, collected, lead, onOpen, onOpenCollected, o
     ...events.map((item): Row => {
       const { event } = item;
       return {
-        key: event.id, kind: event.kind, icon: kindIcon(event.kind), title: event.name, note: note(item),
+        key: event.id, kind: event.kind, icon: kindIcon(event.kind), cover: item.cover_url, title: event.name,
+        note: [event.geo_address_json?.address, note(item)].filter(Boolean).join(' · '),
         start: event.start_at, wall: wallParts(event.start_at, event.timezone).join('T'), past: new Date(event.end_at ?? event.start_at).getTime() + (event.end_at ? 0 : 3 * 3600e3) < now, open: () => { onOpen(event.id); },
       };
     }),
     ...collected.map(({ event }): Row => ({
       key: `c:${event.id}`, kind: 'o', icon: topicIcon(event.topic), topic: topicSlug(event.topic), title: event.title, cover: event.cover_url,
-      note: 'вы заинтересовались', start: event.starts_at, wall: event.starts_at, past: collectedIsPast(event, now), open: () => { onOpenCollected(event); },
+      note: [event.place, 'вы заинтересовались'].filter(Boolean).join(' · '), start: event.starts_at, wall: event.starts_at, past: collectedIsPast(event, now), open: () => { onOpenCollected(event); },
     })),
   ].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   const upcoming = rows.filter((r) => !r.past);

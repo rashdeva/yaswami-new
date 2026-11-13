@@ -100,12 +100,13 @@ export async function getEvent(db: Db | Tx, actor: User, id: string): Promise<Ev
 export async function listEvents(db: Db, actor: User): Promise<EventListItem[]> {
   const mine = and(eq(guests.event_id, events.id), eq(guests.user_id, actor.id));
   const rows = await db
-    .select({ event: events, my_approval_status: guests.approval_status })
+    .select({ event: events, my_approval_status: guests.approval_status, cover_id: photos.id })
     .from(events)
     .leftJoin(guests, mine)
+    .leftJoin(photos, eq(photos.event_id, events.id)) // обложка у события одна: setEventCover заменяет её
     .where(or(eq(events.user_id, actor.id), exists(db.select().from(guests).where(mine))))
     .orderBy(asc(events.start_at));
-  return rows.map((r) => ({ event: r.event, is_host: r.event.user_id === actor.id, my_approval_status: r.my_approval_status }));
+  return rows.map((r) => ({ event: r.event, cover_url: r.cover_id && photoUrl(r.cover_id), is_host: r.event.user_id === actor.id, my_approval_status: r.my_approval_status }));
 }
 
 // Идентификатор собранного события в адресах: telegram:<канал>/<публикация>#<номер> ↔ <канал>-<публикация>-<номер>.
