@@ -10,6 +10,7 @@ import { connect } from './mtproto.mjs';
 const NO_TEXT = '[сообщение без текста]';
 // Telegram повторяет «печатает» каждые ~5 с; API держит отметку 6 с, поэтому чаще раза в 4 с сообщать незачем.
 const TYPING_EVERY_MS = 4000;
+const SMS_HINT = 'Telegram отправил код по СМС, а не в приложение: на этом номере нет входа в Telegram. Если СМС не пришла — войдите в Telegram с телефона и добавьте аккаунт заново';
 
 /** Сессия аккаунта — полный доступ к нему: в базе лежит только зашифрованной (AES-256-GCM, ключ — у сборщика). */
 export function seal(key, text) {
@@ -89,9 +90,12 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
       if (account.status === 'login_requested') {
         const client = connectClient({ apiId, apiHash });
         await client.connect();
-        const { phoneCodeHash } = await client.sendCode({ apiId: Number(apiId), apiHash }, account.phone);
+        const { phoneCodeHash, isCodeViaApp } = await client.sendCode({ apiId: Number(apiId), apiHash }, account.phone);
         logins.set(account.id, { client, phoneCodeHash });
-        return await store.accountUpdate(account.id, { status: 'login_code', last_error: null });
+        // Куда ушёл код, решает Telegram: есть вход на другом устройстве — в приложение (чат «Telegram»), нет — по СМС,
+        // а СМС стороннему клиенту он часто не доставляет. Без этой подсказки в админке ждут СМС, которой не будет.
+        log(`аккаунт ${account.label}: код отправлен ${isCodeViaApp ? 'в приложение Telegram' : 'не в приложение (СМС или звонок)'}`);
+        return await store.accountUpdate(account.id, { status: 'login_code', last_error: isCodeViaApp ? null : SMS_HINT });
       }
       if (!secret) return; // ждём, пока в админке введут код или пароль
       const pending = logins.get(account.id);
