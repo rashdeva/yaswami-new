@@ -5,11 +5,13 @@ import { collectedIsPast, collectedPath, collectedWhen, TOPIC_GUIDES, topicIcon,
 import { track } from '../analytics.ts';
 import { startLogin } from '../api.ts';
 import { useCollectedEvent } from '../hooks/useCollectedEvent.ts';
+import { useScrolledPast } from '../hooks/useScrolledPast.ts';
 import { openExternal } from '../tg.ts';
 import { collectedLink } from '../format.ts';
 import { shareLink } from '../share.ts';
 import { About } from '../components/About.tsx';
 import { GuestRow } from '../components/GuestRow.tsx';
+import { ShareButton } from '../components/ShareButton.tsx';
 
 interface Props {
   id: string;
@@ -32,6 +34,7 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
   const [claiming, setClaiming] = useState(false);
   const [hostOpen, setHostOpen] = useState<CollectedHost | null>(null);
   const { event, failed, signUp: recordSignUp } = useCollectedEvent(id, authed, toast);
+  const [watch, barShown] = useScrolledPast();
 
   useEffect(() => {
     if (event) document.title = `${event.title} — ${collectedWhen(event.starts_at)}, ${city}`;
@@ -55,6 +58,24 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
   // Гид по Topic пишет редакция; у «другого» и у событий, собранных до появления поля, его нет.
   const guide = event.topic ? TOPIC_GUIDES[event.topic] : undefined;
   const cover = !!(event.cover_url || event.video_url);
+
+  // Кнопки сначала лежат в шапке; когда её прокрутили, их копия выезжает снизу.
+  const actions = past ? null : (
+    <div className="cta-row">
+      <ShareButton onClick={() => shareLink(collectedLink(id), `${event.title}\n${collectedWhen(event.starts_at)}, ${city}`, toast)} />
+      {onClaim ? (
+        <button
+          className="cta"
+          disabled={claiming}
+          onClick={() => { setClaiming(true); void onClaim().finally(() => setClaiming(false)); }}
+        >
+          {claiming ? 'Минуту…' : 'Это моё событие'}
+        </button>
+      ) : (
+        <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>
+      )}
+    </div>
+  );
 
   function signUp() {
     track('signup_clicked', { collected_event_id: id, authed });
@@ -85,6 +106,7 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
           <p className="when">{collectedWhen(event.starts_at)}</p>
           <p className="where">📍 {where || city}</p>
         </div>
+        {actions && <div className="acts" ref={watch}>{actions}</div>}
       </div>
 
       {event.price && <div className="group"><div className="meta"><div><span>🎟</span><span>{event.price}</span></div></div></div>}
@@ -119,24 +141,7 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
         <button className="quiet" onClick={() => { startLogin(collectedPath(id)); }}>Вы организатор? Войдите, чтобы принимать записи здесь</button>
       )}
 
-      {!past && (
-        <div className="main"><div>
-          {onClaim ? (
-            <button
-              className="cta"
-              disabled={claiming}
-              onClick={() => { setClaiming(true); void onClaim().finally(() => setClaiming(false)); }}
-            >
-              {claiming ? 'Минуту…' : 'Это моё событие'}
-            </button>
-          ) : (
-            <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>
-          )}
-          <div className="cta-row">
-            <button className="cta alt" onClick={() => shareLink(collectedLink(id), `${event.title}\n${collectedWhen(event.starts_at)}, ${city}`, toast)}>Поделиться</button>
-          </div>
-        </div></div>
-      )}
+      {actions && <div className="main" data-off={!barShown || undefined} inert={!barShown}><div>{actions}</div></div>}
       <Drawer.Root open={!!hostOpen} onOpenChange={(o) => { if (!o) setHostOpen(null); }}>
         <Drawer.Portal>
           <Drawer.Overlay className="drawer-overlay" />
