@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createExtractor, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
+import { createExtractor, createOfferExtractor, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
 import { connect, downloadCover, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { createStore } from './store.mjs';
@@ -8,6 +8,7 @@ import { contactFor, fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
 import { createSender } from './sender.mjs';
 import { fetchLeads } from './lead.mjs';
+import { resolveAuthor, saveOffers } from './offers.mjs';
 
 const env = process.env;
 // Источники живут в таблице sources (раздел «Источники» в админке); CHANNELS при старте только дополняет её.
@@ -27,6 +28,7 @@ const extract = createExtractor({
 });
 
 const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
+const extractOffer = createOfferExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 // Поиск по username — самый флудоопасный вызов Telegram: за проход собираем немного профилей, остальные — в следующий.
 const PROFILES_PER_PASS = 15;
 // Username, под которыми не человек (канал, бот, никого). ponytail: помним только в памяти процесса —
@@ -103,11 +105,12 @@ const leadChats = (env.LEAD_CHATS ?? '').split(',').map((c) => c.trim().replace(
 
 async function pollLeads(chat) {
   const key = `lead:${chat}`; // отметка в той же таблице, что у каналов с анонсами
-  const { last, read, leads } = await fetchLeads(userbot, chat, cursors[key] ?? 0);
+  const { last, read, leads, offers } = await fetchLeads(userbot, chat, cursors[key] ?? 0);
   for (const lead of leads) await toApi('lead', lead);
   if (last !== cursors[key]) await store.saveCursor(key, (cursors[key] = last));
+  const masters = await saveOffers({ store, extractOffer, resolve: (u) => resolveAuthor(userbot, u), pause: () => sleep(llmPauseMs) }, offers);
   // Каждый проход — в журнал: иначе не отличить «вопросов нет» от «чат не читается».
-  console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}`);
+  console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}, мастеров ${masters} из ${offers.length}`);
 }
 
 // Railway проверяет /health при деплое (общий railway.json) и гасит старый контейнер, только когда новый ответил.

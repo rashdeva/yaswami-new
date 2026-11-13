@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, CollectedEvent, Conversation, Event, Feature, Guest, Guide, Host, Message, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, CollectedEvent, Conversation, Event, Feature, Guest, Guide, Host, Message, Practice, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -186,6 +186,9 @@ export const hosts = pgTable(
     bio: text(),
     channel: text(), // username канала: личный канал из профиля или ссылка из «о себе»
     summary: text(),
+    // Что ведёт без даты (Practice): сборщик берёт из его самопредставления в чате (offers.mjs). У тех, кто найден
+    // только по событиям, пусто. ponytail: jsonb в строке, а не таблица — пока Practice не нужны свои ссылки и записи.
+    practices: jsonb().$type<Practice[]>().notNull().default([]),
     // Когда сборщик последний раз смотрел фото в канале; null — ещё не смотрел. Фото может и не оказаться.
     photos_checked_at: at('photos_checked_at'),
     created_at: at('created_at').notNull().defaultNow(),

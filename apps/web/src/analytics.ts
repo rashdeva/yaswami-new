@@ -18,6 +18,7 @@ const source = inTelegram ? 'telegram' : 'web';
 type Action =
   | 'app_opened' | 'login_started' | 'logged_in' | 'logged_out'
   | 'feed_viewed' | 'feed_filtered' | 'collected_event_viewed' | 'signup_clicked' | 'collected_signed_up' | 'host_contacted' | 'host_channel_opened'
+  | 'hosts_viewed' | 'hosts_filtered' | 'host_viewed'
   | 'event_viewed' | 'rsvp_submitted' | 'link_shared'
   | 'my_events_viewed' | 'create_opened' | 'create_denied' | 'event_created' | 'event_updated' | 'event_claimed';
 type Props = Record<string, string | number | boolean | null | undefined>;

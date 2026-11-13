@@ -11,6 +11,8 @@ import { CreateScreen } from './screens/CreateScreen.tsx';
 import { EditScreen } from './screens/EditScreen.tsx';
 import { EventScreen } from './screens/EventScreen.tsx';
 import { FeedScreen } from './screens/FeedScreen.tsx';
+import { HostScreen } from './screens/HostScreen.tsx';
+import { HostsScreen } from './screens/HostsScreen.tsx';
 import { ListScreen } from './screens/ListScreen.tsx';
 import { startParam } from './tg.ts';
 
@@ -75,6 +77,22 @@ function CollectedPage() {
   );
 }
 const collected = createRoute({ getParentRoute: () => app, path: '/e/$id', component: CollectedPage });
+
+function HostsPage() {
+  const navigate = useNavigate();
+  const { city } = useSession();
+  return <HostsScreen city={city} tabs={<AppTabs current="hosts" />} onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} />;
+}
+const hostsRoute = createRoute({ getParentRoute: () => app, path: '/hosts', component: HostsPage });
+
+function HostPage() {
+  const { id } = hostRoute.useParams();
+  const navigate = useNavigate();
+  const { city } = useSession();
+  const { onBack } = useShell();
+  return <HostScreen key={id} id={id} city={city} onBack={onBack} onOpenEvent={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
+}
+const hostRoute = createRoute({ getParentRoute: () => app, path: '/hosts/$id', component: HostPage });
 
 /** Личные страницы: без входа — приглашение войти. */
 function Private() {
@@ -166,7 +184,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, collected, personal.addChildren([list, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, hostRoute, personal.addChildren([list, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 
