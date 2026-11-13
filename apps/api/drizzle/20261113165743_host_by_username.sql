@@ -1,0 +1,1 @@
+ALTER TABLE "hosts" ALTER COLUMN "telegram_id" DROP NOT NULL;

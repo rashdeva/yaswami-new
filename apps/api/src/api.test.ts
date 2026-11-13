@@ -1,11 +1,11 @@
 // Тесты на настоящем Postgres (нужен `pnpm db:up`). Работают в отдельной базе yaswami_test_<checkout>, рабочую не трогают.
 import assert from 'node:assert/strict';
-import { createDecipheriv, createHash, createHmac, generateKeyPairSync, sign } from 'node:crypto';
+import { createDecipheriv, createHash, createHmac, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, HostItem, HostListItem, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
+import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents } from '@yaswami/core';
@@ -1531,6 +1531,7 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_covers_set: 'POST /admin/covers/:id',
   admin_videos_request: 'POST /admin/videos/:id',
   admin_hosts_list: 'GET /admin/hosts',
+  admin_hosts_create: 'POST /admin/hosts',
   admin_hosts_get: 'GET /admin/hosts/:id',
   admin_hosts_update: 'PATCH /admin/hosts/:id',
   admin_hosts_delete: 'DELETE /admin/hosts/:id',
@@ -1580,6 +1581,41 @@ test('источники: команда добавляет и выключае�
   assert.equal((await call(admin, 'POST', `/admin/actions/${off.id}/undo`)).status, 201);
   assert.equal(((await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[])[0]!.enabled, true);
   assert.equal((await call(admin, 'PATCH', '/admin/sources/nobody_here', { enabled: true })).status, 404);
+
+  // Организатор по username: заготовка без telegram_id, её сразу можно указать у источника.
+  const made = await call(admin, 'POST', '/admin/hosts', { username: 'https://t.me/Dato_Banya' });
+  assert.equal(made.status, 201);
+  const stub = (await made.json()) as Host;
+  assert.deepEqual([stub.username, stub.telegram_id, stub.status], ['dato_banya', null, 'pending']);
+  assert.deepEqual(await tool('admin_hosts_create', { username: '@dato_banya' }), { error: 'host_exists' });
+  assert.equal((await call(admin, 'POST', '/admin/hosts', { username: 'нет' })).status, 400);
+  const bound = (await tool('admin_sources_update', { channel: 'danang_yoga', host_id: stub.id })) as AdminSource;
+  assert.deepEqual([bound.host?.id, bound.host?.username, bound.enabled], [stub.id, 'dato_banya', true], 'организатор указан, включённость не тронута');
+  assert.deepEqual(await (await call(admin, 'PATCH', '/admin/sources/danang_yoga', { host_id: randomUUID() })).json(), { error: 'host_not_found' });
+
+  // Сборщик (apps/collector/src/store.mjs) находит человека в Telegram: заготовка заполняется на месте, источник остаётся за ней.
+  const { createStore } = await import(new URL('../../collector/src/store.mjs', import.meta.url).href);
+  const store = createStore(url.href);
+  try {
+    assert.deepEqual(await store.requestedHosts(), ['dato_banya']);
+    await store.saveHost({ telegram_id: 9401, username: 'dato_banya', name: 'Дато', bio: null, channel: null, summary: 'Баня.' });
+    const [filled] = await db.select().from(hosts).where(eq(hosts.id, stub.id));
+    assert.deepEqual([filled!.telegram_id, filled!.name, filled!.summary], [9401, 'Дато', 'Баня.']);
+    // Человек уже есть под другим username: источник заготовки переходит к его строке, заготовка удаляется.
+    const again = (await (await call(admin, 'POST', '/admin/hosts', { username: 'dato_new' })).json()) as Host;
+    await call(admin, 'PATCH', '/admin/sources/danang_yoga', { host_id: again.id });
+    await store.saveHost({ telegram_id: 9401, username: 'dato_new', name: 'Дато', bio: null, channel: null, summary: null });
+    assert.deepEqual((await db.select().from(hosts).where(eq(hosts.telegram_id, 9401))).map((x) => [x.id, x.username]), [[stub.id, 'dato_new']]);
+    assert.equal((await db.select().from(hosts).where(eq(hosts.id, again.id))).length, 0);
+    assert.equal((await db.select().from(sources).where(eq(sources.channel, 'Danang_Yoga')))[0]!.host_id, stub.id);
+    // Под username никого нет: заготовка отклонена с пояснением и больше не в очереди.
+    await call(admin, 'POST', '/admin/hosts', { username: 'nobody_such' });
+    await store.rejectRequestedHost('nobody_such');
+    assert.deepEqual(await store.requestedHosts(), []);
+    assert.equal((await db.select().from(hosts).where(eq(hosts.username, 'nobody_such')))[0]!.status, 'rejected');
+  } finally {
+    await store.end();
+  }
 });
 
 test('парность: у каждого инструмента MCP есть маршрут REST и наоборот', async () => {
@@ -1686,6 +1722,7 @@ const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
   admin_collected_events_redo: (w) => ({ args: { collected_event_id: w.slug }, params: { id: w.slug }, entity_id: w.slug }),
   admin_covers_set: (w) => ({ args: { id: w.slug }, params: { id: w.slug }, body: {}, entity_id: w.slug }),
   admin_videos_request: (w) => ({ args: { id: w.slug }, params: { id: w.slug }, entity_id: w.slug }),
+  admin_hosts_create: (w) => ({ args: { username: `@newhost${w.n}` }, body: { username: `t.me/newhost${w.n}` }, entity_id: (r) => r.id }),
   admin_hosts_update: (w) => ({ args: { host_id: w.profileId, name: 'Игорь' }, params: { id: w.profileId }, body: { name: 'Игорь' }, entity_id: w.profileId }),
   admin_hosts_delete: (w) => ({ args: { host_id: w.profileId }, params: { id: w.profileId }, entity_id: w.profileId }),
   admin_users_update: (w) => ({ args: { user_id: w.otherId, first_name: 'Иван' }, params: { id: w.otherId }, body: { first_name: 'Иван' }, entity_id: String(w.otherId) }),

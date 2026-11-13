@@ -195,7 +195,9 @@ export type CollectedListInput = z.infer<typeof CollectedListInput>;
 export interface AdminSource {
   channel: string; // username без @ или id закрытого чата (-100…)
   enabled: boolean; // выключенный сборщик не читает
-  host: { name: string; username: string } | null; // организатор, из профиля которого взят канал; null — добавила команда
+  // Организатор источника: чей это канал. Сборщик ставит его сам, когда берёт канал из профиля; команда может указать
+  // или сменить. Анонс без контакта из такого источника получает контактом этого организатора. null — не указан.
+  host: { id: string; name: string; username: string } | null;
   events_count: number; // сколько собранных событий из него пришло за всё время
   created_at: Date;
 }
@@ -206,7 +208,12 @@ export const SourceCreateInput = z.object({
 });
 export type SourceCreateInput = z.infer<typeof SourceCreateInput>;
 
-export const SourceUpdateInput = z.object({ enabled: z.boolean().describe('false — stop reading this source') });
+export const SourceUpdateInput = z
+  .object({
+    enabled: z.boolean().describe('false — stop reading this source'),
+    host_id: z.uuid().nullable().describe('Organizer this source belongs to (id from admin_hosts_list); null — none'),
+  })
+  .partial();
 export type SourceUpdateInput = z.infer<typeof SourceUpdateInput>;
 
 /** Собранное событие в «Моих событиях»: куда человек заходил или нажимал «Записаться». */

@@ -12,12 +12,12 @@ import { AppError } from '../services.ts';
 const sameChannel = (channel: string) => sql`lower(${sources.channel}) = lower(${channel})`;
 const selectSources = (db: Db) => db
   .select({
-    channel: sources.channel, enabled: sources.enabled, created_at: sources.created_at, host_name: hosts.name, host_username: hosts.username,
+    channel: sources.channel, enabled: sources.enabled, created_at: sources.created_at, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,
     events_count: sql<number>`(select count(*) from collected_events e where lower(e.channel) = lower(${sources.channel}))::int`,
   })
   .from(sources).leftJoin(hosts, eq(hosts.id, sources.host_id));
 type SourceRow = Awaited<ReturnType<typeof selectSources>>[number];
-const toSource = ({ host_name, host_username, ...r }: SourceRow): AdminSource => ({ ...r, host: host_name && host_username ? { name: host_name, username: host_username } : null });
+const toSource = ({ host_id, host_name, host_username, ...r }: SourceRow): AdminSource => ({ ...r, host: host_id && host_name && host_username ? { id: host_id, name: host_name, username: host_username } : null });
 
 async function getSource(db: Db, channel: string): Promise<AdminSource> {
   const [row] = await selectSources(db).where(sameChannel(channel));
@@ -37,12 +37,17 @@ export const createSource = (db: Db, ctx: Ctx, input: SourceCreateInput): Promis
     return getSource(tx, channel);
   });
 
-/** Включить или выключить источник. Выключенный остаётся в таблице: иначе канал организатора добавился бы снова. */
+/**
+ * Включить или выключить источник, указать или убрать его организатора. Выключенный остаётся в таблице: иначе канал
+ * организатора добавился бы снова.
+ */
 export async function updateSource(db: Db, ctx: Ctx, channel: string, input: SourceUpdateInput): Promise<AdminSource> {
   // Журнал и снимок — по каналу так, как он записан: команда может передать его в другом регистре.
   const { channel: key } = await getSource(db, channel);
   return audited(db, ctx, { action: 'admin_sources_update', entity: 'source', id: key, input }, async (tx) => {
-    await tx.update(sources).set({ enabled: input.enabled }).where(eq(sources.channel, key));
+    if (input.host_id && !(await tx.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, input.host_id))).length) throw new AppError('host_not_found', 404);
+    const values = Object.fromEntries(Object.entries({ enabled: input.enabled, host_id: input.host_id }).filter(([, v]) => v !== undefined));
+    if (Object.keys(values).length) await tx.update(sources).set(values).where(eq(sources.channel, key));
     return getSource(tx, key);
   });
 }

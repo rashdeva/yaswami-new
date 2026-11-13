@@ -5,7 +5,7 @@ import * as z from 'zod';
 import type { User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminGuestUpdateInput,
-  CollectedListInput, CollectedUpdateInput, CoverSetInput, EventCreateInput, EventUpdateInput, HostUpdateInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TEMPLATES,
+  CollectedListInput, CollectedUpdateInput, CoverSetInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostUpdateInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TEMPLATES,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
@@ -364,6 +364,11 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
       description: 'An organizer profile with the community photos from their channel.',
     }, (a) => admin.getHost(db, a.host_id));
 
+    tool('admin_hosts_create', {
+      title: 'Add organizer by username', shape: HostCreateInput.shape,
+      description: `Add an organizer by Telegram username. The profile starts empty (\`telegram_id\` null); the collector looks the username up on its next pass and fills name, bio, channel and summary, or sets status to rejected when there is no such person or channel. ${ONLY_TEAM} Errors: host_exists.`,
+    }, (a) => admin.createHost(db, ctx, a));
+
     tool('admin_hosts_update', {
       title: 'Edit organizer profile', shape: { host_id, ...HostUpdateInput.shape },
       description: `Change an organizer profile: name, username, channel, summary, bio. Only passed fields change. ${ONLY_TEAM}`,
@@ -377,7 +382,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
     // --- Источники сборщика (admin/sources.ts)
     tool('admin_sources_list', {
       title: 'Announcement sources', readOnly: true, shape: {},
-      description: 'Telegram channels and groups the collector reads announcements from, newest first. `host` — the organizer whose profile the channel came from (the collector adds organizers\' channels by itself); null — added by the team. Disabled sources are not read.',
+      description: 'Telegram channels and groups the collector reads announcements from, newest first. `host` — the organizer the source belongs to: set by the collector when it takes a channel from an organizer\'s profile, or by the team; null — none. Disabled sources are not read.',
     }, () => admin.listSources(db));
 
     tool('admin_sources_create', {
@@ -386,8 +391,8 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
     }, (a) => admin.createSource(db, ctx, a));
 
     tool('admin_sources_update', {
-      title: 'Enable or disable announcement source', shape: { channel: z.string().describe('Channel from admin_sources_list'), ...SourceUpdateInput.shape },
-      description: `Stop or resume reading a source, e.g. when an organizer's channel turns out to be someone else's or not about events. ${ONLY_TEAM} Errors: not_found.`,
+      title: 'Edit announcement source', shape: { channel: z.string().describe('Channel from admin_sources_list'), ...SourceUpdateInput.shape },
+      description: `Stop or resume reading a source (e.g. when an organizer's channel turns out to be someone else's or not about events), or set the organizer it belongs to: announcements without a contact then get this organizer as the contact. Only passed fields change. ${ONLY_TEAM} Errors: not_found, host_not_found.`,
     }, ({ channel, ...input }) => admin.updateSource(db, ctx, channel, input));
 
     // --- Пользователи и аудитория (admin/users.ts)

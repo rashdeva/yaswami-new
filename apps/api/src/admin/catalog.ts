@@ -1,6 +1,6 @@
 // Каталог из анонсов глазами команды: собранные события любого статуса и профили их организаторов (hosts).
 import { asc, desc, eq } from 'drizzle-orm';
-import type { AdminCollectedEvent, AdminCollectedEventView, AdminHostView, CollectedUpdateInput, Host, HostUpdateInput } from '@yaswami/core';
+import type { AdminCollectedEvent, AdminCollectedEventView, AdminHostView, CollectedUpdateInput, Host, HostCreateInput, HostUpdateInput } from '@yaswami/core';
 import { normalUsername } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
@@ -52,6 +52,19 @@ export async function getHost(db: Db, id: string): Promise<AdminHostView> {
   const shots = await db.select({ id: photos.id, source: photos.source }).from(photos).where(eq(photos.host_id, id)).orderBy(desc(photos.created_at));
   return { ...host, photos: shots.map((p) => ({ url: photoUrl(p.id), source_url: p.source.replace(/^telegram:/, 'https://t.me/') })) };
 }
+
+/**
+ * Добавить организатора по username. Найти человека в Telegram может только сборщик: здесь появляется заготовка
+ * без `telegram_id`, сборщик на следующем проходе заполнит её (имя, «о себе», канал, сводка) или отклонит, если под
+ * этим username нет ни человека, ни канала.
+ */
+export const createHost = (db: Db, ctx: Ctx, input: HostCreateInput): Promise<Host> =>
+  audited(db, ctx, { action: 'admin_hosts_create', entity: 'host', id: (h) => h.id, input }, async (tx) => {
+    const username = input.username.replace(/^(?:https?:\/\/)?(?:t\.me\/|@)?/, '').replace(/\/$/, '').toLowerCase();
+    if ((await tx.select({ id: hosts.id }).from(hosts).where(eq(hosts.username, username))).length) throw new s.AppError('host_exists', 409);
+    const [host] = await tx.insert(hosts).values({ username, name: `@${username}` }).returning();
+    return host!;
+  });
 
 export const updateHost = (db: Db, ctx: Ctx, id: string, input: HostUpdateInput): Promise<Host> =>
   audited(db, ctx, { action: 'admin_hosts_update', entity: 'host', id, input }, async (tx) => {

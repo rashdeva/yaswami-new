@@ -53,11 +53,30 @@ export function createStore(url) {
       where telegram_username ~ '^\\w{4,32}$' and coalesce(ends_at, starts_at) >= now()
         and status in ('approved', 'published')
         and telegram_username not in (select username from hosts)`).map((r) => r.telegram_username),
-    /** Профиль организатора. Сменил username — строка та же. Уже входил в Ясвами — профиль сразу привязан к нему. */
-    saveHost: (host) => sql`
-      insert into hosts ${sql(host)} on conflict (telegram_id) do update set username = excluded.username`
+    /** Организаторы, которых команда добавила по username в админке: заготовки без telegram_id, ждут проверки. */
+    requestedHosts: async () => (await sql`
+      select username from hosts where telegram_id is null and status = 'pending' order by created_at`).map((r) => r.username),
+    /**
+     * Под username из заготовки нет ни человека, ни канала: отклоняем её с пояснением — команда увидит это в карточке,
+     * а сборщик не будет искать снова. Вернуть в очередь — снова поставить статус pending.
+     */
+    rejectRequestedHost: (username) => sql`
+      update hosts set status = 'rejected', summary = 'Сборщик не нашёл в Telegram ни человека, ни канала с таким username.'
+      where username = ${username} and telegram_id is null`,
+    /**
+     * Профиль организатора. Сменил username — строка та же. Уже входил в Ясвами — профиль сразу привязан к нему.
+     * Заготовку команды (username без telegram_id) заполняем на месте: её id уже может стоять у источников. Если этот
+     * человек уже есть под другим username, источники заготовки переходят к его строке, а заготовка удаляется.
+     */
+    saveHost: (host) => sql.begin(async (tx) => {
+      const stub = () => tx`username = ${host.username} and telegram_id is null`;
+      await tx`update hosts set ${tx(host)} where ${stub()} and not exists (select 1 from hosts where telegram_id = ${host.telegram_id})`;
+      await tx`insert into hosts ${tx(host)} on conflict (telegram_id) do update set username = excluded.username`;
+      await tx`update sources set host_id = (select id from hosts where telegram_id = ${host.telegram_id}) where host_id in (select id from hosts where ${stub()})`;
+      await tx`delete from hosts where ${stub()}`;
       // Пока все пользователи — из Telegram, users.id и есть Telegram id.
-      .then(() => sql`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`),
+      await tx`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`;
+    }),
     /** Уже знаем, что этот человек ведёт (offers.mjs): объявление повторно в ИИ не отправляем. `who` — Telegram id или username. */
     hasPractices: async (who) => (await sql`
       select 1 from hosts where ${typeof who === 'number' ? sql`telegram_id = ${who}` : sql`username = ${who}`} and practices <> '[]'::jsonb`).length > 0,

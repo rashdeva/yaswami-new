@@ -8,6 +8,9 @@ import { useAct } from './useAct.ts';
 export const useHosts = () => useQuery({ queryKey: keys.hosts, queryFn: api.hosts });
 export const useHost = (id: string) => useQuery({ queryKey: keys.host(id), queryFn: () => api.host(id) });
 
+/** Добавить организатора по username: профиль заполнит сборщик на следующем проходе. */
+export const useHostCreate = () => useAct(api.hostCreate, { undo: (_username, host) => ['host', host.id] });
+
 export function useHostActions(id: string) {
   const client = useQueryClient();
   const undo = () => ['host', id] as ['host', string];
