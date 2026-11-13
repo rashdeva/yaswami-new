@@ -91,7 +91,7 @@ export interface AgentStats {
 
 /** Организатор событий каталога — для раздела «Организаторы». Профиль собран сборщиком по его открытому Telegram. */
 export interface HostRow {
-  telegram_id: number;
+  telegram_id: number | null; // null — сборщик ещё не проверил организатора
   name: string;
   username: string;
   channel: string | null;

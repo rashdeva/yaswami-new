@@ -147,19 +147,20 @@ export async function recordHostLead(db: Db, externalId: string): Promise<void> 
   // Профиль организатора собирает сборщик: без него не знаем, кому писать.
   const [profile] = await db.select().from(hosts).where(eq(hosts.username, event.telegram_username));
   // Пока роль пишет черновик, новые записи к тому же организатору её второй раз не зовут: каждый вызов модели платный.
-  if (!profile || profile.user_id || pitching.has(profile.telegram_id) || (await contactedRecently(db, profile.telegram_id))) return;
+  const peer = profile?.telegram_id; // у добавленного командой и ещё не проверенного сборщиком его нет: писать некуда
+  if (!profile || !peer || profile.user_id || pitching.has(peer) || (await contactedRecently(db, peer))) return;
 
-  pitching.add(profile.telegram_id);
+  pitching.add(peer);
   const reply = await host.ask([
     { role: 'system', content: await hostFacts(db, profile.username) },
     { role: 'user', content: `Напиши первое сообщение организатору ${profile.name} (@${profile.username}). Повод: на его событие «${event.event.title}» через «Я с вами» записались люди.` },
-  ]).finally(() => pitching.delete(profile.telegram_id));
+  ]).finally(() => pitching.delete(peer));
   if (!reply?.text) return;
 
   const reason = 'Черновик организатору';
   const account = await activeAccount(db);
   const conversation = await record(
-    db, { id: profile.telegram_id, name: profile.name, username: profile.username, account_id: account?.id ?? null },
+    db, { id: peer, name: profile.name, username: profile.username, account_id: account?.id ?? null },
     { direction: 'out', author: 'agent:host', text: reply.text, status: 'draft', meta: { reason: `На «${event.event.title}» через нас записались` } }, reason,
   );
   await alertAdmins(conversation, reason);
@@ -395,7 +396,7 @@ export async function adminOverview(db: Db): Promise<AdminOverview> {
     .from(collectedEvents)
     .leftJoin(collectedEventSignups, eq(collectedEventSignups.external_id, collectedEvents.external_id))
     .where(gt(collectedEvents.starts_at, new Date())).groupBy(collectedEvents.telegram_username)).map((r) => [r.username, r]));
-  const ids = profiles.map((h) => h.telegram_id);
+  const ids = profiles.map((h) => h.telegram_id).filter((id) => id != null);
   const dialogs = ids.length
     ? await withStages(db, await db.select().from(conversations).where(and(eq(conversations.channel, 'account'), inArray(conversations.peer_id, ids))))
     : [];

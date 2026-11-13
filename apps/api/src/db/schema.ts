@@ -180,7 +180,8 @@ export const hosts = pgTable(
     user_id: telegramId('user_id').references(() => users.id, { onDelete: 'set null' }),
     // Кто это в Telegram: по этому id профиль привязывается к пользователю при входе. Отдельно от user_id:
     // пользователи со временем будут не только из Telegram.
-    telegram_id: telegramId('telegram_id').notNull().unique(),
+    // null — организатора добавила команда по username (admin_hosts_create), сборщик ещё не нашёл его в Telegram.
+    telegram_id: telegramId('telegram_id').unique(),
     username: text().notNull(), // без @, в нижнем регистре; по нему профиль находится от collected_events.telegram_username
     name: text().notNull(),
     bio: text(),
@@ -277,7 +278,7 @@ export const sources = pgTable(
   'sources',
   {
     channel: text().primaryKey(), // как в collected_events.channel и collector_cursors: username без @ или id закрытого чата (-100…)
-    // Организатор, из профиля которого взят канал; null — источник добавила команда.
+    // Организатор источника: сборщик ставит его, когда берёт канал из профиля, команда — в админке; null — не указан.
     host_id: uuid().references(() => hosts.id, { onDelete: 'set null' }),
     // Выключенный источник сборщик не читает. Строку не удаляем: иначе канал организатора добавился бы снова.
     enabled: boolean().notNull().default(true),

@@ -36,13 +36,16 @@ const PROFILES_PER_PASS = 15;
 const notPeople = new Set();
 
 async function profileHosts() {
-  const usernames = (await store.unprofiled()).filter((u) => !notPeople.has(u)).slice(0, PROFILES_PER_PASS);
+  // Сначала те, кого команда добавила по username в админке: их ждут.
+  const requested = await store.requestedHosts();
+  const usernames = [...new Set([...requested, ...(await store.unprofiled()).filter((u) => !notPeople.has(u))])].slice(0, PROFILES_PER_PASS);
   for (const username of usernames) {
     const profile = await fetchProfile(userbot, username);
     if (profile) {
       const { telegram_id, name, bio, channel } = profile;
       await store.saveHost({ telegram_id, username, name, bio, channel: channel?.username ?? null, summary: await summarize(profile) });
-    } else notPeople.add(username);
+    } else if (requested.includes(username)) await store.rejectRequestedHost(username);
+    else notPeople.add(username);
     console.log(`@${username}: ${profile ? `профиль${profile.channel ? `, канал @${profile.channel.username}` : ''}` : 'не человек и не канал'}`);
     await sleep(llmPauseMs);
   }

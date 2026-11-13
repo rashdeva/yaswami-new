@@ -62,7 +62,7 @@ const agents = createRoute({ getParentRoute: () => root, path: '/agents', compon
 function HostsPage() {
   const { q, queue } = hosts.useSearch();
   const navigate = useNavigate();
-  return <HostsScreen query={q ?? ''} queue={!!queue} onQueue={(next) => void navigate({ to: '/hosts', search: { q, queue: next || undefined }, replace: true })} onQuery={(query) => void navigate({ to: '/hosts', search: { q: query || undefined, queue }, replace: true })} onOpen={(c) => void navigate({ to: '/', search: { c } })} />;
+  return <HostsScreen query={q ?? ''} queue={!!queue} onQueue={(next) => void navigate({ to: '/hosts', search: { q, queue: next || undefined }, replace: true })} onQuery={(query) => void navigate({ to: '/hosts', search: { q: query || undefined, queue }, replace: true })} onOpen={(c) => void navigate({ to: '/', search: { c } })} onCreated={(id) => void navigate({ to: '/hosts/$id', params: { id } })} />;
 }
 const hosts = createRoute({ getParentRoute: () => root, path: '/hosts', component: HostsPage, validateSearch: (s: Record<string, unknown>): { q?: string; queue?: boolean } => ({ q: str(s.q), queue: s.queue === true || s.queue === 'true' || undefined }) });
 

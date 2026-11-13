@@ -117,7 +117,7 @@ export type HostStatus = (typeof HOST_STATUSES)[number];
 export interface Host {
   id: string;
   user_id: User['id'] | null;
-  telegram_id: number;
+  telegram_id: number | null; // null — команда добавила по username, сборщик ещё не проверил его в Telegram
   username: string;
   name: string;
   bio: string | null;
@@ -133,6 +133,12 @@ export interface Host {
 export interface AdminHostView extends Host {
   photos: { url: string; source_url: string }[]; // фото сообщества, новые сверху
 }
+
+/** Добавить организатора по username: профиль (имя, «о себе», канал, сводку) соберёт сборщик. В Luma такого нет. */
+export const HostCreateInput = z.object({
+  username: z.string().trim().regex(/^(?:https?:\/\/)?(?:t\.me\/|@)?\w{4,32}\/?$/, 'telegram username').describe('Telegram username, @username or t.me link of a person or a venue channel'),
+});
+export type HostCreateInput = z.infer<typeof HostCreateInput>;
 
 export const HostUpdateInput = z
   .object({
