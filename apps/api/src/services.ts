@@ -122,7 +122,7 @@ const toCollectedItem = ({ external_id, event, announcement, claimed_event_id, c
   const { telegram_username, whatsapp_phone, url, ...shown } = event;
   const id = collectedSlug(external_id);
   return {
-    id, ...shown, claimed_event_id, cover_url: cover_id ? photoUrl(cover_id) : null, video_url, source_url: announcement.url,
+    id, ...shown, claimed_event_id, cover_url: cover_id ? photoUrl(cover_id) : null, video_url, media: announcement.media ?? [], source_url: announcement.url,
     signup_url: collectedSignupUrl(event, announcement.url, settings.publicUrl + collectedPath(id)),
   };
 };

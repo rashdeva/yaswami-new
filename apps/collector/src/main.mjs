@@ -2,7 +2,8 @@ import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createExtractor, createOfferExtractor, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
-import { connect, downloadCover, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
+import { connect, downloadCover, downloadPhotos, downloadVideos, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
+import { createBucket } from './bucket.mjs';
 import { createStore } from './store.mjs';
 import { contactFor, fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
@@ -17,6 +18,8 @@ if (!env.TG_SESSION) throw new Error('TG_SESSION пуст: выполни pnpm -
 if (!env.DATABASE_URL) throw new Error('DATABASE_URL пуст');
 const userbot = connect({ apiId: env.TG_API_ID, apiHash: env.TG_API_HASH, session: env.TG_SESSION });
 const store = createStore(env.DATABASE_URL);
+const bucket = createBucket();
+if (!bucket) console.log('Фото и видео анонсов не сохраняются: нужны S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY и MEDIA_PUBLIC_URL');
 const llmPauseMs = Number(env.LLM_PAUSE_MS ?? 4500); // ≈13 запросов в минуту при лимите 15
 const maxAgeMs = Number(env.MAX_AGE_DAYS ?? 14) * 86_400_000; // старые публикации в ИИ не отправляем
 const pollMinutes = Number(env.POLL_MINUTES ?? 15);
@@ -152,10 +155,13 @@ const ADOPT_PER_PASS = Number(env.ADOPT_PER_PASS ?? 5);
 
 async function pollChannel({ channel, host_username }, known) {
   const fresh = (await fetchChatAnnouncements(userbot, channel, cursors[channel] ?? 0))
-    .sort((a, b) => a.number - b.number);
-  for (const announcement of fresh) {
+    .sort((a, b) => a.announcement.number - b.announcement.number);
+  for (const { announcement, album } of fresh) {
     const candidate = Date.now() - new Date(announcement.published_at) < maxAgeMs && looksLikeEvent(announcement.text);
-    const events = candidate ? await extract(announcement) : [];
+    // Фото качаем только для кандидатов: их видит ИИ (афиша) и, если событие новое, они уходят в бакет.
+    const photos = candidate ? await downloadPhotos(userbot, album) : [];
+    const events = candidate ? await extract({ ...announcement, images: photos.slice(0, 1).map((p) => p.data) }) : []; // ИИ — только первое фото: афиша обычно первая, остальные стоят токенов зря
+    let media; // фото и видео публикации в бакете: заливаем один раз, когда из неё появилось новое событие
     if (candidate) await sleep(llmPauseMs); // бесплатный уровень Gemini считает запросы в минуту
     for (const [i, event] of events.entries()) {
       if (new Date(event.ends_at ?? event.starts_at) < Date.now()) continue; // уже прошло
@@ -169,8 +175,9 @@ async function pollChannel({ channel, host_username }, known) {
       if (same && JSON.stringify(merged) === JSON.stringify(same.event)) continue; // повтор без новых сведений
       // Дубль дополняет запись первого анонса, а не создаёт вторую.
       const external_id = same?.external_id ?? `telegram:${announcement.id}#${i}`;
+      if (!same && bucket) media ??= await saveMedia(announcement, photos, album);
       await store.upsert({
-        external_id, channel, announcement, event: merged,
+        external_id, channel, announcement: media?.length ? { ...announcement, media } : announcement, event: merged,
         signup_url: signupUrl(merged, announcement, signupMessage),
       });
       if (same) same.event = merged; else known.push({ external_id, event, status: 'pending' });
@@ -179,6 +186,26 @@ async function pollChannel({ channel, host_username }, known) {
     cursors[channel] = announcement.number;
     await store.saveCursor(channel, announcement.number);
     console.log(`${announcement.id}: ${candidate ? `событий ${events.length}` : 'отсеяно до ИИ'}`);
+  }
+}
+
+/**
+ * Фото и видео публикации в бакете по порядку альбома: [{ type, url }]. Ключ — канал/публикация/сообщение, повторная
+ * заливка перезаписывает тот же файл. Сбой бакета событие не останавливает: оно сохранится без медиа.
+ */
+async function saveMedia(announcement, photos, album) {
+  const files = [
+    ...photos.map((p) => ({ ...p, type: 'photo', mime: 'image/jpeg', ext: 'jpg' })),
+    ...(await downloadVideos(userbot, album)).map((v) => ({ ...v, type: 'video', mime: v.type, ext: v.type.split('/')[1] ?? 'mp4' })),
+  ].sort((a, b) => a.number - b.number);
+  const key = (f) => `telegram/${announcement.id.replace(/\/\d+$/, '')}/${f.number}.${f.ext}`;
+  try {
+    const media = [];
+    for (const f of files) media.push({ type: f.type, url: await bucket.put(key(f), f.data, f.mime) });
+    return media;
+  } catch (e) {
+    console.error(`медиа ${announcement.id}: ${e.message}`);
+    return [];
   }
 }
 

@@ -136,6 +136,9 @@ importers:
       '@yaswami/extract':
         specifier: workspace:*
         version: link:../../packages/extract
+      aws4fetch:
+        specifier: ^1.0.20
+        version: 1.0.20
       postgres:
         specifier: ^3.4
         version: 3.4.9
@@ -2193,6 +2196,9 @@ packages:
   atomically@1.7.0:
     resolution: {integrity: sha512-Xcz9l0z7y9yQ9rdDaxlmaI4uJHf/T8g9hOEzJcsEqX2SjCj4J20uK7+ldkDHMbpJDK76wF7xEIgxc/vSlsfw5w==}
     engines: {node: '>=10.12.0'}
+
+  aws4fetch@1.0.20:
+    resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
 
   balanced-match@4.0.4:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
@@ -5620,6 +5626,8 @@ snapshots:
       tslib: 2.9.1
 
   atomically@1.7.0: {}
+
+  aws4fetch@1.0.20: {}
 
   balanced-match@4.0.4: {}
 

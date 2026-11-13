@@ -59,11 +59,45 @@ export async function fetchPosts(client, chat, numbers) {
 
 // ponytail: username → (id, access_hash) кэшируется только в памяти процесса. При POLL_MINUTES=0 (cron)
 // resolveUsername дёргается на каждый запуск, а это самый флудоопасный вызов — тогда кэш надо класть в state.
+/**
+ * Новые публикации источника. У каждой — `album`: сообщения с её фото и видео. В альбоме текст несёт одно сообщение,
+ * остальные — только медиа с тем же groupedId. ponytail: альбом, разрезанный границей пачки из 100, теряет часть медиа.
+ */
 export async function fetchChatAnnouncements(client, chat, afterNumber) {
   if (!client.connected) await client.connect();
   // По числовому id Telegram отдаёт только чаты, уже известные клиенту: один раз загружаем список диалогов.
   if (isPrivate(chat)) client.dialogsLoaded ??= client.getDialogs({});
   await client.dialogsLoaded;
   const messages = await client.getMessages(isPrivate(chat) ? Number(chat) : chat, { limit: 100, minId: afterNumber });
-  return messages.flatMap((m) => toAnnouncement(chat, m));
+  return messages.flatMap((m) => toAnnouncement(chat, m).map((announcement) => ({
+    announcement,
+    album: m.groupedId ? messages.filter((o) => String(o.groupedId) === String(m.groupedId)).sort((a, b) => a.id - b.id) : [m],
+  })));
+}
+
+const MEDIA_PHOTOS = 10; // в альбоме Telegram не больше десяти
+const VIDEO_MAX_BYTES = 50_000_000; // ролик анонса — обычно 5–30 МБ; длинные записи эфиров не тащим
+
+const isVideo = (m) => m.media?.className === 'MessageMediaDocument' && m.media.document?.mimeType?.startsWith('video/');
+
+/** Фото публикации (превью 800 px, JPEG) — для ИИ и для страницы события. Не скачалось — пропускаем. */
+export async function downloadPhotos(client, album) {
+  const photos = [];
+  for (const m of album.slice(0, MEDIA_PHOTOS)) {
+    const data = await downloadCover(client, m);
+    if (data) photos.push({ number: m.id, data });
+  }
+  return photos;
+}
+
+/** Видео публикации целиком, если не тяжелее VIDEO_MAX_BYTES. */
+export async function downloadVideos(client, album) {
+  const videos = [];
+  for (const m of album.filter(isVideo)) {
+    const { size, mimeType } = m.media.document;
+    if (Number(size) > VIDEO_MAX_BYTES) continue;
+    const data = await client.downloadMedia(m, {}).catch(() => null);
+    if (Buffer.isBuffer(data)) videos.push({ number: m.id, data, type: mimeType });
+  }
+  return videos;
 }

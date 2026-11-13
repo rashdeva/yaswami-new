@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, CollectedEvent, Conversation, Event, Feature, Guest, Guide, Host, HostStatus, Message, Practice, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostStatus, Message, Practice, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -133,7 +133,7 @@ export const collectedEvents = pgTable(
   {
     external_id: text().primaryKey(), // telegram:<канал>/<публикация>#<номер события в ней>
     channel: text().notNull(),
-    announcement: jsonb().$type<{ url: string; text?: string }>().notNull(),
+    announcement: jsonb().$type<{ url: string; text?: string; media?: CollectedMedia[] }>().notNull(), // media — фото и видео публикации в бакете (ADR-0006)
     event: jsonb().$type<CollectedEvent>().notNull(),
     starts_at: at('starts_at').notNull(),
     ends_at: at('ends_at'),
