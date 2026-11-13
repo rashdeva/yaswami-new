@@ -16,7 +16,7 @@ import { useFeed } from '@/hooks/useInbox';
 
 const LOGIN_STEP: Partial<Record<Account['status'], string>> = {
   login_requested: 'Запрашиваем код у Telegram…',
-  login_code: 'Введите код, который пришёл в Telegram на этот номер',
+  login_code: 'Введите код. Обычно он приходит не по СМС, а в приложение Telegram на этом номере — в чат «Telegram»',
   login_password: 'Введите пароль двухэтапной проверки',
 };
 

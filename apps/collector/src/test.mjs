@@ -148,6 +148,7 @@ console.log('cover ok');
 
   await sender.tick();
   assert.equal(account.status, 'login_code', 'код запрошен');
+  assert.match(account.last_error, /по СМС/, 'код ушёл не в приложение — в админке подсказка');
   await sender.tick();
   assert.equal(account.status, 'login_code', 'без кода ждём');
   account.login = { secret: '00000' };
