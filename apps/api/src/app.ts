@@ -15,7 +15,6 @@ import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
 import type { AuthMethod } from './auth.ts';
 import { authenticate, issueToken, revokeTokens } from './auth.ts';
-import type { Extract } from './bot.ts';
 import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
 import type { TokenScope } from './db/schema.ts';
@@ -43,7 +42,7 @@ interface Options {
   /** Вход на сайте через Telegram: Client Secret из @BotFather и адрес сайта. Без них вход с сайта выключен. */
   webLogin?: { clientSecret: string; publicUrl: string };
   /** Вебхук бота: секрет, который Telegram присылает в заголовке, и разбор анонсов. Без секрета вебхук закрыт. */
-  telegram?: { webhookSecret: string; extract?: Extract };
+  telegram?: { webhookSecret: string };
 }
 
 // Самое большое тело — обложка от иллюстратора картинкой прямо в запросе (data URL, до 4 МБ в base64 ≈ 5,4 МБ).
@@ -93,8 +92,8 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       const given = Buffer.from(c.req.header('x-telegram-bot-api-secret-token') ?? '');
       if (!secret.length || given.length !== secret.length || !timingSafeEqual(given, secret)) return c.json({ error: 'forbidden' }, 403);
       const update: unknown = await c.req.json();
-      // Отвечаем сразу, разбор идёт следом: ИИ думает секунды, а Telegram при медленном ответе шлёт обновление повторно.
-      void handleUpdate(db, telegram?.extract, update).catch(console.error);
+      // Отвечаем сразу, ответ идёт следом: ИИ думает секунды, а Telegram при медленном ответе шлёт обновление повторно.
+      void handleUpdate(db, update).catch(console.error);
       return c.json({ ok: true });
     })
     // Сборщик сообщает о личных сообщениях на наших аккаунтах Telegram. Без общего секрета вход закрыт.

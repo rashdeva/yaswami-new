@@ -7,7 +7,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
-import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES } from './bot.ts';
+import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents } from '@yaswami/core';
 import { bot } from './telegram.ts';
 import type { CollectedEvent } from '@yaswami/core';
@@ -360,9 +360,6 @@ test('возможность event_create: без неё события не с�
     assert.equal(res.status, 403);
     assert.deepEqual(await res.json(), { error: 'feature_off' });
     assert.deepEqual(await features(), []);
-    sent.length = 0;
-    await handleUpdate(db, async () => [extracted()], botMessage(45, ANNOUNCEMENT));
-    assert.deepEqual(sent.map(([m, b]) => (m === 'sendMessage' ? b.text : m)), [REPLIES.not_host]);
 
     // команда создаёт событие за человека — можно, возможность при этом ему не выдаётся
     assert.equal((await call(admin, 'POST', '/admin/events', { ...body, user_id: 45 })).status, 201);
@@ -472,77 +469,27 @@ test('вебхук бота: без секрета закрыт, с чужим �
   assert.equal((await post(hooked, 's3cret')).status, 200);
 });
 
-test('сообщение боту: анонс становится событием отправителя, ответ — виджет', async () => {
-  sent.length = 0;
-  const seen: unknown[] = [];
-  // Переслал своё же сообщение — это по-прежнему его анонс; дата публикации берётся от исходного.
-  const self = { type: 'user', date: 1794000000, sender_user: { id: 60, username: 'u60' } };
-  await handleUpdate(db, async (a) => (seen.push(a), [extracted()]), botMessage(60, ANNOUNCEMENT, { forward_origin: self }));
-  assert.deepEqual(seen, [{ id: 'bot/60/1', text: ANNOUNCEMENT, published_at: new Date(1794000000 * 1000).toISOString(), author_username: 'u60' }]);
-
-  const mine = (await (await call(tma(60, 'Аня'), 'GET', '/events')).json()) as { event: EventView['event']; is_host: boolean }[];
-  assert.deepEqual(mine.map((e) => [e.event.name, e.event.status, e.is_host, e.event.geo_address_json]), [['Йога на пляже', 'published', true, { address: 'Пляж Микхе' }]]);
-  const view = (await (await call(tma(60, 'Аня'), 'GET', `/events/${mine[0]!.event.id}`)).json()) as EventView;
-  assert.equal(view.ticket_types[0]!.price_text, 'донейшн');
-
-  assert.deepEqual(sent.map(([m, b]) => [m, b.chat_id]), [['sendWidget', 60]]);
-  assert.equal(JSON.parse(sent[0]![1].public_data).l, 'Событие создано и подтверждено');
-  assert.ok(sent[0]![1].reply_markup.inline_keyboard[0][0].url.endsWith(`startapp=${mine[0]!.event.id}`));
-});
-
-test('сообщение боту: отказы и лимит бесплатных событий', async () => {
-  const reply = async (extract: Parameters<typeof handleUpdate>[1], text: string, extra?: object) => {
+test('сообщение боту: /start — приветствие с картинкой, остальное — роли поддержки, без неё — «ответим позже»', async () => {
+  const reply = async (text: string, extra?: object) => {
     sent.length = 0;
-    await handleUpdate(db, extract, botMessage(61, text, extra));
-    return sent.map(([m, b]) => (m === 'sendMessage' ? b.text : m));
+    await handleUpdate(db, botMessage(61, text, extra));
+    return sent.map(([m, b]) => (m === 'sendMessage' ? b.text : m === 'sendPhoto' ? [m, b.photo, b.caption] : m));
   };
-  const never = async () => assert.fail('ИИ вызывать не нужно');
-  assert.deepEqual(await reply(never, '/start'), [REPLIES.help]);
-  assert.deepEqual(await reply(never, ''), [REPLIES.help], 'фото без подписи');
-  assert.deepEqual(await reply(never, 'Сдаётся квартира у моря, две спальни, недорого, пишите в личку'), [REPLIES.no_date]);
-  assert.deepEqual(await reply(undefined, ANNOUNCEMENT), [REPLIES.unavailable], 'нет ключа Gemini');
-  assert.deepEqual(await reply(async () => [], ANNOUNCEMENT), [REPLIES.not_event]);
-  assert.deepEqual(await reply(async () => [extracted({ starts_at: 'в субботу' })], ANNOUNCEMENT), [REPLIES.not_event], 'дата не определена');
-  assert.deepEqual(await reply(async () => [extracted({ starts_at: iso(Date.now() - 48 * HOUR) })], ANNOUNCEMENT), [REPLIES.past]);
-  const error = console.error;
-  console.error = () => {};
-  assert.deepEqual(await reply(async () => { throw new Error('429'); }, ANNOUNCEMENT), [REPLIES.unavailable]);
-  console.error = error;
-  assert.deepEqual(await (await call(tma(61, 'Аня'), 'GET', '/events')).json(), [], 'ни один отказ события не создал');
-
-  // Не больше нескольких разборов в минуту от одного человека: ИИ ограничен по запросам.
-  const perMinute = settings.botMessagesPerMinute;
-  settings.botMessagesPerMinute = 4; // четыре разбора выше уже были
-  assert.deepEqual(await reply(never, ANNOUNCEMENT), [REPLIES.too_often]);
-  settings.botMessagesPerMinute = perMinute + 100;
-
-  // Расписание: каждое событие отдельно, пока хватает лимита; остальное — понятный отказ.
-  const limit = settings.freeEventsLimit;
-  settings.freeEventsLimit = 2;
+  assert.deepEqual(await reply('/start'), [['sendPhoto', welcomePhotoUrl(), REPLIES.welcome]]);
+  assert.ok(!REPLIES.welcome.includes('анонс'), 'в приветствии не просим прислать событие');
+  // Telegram картинку не забрал — то же приветствие текстом.
+  const stub = bot.call;
+  bot.call = async (method, body) => (method === 'sendPhoto' ? { ok: false, description: 'wrong file' } : stub(method, body));
   try {
-    const week = [1, 2, 3, 4].map((d) => extracted({ title: `Йога, день ${d}`, starts_at: iso(Date.now() + d * 24 * HOUR) }));
-    assert.deepEqual(await reply(async () => week, ANNOUNCEMENT), ['sendWidget', 'sendWidget', REPLIES.limit(2)]);
-    assert.equal(((await (await call(tma(61, 'Аня'), 'GET', '/events')).json()) as unknown[]).length, 2);
+    assert.deepEqual(await reply('/start'), [REPLIES.welcome]);
   } finally {
-    settings.freeEventsLimit = limit;
+    bot.call = stub;
   }
-});
+  assert.deepEqual(await reply(''), [REPLIES.photo], 'фото без подписи');
+  // Анонс с датой больше не разбирается ботом: без роли поддержки — «ответим позже», событие не создаётся.
+  assert.deepEqual(await reply(ANNOUNCEMENT), [REPLIES.unavailable]);
+  assert.deepEqual(await (await call(tma(61, 'Аня'), 'GET', '/events')).json(), []);
 
-test('сообщение боту: то же собранное событие подтверждается только за своим контактом', async () => {
-  const e = extracted({ title: 'Коллажный кружок', telegram_username: 'u62' });
-  const row = (n: number) => ({
-    external_id: `telegram:danangevent/${n}#0`, channel: 'danangevent', announcement: { url: `https://t.me/danangevent/${n}` },
-    event: e, starts_at: new Date(e.starts_at), telegram_username: 'u62', signup_url: 'https://t.me/u62', status: 'published' as const,
-  });
-  await db.insert(collectedEvents).values([row(901), row(902)]);
-  const claimed = async (n: number) => ((await (await app.request(`/collected-events/danangevent-${n}-0`)).json()) as CollectedEventItem).claimed_event_id;
-
-  await handleUpdate(db, async () => [e], botMessage(63, ANNOUNCEMENT)); // чужой: событие создано, витрина не тронута
-  assert.equal(await claimed(901), null);
-  await handleUpdate(db, async () => [e], botMessage(62, ANNOUNCEMENT));
-  const mine = (await (await call(tma(62, 'Аня'), 'GET', '/events')).json()) as { event: { id: string } }[];
-  assert.equal(await claimed(901), mine[0]!.event.id);
-  assert.equal(await claimed(902), null, 'подтверждается одна запись');
 });
 
 test('RSVP: одно подтверждение гостю, сводка организатору, клики туда-сюда не спамят', async () => {
@@ -604,40 +551,6 @@ test('RSVP: одно подтверждение гостю, сводка орг�
   }
 });
 
-test('сообщение боту: пересланный чужой анонс — собранное событие на витрине, не событие отправителя', async () => {
-  const forward = (id: number, origin: object) => botMessage(id, ANNOUNCEMENT, { forward_origin: { date: 1794000000, ...origin } });
-  const channel = { type: 'channel', chat: { id: -1001234567890, username: 'DanangEvent' }, message_id: 777 };
-  const e = extracted({ title: 'Экстатик дэнс у моря', telegram_username: 'dj_kolya', price: null });
-  // Пересланное ждёт одобрения и на витрине не видно — смотрим так, как его видит админка.
-  const item = async (slug: string) => (await listCollectedForAdmin(db)).find((x) => x.id === slug)!;
-
-  sent.length = 0;
-  await handleUpdate(db, async () => [e], forward(64, channel));
-  assert.equal((await app.request('/collected-events/danangevent-777-0')).status, 404, 'до одобрения страницы события нет');
-  // Ключ и адрес — как у сборщика: когда он дойдёт до этой публикации, второй записи не появится.
-  const added = await item('danangevent-777-0');
-  assert.deepEqual([added.title, added.source_url, added.claimed_event_id], ['Экстатик дэнс у моря', 'https://t.me/DanangEvent/777', null]);
-  assert.deepEqual(await (await call(tma(64, 'Аня'), 'GET', '/events')).json(), [], 'событие Ясвами не создано, лимит не тронут');
-  assert.deepEqual(sent.map(([m, b]) => [m, b.chat_id, JSON.parse(b.public_data).l]), [['sendWidget', 64, 'Отправлено на проверку']]);
-  assert.ok(sent[0]![1].reply_markup.inline_keyboard[0][0].url.endsWith('/e/danangevent-777-0'));
-
-  // Тот же анонс от другого человека и из лички: запись дополняется, а не дублируется.
-  const before = ((await (await app.request('/collected-events')).json()) as unknown[]).length;
-  await handleUpdate(db, async () => [{ ...e, price: '200k' }], forward(65, { type: 'user', sender_user: { id: 99, username: 'dj_kolya' } }));
-  assert.equal(((await (await app.request('/collected-events')).json()) as unknown[]).length, before);
-  assert.equal((await item('danangevent-777-0')).price, '200k');
-
-  // Переслано от человека, события ещё нет: источник — его профиль.
-  await handleUpdate(db, async () => [extracted({ title: 'Нетворкинг фаундеров' })], forward(65, { type: 'user', sender_user: { id: 99, username: 'dj_kolya' } }));
-  assert.equal((await item('bot65-1-0')).source_url, 'https://t.me/dj_kolya');
-
-  // Контактом в пересланном анонсе указан сам отправитель — это его событие.
-  sent.length = 0;
-  await handleUpdate(db, async () => [extracted({ title: 'Баня по-чёрному', telegram_username: '@U66' })], forward(66, { type: 'channel', chat: { id: -1005, username: 'banya' }, message_id: 3 }));
-  assert.equal(JSON.parse(sent[0]![1].public_data).l, 'Событие создано и подтверждено');
-  assert.equal(((await (await call(tma(66, 'Аня'), 'GET', '/events')).json()) as unknown[]).length, 1);
-});
-
 test('заходы: пишутся с тем, кто позвал; организатор, свой и подделанный ref не считаются', async () => {
   const host = tma(901, 'Хост');
   const { event, ticket_types } = await newEvent(host);
@@ -683,10 +596,10 @@ test('фото: аватар гостя и фото сообщества орг�
     const ticket = ((await (await call(host, 'GET', `/events/${event.id}`)).json()) as EventView).ticket_types[0]!.id;
     // Гость из мини-приложения и гость, написавший боту /start: путь один — upsertUser.
     await call(tma(9102, 'Гость9102'), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved', event_ticket_type_id: ticket });
-    await handleUpdate(db, undefined, { message: { message_id: 1, date: 1, chat: { id: 9103, type: 'private' }, from: { id: 9103, first_name: 'Гость9103' }, text: '/start' } });
+    await handleUpdate(db, { message: { message_id: 1, date: 1, chat: { id: 9103, type: 'private' }, from: { id: 9103, first_name: 'Гость9103' }, text: '/start' } });
     await call(tma(9103, 'Гость9103'), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved', event_ticket_type_id: ticket });
     for (const id of [9101, 9102, 9103, 9102]) await saveUserPhoto(db, id); // дождаться фона; повтор не качает заново
-    assert.deepEqual(asked.filter((a) => a !== 'sendMessage'), [
+    assert.deepEqual(asked.filter((a) => a !== 'sendMessage' && a !== 'sendPhoto'), [
       'getUserProfilePhotos', 'getUserProfilePhotos', 'getFile', 'https://api.telegram.org/file/botT/photos/f320.jpg', 'getUserProfilePhotos',
     ], 'по запросу на человека; качаем размер 320 и только у кого фото есть');
 
@@ -730,28 +643,27 @@ test('переписка: бот пишет всё в базу, админ от�
   await db.execute(sql`truncate conversations cascade`);
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
-  const never = async () => assert.fail('ИИ вызывать не нужно');
   const inbox = async () => (await (await call(admin, 'GET', '/admin/inbox')).json()) as InboxFeed;
   const write = async (text: string) => {
     sent.length = 0;
-    await handleUpdate(db, never, botMessage(71, text));
-    return sent.filter(([method, b]) => method === 'sendMessage' && b.chat_id === 71).map(([, b]) => b.text); // без оповещений нам самим
+    await handleUpdate(db, botMessage(71, text));
+    return sent.filter(([method, b]) => (method === 'sendMessage' || method === 'sendPhoto') && b.chat_id === 71).map(([, b]) => b.text ?? b.caption); // без оповещений нам самим
   };
 
   assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/inbox')).status, 403, 'не админ');
 
   // /start — справка без пометки; вопрос, на который бот ответил отказом, ждёт нас.
-  assert.deepEqual(await write('/start'), [REPLIES.help]);
+  assert.deepEqual(await write('/start'), [REPLIES.welcome]);
   assert.equal((await inbox()).conversations[0]!.attention, null);
-  assert.deepEqual(await write('Как записаться на покер?'), [REPLIES.no_date]);
+  assert.deepEqual(await write('Как записаться на покер?'), [REPLIES.unavailable]);
   let feed = await inbox();
   assert.equal(feed.me, 70);
-  assert.deepEqual(feed.conversations.map((c) => [c.peer_id, c.peer_name, c.mode, c.attention]), [[71, 'Аня', 'agent', 'Бот не создал событие']]);
+  assert.deepEqual(feed.conversations.map((c) => [c.peer_id, c.peer_name, c.mode, c.attention]), [[71, 'Аня', 'agent', 'Бот не ответил']]);
   assert.deepEqual([feed.conversations[0]!.kind, feed.conversations[0]!.stage], ['guest', 'bot']);
   assert.deepEqual(feed.messages.map((m) => [m.direction, m.author, m.text, m.status]), [
-    ['out', 'bot', REPLIES.no_date, 'sent'],
+    ['out', 'bot', REPLIES.unavailable, 'sent'],
     ['in', 'user', 'Как записаться на покер?', 'received'],
-    ['out', 'bot', REPLIES.help, 'sent'],
+    ['out', 'bot', REPLIES.welcome, 'sent'],
     ['in', 'user', '/start', 'received'],
   ]);
 
@@ -775,7 +687,7 @@ test('переписка: бот пишет всё в базу, админ от�
   // Вернули боту — он снова отвечает.
   const back = await call(admin, 'PATCH', `/admin/conversations/${id}`, { mode: 'agent', attention: null });
   assert.deepEqual([((await back.json()) as Conversation).mode, back.status], ['agent', 200]);
-  assert.deepEqual(await write('А сегодня что-нибудь есть?'), [REPLIES.no_date]);
+  assert.deepEqual(await write('А сегодня что-нибудь есть?'), [REPLIES.unavailable]);
 
   // Те же операции через MCP — так работает Hermes. Не админу инструменты переписки не видны.
   const mcp = async (auth: string, method: string, params?: object) =>
@@ -899,6 +811,8 @@ test('переписка: бот пишет всё в базу, админ от�
   // Роль поддержки: на вопрос без даты отвечает она, а не отказ бота; переписку получает целиком.
   await call(admin, 'PATCH', `/admin/conversations/${id}`, { mode: 'agent', attention: null });
   settings.supportUrl = 'http://support.test';
+  const perMinute = settings.botMessagesPerMinute;
+  settings.botMessagesPerMinute = 100; // ниже человек пишет роли много раз подряд
   const ask = support.ask;
   let asked: Parameters<typeof support.ask>[0] = [];
   support.ask = async (history) => ((asked = history), { text: 'Откройте событие и нажмите «Пойду».', human: null });
@@ -927,17 +841,17 @@ test('переписка: бот пишет всё в базу, админ от�
   // Роль зовёт человека: пометка в админке и сообщение нам; оповещение в переписку не попадает.
   support.ask = async () => parseSupportReply('Передал команде, вам ответят.\n[[человек: жалоба на организатора]]');
   sent.length = 0;
-  await handleUpdate(db, never, botMessage(71, 'Организатор взял деньги и пропал'));
+  await handleUpdate(db, botMessage(71, 'Организатор взял деньги и пропал'));
   assert.deepEqual(sent.filter(([m]) => m === 'sendMessage').map(([, b]) => [b.chat_id, b.text.split('\n')[0]]), [
     [71, 'Передал команде, вам ответят.'],
     [70, 'Аня (@u71) ждёт человека: жалоба на организатора'],
   ]);
   feed = await inbox();
   assert.deepEqual([feed.conversations.length, feed.conversations[0]!.attention], [1, 'жалоба на организатора']);
-  // Дата в тексте есть, а события ИИ не нашёл — это тоже вопрос роли, а не отказ.
+  // Текст с датой бот не разбирает сам: анонс это или вопрос, решает роль.
   support.ask = async () => ({ text: 'В пятницу покер в 19:00.', human: null });
   sent.length = 0;
-  await handleUpdate(db, async () => [], botMessage(71, 'Что будет в пятницу 20 ноября в 19:00?'));
+  await handleUpdate(db, botMessage(71, 'Что будет в пятницу 20 ноября в 19:00?'));
   assert.deepEqual(sent.filter(([m]) => m === 'sendMessage').map(([, b]) => b.text), ['В пятницу покер в 19:00.']);
   // Событие роль показывает пометкой: человек получает текст без неё и карточку с кнопкой в мини-приложение;
   // неизвестный id пропускается, а не превращается в битую карточку.
@@ -964,7 +878,7 @@ test('переписка: бот пишет всё в базу, админ от�
     hermes: { failed: true, error: 'HTTP 402' },
   });
   try {
-    assert.deepEqual(await write('Как поменять имя?'), [REPLIES.no_date]);
+    assert.deepEqual(await write('Как поменять имя?'), [REPLIES.unavailable]);
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -992,7 +906,7 @@ test('переписка: бот пишет всё в базу, админ от�
       `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'error' }], hermes: { failed: true, error: 'HTTP 402' } })}\n\n`,
       'data: [DONE]\n\n',
     ]);
-    assert.deepEqual(await write('Как поменять имя?'), [REPLIES.no_date]);
+    assert.deepEqual(await write('Как поменять имя?'), [REPLIES.unavailable]);
     assert.deepEqual(drafts(), [DRAFT_PLACEHOLDER]);
   } finally {
     globalThis.fetch = realFetch;
@@ -1000,11 +914,15 @@ test('переписка: бот пишет всё в базу, админ от�
   // Роль открыта только списку пользователей — остальным прежний отказ бота, роль даже не спрашиваем.
   settings.supportUserIds = [70];
   support.ask = async () => assert.fail('роль не для этого пользователя');
-  assert.deepEqual(await write('А мне ответят?'), [REPLIES.no_date]);
+  assert.deepEqual(await write('А мне ответят?'), [REPLIES.unavailable]);
   settings.supportUserIds = [];
   // Роль недоступна — прежний отказ бота.
   support.ask = async () => null;
-  assert.deepEqual(await write('Алло?'), [REPLIES.no_date]);
+  assert.deepEqual(await write('Алло?'), [REPLIES.unavailable]);
+  // Не больше нескольких сообщений роли в минуту от одного человека: каждый ответ — запрос к ИИ.
+  settings.botMessagesPerMinute = 1;
+  assert.deepEqual(await write('Ещё вопрос'), [REPLIES.too_often]);
+  settings.botMessagesPerMinute = perMinute;
   support.ask = ask;
   settings.supportUrl = '';
   assert.deepEqual(parseSupportReply('Привет!\n[[человек:]]'), { text: 'Привет!', human: 'Просит человека', events: [] });
@@ -1021,9 +939,8 @@ test('скрытие: диалог пропадает из списка до с�
   await db.execute(sql`truncate conversations cascade`);
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
-  const never = async () => assert.fail('ИИ вызывать не нужно');
   const one = async () => ((await (await call(admin, 'GET', '/admin/inbox')).json()) as InboxFeed).conversations[0]!;
-  await handleUpdate(db, never, botMessage(71, 'Как записаться на покер?'));
+  await handleUpdate(db, botMessage(71, 'Как записаться на покер?'));
   const { id } = await one();
 
   // Скрыли — диалог помечен и больше не ждёт нас; отмена возвращает его как был.
@@ -1034,12 +951,12 @@ test('скрытие: диалог пропадает из списка до с�
   assert.equal(c.attention, null);
   assert.equal((await call(admin, 'POST', `/admin/actions/${(await lastAction())!.id}/undo`)).status, 201);
   c = await one();
-  assert.deepEqual([c.hidden_at, c.attention], [null, 'Бот не создал событие']);
+  assert.deepEqual([c.hidden_at, c.attention], [null, 'Бот не ответил']);
 
   // Человек написал снова — диалог сам возвращается в список.
   await call(admin, 'PATCH', `/admin/conversations/${id}`, { is_hidden: true });
   assert.ok((await one()).hidden_at);
-  await handleUpdate(db, never, botMessage(71, '/start'));
+  await handleUpdate(db, botMessage(71, '/start'));
   assert.equal((await one()).hidden_at, null);
 });
 
@@ -1156,7 +1073,7 @@ test('отзывы: запрос после события, оценка кно�
   await call(tma(84, 'G84'), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'maybe' });
   await new Promise((r) => setTimeout(r, 100)); // уведомления о записи уходят с паузой — пусть не мешают
   const labels = () => sent.filter(([m]) => m === 'sendWidget').map(([, b]) => [b.chat_id, JSON.parse(b.public_data).l]).sort();
-  const press = (id: number, data: string) => handleUpdate(db, undefined, { update_id: 1, callback_query: { id: 'q', from: { id, first_name: `G${id}` }, data } });
+  const press = (id: number, data: string) => handleUpdate(db, { update_id: 1, callback_query: { id: 'q', from: { id, first_name: `G${id}` }, data } });
 
   // Событие ещё не прошло — никого не спрашиваем.
   sent.length = 0;
@@ -1188,7 +1105,7 @@ test('отзывы: запрос после события, оценка кно�
 
   // Текст — ответом на просьбу бота: это отзыв, а не анонс и не вопрос.
   sent.length = 0;
-  await handleUpdate(db, async () => assert.fail('ИИ вызывать не нужно'), botMessage(81, 'Было здорово, в субботу приду ещё', { reply_to_message: { message_id: row!.prompt_message_id } }));
+  await handleUpdate(db, botMessage(81, 'Было здорово, в субботу приду ещё', { reply_to_message: { message_id: row!.prompt_message_id } }));
   assert.deepEqual(sent.map(([m, b]) => [m, b.text]), [['sendMessage', 'Спасибо! Отзыв сохранён, организатор его увидит.']]);
 
   // Сводка организатору: одна на событие, повторно не уходит; новая оценка — новая сводка.
@@ -1842,18 +1759,14 @@ test('журнал: упавшее действие не оставляет ни
   assert.equal((await db.select().from(adminActions)).length, count);
 });
 
-test('безопасность: проверенное событие чужой анонс не меняет, токен роли ограничен, сессия истекает, лимиты', async () => {
-  // Опубликованное событие без личного контакта; посторонний пересылает боту «тот же» анонс со своим контактом.
+test('безопасность: чужой контакт не даёт права на событие, токен роли ограничен, сессия истекает, лимиты', async () => {
+  // Опубликованное событие без личного контакта: посторонний подтвердить его не может.
   await db.delete(collectedEvents);
   const e = extracted({ title: 'Экстатик у моря' });
   await db.insert(collectedEvents).values({
     external_id: 'telegram:danangyoga/100#0', channel: 'danangyoga', announcement: { url: 'https://t.me/danangyoga/100' }, event: e,
     starts_at: new Date(e.starts_at), signup_url: '', status: 'published',
   });
-  const forged = { ...e, description: 'Предоплата только через @u7002. '.repeat(5), telegram_username: 'u7002' };
-  await handleUpdate(db, async () => [forged], botMessage(7001, ANNOUNCEMENT, { forward_origin: { type: 'user', date: 1794000000, sender_user: { id: 7002, username: 'u7002' } } }));
-  const page = (await (await app.request('/collected-events/danangyoga-100-0')).json()) as CollectedEventItem;
-  assert.deepEqual([page.description, page.signup_url], [e.description, 'https://t.me/danangyoga/100'], 'описание и «Записаться» прежние');
   const bob = tma(7002, 'Боб');
   assert.equal((await call(bob, 'POST', '/collected-events/danangyoga-100-0/claim')).status, 403);
   // Контакт в анонсе, который команда ещё не проверила, права на событие не даёт.

@@ -17,7 +17,6 @@ export const settings = {
   notifyDelayMs: Number(process.env.NOTIFY_DELAY_MS ?? 20_000),
   /** Сколько по событию не должно быть новых отзывов, чтобы организатору ушла сводка. */
   feedbackSettleMs: Number(process.env.FEEDBACK_SETTLE_MS ?? 10 * 60_000),
-  /** Сколько анонсов в минуту один человек может прислать боту на разбор: ИИ ограничен по запросам. */
   /** Роль поддержки в Hermes (support.ts): адрес её HTTP-входа без косой черты в конце и ключ. Пусто — бот отвечает сам. */
   supportUrl: (process.env.SUPPORT_URL ?? '').replace(/\/$/, ''),
   supportKey: process.env.SUPPORT_KEY ?? '',
@@ -47,6 +46,7 @@ export const settings = {
   collectorSecret: process.env.COLLECTOR_SECRET ?? '',
   /** Telegram id тех, кому открыта админка переписки (/admin), через запятую. */
   adminIds: (process.env.ADMIN_IDS ?? '').split(',').map(Number).filter(Boolean),
+  /** Сколько сообщений в минуту один человек может прислать боту: каждый ответ роли поддержки — запрос к ИИ. */
   botMessagesPerMinute: Number(process.env.BOT_MESSAGES_PER_MINUTE ?? 5),
   /** Сколько запросов к API в минуту делает один вошедший человек или токен; сверх — 429. */
   requestsPerMinute: Number(process.env.REQUESTS_PER_MINUTE ?? 300),
