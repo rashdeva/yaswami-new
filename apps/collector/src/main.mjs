@@ -160,7 +160,7 @@ async function pollChannel({ channel, host_username }, known) {
     const candidate = Date.now() - new Date(announcement.published_at) < maxAgeMs && looksLikeEvent(announcement.text);
     // Фото качаем только для кандидатов: их видит ИИ (афиша) и, если событие новое, они уходят в бакет.
     const photos = candidate ? await downloadPhotos(userbot, album) : [];
-    const events = candidate ? await extract({ ...announcement, images: photos.map((p) => p.data) }) : [];
+    const events = candidate ? await extract({ ...announcement, images: photos.slice(0, 1).map((p) => p.data) }) : []; // ИИ — только первое фото: афиша обычно первая, остальные стоят токенов зря
     let media; // фото и видео публикации в бакете: заливаем один раз, когда из неё появилось новое событие
     if (candidate) await sleep(llmPauseMs); // бесплатный уровень Gemini считает запросы в минуту
     for (const [i, event] of events.entries()) {
