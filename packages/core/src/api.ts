@@ -13,6 +13,8 @@ const isTimeZone = (tz: string) => {
 };
 // В JSON дата — строка ISO с часовым поясом; в Date её превращает бэк.
 export const dateTime = z.iso.datetime({ offset: true }).describe('ISO 8601 with offset, e.g. 2026-11-20T19:00:00+04:00');
+/** Ссылка на город в правках команды. Не указан при создании — город по умолчанию (DEFAULT_CITY_ID). */
+export const cityId = z.string().max(40).describe('City id from admin_cities_list; defaults to the first city');
 export const timeZone = z.string().refine(isTimeZone, 'unknown time zone').describe('IANA time zone, e.g. Asia/Tbilisi');
 
 const eventFields = EventSchema.pick({
@@ -192,6 +194,7 @@ export type CollectedStatus = (typeof COLLECTED_STATUSES)[number];
 /** Собранное событие в админке модерации: любого статуса, с источником и контактами, которые витрина прячет. */
 export interface AdminCollectedEvent extends CollectedEventItem, Pick<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {
   status: CollectedStatus;
+  city_id: string; // город: достаётся от источника, команда может сменить
   channel: string; // источник: канал или группа, откуда анонс
   source_text: string | null; // текст публикации-источника: с ним модератор сверяет, что извлёк ИИ
   // Отклик на публикацию-источник — только для команды: в витрине из него получается лишь пометка «Популярное».
@@ -212,6 +215,7 @@ export type CollectedListInput = z.infer<typeof CollectedListInput>;
 export interface AdminSource {
   channel: string; // username без @ или id закрытого чата (-100…)
   enabled: boolean; // выключенный сборщик не читает
+  city_id: string; // город источника: его получают события из этого источника, в его часовом поясе ИИ читает время
   // Организатор источника: чей это канал. Сборщик ставит его сам, когда берёт канал из профиля; команда может указать
   // или сменить. Анонс без контакта из такого источника получает контактом этого организатора. null — не указан.
   host: { id: string; name: string; username: string } | null;
@@ -222,6 +226,7 @@ export interface AdminSource {
 /** Добавить источник: username канала, @username, ссылка t.me/… или id закрытого чата. */
 export const SourceCreateInput = z.object({
   channel: z.string().trim().regex(/^(?:https?:\/\/)?(?:t\.me\/|@)?\w{4,32}\/?$|^-100\d+$/).describe('Channel username, @username, t.me link or -100… id of a private chat'),
+  city_id: cityId.optional(),
 });
 export type SourceCreateInput = z.infer<typeof SourceCreateInput>;
 
@@ -229,6 +234,7 @@ export const SourceUpdateInput = z
   .object({
     enabled: z.boolean().describe('false — stop reading this source'),
     host_id: z.uuid().nullable().describe('Organizer this source belongs to (id from admin_hosts_list); null — none'),
+    city_id: cityId.describe('City of the source (id from admin_cities_list); events collected from now on get it, already collected ones keep theirs'),
   })
   .partial();
 export type SourceUpdateInput = z.infer<typeof SourceUpdateInput>;

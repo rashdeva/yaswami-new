@@ -1,6 +1,6 @@
 // События Ясвами: список, событие, гости, отзывы и все правки команды над ними.
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AdminEventView, AdminGuestUpdateInput, EventUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, Wire } from '@yaswami/core';
+import type { AdminEventUpdateInput, AdminEventView, AdminGuestUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, Wire } from '@yaswami/core';
 import { api } from '../api.ts';
 import { keys } from './keys.ts';
 import { useAct } from './useAct.ts';
@@ -30,7 +30,7 @@ export function useEventActions(id: string) {
   const client = useQueryClient();
   const undo = () => ['event', id] as ['event', string];
   return {
-    update: useAct((input: EventUpdateInput) => api.eventUpdate(id, input), {
+    update: useAct((input: AdminEventUpdateInput) => api.eventUpdate(id, input), {
       undo,
       onSuccess: (view) => client.setQueryData<Wire<AdminEventView>>(keys.event(id), (old) => old && { ...old, ...view }),
     }),

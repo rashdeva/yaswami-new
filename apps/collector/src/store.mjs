@@ -9,15 +9,19 @@ export function createStore(url) {
     addSources: (channels) => channels.length ? sql`insert into sources ${sql(channels.map((channel) => ({ channel })))} on conflict do nothing` : [],
     /** Каналы организаторов, которых ещё нет в источниках, — не больше `limit` за раз; возвращает добавленные. */
     adoptHostChannels: async (limit) => (await sql`
-      insert into sources (channel, host_id)
-      select channel, id from hosts h
+      insert into sources (channel, host_id, city_id)
+      select channel, id, city_id from hosts h
       where channel is not null and not exists (select 1 from sources s where lower(s.channel) = lower(h.channel))
       order by created_at limit ${limit}
       on conflict do nothing
       returning channel`).map((r) => r.channel),
-    /** Включённые источники; у канала организатора — его username: контакт для анонсов без контакта. */
+    /**
+     * Включённые источники; у канала организатора — его username: контакт для анонсов без контакта.
+     * Город источника (id, название, часовой пояс) получают события из него; в этом поясе ИИ читает время анонса.
+     */
     sources: () => sql`
-      select s.channel, h.username as host_username from sources s left join hosts h on h.id = s.host_id
+      select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
+      from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id
       where s.enabled order by s.created_at`,
     /** Номер последней разобранной публикации по каждому источнику. */
     async cursors() {
@@ -29,12 +33,12 @@ export function createStore(url) {
       on conflict (channel) do update set last_number = excluded.last_number`,
     /** Предстоящие события — с ними склеиваются повторные анонсы. */
     upcoming: () => sql`
-      select external_id, event, status, exists(select 1 from photos p where p.collected_external_id = e.external_id) as has_cover
+      select external_id, city_id, event, status, exists(select 1 from photos p where p.collected_external_id = e.external_id) as has_cover
       from collected_events e where coalesce(ends_at, starts_at) >= now()`,
     /** Новое событие или дополнение уже известного. Публикация остаётся от первого анонса. */
-    upsert: ({ external_id, channel, announcement, event, signup_url }) => sql`
+    upsert: ({ external_id, channel, city_id, announcement, event, signup_url }) => sql`
       insert into collected_events ${sql({
-        external_id, channel, signup_url,
+        external_id, channel, city_id, signup_url,
         announcement: sql.json(announcement),
         event: sql.json(event),
         starts_at: event.starts_at,
@@ -48,11 +52,12 @@ export function createStore(url) {
      * Контакты предстоящих событий, по которым профиль ещё не собран. Только одобренные командой события: профиль даёт
      * каналу организатора место в источниках, а контакт в непроверенном анонсе мог подставить кто угодно.
      */
-    unprofiled: async () => (await sql`
-      select distinct telegram_username from collected_events
+    unprofiled: () => sql`
+      select telegram_username as username, min(city_id) as city_id from collected_events
       where telegram_username ~ '^\\w{4,32}$' and coalesce(ends_at, starts_at) >= now()
         and status in ('approved', 'published')
-        and telegram_username not in (select username from hosts)`).map((r) => r.telegram_username),
+        and telegram_username not in (select username from hosts)
+      group by telegram_username`,
     /** Организаторы, которых команда добавила по username в админке: заготовки без telegram_id, ждут проверки. */
     requestedHosts: async () => (await sql`
       select username from hosts where telegram_id is null and status = 'pending' order by created_at`).map((r) => r.username),

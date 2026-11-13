@@ -43,6 +43,20 @@ export const User = z.object({
 });
 export type User = z.infer<typeof User>;
 
+/**
+ * Город: к нему относятся источники, собранные события, организаторы и события Ясвами. В Luma такого нет: там город —
+ * поле адреса, отдельного ресурса нет. `id` — короткое латинское имя, оно же стоит в `city_id` у остальных сущностей.
+ */
+export const City = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9-]{1,39}$/, 'latin slug').describe('Short latin slug, e.g. danang'),
+  name: z.string().trim().min(1).max(80).describe('City name as people read it, e.g. Дананг'),
+  timezone: z.string(), // IANA: в нём ИИ записывает время событий из анонсов этого города
+  created_at: z.date(),
+});
+export type City = z.infer<typeof City>;
+/** Город, с которого начали: он достаётся всему, чему город не указали, и его показывает витрина. */
+export const DEFAULT_CITY_ID = 'danang';
+
 /** Подмножество Address из Luma: пока только строка адреса. */
 export const Address = z.object({ address: z.string().trim().min(1).max(ADDRESS_MAX) });
 export type Address = z.infer<typeof Address>;
@@ -65,6 +79,7 @@ export const Event = z.object({
   start_at: z.date(),
   end_at: z.date().nullable(),
   timezone: z.string(),
+  city_id: City.shape.id, // в Luma такого нет
   geo_address_json: Address.nullable(),
   meeting_url: httpUrl.nullable(),
   max_capacity: z.number().int().positive().nullable(), // общий лимит мест события

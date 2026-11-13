@@ -2,6 +2,7 @@
 import { BanIcon, CheckIcon } from 'lucide-react';
 import { INBOX_STAGES } from '@yaswami/core';
 import { useState } from 'react';
+import { CityBadge } from '@/components/City';
 import { EntityLink, TelegramLink } from '@/components/EntityLink';
 import { Failed, Hint, Loading, Nothing, Page } from '@/components/Page';
 import { Search } from '@/components/Search';
@@ -41,7 +42,7 @@ export function HostsScreen({ query, queue, onQueue, onQuery, onOpen, onCreated 
 
   return (
     <Page title={<>Организаторы <Badge>{hosts?.length ?? '…'}</Badge></>} description="Профили собраны по открытым анонсам. «Записей» — сколько раз на предстоящие события организатора нажали «Записаться» у нас. Нужного нет — добавьте по username: сборщик найдёт его в Telegram и на следующем проходе заполнит имя, «о себе», канал и сводку.">
-      <form className="flex max-w-md gap-2" onSubmit={(e) => (e.preventDefault(), username.trim() && create(username.trim(), { onSuccess: (h) => (setUsername(''), onCreated(h.id)) }))}>
+      <form className="flex max-w-md gap-2" onSubmit={(e) => (e.preventDefault(), username.trim() && create({ username: username.trim() }, { onSuccess: (h) => (setUsername(''), onCreated(h.id)) }))}>
         <Input placeholder="@username или t.me/username" value={username} onChange={(e) => setUsername(e.target.value)} />
         <Button type="submit" variant="outline">Добавить</Button>
       </form>
@@ -68,6 +69,7 @@ export function HostsScreen({ query, queue, onQueue, onQuery, onOpen, onCreated 
                       <ItemTitle><EntityLink entity="host" id={h.id}>{h.name}</EntityLink></ItemTitle>
                       <ItemDescription><TelegramLink username={h.username} /></ItemDescription>
                       {h.channel && <ItemDescription>канал <TelegramLink username={h.channel} /></ItemDescription>}
+                      <ItemDescription><CityBadge id={h.city_id} /></ItemDescription>
                     </ItemContent>
                   </Item>
                 </TableCell>

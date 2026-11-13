@@ -4,7 +4,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import * as z from 'zod';
 import type { User } from '@yaswami/core';
 import {
-  AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminGuestUpdateInput,
+  AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, AdminGuestUpdateInput, CityCreateInput, CityUpdateInput,
   CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostUpdateInput, InboxSendInput, PracticeSignupInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TEMPLATES,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
@@ -261,12 +261,12 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
 
     tool('admin_events_create', {
       title: 'Create event for a user', shape: AdminEventCreateInput.shape,
-      description: `Create an event hosted by user_id. ${KINDS} ${ONLY_TEAM} Errors: user_not_found, events_limit (the host's free limit is used up).`,
+      description: `Create an event hosted by user_id. ${KINDS} ${ONLY_TEAM} Errors: user_not_found, city_not_found, events_limit (the host's free limit is used up).`,
     }, (a) => admin.createAnyEvent(db, ctx, a));
 
     tool('admin_events_update', {
-      title: 'Update any event', shape: { event_id, ...EventUpdateInput.shape },
-      description: `Change any event on behalf of its host; only passed fields change. status "cancelled" cancels it and guests see that. ${ONLY_TEAM}`,
+      title: 'Update any event', shape: { event_id, ...AdminEventUpdateInput.shape },
+      description: `Change any event on behalf of its host; only passed fields change. status "cancelled" cancels it and guests see that. ${ONLY_TEAM} Errors: city_not_found.`,
     }, ({ event_id: id, ...input }) => admin.updateAnyEvent(db, ctx, id, input));
 
     tool('admin_events_delete', {
@@ -371,18 +371,34 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
 
     tool('admin_hosts_create', {
       title: 'Add organizer by username', shape: HostCreateInput.shape,
-      description: `Add an organizer by Telegram username. The profile starts empty (\`telegram_id\` null); the collector looks the username up on its next pass and fills name, bio, channel and summary, or sets status to rejected when there is no such person or channel. ${ONLY_TEAM} Errors: host_exists.`,
+      description: `Add an organizer by Telegram username. The profile starts empty (\`telegram_id\` null); the collector looks the username up on its next pass and fills name, bio, channel and summary, or sets status to rejected when there is no such person or channel. ${ONLY_TEAM} Errors: host_exists, city_not_found.`,
     }, (a) => admin.createHost(db, ctx, a));
 
     tool('admin_hosts_update', {
       title: 'Edit organizer profile', shape: { host_id, ...HostUpdateInput.shape },
-      description: `Change an organizer profile: name, username, channel, summary, bio. Only passed fields change. ${ONLY_TEAM}`,
+      description: `Change an organizer profile: name, username, channel, summary, bio, city. Only passed fields change. ${ONLY_TEAM} Errors: city_not_found.`,
     }, ({ host_id: id, ...input }) => admin.updateHost(db, ctx, id, input));
 
     tool('admin_hosts_delete', {
       title: 'Delete organizer profile', destructive: true, shape: { host_id },
       description: `Delete an organizer profile with its photos, e.g. when the person asks for it. The collector may profile them again from new announcements. ${ONLY_TEAM}`,
     }, (a) => admin.deleteHost(db, ctx, a.host_id));
+
+    // --- Города (admin/cities.ts)
+    tool('admin_cities_list', {
+      title: 'Cities', readOnly: true, shape: {},
+      description: 'Cities the service works in, oldest first. Sources, catalogue events, organizers and events carry `city_id`; the public catalogue shows the first city.',
+    }, () => admin.listCities(db));
+
+    tool('admin_cities_create', {
+      title: 'Add city', shape: CityCreateInput.shape,
+      description: `Add a city so that sources, organizers and events can be assigned to it. \`timezone\` is the zone announcements of this city are read in. ${ONLY_TEAM} Errors: city_exists.`,
+    }, (a) => admin.createCity(db, ctx, a));
+
+    tool('admin_cities_update', {
+      title: 'Edit city', shape: { city_id: z.string().describe('City id from admin_cities_list'), ...CityUpdateInput.shape },
+      description: `Rename a city or change its time zone; the zone applies to events collected afterwards. Only passed fields change. ${ONLY_TEAM} Errors: not_found.`,
+    }, ({ city_id, ...input }) => admin.updateCity(db, ctx, city_id, input));
 
     // --- Источники сборщика (admin/sources.ts)
     tool('admin_sources_list', {
@@ -392,12 +408,12 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
 
     tool('admin_sources_create', {
       title: 'Add announcement source', shape: SourceCreateInput.shape,
-      description: `Start reading announcements from a public Telegram channel or group; the collector picks it up on its next pass. ${ONLY_TEAM} Errors: source_exists.`,
+      description: `Start reading announcements from a public Telegram channel or group; the collector picks it up on its next pass. Pass city_id when the channel is about another city than the first one. ${ONLY_TEAM} Errors: source_exists, city_not_found.`,
     }, (a) => admin.createSource(db, ctx, a));
 
     tool('admin_sources_update', {
       title: 'Edit announcement source', shape: { channel: z.string().describe('Channel from admin_sources_list'), ...SourceUpdateInput.shape },
-      description: `Stop or resume reading a source (e.g. when an organizer's channel turns out to be someone else's or not about events), or set the organizer it belongs to: announcements without a contact then get this organizer as the contact. Only passed fields change. ${ONLY_TEAM} Errors: not_found, host_not_found.`,
+      description: `Stop or resume reading a source (e.g. when an organizer's channel turns out to be someone else's or not about events), or set the organizer it belongs to: announcements without a contact then get this organizer as the contact. Only passed fields change. ${ONLY_TEAM} Errors: not_found, host_not_found, city_not_found.`,
     }, ({ channel, ...input }) => admin.updateSource(db, ctx, channel, input));
 
     // --- Пользователи и аудитория (admin/users.ts)
