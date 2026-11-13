@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import type { Event, RsvpStatus } from '@yaswami/core';
-import { TEMPLATES } from '@yaswami/core';
 import { useEvent, useEventVisit } from '../hooks/useEvent.ts';
 import { hue, kindIcon, when } from '../format.ts';
 import { haptic } from '../tg.ts';
@@ -45,8 +44,8 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
   }
 
   const { event, ticket_types: types, guests, guest_counts: counts, me, is_host } = view;
-  const template = TEMPLATES[event.kind];
   const open = event.status === 'published';
+  const price = types.length === 1 ? types[0]!.price_text : null;
   const selected = picked ?? me?.event_ticket_type_id ?? (types.length === 1 ? types[0]!.id : null);
   const taken = (typeId: string) =>
     guests.filter((g) => g.approval_status === 'approved' && g.event_ticket_type_id === typeId).reduce((n, g) => n + 1 + g.plus_ones, 0);
@@ -83,16 +82,18 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
         {view.cover_url && <img className="mark" src="/mark.svg" alt="" />}
         {onBack && <button className="back" onClick={onBack}>← Мои события</button>}
         {!view.cover_url && <img className="emo" src={kindIcon(event.kind)} alt="" />}
-        <small>{event.status === 'cancelled' ? 'Отменено' : event.status === 'draft' ? 'Черновик' : template.label}</small>
-        <h1>{event.name}</h1>
+        <div className="sum">
+          {event.status !== 'published' && <small>{event.status === 'cancelled' ? 'Отменено' : 'Черновик'}</small>}
+          <h1>{event.name}</h1>
+          <p className="when">{when(event.start_at, event.timezone)}</p>
+          {event.geo_address_json && <p className="where">📍 {event.geo_address_json.address}</p>}
+        </div>
       </div>
 
-      <div className="group"><div className="meta">
-        <div><span>🗓</span><span>{when(event.start_at, event.timezone)}</span></div>
-        {event.geo_address_json && <div><span>📍</span><span>{event.geo_address_json.address}</span></div>}
+      {(event.meeting_url || price) && <div className="group"><div className="meta">
         {event.meeting_url && <div><span>🔗</span><a href={event.meeting_url} target="_blank" rel="noreferrer">{event.meeting_url.replace(/^https?:\/\//, '')}</a></div>}
-        {types.length === 1 && types[0]!.price_text && <div><span>🎟</span><span>{types[0]!.price_text}</span></div>}
-      </div></div>
+        {price && <div><span>🎟</span><span>{price}</span></div>}
+      </div></div>}
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
 
       <About topic={event.topic} what_happens={event.what_happens} for_whom={event.for_whom} beginner_friendly={event.beginner_friendly}

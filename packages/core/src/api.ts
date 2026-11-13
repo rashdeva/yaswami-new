@@ -86,6 +86,7 @@ export interface EventView {
 
 export interface EventListItem {
   event: Event;
+  cover_url: string | null; // как в EventView: в Luma — event.cover_url
   is_host: boolean;
   my_approval_status: Guest['approval_status'] | null;
 }

@@ -79,24 +79,22 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
         {cover && <img className="mark" src="/mark.svg" alt="" />}
         {onBack && <button className="back" onClick={onBack}>← Все события</button>}
         {!cover && <img className="emo" src={topicIcon(event.topic)} alt="" />}
-        {/* На обложке тему несёт плашка в её цвете; без обложки её показывает иконка и цвет шапки. */}
-        {cover && guide && <span className="cat"><img src={topicIcon(event.topic)} alt="" />{event.topic![0]!.toUpperCase() + event.topic!.slice(1)}</span>}
-        <small>{past ? 'Событие прошло' : [city, guide && !cover && event.topic].filter(Boolean).join(' · ')}</small>
-        <h1>{event.title}</h1>
-        {(event.popular || event.tags.length > 0) && (
-          <div className="tags">
-            {event.popular && <span className="hot">Популярное</span>}
-            {event.tags.map((t) => <span key={t}>{t}</span>)}
-          </div>
-        )}
+        <div className="sum">
+          {past && <small>Событие прошло</small>}
+          <h1>{event.title}</h1>
+          <p className="when">{collectedWhen(event.starts_at)}</p>
+          <p className="where">📍 {where || city}</p>
+        </div>
       </div>
 
-      <div className="group"><div className="meta">
-        <div><span>🗓</span><span>{collectedWhen(event.starts_at)}</span></div>
-        {where && <div><span>📍</span><span>{where}</span></div>}
-        {event.price && <div><span>🎟</span><span>{event.price}</span></div>}
-      </div></div>
+      {event.price && <div className="group"><div className="meta"><div><span>🎟</span><span>{event.price}</span></div></div></div>}
       {event.description && <div className="group"><div className="meta"><div className="text">{event.description}</div></div></div>}
+      {(event.popular || event.tags.length > 0) && (
+        <p className="taglist">
+          {event.popular && <span className="badge hot">Популярное</span>}
+          {event.tags.map((t) => <span key={t}>#{t}</span>)}
+        </p>
+      )}
       <About topic={event.topic} what_happens={event.what_happens} for_whom={event.for_whom} beginner_friendly={event.beginner_friendly}
         takeaway={event.takeaway} guide={guide} guideNote="Гид написала редакция Ясвами — это не обещание организатора." />
       <h2>Участники</h2>

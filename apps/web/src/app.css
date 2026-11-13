@@ -106,9 +106,28 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
    Кадр 9:16, поэтому шапка высокая — иначе от него остаётся полоска. */
 .hero.cov { margin: calc(-1 * var(--inset-top, 0px)) 0 0; padding: calc(16px + var(--inset-top, 0px)) 20px 26px; border-radius: 0 0 34px 34px; min-height: min(84vh, 760px); box-shadow: none; display: flex; flex-direction: column; align-items: flex-start; }
 .hero .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.hero.cov::before { z-index: 1; background: linear-gradient(rgba(0, 0, 0, .3), transparent 30%, transparent 45%, rgba(0, 0, 0, .78)); }
+/* Низ затемнён сильнее: на нём название, дата и адрес, и они не должны сливаться с картинкой. */
+.hero.cov::before { z-index: 1; background: linear-gradient(rgba(0, 0, 0, .3), transparent 25%, transparent 38%, rgba(0, 0, 0, .55) 60%, rgba(0, 0, 0, .88)); }
 .hero.cov > :not(.bg) { z-index: 2; }
 .hero.cov small { margin-top: auto; }
+/* Главное о событии — под картинкой: название, крупно дата и время, адрес. */
+.hero .sum { margin-top: 14px; }
+.hero.cov .sum { margin-top: auto; align-self: stretch; text-shadow: 0 1px 12px rgba(0, 0, 0, .45); }
+.hero .when { margin: 10px 0 0; font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; }
+.hero .where { margin: 6px 0 0; font-size: 16px; opacity: .92; overflow-wrap: anywhere; }
+
+/* карточка события: обложка 3:4 слева, текст справа; одна в витрине и в «моих событиях» */
+.feed { display: grid; gap: 10px; margin: 0 16px; }
+.ev { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; align-items: start; padding: 10px; border: .5px solid var(--stroke); border-radius: 22px; background: var(--mat); box-shadow: inset 0 1px 0 var(--shine), var(--shadow); width: 100%; text-align: left; color: inherit; text-decoration: none; cursor: pointer; transition: transform .2s var(--spring); }
+.ev:active { transform: scale(.98); }
+.ev > div { padding-top: 4px; min-width: 0; }
+.ev time { display: block; font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 2px; }
+.ev b { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-weight: 600; }
+.ev small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 4px; color: var(--hint); font-size: 14px; }
+.ev .th { display: block; width: 96px; aspect-ratio: 3 / 4; border-radius: 14px; object-fit: cover; }
+.ev .th.ico { object-fit: contain; padding: 18px; background: color-mix(in srgb, var(--a) 12%, transparent); }
+.ev[data-topic] time { color: var(--c); }
+.ev[data-topic] .th.ico { background: color-mix(in srgb, var(--c) 14%, transparent); }
 
 /* лента: обложки 9:16 в две колонки, подпись поверх нижней части — как сторис */
 .covers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 16px; }
@@ -119,14 +138,10 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 .cover .mark { position: absolute; right: 12px; bottom: 14px; width: 18px; z-index: 1; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .4)); }
 .cover:has(.mark) .cap { padding-right: 38px; }
 .hero .mark { position: absolute; right: 20px; bottom: 28px; width: 26px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, .45)); }
-.hero.cov:has(.mark) .tags, .hero.cov:has(.mark) h1 { padding-right: 34px; }
+.hero.cov:has(.mark) .sum { padding-right: 34px; }
 /* Тема события (data-topic, цвет --c — в tokens.css): шапка без обложки в её цвете, на обложке — плашка и низ в цвет темы */
 .hero[data-topic] { --a: var(--c); --b: color-mix(in srgb, var(--c) 55%, #000); }
-.hero.cov[data-topic]::before { background: linear-gradient(rgba(0, 0, 0, .28), transparent 26%, transparent 42%, color-mix(in srgb, var(--c) 62%, #000)); }
-.hero.cov[data-topic] .tags span { background: color-mix(in srgb, var(--c) 45%, rgba(255, 255, 255, .18)); }
-.hero .cat { display: inline-flex; align-items: center; gap: 6px; margin-top: auto; padding: 5px 12px 5px 5px; border-radius: 99px; background: var(--c); font-weight: 700; font-size: 14px; box-shadow: 0 4px 14px rgba(0, 0, 0, .25), inset 0 1px 0 rgba(255, 255, 255, .35); }
-.hero .cat img { width: 26px; height: 26px; }
-.hero.cov .cat + small { margin-top: 10px; }
+.hero.cov[data-topic]::before { background: linear-gradient(rgba(0, 0, 0, .28), transparent 25%, transparent 38%, color-mix(in srgb, var(--c) 30%, rgba(0, 0, 0, .6)) 60%, color-mix(in srgb, var(--c) 25%, #000)); }
 .cover .ico { position: absolute; left: 50%; top: 36%; width: 58%; transform: translate(-50%, -50%); }
 .cover .cap { position: absolute; inset: auto 0 0; padding: 48px 12px 12px; background: linear-gradient(transparent, rgba(0, 0, 0, .78)); }
 .cover b { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 16px; line-height: 1.2; overflow-wrap: anywhere; }
@@ -211,8 +226,8 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 /* витрина собранных событий */
 a.item { text-decoration: none; color: inherit; }
 .item i.t { font-size: 13px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
-.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.tags span { font-size: 13px; color: #fff; background: rgba(255, 255, 255, .2); border: .5px solid rgba(255, 255, 255, .4); border-radius: 99px; padding: 4px 10px; }
+.taglist { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 12px 24px 0; font-size: 14px; color: var(--hint); }
+.taglist .badge { color: var(--text); }
 .note a { color: var(--btn); text-decoration: none; }
 .item.claim { cursor: default; }
 .item.claim > div { flex: 1; min-width: 0; }
@@ -268,21 +283,7 @@ button.cover { width: 100%; padding: 0; border: 0; font: inherit; text-align: le
 .drawer .who .ava { width: 48px; height: 48px; object-fit: cover; border-radius: 50%; }
 .drawer .cta { margin-top: 12px; }
 
-/* лента списком: время — первая колонка, сегодняшний день выделен цветом */
-.feed { margin: 0 16px; }
-.ev { display: grid; grid-template-columns: 48px minmax(0, 1fr) 56px; gap: 12px; align-items: start; padding: 12px 0; border: 0; border-top: .5px solid var(--line); background: none; width: 100%; text-align: left; color: inherit; text-decoration: none; cursor: pointer; transition: opacity .15s; }
-.ev:first-child { border-top: 0; }
-.ev:active { opacity: .6; }
-.ev time { font-weight: 600; font-variant-numeric: tabular-nums; }
-.ev b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-weight: 600; }
-.ev small { display: block; margin-top: 2px; color: var(--hint); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ev .th { width: 56px; height: 56px; border-radius: 14px; object-fit: cover; }
-.ev .th.ico { object-fit: contain; padding: 6px; background: color-mix(in srgb, var(--a) 12%, transparent); }
-.ev[data-topic] time { color: var(--c); }
-.ev[data-topic] .th.ico { background: color-mix(in srgb, var(--c) 14%, transparent); }
-.ev .thw { position: relative; height: 56px; }
-.ev .thw .th { display: block; box-shadow: 0 0 0 2px var(--c); }
-.ev .tb { position: absolute; right: -5px; bottom: -5px; width: 24px; height: 24px; padding: 2px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--bg); }
+/* лента: сегодняшний день выделен цветом */
 h2.today { color: var(--btn); }
 /* Ряд чипов прокручивается и режет всё, что вылезает за его край: размытие стекла и длинная тень --shadow
    рисовали под рядом светлую полосу. Здесь чип без размытия и с короткой тенью. */
