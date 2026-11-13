@@ -12,7 +12,7 @@ import { ADDRESS_MAX, Feature, normalUsername, collectedPath, collectedSignupUrl
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
 import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, ticketTypes, users, visits } from './db/schema.ts';
-import { photoUrl } from './photos.ts';
+import { optimizeImage, photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
 import { recordHostLead } from './inbox.ts';
@@ -161,7 +161,7 @@ const COVER_MAX_BYTES = 4_000_000; // Grok рисует 100–400 КБ, ChatGPT 
 
 /**
  * Картинка обложки от иллюстратора: ссылка хранилища xAI или data URL (её Hermes вставляет вместо файла, нарисованного
- * ChatGPT). Только PNG и JPEG и не больше COVER_MAX_BYTES; всё остальное — bad_image_url / bad_image.
+ * ChatGPT). Только PNG и JPEG и не больше COVER_MAX_BYTES; всё остальное — bad_image_url / bad_image. Хранится сжатый JPEG (optimizeImage).
  */
 async function coverBytes(imageUrl: string): Promise<Buffer> {
   let data: Buffer | null = null;
@@ -175,7 +175,7 @@ async function coverBytes(imageUrl: string): Promise<Buffer> {
   }
   const isImage = data && (data.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])) || (data[0] === 0xff && data[1] === 0xd8));
   if (!data || !isImage || data.length > COVER_MAX_BYTES) throw new AppError('bad_image', 400);
-  return data;
+  return optimizeImage(data).catch(() => { throw new AppError('bad_image', 400); });
 }
 
 /**
