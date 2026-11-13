@@ -21,10 +21,11 @@ interface Props {
   events: EventListData[];
   /** Собранные события, куда человек заходил или нажимал «Записаться». */
   collected: MyCollectedItem[];
-  tabs: ReactNode;
   lead?: ReactNode;
   onOpen: (id: string) => void;
   onOpenCollected: (event: CollectedEventItem) => void;
+  /** Выйти на сайте; null — в Telegram, там выходить не из чего. */
+  onLogout: (() => void) | null;
   /** Создать событие; null — человеку создание не открыто, кнопки нет. */
   onNew: (() => void) | null;
   onKind: (kind: Event['kind']) => void;
@@ -33,7 +34,7 @@ interface Props {
 /** Строка списка: свои события и собранные выглядят одинаково. */
 interface Row { key: string; kind: Event['kind']; icon: string; topic?: string; cover?: string | null; title: string; note: string; start: string; /** Дата и время «на стене» в поясе события: по ним день и время в списке. */ wall: string; past: boolean; open: () => void }
 
-export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollected, onNew, onKind }: Props) {
+export function ListScreen({ events, collected, lead, onOpen, onOpenCollected, onLogout, onNew, onKind }: Props) {
   // Событие считается прошедшим через три часа после начала (или после конца, если он задан).
   const now = Date.now();
   const rows: Row[] = [
@@ -71,7 +72,7 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
 
   return (
     <>
-      <div className="top">{tabs}<h1>Мои события</h1></div>
+      <div className="top"><h1>Мои события</h1></div>
       {lead}
       {days.map((list) => {
         const label = dayLabel(list[0]!.wall);
@@ -79,6 +80,7 @@ export function ListScreen({ events, collected, tabs, lead, onOpen, onOpenCollec
       })}
       {past.length > 0 && <section><h2>Прошедшие</h2>{grid(past)}</section>}
       {rows.length === 0 && <div className="state"><b>🗓</b><p>Здесь появятся события, на которые вы записались.</p></div>}
+      {onLogout && <button className="quiet" onClick={onLogout}>Выйти</button>}
       {onNew && <div className="main"><div><button className="cta" onClick={onNew}>Новое событие</button></div></div>}
     </>
   );

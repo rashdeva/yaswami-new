@@ -10,7 +10,6 @@ import { dayLabel } from '../format.ts';
 
 interface Props {
   city: string;
-  tabs: ReactNode;
   /** Блок над списком: предложение организатору подтвердить свои события. */
   lead?: ReactNode;
   onOpen: (event: CollectedEventItem) => void;
@@ -20,7 +19,7 @@ interface Props {
 const POPULAR = '🔥';
 
 /** Витрина: все предстоящие события города. Открыта без входа. */
-export function FeedScreen({ city, tabs, lead, onOpen }: Props) {
+export function FeedScreen({ city, lead, onOpen }: Props) {
   const { items, failed } = useCollectedFeed();
   const [topic, pickTopic] = useState<string | null>(null);
   const setTopic = (next: string | null) => {
@@ -47,7 +46,6 @@ export function FeedScreen({ city, tabs, lead, onOpen }: Props) {
   return (
     <>
       <div className="top">
-        {tabs}
         <div className="head">
           <h1>События</h1>
           <p>📍 {city}</p>

@@ -51,6 +51,7 @@ const safely = (fn: () => void) => {
 // нажатие — лёгкий удар, результат — «успех» или «ошибка»
 export const haptic = {
   tap: () => safely(() => tg?.HapticFeedback.impactOccurred('light')),
+  select: () => safely(() => tg?.HapticFeedback.selectionChanged()), // переключение вкладки, выбор из списка
   success: () => safely(() => tg?.HapticFeedback.notificationOccurred('success')),
   error: () => safely(() => tg?.HapticFeedback.notificationOccurred('error')),
 };

@@ -1,6 +1,6 @@
 // Все маршруты приложения. Страница здесь — тонкая связка: берёт адрес, вход и общие вещи layout и раздаёт экрану.
 import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect, useNavigate } from '@tanstack/react-router';
-import { App, AppTabs, Claims, useClaim, useShell } from './App.tsx';
+import { App, Claims, useClaim, useLogout, useShell } from './App.tsx';
 import { hasCredentials, startLogin } from './api.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
 import { useFeature } from './hooks/useFeature.ts';
@@ -50,7 +50,7 @@ function FeedPage() {
     if (me && mine.total === null) return <Spinner />;
     if (mine.total) return <Navigate to="/my" replace />;
   }
-  return <FeedScreen city={city} tabs={<AppTabs current="feed" />} lead={<Claims />} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
+  return <FeedScreen city={city} lead={<Claims />} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
 }
 const feed = createRoute({ getParentRoute: () => app, path: '/', component: FeedPage });
 
@@ -81,7 +81,7 @@ const collected = createRoute({ getParentRoute: () => app, path: '/e/$id', compo
 function HostsPage() {
   const navigate = useNavigate();
   const { city } = useSession();
-  return <HostsScreen city={city} tabs={<AppTabs current="hosts" />} onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} />;
+  return <HostsScreen city={city} onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} />;
 }
 const hostsRoute = createRoute({ getParentRoute: () => app, path: '/hosts', component: HostsPage });
 
@@ -124,6 +124,7 @@ function ListPage() {
   const { events, collected: seen, total, failed } = useMyEvents();
   const { onKind } = useShell();
   const canCreate = useFeature('event_create');
+  const logout = useLogout();
   if (failed) return <Failed error={failed} />;
   if (total === null) return <Spinner />;
   if (total === 0 && canCreate) return <Navigate to="/new" replace />; // показывать нечего — организатору предлагаем создать
@@ -131,10 +132,11 @@ function ListPage() {
     <ListScreen
       events={events ?? []}
       collected={seen}
-      tabs={<AppTabs current="mine" />}
+     
       lead={<Claims />}
       onOpen={(id) => void navigate({ to: '/events/$id', params: { id } })}
       onOpenCollected={(item) => void navigate({ to: '/e/$id', params: { id: item.id } })}
+      onLogout={logout}
       onNew={canCreate ? () => void navigate({ to: '/new' }) : null}
       onKind={onKind}
     />

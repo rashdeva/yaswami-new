@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import type { HostListItem } from '@yaswami/core';
 import { TOPIC_GUIDES, topicIcon } from '@yaswami/core';
@@ -9,7 +8,6 @@ import { useViewed } from '../hooks/useViewed.ts';
 
 interface Props {
   city: string;
-  tabs: ReactNode;
   onOpen: (host: HostListItem) => void;
 }
 
@@ -18,7 +16,7 @@ const doesLine = (h: HostListItem) =>
   [...(h.practices.length ? h.practices.map((p) => p.title) : h.topics), h.upcoming_count && `событий: ${h.upcoming_count}`].filter(Boolean).join(' · ');
 
 /** Каталог организаторов и мастеров города с фильтром по темам. Открыт без входа. */
-export function HostsScreen({ city, tabs, onOpen }: Props) {
+export function HostsScreen({ city, onOpen }: Props) {
   const { hosts, failed } = useHosts();
   const [topic, pickTopic] = useState<string | null>(null);
   useViewed('hosts_viewed');
@@ -34,7 +32,6 @@ export function HostsScreen({ city, tabs, onOpen }: Props) {
   return (
     <>
       <div className="top">
-        {tabs}
         <div className="head">
           <h1>Организаторы</h1>
           <p>📍 {city} · ведущие, мастера и площадки</p>
