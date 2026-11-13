@@ -132,6 +132,7 @@ export interface Host {
 
 export interface AdminHostView extends Host {
   photos: { url: string; source_url: string }[]; // фото сообщества, новые сверху
+  practice_signups: { id: User['id']; first_name: string; username: string | null; title: string; at: Date }[]; // кто нажал «Записаться» на Practice, новые сверху
 }
 
 /** Добавить организатора по username: профиль (имя, «о себе», канал, сводку) соберёт сборщик. В Luma такого нет. */

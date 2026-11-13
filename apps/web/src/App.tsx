@@ -32,7 +32,7 @@ export function App() {
   const [kind, setKind] = useState<Event['kind']>('o');
 
   // У публичных экранов свой нейтральный цвет; личные выставляют цвет шаблона события сами.
-  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/hosts')) && kind !== 'o') setKind('o');
+  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/hosts') || pathname === '/services') && kind !== 'o') setKind('o');
 
   // Куда ведёт «назад»: событие → свой список, организатор → каталог, создание → список или витрина. null — корень.
   const here = { includeSearch: false } as const; // ?signup, ?startapp в адресе маршрут не меняют
@@ -41,7 +41,7 @@ export function App() {
   const back = matchRoute({ to: '/e/$id', ...here })
     ? () => void navigate({ to: '/' })
     : matchRoute({ to: '/hosts/$id', ...here })
-      ? () => void navigate({ to: '/hosts' })
+      ? () => void navigate({ to: '/services' })
     : section
       ? () => void navigate({ to: '/events/$id/edit', params: { id: section.id } })
       : edit
@@ -52,7 +52,7 @@ export function App() {
             ? () => void navigate({ to: hasEvents ? '/my' : '/' })
             : null;
   useTelegramBack(back);
-  const withTabBar = pathname === '/' || pathname === '/hosts' || pathname === '/my';
+  const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/my';
 
   return (
     <ShellContext value={{ toast: showToast, onKind: setKind, onBack: nativeBack ? null : back }}>
@@ -60,7 +60,7 @@ export function App() {
         <div className="air" />
         <Outlet />
         {/* Таббар — на корневых разделах; у страниц события и организатора внизу своя кнопка действия и «назад». */}
-        {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/hosts' ? 'hosts' : 'mine'} />}
+        {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/services' ? 'hosts' : 'mine'} />}
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </ShellContext>
@@ -73,7 +73,7 @@ function AppTabBar({ current }: { current: Tab }) {
   const { me, authed, canLogin } = useSession();
   const { hasEvents } = useMyEvents();
   const canCreate = useFeature('event_create');
-  const tabs: [Tab, () => void][] = [['feed', () => void navigate({ to: '/' })], ['hosts', () => void navigate({ to: '/hosts' })]];
+  const tabs: [Tab, () => void][] = [['feed', () => void navigate({ to: '/' })], ['hosts', () => void navigate({ to: '/services' })]];
   if (me || canLogin) tabs.push(['mine', () => void navigate({ to: authed && !hasEvents && canCreate ? '/new' : '/my' })]);
   return <TabBar current={current} tabs={tabs} />;
 }
