@@ -236,6 +236,19 @@ export const collectedEventSignups = pgTable(
   (t) => [primaryKey({ columns: [t.external_id, t.user_id] }), index('collected_event_signups_user_idx').on(t.user_id)],
 );
 
+// «Записаться» на Practice мастера: фиксируем намерение и отправляем человека к мастеру. Practice — по названию:
+// своего id у неё нет (hosts.practices). ponytail: без статуса и подтверждения — пока мастера не входят в Ясвами.
+export const practiceSignups = pgTable(
+  'practice_signups',
+  {
+    host_id: uuid().notNull().references(() => hosts.id, { onDelete: 'cascade' }),
+    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    title: text().notNull(),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.host_id, t.user_id, t.title] }), index('practice_signups_user_idx').on(t.user_id)],
+);
+
 // Аудитория организатора — contacts календаря в Luma API. Организатор у нас — пользователь (events.user_id).
 // Сюда же лягут метки, блокировки и отписки, когда появятся рассылки.
 export const contacts = pgTable(

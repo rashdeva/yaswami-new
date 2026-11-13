@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
+import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, PracticeSignup, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents } from '@yaswami/core';
@@ -14,7 +14,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, collectedEvents, contacts, conversations, guests, hosts, messages, photos, sources, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, collectedEvents, contacts, conversations, guests, hosts, messages, photos, practiceSignups, sources, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { saveUserPhoto } from './photos.ts';
@@ -223,7 +223,7 @@ test('MCP: список инструментов, создание событи�
   assert.deepEqual(tools.map((t: { name: string }) => t.name).sort(), [
     'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
-    'events_ticket_types_update', 'events_update', 'hosts_get', 'hosts_list', 'me_collected_list', 'search', 'users_get_self',
+    'events_ticket_types_update', 'events_update', 'hosts_get', 'hosts_list', 'hosts_practices_signup', 'me_collected_list', 'search', 'users_get_self',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
@@ -336,6 +336,16 @@ test('каталог организаторов: с событиями или Pr
   assert.equal((await app.request('/hosts/not-an-id')).status, 404);
   const [nobody] = await db.select().from(hosts).where(eq(hosts.username, 'nobody'));
   assert.equal((await app.request(`/hosts/${nobody!.id}`)).status, 404);
+
+  // запись на Practice: намерение записано, человек получает ссылку на чат мастера; повтор ничего не меняет
+  const dasha = list[1]!;
+  const signup = () => call(tma(90, 'Оля'), 'POST', `/hosts/${dasha.id}/practices/signup`, { title: 'Утренняя йога' });
+  const { signup_url } = (await (await signup()).json()) as PracticeSignup;
+  assert.match(signup_url, /^https:\/\/t\.me\/dasha_yoga\?text=/);
+  assert.equal((await signup()).status, 200);
+  assert.equal((await db.select().from(practiceSignups)).length, 1);
+  assert.equal((await call(tma(90, 'Оля'), 'POST', `/hosts/${dasha.id}/practices/signup`, { title: 'Ремонт телефонов' })).status, 404); // не наша тема
+  assert.equal((await app.request(`/hosts/${dasha.id}/practices/signup`, { method: 'POST' })).status, 401);
 
   // модерация: одобренный мастер появляется в каталоге, отклонённый организатор пропадает даже с событиями
   const [master] = await db.select().from(hosts).where(eq(hosts.username, 'new_master'));
@@ -1739,6 +1749,7 @@ test('парность: у каждого инструмента MCP есть м
     hosts_list: 'GET /hosts',
     hosts_get: 'GET /hosts/:id',
     search: 'GET /search',
+    hosts_practices_signup: 'POST /hosts/:id/practices/signup',
     collected_events_claim: 'POST /collected-events/:id/claim',
     collected_events_signup: 'POST /collected-events/:id/signup',
     users_get_self: 'GET /me',

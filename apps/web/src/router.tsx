@@ -84,7 +84,9 @@ function HostsPage() {
   const { city } = useSession();
   return <HostsScreen city={city} onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} onSearch={() => void navigate({ to: '/search' })} />;
 }
-const hostsRoute = createRoute({ getParentRoute: () => app, path: '/hosts', component: HostsPage });
+const hostsRoute = createRoute({ getParentRoute: () => app, path: '/services', component: HostsPage });
+// Старый адрес вкладки: раньше она называлась «Организаторы». Страница мастера осталась на /hosts/$id — это Host.
+const oldHostsRoute = createRoute({ getParentRoute: () => app, path: '/hosts', beforeLoad: () => { throw redirect({ to: '/services', replace: true }); } });
 
 function HostPage() {
   const { id } = hostRoute.useParams();
@@ -208,7 +210,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, hostRoute, searchRoute, personal.addChildren([list, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, oldHostsRoute, hostRoute, searchRoute, personal.addChildren([list, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 

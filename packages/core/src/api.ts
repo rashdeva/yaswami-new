@@ -137,6 +137,17 @@ export interface Practice {
   price: string | null; // как написал сам организатор
 }
 
+/** Запись на Practice: какую именно, по названию — своего id у Practice нет (она строка в `hosts.practices`). В Luma такого нет. */
+export const PracticeSignupInput = z.object({ title: z.string().trim().min(1).max(200).describe('Practice title exactly as in `practices` of the organizer') });
+export type PracticeSignupInput = z.infer<typeof PracticeSignupInput>;
+
+/** Ответ на запись: куда идти дальше — запись подтверждает сам мастер. */
+export interface PracticeSignup { signup_url: string }
+
+/** Куда ведёт «Записаться» у Practice: чат мастера в Telegram с готовым сообщением. */
+export const practiceSignupUrl = (username: string, title: string) =>
+  `https://t.me/${username}?text=${encodeURIComponent(`Здравствуйте! Хочу записаться: «${title}». Нашёл вас на Ясвами.`)}`;
+
 /**
  * Организатор в каталоге «Организаторы»: тот, у кого есть предстоящие события или Practice из наших Topic.
  * В Luma общего списка Host нет — там Host живёт только внутри события; поля — как у CollectedHost.
@@ -145,6 +156,7 @@ export interface HostListItem extends Omit<CollectedHost, 'photos'> {
   id: string;
   username: string; // без @: по нему пишут организатору
   contact_url: string; // t.me/<username>
+  url: string; // страница мастера в Ясвами: там его услуги с кнопкой «Записаться»
   topics: string[]; // темы его Practice и предстоящих событий, порядок — как в TOPIC_GUIDES
   practices: Practice[];
   upcoming_count: number; // предстоящих опубликованных событий

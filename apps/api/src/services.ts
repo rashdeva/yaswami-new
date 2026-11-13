@@ -4,14 +4,14 @@ import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNot
 import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedStatus, CollectedUpdateInput,
-  CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
+  CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
-import { ADDRESS_MAX, Feature, normalUsername, collectedPath, collectedSignupUrl, popularIds, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
+import { ADDRESS_MAX, Feature, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
-import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, ticketTypes, users, visits } from './db/schema.ts';
+import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, practiceSignups, ticketTypes, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
@@ -455,7 +455,7 @@ function toHostListItem(h: HostRecord, eventTopics: (string | undefined)[]): Hos
   if (!practices.length && !eventTopics.length) return null;
   const mentioned = new Set([...practices.map((p) => p.topic), ...eventTopics]);
   return {
-    ...hostCard(h), id: h.id, username: h.username, contact_url: `https://t.me/${h.username}`,
+    ...hostCard(h), id: h.id, username: h.username, contact_url: `https://t.me/${h.username}`, url: `${settings.publicUrl}/hosts/${h.id}`,
     topics: Object.keys(TOPIC_GUIDES).filter((t) => mentioned.has(t)), practices, upcoming_count: eventTopics.length,
   };
 }
@@ -551,6 +551,14 @@ export async function search(db: Db, { query, pagination_limit: limit = SEARCH_L
     }),
   ];
   return { entries: found.sort((a, b) => b.score - a.score).slice(0, limit).map(({ score: _, ...entry }) => entry as SearchEntry) };
+}
+
+/** Фиксирует, что человек хочет записаться на Practice мастера. Повторный вызов ничего не меняет. */
+export async function signUpForPractice(db: Db, actor: User, hostId: string, input: PracticeSignupInput): Promise<PracticeSignup> {
+  const host = await getHost(db, hostId);
+  if (!host.practices.some((p) => p.title === input.title)) throw new AppError('not_found', 404);
+  await db.insert(practiceSignups).values({ host_id: host.id, user_id: actor.id, title: input.title }).onConflictDoNothing();
+  return { signup_url: practiceSignupUrl(host.username, input.title) };
 }
 
 /** Фиксирует, что человек собрался на событие. Повторный вызов ничего не меняет. */

@@ -24,7 +24,7 @@ const ICONS: Record<Tab, React.ReactNode> = {
     </>
   ),
 };
-const LABELS: Record<Tab, string> = { feed: 'События', hosts: 'Организаторы', mine: 'Мои' };
+const LABELS: Record<Tab, string> = { feed: 'События', hosts: 'Услуги', mine: 'Мои' };
 
 /**
  * Нижний таббар, как в iOS. `tabs` — вкладка и куда она ведёт; «Мои» передают, только когда человек вошёл или может войти.

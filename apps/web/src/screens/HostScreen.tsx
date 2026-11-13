@@ -3,8 +3,9 @@ import type { CollectedEventItem } from '@yaswami/core';
 import { collectedBadges, collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { EventRow } from '../components/EventRow.tsx';
+import { PracticeRow } from '../components/PracticeRow.tsx';
 import { dayLabel } from '../format.ts';
-import { useHost } from '../hooks/useHosts.ts';
+import { useHost, usePracticeSignup } from '../hooks/useHosts.ts';
 import { useViewed } from '../hooks/useViewed.ts';
 import { openExternal } from '../tg.ts';
 
@@ -18,6 +19,7 @@ interface Props {
 /** Страница организатора или мастера: кто это, что ведёт, ближайшие события и как ему написать. */
 export function HostScreen({ id, city, onOpenEvent, onBack }: Props) {
   const { host, loaded, failed } = useHost(id);
+  const signUp = usePracticeSignup();
   useViewed('host_viewed', id);
   useEffect(() => { if (host) document.title = `${host.name} — ${city}, Я с вами`; }, [host, city]);
 
@@ -26,7 +28,7 @@ export function HostScreen({ id, city, onOpenEvent, onBack }: Props) {
       <div className="state">
         <b>🫥</b>
         <p>{failed.message}</p>
-        {onBack && <button className="chip" onClick={onBack}>← Все организаторы</button>}
+        {onBack && <button className="chip" onClick={onBack}>← Все услуги</button>}
       </div>
     ) : (
       <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>
@@ -37,7 +39,7 @@ export function HostScreen({ id, city, onOpenEvent, onBack }: Props) {
   return (
     <>
       <div className={`hero${onBack ? '' : ' nb'}`} data-topic={topicSlug(topic)}>
-        {onBack && <button className="back" onClick={onBack}>← Все организаторы</button>}
+        {onBack && <button className="back" onClick={onBack}>← Все услуги</button>}
         {/* фото нет или скрыто — Telegram отвечает 404, тогда иконка темы */}
         <img className="emo" src={host.photo_url} alt="" referrerPolicy="no-referrer" style={{ borderRadius: '50%', objectFit: 'cover' }}
           onError={(e) => { e.currentTarget.src = topicIcon(topic); e.currentTarget.style.borderRadius = '0'; }} />
@@ -51,13 +53,7 @@ export function HostScreen({ id, city, onOpenEvent, onBack }: Props) {
         <>
           <h2>Что ведёт</h2>
           <div className="group">
-            {host.practices.map((p) => (
-              <div key={p.title} className="guest">
-                <img src={topicIcon(p.topic)} alt="" width={36} height={36} />
-                <div>{p.title}{p.description && <small>{p.description}</small>}</div>
-                {p.price && <span>{p.price}</span>}
-              </div>
-            ))}
+            {host.practices.map((p) => <PracticeRow key={p.title} practice={p} onSignUp={() => signUp(host, p.title)} />)}
           </div>
         </>
       )}
