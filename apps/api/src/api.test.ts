@@ -1123,7 +1123,7 @@ test('аккаунты Telegram: вход по шагам из админки, �
   assert.equal((await call(admin, 'POST', `/admin/accounts/${account.id}/login`, { secret: '12345' })).status, 204);
   const [row] = await db.select().from(tgAccounts);
   assert.deepEqual(row!.login, { secret: '12345' });
-  assert.deepEqual(Object.keys((await inbox()).accounts[0]!).sort(), ['cold_today', 'created_at', 'daily_limit', 'id', 'label', 'last_error', 'phone', 'status']);
+  assert.deepEqual(Object.keys((await inbox()).accounts[0]!).sort(), ['cold_paused_until', 'cold_today', 'created_at', 'daily_limit', 'id', 'label', 'last_error', 'phone', 'status']);
 
   // Сборщик сообщает о личном сообщении на аккаунте: без секрета — отказ.
   const report = (body: object, secret?: string) =>
@@ -1212,6 +1212,15 @@ test('лимит аккаунта: первых сообщений за сутк
   // Человек ответил на первое сообщение — дальше с ним без лимита.
   await db.insert(messages).values({ conversation_id: first, direction: 'in', author: 'user', text: 'Да?', status: 'received' });
   assert.equal((await send(first, 'Рассказываю')).status, 204);
+  // Telegram ограничил аккаунт (PEER_FLOOD, паузу ставит сборщик): первые сообщения — нет, ответы — да; команда снимает паузу.
+  await call(admin, 'PATCH', `/admin/accounts/${account!.id}`, { daily_limit: 20 });
+  await db.update(tgAccounts).set({ cold_paused_until: new Date(Date.now() + 86_400_000) }).where(eq(tgAccounts.id, account!.id));
+  const paused = await send(await dialog(604), 'Здравствуйте!');
+  assert.deepEqual([paused.status, ((await paused.json()) as { error: string }).error], [409, 'account_limited']);
+  assert.equal((await send(wrote, 'Отвечаю и в паузу')).status, 204);
+  const lifted = (await (await call(admin, 'PATCH', `/admin/accounts/${account!.id}`, { cold_paused_until: null })).json()) as TgAccount;
+  assert.equal(lifted.cold_paused_until, null);
+  assert.equal((await send(await dialog(605), 'Здравствуйте!')).status, 204);
 });
 
 test('отзывы: запрос после события, оценка кнопкой, текст ответом, сводка организатору', async () => {

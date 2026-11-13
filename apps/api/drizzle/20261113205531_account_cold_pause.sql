@@ -1,0 +1,1 @@
+ALTER TABLE "tg_accounts" ADD COLUMN "cold_paused_until" timestamp with time zone;

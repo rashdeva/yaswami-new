@@ -206,6 +206,13 @@ console.log('cover ok');
   assert.deepEqual(reported.slice(2).map((m) => [m.direction, m.text, m.reply_to]), [
     ['in', 'А сколько стоит?', { chat: 'danang_chat', message_id: 10 }], ['in', 'закрытый чат', { chat: '-100500', message_id: 12 }],
   ]);
+  // PEER_FLOOD: Telegram ограничил аккаунт — сообщение возвращается в черновики, первые сообщения на паузе.
+  client.sendMessage = async () => { throw fail('PEER_FLOOD'); };
+  queue.push({ id: 'm4', text: 'Привет! Видел в чате…', account_id: 'a1', peer_id: '77', peer_username: 'anya', status: 'queued' });
+  await sender.tick();
+  assert.equal(queue.at(-1).status, 'draft', 'не потеряно — снова черновик');
+  assert.ok(account.cold_paused_until > new Date(Date.now() + 2 * 86_400_000), 'пауза на дни');
+  assert.match(account.last_error, /PEER_FLOOD/);
   console.log('sender ok');
 }
 

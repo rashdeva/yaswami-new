@@ -198,7 +198,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
 
     tool('admin_messages_send', {
       title: 'Send message to person', shape: { conversation_id, ...InboxSendInput.shape },
-      description: 'Send a Telegram message to the person in this conversation, on behalf of the team. After it the bot stops auto-replying there and the person\'s next message waits for a human. Cannot be undone. `account_id` (from admin_accounts_list) picks which of our Telegram accounts sends it; omit it to keep the account the conversation already uses. Pass another account only when the team names it: the conversation moves to that account and the person sees a new chat from a different number. Errors: not_delivered (Telegram refused it: the person blocked the bot), no_account (no active account to send from), account_unavailable (the account is not active: logging in or failed), daily_limit (the account sent its daily number of first messages to people who have not written to us; replies are not limited).',
+      description: 'Send a Telegram message to the person in this conversation, on behalf of the team. After it the bot stops auto-replying there and the person\'s next message waits for a human. Cannot be undone. `account_id` (from admin_accounts_list) picks which of our Telegram accounts sends it; omit it to keep the account the conversation already uses. Pass another account only when the team names it: the conversation moves to that account and the person sees a new chat from a different number. Errors: not_delivered (Telegram refused it: the person blocked the bot), no_account (no active account to send from), account_unavailable (the account is not active: logging in or failed), daily_limit (the account sent its daily number of first messages to people who have not written to us; replies are not limited), account_limited (Telegram restricted the account for messaging strangers — PEER_FLOOD; first messages are paused until cold_paused_until, replies still go).',
     }, ({ conversation_id: id, ...input }) => inboxSend(db, ctx, id, input));
 
     tool('admin_conversations_update', {
@@ -213,7 +213,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
     const message_id = z.uuid().describe('Id of a message with status "draft" from admin_conversations_get');
     tool('admin_drafts_send', {
       title: 'Send agent draft', shape: { message_id, ...DraftSendInput.shape, text: DraftSendInput.shape.text.describe('Corrected text; omit to send as written') },
-      description: 'Approve a draft written by an agent (message status "draft"): it is queued and sent from our Telegram account. Only on an explicit go-ahead from the team; cannot be undone. `account_id` (from admin_accounts_list) picks which of our Telegram accounts sends it; omit it to keep the account the conversation already uses. Pass another account only when the team names it: the conversation moves to that account and the person sees a new chat from a different number. Errors: not_draft (already sent or rejected), no_account (no active account to send from), account_unavailable (the account is not active: logging in or failed), daily_limit (the account sent its daily number of first messages to people who have not written to us; replies are not limited).',
+      description: 'Approve a draft written by an agent (message status "draft"): it is queued and sent from our Telegram account. Only on an explicit go-ahead from the team; cannot be undone. `account_id` (from admin_accounts_list) picks which of our Telegram accounts sends it; omit it to keep the account the conversation already uses. Pass another account only when the team names it: the conversation moves to that account and the person sees a new chat from a different number. Errors: not_draft (already sent or rejected), no_account (no active account to send from), account_unavailable (the account is not active: logging in or failed), daily_limit (the account sent its daily number of first messages to people who have not written to us; replies are not limited), account_limited (Telegram restricted the account for messaging strangers — PEER_FLOOD; first messages are paused until cold_paused_until, replies still go).',
     }, ({ message_id: id, ...input }) => sendDraft(db, ctx, id, input));
 
     tool('admin_drafts_update', {
@@ -466,7 +466,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
     const account_id = z.uuid().describe('Account id from admin_accounts_list');
     tool('admin_accounts_list', {
       title: 'Our Telegram accounts', readOnly: true, shape: {},
-      description: 'Telegram accounts the team writes to people from, with their state (active, logging in, error), daily_limit and cold_today (first messages sent in the last 24 hours).',
+      description: 'Telegram accounts the team writes to people from, with their state (active, logging in, error), daily_limit, cold_today (first messages sent in the last 24 hours) and cold_paused_until (Telegram restricted first messages — PEER_FLOOD; until then only replies go).',
     }, () => listAccounts(db));
 
     tool('admin_accounts_create', {
@@ -476,7 +476,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
 
     tool('admin_accounts_update', {
       title: 'Update a Telegram account', shape: { account_id, ...AccountUpdateInput.shape },
-      description: 'Change the label of our Telegram account or its daily_limit: how many first messages (to people who have not written to us) it may send in 24 hours. Replies are not limited.',
+      description: 'Change the label of our Telegram account or its daily_limit: how many first messages (to people who have not written to us) it may send in 24 hours. Replies are not limited. cold_paused_until: null lifts the pause after PEER_FLOOD — only when the team says the restriction is over (e.g. @SpamBot says so).',
     }, ({ account_id: id, ...input }) => updateAccount(db, ctx, id, input));
 
     tool('admin_accounts_delete', {
