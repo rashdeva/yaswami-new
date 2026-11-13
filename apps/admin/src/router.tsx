@@ -21,6 +21,7 @@ import { HostsScreen } from '@/screens/HostsScreen';
 import { PeopleScreen } from '@/screens/PeopleScreen';
 import { UserScreen } from '@/screens/UserScreen';
 import { UsersScreen } from '@/screens/UsersScreen';
+import { CitiesScreen } from '@/screens/CitiesScreen';
 import { SourcesScreen } from '@/screens/SourcesScreen';
 
 const root = createRootRoute({ component: App });
@@ -178,10 +179,11 @@ const action = createRoute({ getParentRoute: () => root, path: '/actions/$id', c
 
 const accounts = createRoute({ getParentRoute: () => root, path: '/accounts', component: AccountsScreen });
 const sources = createRoute({ getParentRoute: () => root, path: '/sources', component: SourcesScreen });
+const cities = createRoute({ getParentRoute: () => root, path: '/cities', component: CitiesScreen });
 
 // Сервер отдаёт админку по /admin (apps/api/src/main.ts), Vite — с base: '/admin/'.
 export const router = createRouter({
-  routeTree: root.addChildren([people, feed, agents, hosts, host, events, eventNew, event, catalog, catalogItem, users, user, sources, actions, action, accounts]),
+  routeTree: root.addChildren([people, feed, agents, hosts, host, events, eventNew, event, catalog, catalogItem, users, user, sources, cities, actions, action, accounts]),
   basepath: '/admin',
 });
 

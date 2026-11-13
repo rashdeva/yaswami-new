@@ -4,6 +4,7 @@
 import type { AdminCollectedEvent, CollectedStatus } from '@yaswami/core';
 import { COLLECTED_STATUSES, collectedWhen } from '@yaswami/core';
 import { Cover } from '@/components/Cover';
+import { CityBadge } from '@/components/City';
 import { EntityLink, ExternalLink } from '@/components/EntityLink';
 import { Failed, Loading, Nothing, Page } from '@/components/Page';
 import { Search } from '@/components/Search';
@@ -78,7 +79,7 @@ export function CatalogScreen({ status, query, onFilter }: Props) {
                       </Item>
                     </TableCell>
                     <TableCell>{collectedWhen(e.starts_at)}</TableCell>
-                    <TableCell><ExternalLink href={e.source_url}>{e.channel}</ExternalLink></TableCell>
+                    <TableCell><ExternalLink href={e.source_url}>{e.channel}</ExternalLink> <CityBadge id={e.city_id} /></TableCell>
                     <TableCell><Badge variant={e.status === 'pending' ? 'default' : e.status === 'rejected' ? 'outline' : 'secondary'}>{COLLECTED_LABELS[e.status]}</Badge></TableCell>
                     <TableCell>
                       <ButtonGroup className="justify-end">

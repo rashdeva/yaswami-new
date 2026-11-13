@@ -8,10 +8,10 @@ import type {
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
-import { ADDRESS_MAX, Feature, normalUsername, collectedPath, collectedSignupUrl, popularIds, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
+import { ADDRESS_MAX, DEFAULT_CITY_ID, Feature, normalUsername, collectedPath, collectedSignupUrl, popularIds, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
-import { collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, ticketTypes, users, visits } from './db/schema.ts';
+import { cities, collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, ticketTypes, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
@@ -137,10 +137,19 @@ const collectedWithCover = (db: Db | Tx) => db
   .from(collectedEvents)
   .leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id));
 
-/** Предстоящие собранные события для витрины. Открыты всем: это пересказ публичных анонсов. */
+/** Город команда указывает по id: несуществующий — понятный отказ, а не сбой внешнего ключа. */
+export async function assertCity(db: Db | Tx, id: string | undefined): Promise<void> {
+  if (id && !(await db.select({ id: cities.id }).from(cities).where(eq(cities.id, id))).length) throw new AppError('city_not_found', 404);
+}
+
+/**
+ * Предстоящие собранные события для витрины. Открыты всем: это пересказ публичных анонсов.
+ * ponytail: витрина одна и показывает первый город (DEFAULT_CITY_ID); события других городов видит только команда.
+ * Появится витрина второго города — город станет параметром здесь и в listHosts.
+ */
 export async function listCollectedEvents(db: Db): Promise<CollectedEventItem[]> {
   const rows = await collectedWithCover(db)
-    .where(and(upcomingCollected, published))
+    .where(and(upcomingCollected, published, eq(collectedEvents.city_id, DEFAULT_CITY_ID)))
     .orderBy(asc(collectedEvents.starts_at))
     .limit(500); // ponytail: без постраничной выдачи, пока событий одного города меньше лимита
   const popular = popularIds(rows, (r) => r.external_id);
@@ -360,7 +369,7 @@ export function startVideoLoop(db: Db, everyMs = 15 * 60_000): void {
 
 /** Собранное событие для команды: с источником, его текстом и контактами, которые витрина прячет. */
 export const toAdminItem = (r: CollectedRow): AdminCollectedEvent => ({
-  ...toCollectedItem(r), status: r.status, channel: r.channel, source_text: r.announcement.text ?? null, views: r.views, reactions: r.reactions,
+  ...toCollectedItem(r), status: r.status, city_id: r.city_id, channel: r.channel, source_text: r.announcement.text ?? null, views: r.views, reactions: r.reactions,
   telegram_username: r.event.telegram_username, whatsapp_phone: r.event.whatsapp_phone, url: r.event.url,
 });
 
@@ -376,15 +385,16 @@ export async function listCollectedForAdmin(db: Db, status?: CollectedStatus): P
  * вместе с ним. `status` — решение модератора. approved: событие встаёт в очередь обработки и выйдет в ленту, когда
  * она закончится (уже обработанное — сразу). rejected: не выводится нигде; так же снимается с публикации опубликованное.
  */
-export async function updateCollectedEvent(db: Db, slug: string, { status, ...fields }: CollectedUpdateInput): Promise<AdminCollectedEvent> {
+export async function updateCollectedEvent(db: Db, slug: string, { status, city_id, ...fields }: CollectedUpdateInput): Promise<AdminCollectedEvent> {
   const external_id = collectedExternalId(slug);
   await db.transaction(async (tx) => {
     const [row] = await tx.select().from(collectedEvents).where(eq(collectedEvents.external_id, external_id)).for('update');
     if (!row) throw new AppError('not_found', 404);
+    await assertCity(tx, city_id);
     const event: CollectedEvent = { ...row.event, ...fields, telegram_username: normalUsername(fields.telegram_username !== undefined ? fields.telegram_username : row.event.telegram_username) };
     await tx.update(collectedEvents).set({
       event, starts_at: new Date(event.starts_at), ends_at: event.ends_at ? new Date(event.ends_at) : null,
-      telegram_username: event.telegram_username, updated_at: new Date(), ...(status ? { status } : {}),
+      telegram_username: event.telegram_username, updated_at: new Date(), ...(status ? { status } : {}), ...(city_id ? { city_id } : {}),
     }).where(eq(collectedEvents.external_id, external_id));
   });
   // Не ждём шага очереди: обработанное публикуется сразу, необработанному заказываем обложку и ролик.
@@ -473,7 +483,7 @@ async function upcomingTopicsByHost(db: Db, username?: string): Promise<Map<stri
 export async function listHosts(db: Db): Promise<HostListItem[]> {
   const topics = await upcomingTopicsByHost(db);
   // ponytail: все профили за раз, без постраничной выдачи, пока организаторов одного города — сотни
-  return (await db.select().from(hosts))
+  return (await db.select().from(hosts).where(eq(hosts.city_id, DEFAULT_CITY_ID)))
     .flatMap((h) => toHostListItem(h, topics.get(h.username) ?? []) ?? [])
     .sort((a, b) => b.upcoming_count - a.upcoming_count || b.practices.length - a.practices.length || a.name.localeCompare(b.name));
 }
@@ -499,13 +509,14 @@ export async function signUpForCollectedEvent(db: Db, actor: User, slug: string)
 }
 
 /** Событие Ясвами из того, что извлёк ИИ: организатор — `actor`, один тип билета с ценой из анонса. */
-async function insertExtractedEvent(tx: Tx, actor: User, extracted: CollectedEvent): Promise<string> {
+async function insertExtractedEvent(tx: Tx, actor: User, extracted: CollectedEvent, city_id: string): Promise<string> {
   const id = newEventId();
   const { title, description, place, address, price, topic } = extracted;
   const template = topic ? TOPIC_GUIDES[topic] : undefined;
   const where = [place, address].filter(Boolean).join(', ');
+  const [city] = await tx.select().from(cities).where(eq(cities.id, city_id));
   await tx.insert(events).values({
-    id, user_id: actor.id, kind: 'o', status: 'published', timezone: settings.timezone,
+    id, user_id: actor.id, kind: 'o', status: 'published', timezone: city!.timezone, city_id,
     name: title.trim().slice(0, NAME_MAX), description: description.trim().slice(0, DESCRIPTION_MAX) || null,
     start_at: new Date(extracted.starts_at), end_at: extracted.ends_at ? new Date(extracted.ends_at) : null,
     geo_address_json: where ? { address: where.slice(0, ADDRESS_MAX) } : null,
@@ -551,7 +562,7 @@ export async function claimCollectedEvent(db: Db, actor: User, slug: string): Pr
       actor = { ...actor, features: [...actor.features, 'event_create'] };
       await tx.update(users).set({ features: actor.features }).where(eq(users.id, actor.id));
     }
-    const id = await insertExtractedEvent(tx, actor, row.event);
+    const id = await insertExtractedEvent(tx, actor, row.event, row.city_id);
     await tx.update(collectedEvents).set({ claimed_event_id: id }).where(eq(collectedEvents.external_id, row.external_id));
     return getEvent(tx, actor, id);
   });
@@ -652,9 +663,11 @@ export async function me(db: Db, actor: User): Promise<Me> {
   };
 }
 
-export async function createEvent(db: Db, actor: User, input: EventCreateInput): Promise<EventView> {
+/** `city_id` передаёт только команда (admin/events.ts): в схемах организатора его нет, его событие получает город по умолчанию. */
+export async function createEvent(db: Db, actor: User, input: EventCreateInput & { city_id?: string }): Promise<EventView> {
   const view = await db.transaction(async (tx) => {
     await assertCanCreate(tx, actor);
+    await assertCity(tx, input.city_id);
     const id = newEventId();
     const { ticket_types, ...fields } = input;
     await tx.insert(events).values({
@@ -669,9 +682,10 @@ export async function createEvent(db: Db, actor: User, input: EventCreateInput):
   return { ...view, cover_pending: requestEventCover(db, view.event) };
 }
 
-export async function updateEvent(db: Db, actor: User, id: string, input: EventUpdateInput): Promise<EventView> {
+export async function updateEvent(db: Db, actor: User, id: string, input: EventUpdateInput & { city_id?: string }): Promise<EventView> {
   return db.transaction(async (tx) => {
     await findHostedEvent(tx, actor, id);
+    await assertCity(tx, input.city_id);
     const { start_at, end_at, ...rest } = input;
     await tx
       .update(events)

@@ -1,9 +1,9 @@
 // Операции команды над всем сервисом (`admin_*` в MCP, `/admin/*` в REST) и журнал этих действий: формы входа и ответа.
 import * as z from 'zod';
 import type { AdminCollectedEvent, EventView, Practice } from './api.ts';
-import { dateTime, EventCreateInput, timeZone } from './api.ts';
+import { cityId, dateTime, EventCreateInput, EventUpdateInput, timeZone } from './api.ts';
 import type { Event, Guest, User } from './schema.ts';
-import { Feature, RsvpStatus, User as UserSchema } from './schema.ts';
+import { City, Feature, RsvpStatus, User as UserSchema } from './schema.ts';
 
 const text = (max: number) => z.string().trim().max(max);
 // Сервис сам убирает @ и приводит к нижнему регистру (normalUsername): преобразование в схеме не описать в JSON Schema для MCP.
@@ -37,8 +37,13 @@ export interface AdminEventView extends EventView {
 /** Событие от имени пользователя: `user_id` — организатор; его лимит бесплатных событий действует. */
 export const AdminEventCreateInput = EventCreateInput.extend({
   user_id: UserSchema.shape.id.describe('Telegram id of the host (admin_users_search)'),
+  city_id: cityId.optional(),
 });
 export type AdminEventCreateInput = z.infer<typeof AdminEventCreateInput>;
+
+/** Правка события командой: всё, что правит организатор, и город — его организатор пока не выбирает. */
+export const AdminEventUpdateInput = EventUpdateInput.extend({ city_id: cityId.optional() });
+export type AdminEventUpdateInput = z.infer<typeof AdminEventUpdateInput>;
 
 /** Гость в глазах команды — как Guest в Luma (`user_id`, `user_first_name`); `user_username` — наше. */
 export interface AdminGuest extends Guest {
@@ -90,6 +95,7 @@ export const CollectedUpdateInput = z
     for_whom: text(300).nullable(),
     beginner_friendly: z.boolean().nullable(),
     takeaway: text(300).nullable(),
+    city_id: cityId,
     status: z.enum(['approved', 'rejected']).describe('approved: processed and published; rejected: hidden everywhere'),
   })
   .partial();
@@ -120,6 +126,7 @@ export interface Host {
   telegram_id: number | null; // null — команда добавила по username, сборщик ещё не проверил его в Telegram
   username: string;
   name: string;
+  city_id: string; // город: у найденного по событию — город события, иначе город по умолчанию
   bio: string | null;
   channel: string | null;
   summary: string | null;
@@ -137,6 +144,7 @@ export interface AdminHostView extends Host {
 /** Добавить организатора по username: профиль (имя, «о себе», канал, сводку) соберёт сборщик. В Luma такого нет. */
 export const HostCreateInput = z.object({
   username: z.string().trim().regex(/^(?:https?:\/\/)?(?:t\.me\/|@)?\w{4,32}\/?$/, 'telegram username').describe('Telegram username, @username or t.me link of a person or a venue channel'),
+  city_id: cityId.optional(),
 });
 export type HostCreateInput = z.infer<typeof HostCreateInput>;
 
@@ -147,10 +155,20 @@ export const HostUpdateInput = z
     bio: text(1000).nullable(),
     channel: username.nullable().describe('Channel username, without @'),
     summary: text(2000).nullable(),
+    city_id: cityId,
     status: z.enum(HOST_STATUSES).describe('Moderation: published — show in the public catalogue of organizers, rejected — never show'),
   })
   .partial();
 export type HostUpdateInput = z.infer<typeof HostUpdateInput>;
+
+// --- Города (в Luma такого нет)
+
+export const CityCreateInput = City.pick({ id: true, name: true }).extend({ timezone: timeZone });
+export type CityCreateInput = z.infer<typeof CityCreateInput>;
+
+/** `id` не меняется: он стоит в `city_id` у источников, событий и организаторов. */
+export const CityUpdateInput = CityCreateInput.omit({ id: true }).partial();
+export type CityUpdateInput = z.infer<typeof CityUpdateInput>;
 
 // --- Пользователи
 
@@ -191,7 +209,7 @@ export type AdminContactListInput = z.infer<typeof AdminContactListInput>;
 // --- Журнал действий команды (в Luma такого нет; ADR-0004)
 
 /** Чего касается действие. `entity_id` — id в API: у собранного события — его адрес, у пользователя — Telegram id. */
-export const ADMIN_ENTITIES = ['event', 'collected_event', 'host', 'user', 'account', 'conversation', 'message', 'contact', 'source'] as const;
+export const ADMIN_ENTITIES = ['event', 'collected_event', 'host', 'user', 'account', 'conversation', 'message', 'contact', 'source', 'city'] as const;
 export type AdminEntity = (typeof ADMIN_ENTITIES)[number];
 
 /**

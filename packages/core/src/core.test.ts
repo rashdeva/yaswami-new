@@ -6,7 +6,7 @@ import { collectedBadges, Event as EventSchema, popularIds, PUBLIC_STATE_MAX_BYT
 const now = new Date('2026-11-11T12:00:00Z');
 const event: Event = {
   id: 'e_2a9c', user_id: 1, kind: 's', name: 'Футбол 5×5', description: null, start_at: new Date('2026-11-20T16:00:00Z'), end_at: null,
-  timezone: 'Asia/Tbilisi', geo_address_json: { address: 'Стадион «Локомотив»' }, meeting_url: null, max_capacity: null,
+  timezone: 'Asia/Tbilisi', city_id: 'danang', geo_address_json: { address: 'Стадион «Локомотив»' }, meeting_url: null, max_capacity: null,
   allow_plus_one: false, topic: null, what_happens: [], for_whom: null, beginner_friendly: null, takeaway: null, guide: null, status: 'published', widget_id: null, rev: 0, created_at: now,
 };
 const type = (id: string, o: Partial<TicketType> = {}): TicketType => ({

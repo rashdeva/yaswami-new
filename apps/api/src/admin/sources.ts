@@ -6,13 +6,13 @@ import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
 import type { Db } from '../db/client.ts';
 import { hosts, sources } from '../db/schema.ts';
-import { AppError } from '../services.ts';
+import { AppError, assertCity } from '../services.ts';
 
 // Username в Telegram не различает регистр, поэтому сравниваем по lower().
 const sameChannel = (channel: string) => sql`lower(${sources.channel}) = lower(${channel})`;
 const selectSources = (db: Db) => db
   .select({
-    channel: sources.channel, enabled: sources.enabled, created_at: sources.created_at, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,
+    channel: sources.channel, enabled: sources.enabled, city_id: sources.city_id, created_at: sources.created_at, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,
     events_count: sql<number>`(select count(*) from collected_events e where lower(e.channel) = lower(${sources.channel}))::int`,
   })
   .from(sources).leftJoin(hosts, eq(hosts.id, sources.host_id));
@@ -32,7 +32,8 @@ export const listSources = async (db: Db): Promise<AdminSource[]> => (await sele
 export const createSource = (db: Db, ctx: Ctx, input: SourceCreateInput): Promise<AdminSource> =>
   audited(db, ctx, { action: 'admin_sources_create', entity: 'source', id: (r) => r.channel, input }, async (tx) => {
     const channel = input.channel.replace(/^(?:https?:\/\/)?(?:t\.me\/|@)?/, '').replace(/\/$/, '');
-    const added = await tx.insert(sources).values({ channel }).onConflictDoNothing().returning();
+    await assertCity(tx, input.city_id);
+    const added = await tx.insert(sources).values({ channel, city_id: input.city_id }).onConflictDoNothing().returning();
     if (!added.length) throw new AppError('source_exists', 409);
     return getSource(tx, channel);
   });
@@ -46,7 +47,8 @@ export async function updateSource(db: Db, ctx: Ctx, channel: string, input: Sou
   const { channel: key } = await getSource(db, channel);
   return audited(db, ctx, { action: 'admin_sources_update', entity: 'source', id: key, input }, async (tx) => {
     if (input.host_id && !(await tx.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, input.host_id))).length) throw new AppError('host_not_found', 404);
-    const values = Object.fromEntries(Object.entries({ enabled: input.enabled, host_id: input.host_id }).filter(([, v]) => v !== undefined));
+    await assertCity(tx, input.city_id);
+    const values = Object.fromEntries(Object.entries({ enabled: input.enabled, host_id: input.host_id, city_id: input.city_id }).filter(([, v]) => v !== undefined));
     if (Object.keys(values).length) await tx.update(sources).set(values).where(eq(sources.channel, key));
     return getSource(tx, key);
   });

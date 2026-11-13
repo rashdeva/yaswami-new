@@ -2,8 +2,8 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostStatus, Message, Practice, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostStatus, Message, Practice, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
+import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -19,6 +19,15 @@ export const users = pgTable('users', {
   features: jsonb().$type<Feature[]>().notNull().default([]),
 });
 
+// Город (City в @yaswami/core). `city_id` у источников, собранных событий, организаторов и событий Ясвами по умолчанию —
+// первый город: так его получает всё, что было до городов, и всё, чему город не указали (в том числе записи сборщика).
+export const cities = pgTable('cities', {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  timezone: text().notNull(),
+  created_at: at('created_at').notNull().defaultNow(),
+});
+
 export const events = pgTable(
   'events',
   {
@@ -30,6 +39,7 @@ export const events = pgTable(
     start_at: at('start_at').notNull(),
     end_at: at('end_at'),
     timezone: text().notNull(),
+    city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
     geo_address_json: jsonb().$type<Address>(),
     meeting_url: text(),
     max_capacity: integer(),
@@ -133,6 +143,7 @@ export const collectedEvents = pgTable(
   {
     external_id: text().primaryKey(), // telegram:<канал>/<публикация>#<номер события в ней>
     channel: text().notNull(),
+    city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
     announcement: jsonb().$type<{ url: string; text?: string; media?: CollectedMedia[] }>().notNull(), // media — фото и видео публикации в бакете (ADR-0006)
     event: jsonb().$type<CollectedEvent>().notNull(),
     starts_at: at('starts_at').notNull(),
@@ -184,6 +195,7 @@ export const hosts = pgTable(
     telegram_id: telegramId('telegram_id').unique(),
     username: text().notNull(), // без @, в нижнем регистре; по нему профиль находится от collected_events.telegram_username
     name: text().notNull(),
+    city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
     bio: text(),
     channel: text(), // username канала: личный канал из профиля или ссылка из «о себе»
     summary: text(),
@@ -282,6 +294,7 @@ export const sources = pgTable(
     host_id: uuid().references(() => hosts.id, { onDelete: 'set null' }),
     // Выключенный источник сборщик не читает. Строку не удаляем: иначе канал организатора добавился бы снова.
     enabled: boolean().notNull().default(true),
+    city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
     created_at: at('created_at').notNull().defaultNow(),
   },
   // Username в Telegram не различает регистр: @Tea и @tea — один канал.
@@ -399,4 +412,5 @@ export const tablesMatchCore: [
   Same<typeof messages.$inferSelect, Message>,
   Same<typeof hosts.$inferSelect, Host>,
   Same<typeof adminActions.$inferSelect, AdminAction>,
-] = [true, true, true, true, true, true, true, true, true];
+  Same<typeof cities.$inferSelect, City>,
+] = [true, true, true, true, true, true, true, true, true, true];

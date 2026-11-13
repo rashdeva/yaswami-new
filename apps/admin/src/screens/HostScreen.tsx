@@ -5,6 +5,7 @@ import { collectedWhen, HostUpdateInput, INBOX_STAGES } from '@yaswami/core';
 import { BanIcon, CheckIcon, MessagesSquareIcon, Trash2Icon } from 'lucide-react';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
+import { CityField } from '@/components/City';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
 import { EntityLink, ExternalLink, TelegramLink } from '@/components/EntityLink';
 import { AreaField, SaveBar, saveDirty, TextField } from '@/components/Fields';
@@ -20,7 +21,7 @@ import { useHost, useHostActions } from '@/hooks/useHosts';
 import { useOverview } from '@/hooks/useOverview';
 import { COLLECTED_LABELS, HOST_LABELS, hostEvents } from '@/lib/catalog';
 
-const values = (h: Wire<Host>): Input => ({ name: h.name, username: h.username, bio: h.bio, channel: h.channel, summary: h.summary });
+const values = (h: Wire<Host>): Input => ({ name: h.name, city_id: h.city_id, username: h.username, bio: h.bio, channel: h.channel, summary: h.summary });
 
 export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (conversation: string) => void; onDeleted: () => void }) {
   const { data: h, error } = useHost(id);
@@ -57,8 +58,9 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
       <Section title="Профиль">
         <form onSubmit={saveDirty(form, update)} className="flex flex-col gap-4">
           <FieldGroup>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2">
               <TextField form={form} name="name" label="Имя" />
+              <CityField form={form} />
               <TextField form={form} name="username" label="Username" hint="Без @" />
               <TextField form={form} name="channel" label="Канал" nullable hint="Без @" />
             </div>

@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
+import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents } from '@yaswami/core';
@@ -48,6 +48,9 @@ before(async () => {
   db = createDb(url.href);
   await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
   await db.execute(sql`truncate users, admin_actions, collected_events, hosts, tg_accounts, conversations cascade`);
+  // Города из прошлого запуска: Дананг создан миграцией, остальное добавляют тесты.
+  await db.execute(sql`delete from sources where city_id <> 'danang'`);
+  await db.execute(sql`delete from cities where id <> 'danang'`);
   app = createApp({ db, botToken: BOT_TOKEN });
 });
 after(() => db.$client.end());
@@ -1585,6 +1588,9 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_sources_list: 'GET /admin/sources',
   admin_sources_create: 'POST /admin/sources',
   admin_sources_update: 'PATCH /admin/sources/:channel',
+  admin_cities_list: 'GET /admin/cities',
+  admin_cities_create: 'POST /admin/cities',
+  admin_cities_update: 'PATCH /admin/cities/:id',
   admin_covers_list: 'GET /admin/covers',
   admin_covers_set: 'POST /admin/covers/:id',
   admin_videos_request: 'POST /admin/videos/:id',
@@ -1674,6 +1680,75 @@ test('источники: команда добавляет и выключае�
   } finally {
     await store.end();
   }
+});
+
+test('города: всё прежнее — Дананг; новый город получает свои источники, события и организаторов, витрина его не показывает', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const tool = async (name: string, args: object) =>
+    JSON.parse(((await (await call(admin, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })).json()) as { result: any }).result.content[0].text);
+  const feed = async () => ((await (await call(admin, 'GET', '/collected-events')).json()) as CollectedEventItem[]).map((e) => e.id);
+  assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/cities')).status, 403);
+  assert.deepEqual(((await (await call(admin, 'GET', '/admin/cities')).json()) as City[]).map((c) => [c.id, c.name, c.timezone]), [['danang', 'Дананг', 'Asia/Ho_Chi_Minh']]);
+
+  const made = await call(admin, 'POST', '/admin/cities', { id: 'tbilisi', name: 'Тбилиси', timezone: 'Asia/Tbilisi' });
+  assert.equal(made.status, 201);
+  assert.deepEqual(await tool('admin_cities_create', { id: 'tbilisi', name: 'Ещё раз', timezone: 'Asia/Tbilisi' }), { error: 'city_exists' });
+  assert.equal((await call(admin, 'POST', '/admin/cities', { id: 'Тбилиси', name: 'Тбилиси', timezone: 'Asia/Tbilisi' })).status, 400);
+  assert.equal((await call(admin, 'POST', '/admin/cities', { id: 'batumi', name: 'Батуми', timezone: 'Asia/Nowhere' })).status, 400);
+  assert.equal(((await tool('admin_cities_update', { city_id: 'tbilisi', name: 'Тифлис' })) as City).name, 'Тифлис');
+  assert.equal((await call(admin, 'PATCH', '/admin/cities/nowhere', { name: 'Нигде' })).status, 404);
+
+  // Источник: без города — Дананг, с городом — он; неизвестный город — отказ, а не сбой.
+  await db.delete(sources);
+  assert.equal(((await (await call(admin, 'POST', '/admin/sources', { channel: 'danang_chat' })).json()) as AdminSource).city_id, 'danang');
+  assert.equal(((await tool('admin_sources_create', { channel: 'tbilisi_chat', city_id: 'tbilisi' })) as AdminSource).city_id, 'tbilisi');
+  assert.deepEqual(await tool('admin_sources_create', { channel: 'nowhere_chat', city_id: 'nowhere' }), { error: 'city_not_found' });
+  assert.equal(((await (await call(admin, 'PATCH', '/admin/sources/danang_chat', { city_id: 'tbilisi' })).json()) as AdminSource).city_id, 'tbilisi');
+  assert.deepEqual(await (await call(admin, 'PATCH', '/admin/sources/danang_chat', { city_id: 'nowhere' })).json(), { error: 'city_not_found' });
+
+  // Сборщик (apps/collector/src/store.mjs): источник отдаёт город и пояс, событие из него получает этот город.
+  const { createStore } = await import(new URL('../../collector/src/store.mjs', import.meta.url).href);
+  const store = createStore(url.href);
+  const at = new Date(Date.now() + 86_400_000);
+  const event = { title: 'Хинкали', description: '', starts_at: at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'gio_host', whatsapp_phone: null, url: null };
+  try {
+    const [src] = (await store.sources()).filter((x: { channel: string }) => x.channel === 'tbilisi_chat');
+    assert.deepEqual([src.city_id, src.city, src.timezone], ['tbilisi', 'Тифлис', 'Asia/Tbilisi']);
+    await store.upsert({ external_id: 'telegram:tbilisi_chat/1#0', channel: 'tbilisi_chat', city_id: src.city_id, announcement: { url: 'https://t.me/tbilisi_chat/1' }, event, signup_url: '' });
+    await db.update(collectedEvents).set({ status: 'published' }).where(eq(collectedEvents.external_id, 'telegram:tbilisi_chat/1#0'));
+    // Организатор, найденный по событию, получает его город; его канал становится источником того же города.
+    assert.deepEqual([...(await store.unprofiled())].map((r: { username: string; city_id: string }) => [r.username, r.city_id]), [['gio_host', 'tbilisi']]);
+    await store.saveHost({ telegram_id: 9500, username: 'gio_host', name: 'Гио', bio: null, channel: 'gio_supra', summary: null, city_id: 'tbilisi' });
+    await store.adoptHostChannels(5);
+    assert.equal((await db.select().from(sources).where(eq(sources.channel, 'gio_supra')))[0]!.city_id, 'tbilisi');
+  } finally {
+    await store.end();
+  }
+  const listed = ((await (await call(admin, 'GET', '/admin/collected-events')).json()) as AdminCollectedEvent[]).find((e) => e.id === 'tbilisi_chat-1-0');
+  assert.equal(listed!.city_id, 'tbilisi');
+  // Витрина одна и показывает первый город: событие и организатор другого города в неё не попадают.
+  assert.ok(!(await feed()).includes('tbilisi_chat-1-0'));
+  assert.ok(!((await (await call(admin, 'GET', '/hosts')).json()) as HostListItem[]).some((h) => h.username === 'gio_host'));
+  assert.equal(((await tool('admin_collected_events_update', { collected_event_id: 'tbilisi_chat-1-0', city_id: 'danang' })) as AdminCollectedEvent).city_id, 'danang');
+  assert.ok((await feed()).includes('tbilisi_chat-1-0'));
+  assert.deepEqual(await tool('admin_collected_events_update', { collected_event_id: 'tbilisi_chat-1-0', city_id: 'nowhere' }), { error: 'city_not_found' });
+
+  // Организатор и событие Ясвами: город указывает команда.
+  const [gio] = await db.select().from(hosts).where(eq(hosts.username, 'gio_host'));
+  assert.equal(((await (await call(admin, 'PATCH', `/admin/hosts/${gio!.id}`, { city_id: 'danang' })).json()) as Host).city_id, 'danang');
+  assert.equal(((await tool('admin_hosts_create', { username: 'nino_wine', city_id: 'tbilisi' })) as Host).city_id, 'tbilisi');
+  const input = { user_id: 70, kind: 'o', name: 'Супра', start_at: '2027-01-01T19:00:00+04:00', timezone: 'Asia/Tbilisi' };
+  const supra = (await (await call(admin, 'POST', '/admin/events', { ...input, city_id: 'tbilisi' })).json()) as EventView;
+  assert.equal(supra.event.city_id, 'tbilisi');
+  assert.equal(((await tool('admin_events_update', { event_id: supra.event.id, city_id: 'danang' })) as EventView).event.city_id, 'danang');
+  assert.deepEqual(await (await call(admin, 'POST', '/admin/events', { ...input, city_id: 'nowhere' })).json(), { error: 'city_not_found' });
+  // Организатор сам город не выбирает: его событие получает город по умолчанию, лишнее поле отбрасывается.
+  const featuresOn = settings.featuresOn;
+  settings.featuresOn = ['event_create'];
+  const own = (await (await call(admin, 'POST', '/events', { kind: 'o', name: 'Своё', start_at: '2027-01-02T19:00:00+07:00', timezone: 'Asia/Ho_Chi_Minh', city_id: 'tbilisi' })).json()) as EventView;
+  assert.equal(own.event.city_id, 'danang');
+  settings.featuresOn = featuresOn;
 });
 
 test('парность: у каждого инструмента MCP есть маршрут REST и наоборот', async () => {
@@ -1788,6 +1863,11 @@ const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
   admin_users_tokens_revoke: (w) => ({ args: { user_id: w.otherId }, params: { id: w.otherId }, entity_id: String(w.otherId) }),
   admin_sources_create: (w) => ({ args: { channel: `@newsrc${w.n}` }, body: { channel: `t.me/newsrc${w.n}` }, entity_id: (r) => r.channel }),
   admin_sources_update: (w) => ({ args: { channel: w.source.toUpperCase(), enabled: false }, params: { channel: w.source }, body: { enabled: false }, entity_id: w.source }),
+  admin_cities_create: (w) => {
+    const input = { id: `city${w.n}`, name: 'Город', timezone: 'Asia/Tbilisi' };
+    return { args: input, body: input, entity_id: input.id };
+  },
+  admin_cities_update: () => ({ args: { city_id: 'danang', name: 'Дананг' }, params: { id: 'danang' }, body: { name: 'Дананг' }, entity_id: 'danang' }),
   admin_contacts_remove: (w) => ({ args: { contact_id: w.contactId }, params: { id: w.contactId }, entity_id: w.contactId }),
   admin_accounts_create: (w) => {
     const input = { label: 'Второй', phone: `+7911${w.hostId}` };

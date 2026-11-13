@@ -1,7 +1,7 @@
 // Корневой layout: вход, боковое меню разделов, шапка с «ждут вас» и состоянием связи.
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router';
 import {
-  ActivityIcon, BotIcon, CalendarCheckIcon, ChevronsUpDownIcon, HistoryIcon, LayoutListIcon, LogOutIcon, MegaphoneIcon, MessagesSquareIcon, RadioTowerIcon,
+  ActivityIcon, BotIcon, CalendarCheckIcon, ChevronsUpDownIcon, HistoryIcon, LayoutListIcon, LogOutIcon, MapPinIcon, MegaphoneIcon, MessagesSquareIcon, RadioTowerIcon,
   SmartphoneIcon, UserIcon,
 } from 'lucide-react';
 import { loginUrl } from '@/api';
@@ -33,6 +33,7 @@ const NAV = [
     { to: '/catalog', label: 'Каталог', icon: LayoutListIcon },
     { to: '/hosts', label: 'Организаторы', icon: MegaphoneIcon },
     { to: '/sources', label: 'Источники', icon: RadioTowerIcon },
+    { to: '/cities', label: 'Города', icon: MapPinIcon },
   ] },
   { group: 'Сервис', items: [
     { to: '/events', label: 'События Ясвами', icon: CalendarCheckIcon },

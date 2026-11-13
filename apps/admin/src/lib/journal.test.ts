@@ -12,6 +12,7 @@ test('подпись действия: известное, от имени по�
 test('куда ведёт сущность', () => {
   assert.deepEqual(entityLink('event', 'ab'), { to: '/events/$id', params: { id: 'ab' } });
   assert.deepEqual(entityLink('conversation', 'c1'), { to: '/', search: { c: 'c1' } });
+  assert.deepEqual(entityLink('city', 'danang'), { to: '/cities' });
   assert.equal(entityLink('message', 'm1'), null);
 });
 
