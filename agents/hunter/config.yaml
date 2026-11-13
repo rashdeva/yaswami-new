@@ -22,7 +22,7 @@ mcp_servers:
     headers:
       Authorization: "Bearer __MCP_TOKEN__"
     tools:
-      include: [collected_events_list, hosts_list] # только публичные каталоги: события и организаторы
+      include: [collected_events_list, hosts_list, search] # только публичные каталоги: события и организаторы
       resources: false
       prompts: false
 

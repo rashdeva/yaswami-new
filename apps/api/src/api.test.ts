@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, PracticeSignup, TgAccount } from '@yaswami/core';
+import type { AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, PracticeSignup, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -226,7 +226,7 @@ test('MCP: список инструментов, создание событи�
   assert.deepEqual(tools.map((t: { name: string }) => t.name).sort(), [
     'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
-    'events_ticket_types_update', 'events_update', 'hosts_get', 'hosts_list', 'hosts_practices_signup', 'me_collected_list', 'users_get_self',
+    'events_ticket_types_update', 'events_update', 'hosts_get', 'hosts_list', 'hosts_practices_signup', 'me_collected_list', 'search', 'users_get_self',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
@@ -557,6 +557,69 @@ test('сообщение боту: /start — приветствие с карт
   assert.deepEqual(await reply(ANNOUNCEMENT), [REPLIES.unavailable]);
   assert.deepEqual(await (await call(tma(61, 'Аня'), 'GET', '/events')).json(), []);
 
+});
+
+test('поиск: события и Practice одним запросом; формы слова, начало слова, опечатки; только публичное', async () => {
+  await db.delete(collectedEvents);
+  await db.delete(hosts);
+  const day = (n: number) => new Date(Date.now() + n * 86_400_000);
+  const row = (n: number, title: string, more: { description?: string; status?: 'published' | 'pending'; days?: number; tags?: string[] } = {}) => ({
+    external_id: `telegram:find/${n}#0`, channel: 'find', status: more.status ?? 'published' as const, starts_at: day(more.days ?? 1), signup_url: '',
+    announcement: { url: `https://t.me/find/${n}` },
+    event: {
+      title, description: more.description ?? '', starts_at: day(more.days ?? 1).toISOString(), ends_at: null, place: null, address: null, price: null,
+      tags: more.tags ?? [], telegram_username: null, whatsapp_phone: null, url: null,
+    },
+  });
+  await db.insert(collectedEvents).values([
+    row(1, 'Йога на рассвете', { days: 10 }),
+    row(2, 'Ещё одна йога', { days: 2 }),
+    row(3, 'Ретрит в горах', { description: 'Три дня тишины, утром йога и чай.', tags: ['медитация'] }),
+    row(4, 'Йога, которой не видно', { status: 'pending' }),
+    row(5, 'Йога, которая прошла', { days: -2 }),
+  ]);
+  await db.insert(hosts).values([
+    { telegram_id: 51, username: 'dasha_yoga', name: 'Даша Морская', summary: 'Ведёт занятия у моря.', status: 'published' as const, practices: [
+      { title: 'Тайский массаж', topic: 'телесные практики', description: 'Час или два, с выездом.', price: '500k' },
+      { title: 'Массаж телефонов', topic: 'другое', description: null, price: null }, // не наша тема
+    ] },
+    { telegram_id: 52, username: 'hidden_master', name: 'Скрытый мастер', practices: [{ title: 'Массаж спины', topic: 'телесные практики', description: null, price: null }] }, // ждёт модерации
+    { telegram_id: 53, username: 'nobody', name: 'Даша без всего' }, // ни событий, ни Practice — не в каталоге
+  ]);
+  const find = async (query: string, limit?: number) =>
+    ((await (await app.request(`/search?query=${encodeURIComponent(query)}${limit ? `&pagination_limit=${limit}` : ''}`)).json()) as SearchResult).entries;
+  const names = (entries: SearchEntry[]) => entries.map((e) => (e.type === 'event' ? e.event.title : `${e.practice.title} @${e.host.username}`));
+
+  // форма слова и «ё»: название важнее описания, из равных ближайшее выше; скрытое и прошедшее не находятся
+  assert.deepEqual(names(await find('йогой')), ['Ещё одна йога', 'Йога на рассвете', 'Ретрит в горах']);
+  assert.deepEqual(names(await find('еще')), ['Ещё одна йога']);
+  assert.deepEqual(names(await find('йога', 1)), ['Ещё одна йога']);
+  // начало слова — поиск по мере ввода; несколько слов — все должны найтись; теги тоже ищутся
+  assert.deepEqual(names(await find('рет')), ['Ретрит в горах']);
+  assert.deepEqual(names(await find('йога рассвет')), ['Йога на рассвете']);
+  assert.deepEqual(names(await find('медитации')), ['Ретрит в горах']);
+  // опечатка; Practice — только у одобренного организатора и только из наших тем
+  assert.deepEqual(names(await find('масаж')), ['Тайский массаж @dasha_yoga']);
+  // другой город: ни его событий, ни услуг его мастеров в поиске нет — как в витрине
+  await db.execute(sql`insert into cities (id, name, timezone) values ('nhatrang', 'Нячанг', 'Asia/Ho_Chi_Minh')`);
+  await db.insert(collectedEvents).values({ ...row(6, 'Сёрфинг в Нячанге'), city_id: 'nhatrang' });
+  await db.insert(hosts).values({ telegram_id: 54, username: 'surf_nt', name: 'Сёрф-школа', city_id: 'nhatrang', status: 'published' as const, practices: [{ title: 'Урок сёрфинга', topic: 'спорт', description: null, price: null }] });
+  assert.deepEqual(names(await find('серфинг')), []);
+  await db.execute(sql`delete from collected_events where city_id = 'nhatrang'`);
+  await db.execute(sql`delete from hosts where city_id = 'nhatrang'`);
+  await db.execute(sql`delete from cities where id = 'nhatrang'`);
+  // самих организаторов поиск не выдаёт — только события и услуги
+  assert.deepEqual(names(await find('даша')), []);
+  // лишние знаки запрос не ломают; пусто и один символ — ошибка входа
+  assert.deepEqual(names(await find("йога' & | ! :* (")), names(await find('йога')));
+  assert.deepEqual(await find('!!!'), []);
+  assert.equal((await app.request('/search?query=a')).status, 400);
+  assert.equal((await app.request('/search')).status, 400);
+
+  // MCP: тот же поиск, событие — коротко и со ссылкой
+  const res = await call(tma(71, 'Аня'), 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search', arguments: { query: 'ретрит' } } });
+  const { entries } = JSON.parse(((await res.json()) as { result: any }).result.content[0].text);
+  assert.deepEqual(entries.map((e: any) => [e.type, e.event.title, e.event.url.includes('find-3-0')]), [['event', 'Ретрит в горах', true]]);
 });
 
 test('RSVP: одно подтверждение гостю, сводка организатору, клики туда-сюда не спамят', async () => {
@@ -1774,6 +1837,7 @@ test('парность: у каждого инструмента MCP есть м
     collected_events_get: 'GET /collected-events/:id',
     hosts_list: 'GET /hosts',
     hosts_get: 'GET /hosts/:id',
+    search: 'GET /search',
     hosts_practices_signup: 'POST /hosts/:id/practices/signup',
     collected_events_claim: 'POST /collected-events/:id/claim',
     collected_events_signup: 'POST /collected-events/:id/signup',
@@ -2085,8 +2149,8 @@ test('безопасность: чужой контакт не даёт прав
   const rpc = async (auth: string, method: string, params?: object) => (await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params })).json()) as any;
   const names = async (auth: string) => ((await rpc(auth, 'tools/list')).result.tools as { name: string }[]).map((t) => t.name).sort();
   const role = `Bearer ${await issueToken(db, 70, { scope: 'support' })}`;
-  assert.deepEqual(await names(role), ['collected_events_list', 'hosts_list', 'person_events_create', 'person_events_get', 'person_events_list', 'person_events_update']);
-  assert.deepEqual(await names(`Bearer ${await issueToken(db, 70, { scope: 'catalog' })}`), ['collected_events_list', 'hosts_list']);
+  assert.deepEqual(await names(role), ['collected_events_list', 'hosts_list', 'person_events_create', 'person_events_get', 'person_events_list', 'person_events_update', 'search']);
+  assert.deepEqual(await names(`Bearer ${await issueToken(db, 70, { scope: 'catalog' })}`), ['collected_events_list', 'hosts_list', 'search']);
   const denied = await rpc(role, 'tools/call', { name: 'admin_users_search', arguments: {} });
   assert.ok(denied.error || denied.result.isError, 'инструмент команды токену роли не отвечает');
   for (const path of ['/me', '/events', '/admin/inbox']) assert.equal((await call(role, 'GET', path)).status, 403, `REST закрыт: ${path}`);

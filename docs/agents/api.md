@@ -60,6 +60,9 @@
 | Список | `{ entries, has_more, next_cursor }`, вход `pagination_cursor`, `pagination_limit` | как `calendars/contacts/list` |
 | Действия админа | префикс `admin_` у инструмента, `/admin/` в пути | `admin_events_list` ↔ `GET /admin/events` |
 | Собранное событие (в Luma такого нет) | `collected_events_*`, `/collected-events` | `collected_events_signup` |
+| Единый поиск по каталогу: события и услуги (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
+
+Новый публичный ресурс каталога добавляется в поиск в том же PR: ещё один `type` в `SearchEntry` и ещё один запрос в `search` (`services.ts`).
 
 Чего в Luma нет (Telegram, витрина собранных событий, переписка, `kind`, ответ «maybe») — называем сами словами из `CONTEXT.md` и пишем у типа: «в Luma такого нет». Сейчас так помечены поля в `packages/core/src/schema.ts`.
 

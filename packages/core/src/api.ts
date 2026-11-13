@@ -170,6 +170,25 @@ export interface HostItem extends HostListItem {
   events: CollectedEventItem[];
 }
 
+/**
+ * Единый поиск по публичному каталогу: предстоящие события и услуги мастеров (Practice). В Luma общего поиска нет;
+ * `query` — как у `places/search`, список — как у остальных (`entries`).
+ */
+export const SearchInput = z.object({
+  query: z.string().trim().min(2).max(100).describe('What to look for, in the person\'s own words: "йога", "массаж", "ретрит". Word endings and small typos are tolerated'),
+  pagination_limit: z.coerce.number().int().min(1).max(50).optional().describe('Default 20'),
+});
+export type SearchInput = z.infer<typeof SearchInput>;
+
+/**
+ * Находка поиска; `type` говорит, что это. У Practice своей страницы нет — открывается её мастер (`host`).
+ * Самих организаторов поиск не выдаёт: человек ищет, куда пойти или что заказать, а не кого.
+ */
+export type SearchEntry =
+  | { type: 'event'; event: CollectedEventItem }
+  | { type: 'practice'; practice: Practice; host: HostListItem };
+export interface SearchResult { entries: SearchEntry[] } // самые подходящие первыми
+
 /** Фото или видео из публикации-источника; лежит в нашем бакете (ADR-0006). В Luma такого нет. */
 export interface CollectedMedia { type: 'photo' | 'video'; url: string }
 

@@ -8,6 +8,8 @@ export const keys = {
   /** Каталог организаторов и страница одного. */
   hosts: ['hosts'],
   host: (id: string) => ['host', id],
+  /** Единый поиск по каталогу. */
+  search: (query: string) => ['search', query],
   /** «Мои события»: свои и собранные, куда заходил. */
   mine: ['mine'],
   event: (id: string) => ['event', id],

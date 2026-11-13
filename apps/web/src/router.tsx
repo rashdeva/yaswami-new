@@ -14,6 +14,7 @@ import { FeedScreen } from './screens/FeedScreen.tsx';
 import { HostScreen } from './screens/HostScreen.tsx';
 import { HostsScreen } from './screens/HostsScreen.tsx';
 import { ListScreen } from './screens/ListScreen.tsx';
+import { SearchScreen } from './screens/SearchScreen.tsx';
 import { startParam } from './tg.ts';
 
 const Spinner = () => <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>;
@@ -95,6 +96,25 @@ function HostPage() {
   return <HostScreen key={id} id={id} city={city} onBack={onBack} onOpenEvent={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
 }
 const hostRoute = createRoute({ getParentRoute: () => app, path: '/hosts/$id', component: HostPage });
+
+/** Поиск. Запрос живёт в адресе (?q=): находками можно поделиться ссылкой, а «назад» браузера возвращает к ним. */
+function SearchPage() {
+  const { q = '' } = searchRoute.useSearch();
+  const navigate = useNavigate();
+  return (
+    <SearchScreen
+      query={q}
+      onQuery={(next) => void navigate({ to: '/search', search: { q: next || undefined }, replace: true })}
+      onOpen={(entry) => void (entry.type === 'event'
+        ? navigate({ to: '/e/$id', params: { id: entry.event.id } })
+        : navigate({ to: '/hosts/$id', params: { id: entry.host.id } }))}
+    />
+  );
+}
+const searchRoute = createRoute({
+  getParentRoute: () => app, path: '/search', component: SearchPage,
+  validateSearch: (search: Record<string, unknown>): { q?: string } => (typeof search.q === 'string' && search.q ? { q: search.q } : {}),
+});
 
 /** Личные страницы: без входа — приглашение войти. */
 function Private() {
@@ -188,7 +208,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, oldHostsRoute, hostRoute, personal.addChildren([list, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, oldHostsRoute, hostRoute, searchRoute, personal.addChildren([list, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 

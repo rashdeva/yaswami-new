@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  EventUpdateInput, HostCreateInput, HostUpdateInput, InboxSendInput, LeadInput, PracticeSignupInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
+  EventUpdateInput, HostCreateInput, HostUpdateInput, InboxSendInput, LeadInput, PracticeSignupInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -82,6 +82,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/collected-events/:id', async (c) => c.json(await s.getCollectedEvent(db, c.req.param('id'))))
     .get('/hosts', async (c) => c.json(await s.listHosts(db)))
     .get('/hosts/:id', async (c) => c.json(await s.getHost(db, c.req.param('id'))))
+    .get('/search', async (c) => c.json(await s.search(db, SearchInput.parse(c.req.query()))))
     // Фото из базы (ADR-0003). Открыто всем: <img> не шлёт заголовок входа, а id фото не угадать.
     .get('/photos/:id', async (c) => {
       const data = await getPhoto(db, c.req.param('id'));
