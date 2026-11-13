@@ -4,14 +4,14 @@ import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNot
 import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedStatus, CollectedUpdateInput,
-  CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
+  CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, Practice, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
 import { ADDRESS_MAX, DEFAULT_CITY_ID, Feature, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
-import { cities, collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, practiceSignups, ticketTypes, users, visits } from './db/schema.ts';
+import { cities, collectedEvents, collectedEventSignups, contacts, events, guests, hosts, photos, practices, practiceSignups, ticketTypes, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
@@ -453,15 +453,26 @@ async function hostPhotos(db: Db, hostId: string): Promise<CollectedHost['photos
   return shots.map((p) => ({ url: photoUrl(p.id), source_url: p.source.replace(/^telegram:/, 'https://t.me/') }));
 }
 
+const practiceFields = { id: practices.id, title: practices.title, topic: practices.topic, description: practices.description, price: practices.price, status: practices.status };
+
+/** Practice организаторов по порядку, как у каждого: всех (`hostId` не задан) или одного. Любого статуса — что показать, решает зовущий. */
+export async function practicesByHost(db: Db | Tx, hostId?: string): Promise<Map<string, Practice[]>> {
+  const rows = await db.select({ ...practiceFields, host_id: practices.host_id }).from(practices)
+    .where(hostId ? eq(practices.host_id, hostId) : undefined).orderBy(asc(practices.position), asc(practices.created_at));
+  const byHost = new Map<string, Practice[]>();
+  for (const { host_id, ...p } of rows) byHost.set(host_id, [...byHost.get(host_id) ?? [], p]);
+  return byHost;
+}
+
 /**
  * Организатор в каталоге. Practice вне наших Topic не показываем: Topic — контент-политика каталога (CONTEXT.md).
- * `eventTopics` — темы его предстоящих опубликованных событий, по одной на событие.
+ * `all` — все его Practice; `eventTopics` — темы его предстоящих опубликованных событий, по одной на событие.
  */
-function toHostListItem(h: HostRecord, eventTopics: (string | undefined)[]): HostListItem | null {
+function toHostListItem(h: HostRecord, all: Practice[], eventTopics: (string | undefined)[]): HostListItem | null {
   // Отклонённого организатора не показываем целиком. Остальное решается по отдельности: события — своим статусом,
   // Practice — своим (PRACTICE_STATUSES).
   if (h.status === 'rejected') return null;
-  const practices = h.practices.filter((p) => p.status === 'published' && p.topic in TOPIC_GUIDES);
+  const practices = all.filter((p) => p.status === 'published' && p.topic in TOPIC_GUIDES);
   if (!practices.length && !eventTopics.length) return null;
   const mentioned = new Set([...practices.map((p) => p.topic), ...eventTopics]);
   return {
@@ -481,10 +492,10 @@ async function upcomingTopicsByHost(db: Db, username?: string): Promise<Map<stri
 
 /** Каталог организаторов: у кого есть предстоящие события или Practice. Открыт всем, как витрина событий. */
 export async function listHosts(db: Db): Promise<HostListItem[]> {
-  const topics = await upcomingTopicsByHost(db);
+  const [topics, offered] = await Promise.all([upcomingTopicsByHost(db), practicesByHost(db)]);
   // ponytail: все профили за раз, без постраничной выдачи, пока организаторов одного города — сотни
   return (await db.select().from(hosts).where(eq(hosts.city_id, DEFAULT_CITY_ID)))
-    .flatMap((h) => toHostListItem(h, topics.get(h.username) ?? []) ?? [])
+    .flatMap((h) => toHostListItem(h, offered.get(h.id) ?? [], topics.get(h.username) ?? []) ?? [])
     .sort((a, b) => b.upcoming_count - a.upcoming_count || b.practices.length - a.practices.length || a.name.localeCompare(b.name));
 }
 
@@ -492,7 +503,7 @@ export async function listHosts(db: Db): Promise<HostListItem[]> {
 export async function getHost(db: Db, id: string): Promise<HostItem> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new AppError('not_found', 404);
   const [h] = await db.select().from(hosts).where(eq(hosts.id, id));
-  const item = h && toHostListItem(h, (await upcomingTopicsByHost(db, h.username)).get(h.username) ?? []);
+  const item = h && toHostListItem(h, (await practicesByHost(db, h.id)).get(h.id) ?? [], (await upcomingTopicsByHost(db, h.username)).get(h.username) ?? []);
   if (!item) throw new AppError('not_found', 404);
   const rows = await collectedWithCover(db).where(and(upcomingCollected, published, eq(collectedEvents.telegram_username, h!.username))).orderBy(asc(collectedEvents.starts_at));
   return { ...item, photos: await hostPhotos(db, h!.id), events: rows.map(toCollectedItem) };
@@ -521,7 +532,7 @@ function searchMatch(query: string, title: SQL, b: SQL[], c: SQL[]) {
   const similar = sql`word_similarity(${words.join(' ')}, translate(${title}, 'ёЁ', 'еЕ'))`;
   return { where: sql`(${doc} @@ ${tsquery} or ${similar} >= ${TYPO})`, score: sql<number>`(ts_rank_cd(${doc}, ${tsquery}) + ${similar})::float8` };
 }
-const jsonText = (column: SQL | typeof collectedEvents.event, key: string) => sql`${column}->>'${sql.raw(key)}'`;
+const jsonText = (column: typeof collectedEvents.event, key: string) => sql`${column}->>'${sql.raw(key)}'`;
 
 /**
  * Единый поиск по публичному каталогу: события из ленты и услуги из вкладки «Услуги», самое подходящее первым. Открыт всем.
@@ -529,31 +540,31 @@ const jsonText = (column: SQL | typeof collectedEvents.event, key: string) => sq
  */
 export async function search(db: Db, { query, pagination_limit: limit = SEARCH_LIMIT }: SearchInput): Promise<SearchResult> {
   const e = (key: string) => jsonText(collectedEvents.event, key);
-  const p = (key: string) => jsonText(sql`p.value`, key);
   const event = searchMatch(query, e('title'), [e('place'), e('address'), e('tags'), e('topic'), e('for_whom')], [e('description'), e('what_happens'), e('takeaway')]);
-  const practice = searchMatch(query, p('title'), [p('topic')], [p('description')]);
+  const practice = searchMatch(query, sql`${practices.title}`, [sql`${practices.topic}`], [sql`${practices.description}`]);
   if (!event || !practice) return { entries: [] };
 
   // ponytail: среди одинаково подходящих событий ближайшее чуть выше — надбавка на глаз, до 0.1 и тает за недели
   const eventScore = sql<number>`${event.score} + 0.1 / (1 + greatest(0, extract(epoch from ${collectedEvents.starts_at} - now())) / 604800)`;
 
-  const [events, offers, topics] = await Promise.all([
+  const [events, offers, topics, offered] = await Promise.all([
     db.select({ ...getTableColumns(collectedEvents), cover_id: photos.id, score: eventScore })
       .from(collectedEvents).leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id))
       .where(and(upcomingCollected, published, eq(collectedEvents.city_id, DEFAULT_CITY_ID), event.where)).orderBy(desc(eventScore)).limit(limit),
-    db.select({ host: hosts, n: sql<number>`p.n::int`, score: practice.score })
-      .from(hosts).innerJoin(sql`jsonb_array_elements(${hosts.practices}) with ordinality as p(value, n)`, sql`true`)
-      .where(and(ne(hosts.status, 'rejected'), eq(hosts.city_id, DEFAULT_CITY_ID), practice.where)),
+    db.select({ host: hosts, id: practices.id, score: practice.score })
+      .from(practices).innerJoin(hosts, eq(hosts.id, practices.host_id))
+      .where(and(eq(practices.status, 'published'), ne(hosts.status, 'rejected'), eq(hosts.city_id, DEFAULT_CITY_ID), practice.where)),
     upcomingTopicsByHost(db),
+    practicesByHost(db),
   ]);
-  const hostItem = (h: HostRecord) => toHostListItem(h, topics.get(h.username) ?? []);
+  const hostItem = (h: HostRecord) => toHostListItem(h, offered.get(h.id) ?? [], topics.get(h.username) ?? []);
   const found: (SearchEntry & { score: number })[] = [
     ...events.map((r) => ({ type: 'event' as const, event: toCollectedItem(r), score: r.score })),
     ...offers.flatMap((r) => {
       const item = hostItem(r.host);
-      const practice = r.host.practices[r.n - 1];
       // Только то, что видно в каталоге: одобренная Practice из наших Topic
-      return item && practice && item.practices.includes(practice) ? [{ type: 'practice' as const, practice, host: item, score: r.score }] : [];
+      const practice = item?.practices.find((p) => p.id === r.id);
+      return item && practice ? [{ type: 'practice' as const, practice, host: item, score: r.score }] : [];
     }),
   ];
   return { entries: found.sort((a, b) => b.score - a.score).slice(0, limit).map(({ score: _, ...entry }) => entry as SearchEntry) };
@@ -562,9 +573,10 @@ export async function search(db: Db, { query, pagination_limit: limit = SEARCH_L
 /** Фиксирует, что человек хочет записаться на Practice мастера. Повторный вызов ничего не меняет. */
 export async function signUpForPractice(db: Db, actor: User, hostId: string, input: PracticeSignupInput): Promise<PracticeSignup> {
   const host = await getHost(db, hostId);
-  if (!host.practices.some((p) => p.title === input.title)) throw new AppError('not_found', 404);
-  await db.insert(practiceSignups).values({ host_id: host.id, user_id: actor.id, title: input.title }).onConflictDoNothing();
-  return { signup_url: practiceSignupUrl(host.username, input.title) };
+  const practice = host.practices.find((p) => p.id === input.practice_id); // только то, что видно в каталоге
+  if (!practice) throw new AppError('not_found', 404);
+  await db.insert(practiceSignups).values({ practice_id: practice.id, host_id: host.id, user_id: actor.id }).onConflictDoNothing();
+  return { signup_url: practiceSignupUrl(host.username, practice.title) };
 }
 
 /** Фиксирует, что человек собрался на событие. Повторный вызов ничего не меняет. */
@@ -848,9 +860,10 @@ export async function updateTicketType(db: Db, actor: User, id: string, input: T
   return db.transaction(async (tx) => {
     const { type, siblings } = await findHostedTicketType(tx, actor, id);
     if (input.is_hidden && !type.is_hidden) assertRemovable(siblings, id);
+    if (!Object.keys(input).length) return type; // пустой input ничего не меняет (а drizzle на пустом set бросает)
     const [updated] = await tx.update(ticketTypes).set(input).where(eq(ticketTypes.id, id)).returning();
     await bumpRev(tx, type.event_id);
-    return updated ?? type; // пустой input ничего не меняет
+    return updated!;
   });
 }
 

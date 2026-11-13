@@ -8,7 +8,7 @@ import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { AdminAction, AdminActionList, AdminActionListInput, AdminEntity, User } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import {
-  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hosts, messages, photos, practiceSignups, shares, sources,
+  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hosts, messages, photos, practices, practiceSignups, shares, sources,
   ticketTypes, tgAccounts, users,
 } from './db/schema.ts';
 import { AppError, collectedExternalId } from './services.ts';
@@ -39,7 +39,8 @@ export function afterCommit(db: Db, job: (db: Db) => unknown): void {
 
 /**
  * Что входит в снимок сущности: строка `root` и строки `children`, ссылающиеся на неё (порядок — порядок вставки
- * при восстановлении). `omit` — колонки, которых в журнале быть не должно (сессия и вход аккаунта).
+ * при восстановлении). `omit` — колонки, которых в журнале быть не должно: секреты (сессия и вход аккаунта) и счётчики,
+ * которые меняются сами (отклик на публикацию).
  * Заходы (`visits`) не входят: это счётчик, а не данные, которые правит команда.
  */
 interface Kind {
@@ -53,9 +54,11 @@ const KINDS: Record<AdminEntity, Kind> = {
   event: { root: events, key: events.id, children: { ticket_types: ticketTypes.event_id, guests: guests.event_id, shares: shares.event_id, feedback: eventFeedback.event_id } },
   collected_event: {
     root: collectedEvents, key: collectedEvents.external_id, toKey: (id) => collectedExternalId(id),
+    // Отклик на публикацию сборщик обновляет каждый проход: в снимке он делал бы любую отмену «изменено с тех пор».
+    omit: ['views', 'reactions'],
     children: { cover: photos.collected_external_id, signups: collectedEventSignups.external_id },
   },
-  host: { root: hosts, key: hosts.id, children: { photos: photos.host_id, practice_signups: practiceSignups.host_id } },
+  host: { root: hosts, key: hosts.id, children: { photos: photos.host_id, practices: practices.host_id, practice_signups: practiceSignups.host_id } },
   // Аватар не входит: он подтянется из Telegram при следующем входе. Токены не входят никогда.
   user: {
     root: users, key: users.id, toKey: Number,

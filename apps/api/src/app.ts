@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  EventUpdateInput, HostCreateInput, HostUpdateInput, InboxSendInput, LeadInput, PracticeSignupInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
+  EventUpdateInput, HostCreateInput, HostUpdateInput, InboxSendInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -268,6 +268,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await admin.deleteHost(db, ctx(c), c.req.param('id'));
       return c.body(null, 204);
     })
+    .patch('/admin/practices/:id', json(PracticeUpdateInput), async (c) => c.json(await admin.updatePractice(db, ctx(c), c.req.param('id'), c.req.valid('json'))))
     // Города (admin/cities.ts).
     .get('/admin/cities', async (c) => c.json(await admin.listCities(db)))
     .post('/admin/cities', json(CityCreateInput), async (c) => c.json(await admin.createCity(db, ctx(c), c.req.valid('json')), 201))

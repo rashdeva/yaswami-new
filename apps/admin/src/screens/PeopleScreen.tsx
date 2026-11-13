@@ -156,7 +156,7 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
                   onSend={() => sendDraft({ id: draft.id, text: edited[draft.id], account_id: from(c).account })} onReject={() => rejectDraft(draft.id)} from={from(c)}
                 />
               )}
-              <Reply from={from(c)} onSend={(text) => send({ id: c.id, text, account_id: from(c).account })} />
+              <Reply from={from(c)} onSend={(text, sent) => send({ id: c.id, text, account_id: from(c).account }, { onSuccess: sent })} />
             </div>
           </>
         )}

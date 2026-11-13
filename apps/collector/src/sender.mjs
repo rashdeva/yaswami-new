@@ -28,6 +28,9 @@ export function unseal(key, sealed) {
 }
 
 const code = (e) => e?.errorMessage ?? e?.message ?? String(e);
+// Сессии больше нет: помочь может только новый вход. Всё остальное (сеть, FLOOD_WAIT) проходит само.
+const SESSION_DEAD = /AUTH_KEY|SESSION_REVOKED|SESSION_EXPIRED|USER_DEACTIVATED|PHONE_NUMBER_BANNED/;
+const RECONNECT_MS = 60_000;
 
 /**
  * `store` — запросы к базе (store.mjs), `report` — сообщить API о личном сообщении или ответе нам в чате, `reportTyping` — что собеседник
@@ -36,6 +39,8 @@ const code = (e) => e?.errorMessage ?? e?.message ?? String(e);
 export function createSender({ store, apiId, apiHash, key, report, reportTyping = async () => {}, connectClient = connect, log = console.log }) {
   const clients = new Map(); // id аккаунта → подключённый клиент
   const logins = new Map(); // id аккаунта → { client, phoneCodeHash }: вход между шагами живёт только в памяти
+  const retryAt = new Map(); // id аккаунта → когда снова пробовать подключиться после сбоя
+  let started = false;
   const sentIds = new Map(); // id аккаунта → номера сообщений, отправленных нами: о них в API не сообщаем
 
   function listen(account, client) {
@@ -120,15 +125,21 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
   }
 
   async function connectAccount(account) {
+    if (Date.now() < (retryAt.get(account.id) ?? 0)) return;
+    let client;
     try {
-      const client = connectClient({ apiId, apiHash, session: unseal(key, account.session) });
+      client = connectClient({ apiId, apiHash, session: unseal(key, account.session) });
       await client.connect();
       // Список диалогов даёт клиенту адреса собеседников: без него после перезапуска некому ответить по id.
       await client.getDialogs({ limit: 100 });
       listen(account, client);
       log(`аккаунт ${account.label}: на связи`);
     } catch (e) {
-      await store.accountUpdate(account.id, { status: 'error', last_error: code(e) });
+      await client?.disconnect().catch(() => {});
+      // `error` — только когда сессии больше нет: из него один путь — новый вход с кодом. Сбой сети или FLOOD_WAIT
+      // аккаунт не портит: пробуем снова через минуту.
+      if (SESSION_DEAD.test(code(e))) await store.accountUpdate(account.id, { status: 'error', last_error: code(e) });
+      else retryAt.set(account.id, Date.now() + RECONNECT_MS);
       log(`аккаунт ${account.label}: не подключился: ${code(e)}`);
     }
   }
@@ -136,6 +147,8 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
   async function send(row) {
     const client = clients.get(row.account_id);
     if (!client) return; // аккаунт ещё не на связи — сообщение подождёт в очереди
+    // Забираем сообщение до отправки: упадём между отправкой и отметкой «sent» — оно не уйдёт человеку второй раз.
+    if (!(await store.claim(row.id))) return;
     try {
       // Ответ на вопрос в чате уходит реплаем в этот чат (аккаунт должен в нём состоять), остальное — в личку.
       const reply = row.meta?.reply_to;
@@ -164,6 +177,9 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
 
   return {
     async tick() {
+      // Сообщения, на отправке которых оборвался прошлый запуск: ушли они или нет, неизвестно — решит человек.
+      if (!started) await store.failStuck();
+      started = true;
       const accounts = await store.accounts();
       for (const account of accounts) {
         if (account.status.startsWith('login_')) await login(account);

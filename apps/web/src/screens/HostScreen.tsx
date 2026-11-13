@@ -53,7 +53,7 @@ export function HostScreen({ id, city, onOpenEvent, onBack }: Props) {
         <>
           <h2>Что ведёт</h2>
           <div className="group">
-            {host.practices.map((p) => <PracticeRow key={p.title} practice={p} onSignUp={() => signUp(host, p.title)} />)}
+            {host.practices.map((p) => <PracticeRow key={p.id} practice={p} onSignUp={() => signUp(host, p)} />)}
           </div>
         </>
       )}

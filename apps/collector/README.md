@@ -42,7 +42,7 @@ pnpm --filter @yaswami/collector scout                     # или свои з�
 
 ## Данные
 
-Таблицы описаны в `apps/api/src/db/schema.ts` и создаются миграциями API; сборщик только пишет в них (`src/store.mjs`).
+Таблицы описаны в `apps/api/src/db/schema.ts` и создаются миграциями API; сборщик только пишет в них (`src/store.mjs`). Запросы хранилища проверяет `apps/api/src/collector-store.test.ts` — на настоящей базе, вместе с остальными тестами (`pnpm test`); новый запрос добавляй и туда.
 
 `collected_events` — одно событие на строку, ключ `external_id` (`telegram:<канал>/<публикация>#<номер события в публикации>`):
 

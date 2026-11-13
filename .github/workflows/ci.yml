@@ -1,0 +1,23 @@
+# Проверка перед влитием: main сам выкладывается в прод (ADR-0002), поэтому сломанное туда попадать не должно.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:18-3.6 # как в docker-compose.yml
+        env: { POSTGRES_USER: yaswami, POSTGRES_PASSWORD: yaswami, POSTGRES_DB: yaswami }
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U yaswami" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test

@@ -29,9 +29,10 @@ export interface Message {
   author: string;
   text: string;
   /**
-   * `draft` — написал агент, ждёт нашего «отправить»; `queued` — ждёт отправки с аккаунта: её делает сборщик, а не API.
+   * `draft` — написал агент, ждёт нашего «отправить»; `queued` — ждёт отправки с аккаунта: её делает сборщик, а не API;
+   * `sending` — сборщик забрал его и отправляет (секунды; оборвался — станет `failed`, а не уйдёт второй раз).
    */
-  status: 'received' | 'draft' | 'queued' | 'sent' | 'failed';
+  status: 'received' | 'draft' | 'queued' | 'sending' | 'sent' | 'failed';
   meta: MessageMeta | null;
   created_at: Date;
 }

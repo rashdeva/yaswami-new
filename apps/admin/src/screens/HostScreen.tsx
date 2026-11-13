@@ -38,7 +38,8 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
   // Услуги — отдельной формой: список уходит целиком, а не по изменённым полям, как профиль.
   const listed = useMemo(() => h && { practices: h.practices }, [h]);
   const practicesForm = useForm({ resolver: zodResolver(PracticesInput), values: listed });
-  const practices = useFieldArray({ control: practicesForm.control, name: 'practices' });
+  // keyName: по умолчанию useFieldArray кладёт свой ключ в `id` и затирает им id услуги — а по нему сервер отличает правку от новой.
+  const practices = useFieldArray({ control: practicesForm.control, name: 'practices', keyName: 'key' });
 
   if (error) return <Page title="Организатор"><Failed error={error} /></Page>;
   if (!h) return <Page title="Организатор"><Loading rows={6} /></Page>;
@@ -82,10 +83,10 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
 
       <Section title={<>Услуги <Badge variant="secondary">{h.practices.length}</Badge></>} description="Что мастер ведёт без даты. Во вкладке «Услуги» приложения видны только одобренные услуги из наших тем; решения по новым — в «Каталоге».">
         {h.offer_url && <Hint>Из сообщения: <ExternalLink href={h.offer_url}>{h.offer_url.replace('https://', '')}</ExternalLink>. Сверь, что это сам мастер и его занятия.</Hint>}
-        <form onSubmit={practicesForm.handleSubmit((v) => update({ practices: v.practices }, { onSuccess: () => practicesForm.reset(v), onError: (e) => showIssues(practicesForm, e) }))} className="flex flex-col gap-4">
+        <form onSubmit={practicesForm.handleSubmit((v) => update({ practices: v.practices }, { onSuccess: (saved) => practicesForm.reset({ practices: saved.practices }), onError: (e) => showIssues(practicesForm, e) }))} className="flex flex-col gap-4">
           {practices.fields.length === 0 && <Hint>Пусто: организатор найден по событиям, а не по самопредставлению.</Hint>}
           {practices.fields.map((f, i) => (
-            <FieldGroup key={f.id}>
+            <FieldGroup key={f.key}>
               {i > 0 && <Separator />}
               <div className="grid items-end gap-4 md:grid-cols-[2fr_1fr_1fr_1fr_auto]">
                 <TextField form={practicesForm} name={`practices.${i}.title`} label="Название" />
@@ -108,7 +109,7 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
         <Section title={<>Заявки на услуги <Badge variant="secondary">{h.practice_signups.length}</Badge></>}>
           <ItemGroup className="gap-1">
             {h.practice_signups.map((s) => (
-              <Item key={s.id + s.title} size="xs" variant="muted">
+              <Item key={s.id + s.practice_id} size="xs" variant="muted">
                 <ItemContent>
                   <ItemTitle><EntityLink entity="user" id={s.id}>{s.first_name}</EntityLink> — {s.title}</ItemTitle>
                   {s.username && <ItemDescription><TelegramLink username={s.username} /></ItemDescription>}

@@ -10,9 +10,10 @@ import { switchNote } from '@/lib/inbox';
 
 /**
  * Поле ответа человеку: Enter спрашивает подтверждение (фокус на «Отправить» — второй Enter отправит), Shift+Enter — перенос строки.
+ * `onSend` получает текст и `sent` — её зовут, когда сообщение принято: тогда поле очищается.
  * `data-reply` — по нему поле находят горячие клавиши. `from` — выбор аккаунта, с которого уйдёт сообщение.
  */
-export function Reply({ onSend, from, className }: { onSend: (text: string) => void; from?: From; className?: string }) {
+export function Reply({ onSend, from, className }: { onSend: (text: string, sent: () => void) => void; from?: From; className?: string }) {
   const [text, setText] = useState('');
   const [asking, setAsking] = useState(false);
   const ask = () => text.trim() && setAsking(true);
@@ -50,8 +51,8 @@ export function Reply({ onSend, from, className }: { onSend: (text: string) => v
         open={asking} onOpenChange={setAsking} title="Отправить сообщение?" action="Отправить" destructive={false}
         description={<>Уйдёт человеку в Telegram — вернуть его нельзя. Бот в этом диалоге замолчит.{fromText(from)}<span className="mt-2 block whitespace-pre-wrap text-foreground">{text.trim()}</span></>}
         onConfirm={() => {
-          onSend(text.trim());
-          setText('');
+          // Поле чистим, только когда сервер принял сообщение: при отказе (лимит, аккаунт не на связи) текст остаётся.
+          onSend(text.trim(), () => setText(''));
         }}
       />
     </form>

@@ -21,6 +21,19 @@ assert.ok(!looksLikeEvent('Сдаётся квартира у моря, две �
 assert.ok(!looksLikeEvent('Завтра йога в 7:00'), 'слишком коротко');
 console.log('prefilter ok');
 
+// Ответ ИИ: неразборчивый — публикация без событий (источник не встаёт), событие с негодной датой отбрасывается одно.
+const { parseExtracted } = await import('@yaswami/extract');
+const extracted = { title: 'Йога', description: '', starts_at: '2026-11-20T07:00:00+07:00', ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'anna', whatsapp_phone: null, url: null };
+{
+  const error = console.error;
+  console.error = () => {};
+  assert.deepEqual(parseExtracted('x/1', 'SAFETY', undefined), []);
+  assert.deepEqual(parseExtracted('x/1', 'STOP', '{"events": [oops'), []);
+  assert.deepEqual(parseExtracted('x/1', 'STOP', JSON.stringify({ events: [extracted, { ...extracted, starts_at: 'в субботу' }] })), [extracted]);
+  console.error = error;
+}
+console.log('extract ok');
+
 const { toAnnouncement } = await import('./mtproto.mjs');
 const msg = { id: 7, message: 'Завтрак в пятницу', date: 1794366000, sender: { className: 'User', username: 'ivan', bot: false } };
 assert.deepEqual(toAnnouncement('danangevent', msg), [{
@@ -133,6 +146,8 @@ console.log('cover ok');
     accountUpdate: async (_id, fields) => void Object.assign(account, fields),
     queued: async () => queue.filter((m) => m.status === 'queued'),
     messageStatus: async (id, status) => void (queue.find((m) => m.id === id).status = status),
+    claim: async (id) => { const m = queue.find((m) => m.id === id); if (m.status !== 'queued') return false; m.status = 'sending'; return true; },
+    failStuck: async () => queue.filter((m) => m.status === 'sending').forEach((m) => (m.status = 'failed')),
   };
   const fail = (errorMessage) => Object.assign(new Error(errorMessage), { errorMessage });
   let handler;
