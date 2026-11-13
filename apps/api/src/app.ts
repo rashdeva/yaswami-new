@@ -189,12 +189,12 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/admin/overview', async (c) => c.json(await adminOverview(db)))
     .get('/admin/conversations/:id/messages', async (c) => c.json(await inboxThread(db, c.req.param('id'))))
     .post('/admin/conversations/:id/messages', json(InboxSendInput), async (c) => {
-      await inboxSend(db, ctx(c), c.req.param('id'), c.req.valid('json').text);
+      await inboxSend(db, ctx(c), c.req.param('id'), c.req.valid('json'));
       return c.body(null, 204);
     })
     .patch('/admin/conversations/:id', json(ConversationUpdateInput), async (c) => c.json(await inboxUpdate(db, ctx(c), c.req.param('id'), c.req.valid('json'))))
     .post('/admin/messages/:id/send', json(DraftSendInput), async (c) => {
-      await sendDraft(db, ctx(c), c.req.param('id'), c.req.valid('json').text);
+      await sendDraft(db, ctx(c), c.req.param('id'), c.req.valid('json'));
       return c.body(null, 204);
     })
     .patch('/admin/messages/:id', json(DraftUpdateInput), async (c) => c.json(await updateDraft(db, ctx(c), c.req.param('id'), c.req.valid('json').text)))

@@ -40,13 +40,29 @@ export const sender = (m: Msg, me: number) => {
   return m.author === 'bot' ? 'Бот (автоответ)' : agent ? `Агент «${AGENTS[agent].name}»` : m.author === `admin:${me}` ? 'Вы' : 'Человек из команды';
 };
 
-/** Через что идёт диалог: бот или наш аккаунт. */
-export const via = (c: Conv, accounts: Feed['accounts']) =>
-  c.channel === 'bot' ? 'боту' : `аккаунт «${accounts.find((a) => a.id === c.account_id)?.label ?? 'не подключён'}»`;
+/** Подпись нашего аккаунта; его удалили или диалог ещё ни к одному не привязан — «не подключён». */
+export const accountLabel = (id: string | null | undefined, accounts: Feed['accounts']) => accounts.find((a) => a.id === id)?.label ?? 'не подключён';
 
-/** Подпись сообщения: кто кому. */
-export const who = (c: Conv, m: Msg, me: number, through: string) =>
-  m.direction === 'in' ? `${c.peer_name} → ${through}` : `${sender(m, me)} → ${c.peer_name}${c.channel === 'account' ? ` · ${through}` : ''}`;
+/** Через что идёт диалог: бот или наш аккаунт. */
+export const via = (c: Conv, accounts: Feed['accounts']) => (c.channel === 'bot' ? 'боту' : `аккаунт «${accountLabel(c.account_id, accounts)}»`);
+
+/** Подпись сообщения: кто кому. Аккаунт — тот, через который прошло само сообщение: диалог мог с тех пор перейти на другой. */
+export function who(c: Conv, m: Msg, me: number, accounts: Feed['accounts']) {
+  const through = via({ ...c, account_id: m.meta?.account_id ?? c.account_id }, accounts);
+  return m.direction === 'in' ? `${c.peer_name} → ${through}` : `${sender(m, me)} → ${c.peer_name}${c.channel === 'account' ? ` · ${through}` : ''}`;
+}
+
+/** С какого аккаунта уйдёт сообщение: выбранного нами, иначе аккаунта диалога, иначе первого рабочего. У диалога с ботом аккаунта нет. */
+export const sendFrom = (c: Conv, accounts: Feed['accounts'], chosen?: string) =>
+  c.channel === 'bot' ? undefined : chosen ?? c.account_id ?? accounts.find((a) => a.status === 'active')?.id;
+
+/**
+ * Предупреждение о смене аккаунта: чат в Telegram привязан к аккаунту, поэтому с другого человек увидит новый чат,
+ * а прежняя переписка останется в старом. Пока в диалоге только черновик, менять нечего — предупреждения нет.
+ */
+export const switchNote = (c: Conv, accounts: Feed['accounts'], account: string | undefined) =>
+  !account || !c.account_id || account === c.account_id || c.stage === 'draft' ? null
+    : `С этим человеком переписывались с аккаунта «${accountLabel(c.account_id, accounts)}»: с «${accountLabel(account, accounts)}» он увидит новый чат с другого номера.`;
 
 /** Кто сейчас отвечает в диалоге. */
 export const leads = (c: Conv) =>

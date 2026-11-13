@@ -44,6 +44,11 @@ export interface MessageMeta {
   source_url?: string;
   /** Отправить не в личку, а ответом на это сообщение в группе. */
   reply_to?: { chat: string; message_id: number };
+  /**
+   * Наш аккаунт Telegram, с которого ушло или на который пришло сообщение. Диалог может перейти на другой аккаунт
+   * (`conversations.account_id` — текущий), а у сообщения остаётся тот, через который оно прошло. В Luma такого нет.
+   */
+  account_id?: string;
 }
 
 /** Лента админки: последние диалоги и последние сообщения во всех диалогах, свежие первыми. */
@@ -201,16 +206,23 @@ export const LeadInput = z.object({
 export const LEAD_REPLY_HOURS = 2;
 export type LeadInput = z.infer<typeof LeadInput>;
 
+/**
+ * С какого нашего аккаунта Telegram отправить (в Luma такого нет). Не задан — с аккаунта диалога, а если его нет —
+ * с первого рабочего. Другой аккаунт — диалог переходит на него: человек увидит новый чат с другого номера.
+ * У диалога с ботом не используется.
+ */
+const account_id = z.uuid().optional();
+
 /** Отправить черновик агента, при желании — с исправленным текстом. */
-export const DraftSendInput = z.object({ text: z.string().trim().min(1).max(4000).optional() });
+export const DraftSendInput = z.object({ text: z.string().trim().min(1).max(4000).optional(), account_id });
 export type DraftSendInput = z.infer<typeof DraftSendInput>;
 
-export const InboxSendInput = z.object({ text: z.string().trim().min(1).max(4000) });
+export const InboxSendInput = z.object({ text: z.string().trim().min(1).max(4000), account_id });
 export type InboxSendInput = z.infer<typeof InboxSendInput>;
 
 /** Новый текст черновика агента: сообщение остаётся черновиком и ждёт «Отправить». */
-export const DraftUpdateInput = InboxSendInput;
-export type DraftUpdateInput = InboxSendInput;
+export const DraftUpdateInput = InboxSendInput.pick({ text: true });
+export type DraftUpdateInput = z.infer<typeof DraftUpdateInput>;
 
 /** `is_hidden: true` — скрыть диалог и снять «ждёт вас», `false` — вернуть в список. */
 export const ConversationUpdateInput = z.object({ mode: z.enum(['agent', 'human']).optional(), attention: z.null().optional(), is_hidden: z.boolean().optional() });

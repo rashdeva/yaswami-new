@@ -1,7 +1,7 @@
 // «Люди»: слева собеседники с фильтрами и поиском, справа переписка с выбранным.
 import type { AgentKey } from '@yaswami/core';
 import { AGENTS } from '@yaswami/core';
-import { BotIcon, CheckIcon, CircleAlertIcon, EyeIcon, EyeOffIcon, HandIcon, PencilLineIcon } from 'lucide-react';
+import { BotIcon, CheckIcon, CircleAlertIcon, EyeIcon, EyeOffIcon, HandIcon, PencilLineIcon, SendIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Draft } from '@/components/Draft';
 import { TelegramLink } from '@/components/EntityLink';
@@ -18,11 +18,11 @@ import { Kbd } from '@/components/ui/kbd';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { useConversationActions, useFeed, useThread } from '@/hooks/useInbox';
+import { useConversationActions, useFeed, useSendFrom, useThread } from '@/hooks/useInbox';
 import { useInboxKeys } from '@/hooks/useInboxKeys';
 import { useTyping } from '@/hooks/useLive';
 import type { Filter } from '@/lib/inbox';
-import { draftsOf, FILTERS, filterPeople, initials, lastOf, leads, person, pick, time, typingText, via } from '@/lib/inbox';
+import { accountLabel, draftsOf, FILTERS, filterPeople, initials, lastOf, leads, person, pick, time, typingText, via } from '@/lib/inbox';
 
 interface Props {
   /** Диалог из адреса; нет или не попал под фильтр — выбран первый в списке. */
@@ -49,7 +49,8 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
   const last = lastOf(feed);
   const draft = c && drafts.get(c.id);
   const typing = useTyping();
-  useInboxKeys({ rows, at, onSelect, draft, draftText: draft && edited[draft.id], scope: '[data-pane]' });
+  const from = useSendFrom(feed.accounts);
+  useInboxKeys({ rows, at, onSelect, draft, draftText: draft && edited[draft.id], account: c && from(c).account, scope: '[data-pane]' });
 
   return (
     <div className="grid h-full grid-rows-2 md:grid-cols-3 md:grid-rows-1 xl:grid-cols-4">
@@ -97,8 +98,9 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
                       </Avatar>
                     </ItemMedia>
                     <ItemContent className="min-w-0 gap-0.5">
-                      <ItemTitle>
+                      <ItemTitle className="flex-wrap">
                         {p.peer_name}{drafts.has(p.id) && <Badge variant="secondary">черновик</Badge>}
+                        {p.channel === 'account' && <Badge variant="outline" title="Пишем с этого аккаунта"><SendIcon />{accountLabel(p.account_id, feed.accounts)}</Badge>}
                         {typing.filter((t) => t.conversation_id === p.id).map((t) => (
                           <Badge key={t.who} variant="outline" title={typingText(t)}>{t.who === 'agent' ? <BotIcon /> : <PencilLineIcon />}{t.who === 'agent' ? 'пишет' : 'печатает'}</Badge>
                         ))}
@@ -145,16 +147,16 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
                 <Alert><EyeOffIcon /><AlertDescription>Скрыт {time(c.hidden_at)}: вернётся в список, когда человек напишет снова.</AlertDescription></Alert>
               )}
             </header>
-            <Thread conversation={c} messages={thread} me={feed.me} through={via(c, feed.accounts)} typing={typing.filter((t) => t.conversation_id === c.id)} />
+            <Thread conversation={c} messages={thread} me={feed.me} accounts={feed.accounts} typing={typing.filter((t) => t.conversation_id === c.id)} />
             <div className="flex flex-col gap-2 px-4 pt-1 pb-4">
               {draft && (
                 <Draft
                   draft={draft} text={edited[draft.id]} onEdit={(text) => setEdited({ ...edited, [draft.id]: text })}
                   onSave={(text) => saveDraft({ id: draft.id, text }, { onSuccess: () => setEdited(({ [draft.id]: _, ...rest }) => rest) })}
-                  onSend={() => sendDraft({ id: draft.id, text: edited[draft.id] })} onReject={() => rejectDraft(draft.id)}
+                  onSend={() => sendDraft({ id: draft.id, text: edited[draft.id], account_id: from(c).account })} onReject={() => rejectDraft(draft.id)} from={from(c)}
                 />
               )}
-              <Reply onSend={(text) => send({ id: c.id, text })} />
+              <Reply from={from(c)} onSend={(text) => send({ id: c.id, text, account_id: from(c).account })} />
             </div>
           </>
         )}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { InboxConversation, InboxFeed, Message, Wire } from '@yaswami/core';
-import { agentOf, day, draftsOf, eventsOf, feedRows, filterPeople, initials, kind, lastOf, leads, pick, sender, via, visible, who } from './inbox.ts';
+import { agentOf, day, draftsOf, eventsOf, feedRows, filterPeople, initials, kind, lastOf, leads, pick, sender, sendFrom, switchNote, via, visible, who } from './inbox.ts';
 
 const conv = (id: string, over: Partial<Wire<InboxConversation>> = {}): Wire<InboxConversation> => ({
   id, channel: 'bot', account_id: null, peer_id: 1, peer_name: `Имя ${id}`, peer_username: null, mode: 'agent', attention: null, hidden_at: null,
@@ -42,12 +42,30 @@ test('подписи: через что идёт диалог и кто его �
   assert.equal(via(a, feed.accounts), 'боту');
   assert.equal(via(b, feed.accounts), 'аккаунт «Рабочий»');
   assert.equal(via(b, []), 'аккаунт «не подключён»');
-  assert.equal(who(a, feed.messages[3]!, 7, 'боту'), 'Аня → боту');
-  assert.equal(who(b, feed.messages[1]!, 7, 'аккаунт «Рабочий»'), 'Вы → Борис · аккаунт «Рабочий»');
+  assert.equal(who(a, feed.messages[3]!, 7, feed.accounts), 'Аня → боту');
+  assert.equal(who(b, feed.messages[1]!, 7, feed.accounts), 'Вы → Борис · аккаунт «Рабочий»');
   assert.equal(leads(a), 'ведёт агент «Для организаторов»');
   assert.equal(leads(b), 'ведёте вы');
   assert.equal(leads(conv('c')), 'отвечает бот');
   assert.equal(leads(conv('c', { channel: 'account' })), 'никто не ведёт');
+});
+
+test('аккаунт отправки: выбранный, иначе аккаунт диалога, иначе первый рабочий; смена — новый чат', () => {
+  const account = (id: string, label: string, status: 'active' | 'error' = 'active') => ({ ...feed.accounts[0]!, id, label, status });
+  const accounts = [account('old', 'Старый', 'error'), account('acc', 'Рабочий'), account('new', 'Новый')];
+  const b = conv('b', { channel: 'account', account_id: 'old', stage: 'contacted' });
+  assert.equal(sendFrom(conv('a'), accounts, 'new'), undefined, 'боту — без аккаунта');
+  assert.equal(sendFrom(b, accounts), 'old', 'аккаунт диалога, даже если он не на связи: менять — решение человека');
+  assert.equal(sendFrom(b, accounts, 'new'), 'new');
+  assert.equal(sendFrom({ ...b, account_id: null }, accounts), 'acc');
+  assert.equal(sendFrom({ ...b, account_id: null }, [accounts[0]!]), undefined);
+
+  assert.equal(switchNote(b, accounts, 'old'), null);
+  assert.equal(switchNote(b, accounts, 'new'), 'С этим человеком переписывались с аккаунта «Старый»: с «Новый» он увидит новый чат с другого номера.');
+  assert.equal(switchNote({ ...b, stage: 'draft' }, accounts, 'new'), null, 'ещё не писали — менять нечего');
+  assert.equal(switchNote({ ...b, account_id: null }, accounts, 'new'), null);
+  // У сообщения остаётся аккаунт, через который оно прошло.
+  assert.equal(who({ ...b, account_id: 'new' }, msg('x', 'b', { direction: 'out', author: 'admin:7', meta: { account_id: 'old' } }), 7, accounts), 'Вы → Имя b · аккаунт «Старый»');
 });
 
 test('люди: фильтр, агент и поиск', () => {

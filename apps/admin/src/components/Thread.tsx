@@ -1,7 +1,7 @@
 // Переписка с человеком на компонентах чата shadcn: message-scroller, message, bubble; дни разделены marker.
 import { ArrowDownIcon } from 'lucide-react';
 import { useEffect } from 'react';
-import type { Conv, Msg } from '@/api';
+import type { Account, Conv, Msg } from '@/api';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { Message, MessageContent, MessageFooter } from '@/components/ui/message';
@@ -25,13 +25,13 @@ interface Props {
   messages: Msg[];
   /** Наш Telegram id — чтобы подписать свои сообщения «Вы». */
   me: number;
-  /** Через что идёт диалог: «боту» или «аккаунт …». */
-  through: string;
+  /** Наши аккаунты: в подписи сообщения — тот, через который оно прошло. */
+  accounts: Account[];
   /** Кто пишет прямо сейчас: агент — с текстом, который уже написал. */
   typing: Typing[];
 }
 
-export function Thread({ conversation, messages, me, through, typing }: Props) {
+export function Thread({ conversation, messages, me, accounts, typing }: Props) {
   const sent = messages.filter((m) => m.status !== 'draft'); // черновик показывается отдельно, с кнопками
   return (
     <MessageScrollerProvider key={conversation.id}>
@@ -51,7 +51,7 @@ export function Thread({ conversation, messages, me, through, typing }: Props) {
                       <Bubble variant={BUBBLE[kind(m)]} align={align}>
                         <BubbleContent className="whitespace-pre-wrap">{m.text}</BubbleContent>
                       </Bubble>
-                      <MessageFooter className={m.status === 'failed' ? 'text-destructive' : ''}>{who(conversation, m, me, through)} · {statusText(m, true)}</MessageFooter>
+                      <MessageFooter className={m.status === 'failed' ? 'text-destructive' : ''}>{who(conversation, m, me, accounts)} · {statusText(m, true)}</MessageFooter>
                     </MessageContent>
                   </Message>
                 </MessageScrollerItem>

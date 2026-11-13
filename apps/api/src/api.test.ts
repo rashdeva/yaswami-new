@@ -1071,6 +1071,10 @@ test('аккаунты Telegram: вход по шагам из админки, �
   await db.delete(messages).where(eq(messages.text, 'И сколько стоит?'));
   feed = await inbox();
   sent.length = 0;
+  // Пока вход в аккаунт не закончен, сборщик с него не шлёт: сообщение осталось бы в очереди, поэтому отказ.
+  const early = await call(admin, 'POST', `/admin/conversations/${id}/messages`, { text: 'Каталог событий Дананга.' });
+  assert.deepEqual([early.status, ((await early.json()) as { error: string }).error], [409, 'account_unavailable']);
+  await db.update(tgAccounts).set({ status: 'active' }).where(eq(tgAccounts.id, account.id));
   assert.equal((await call(admin, 'POST', `/admin/conversations/${id}/messages`, { text: 'Каталог событий Дананга.' })).status, 204);
   assert.deepEqual(sent, []);
   feed = await inbox();
@@ -1210,6 +1214,57 @@ test('охотник: старое сообщение из чата — черн
     hunter.ask = ask;
     settings.hunterUrl = '';
   }
+});
+
+test('выбор аккаунта: сообщение и черновик уходят с выбранного аккаунта, диалог переходит на него', async () => {
+  await db.execute(sql`truncate conversations, tg_accounts cascade`);
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const [blocked, working, away] = await db.insert(tgAccounts).values([
+    { label: 'Заблокирован', phone: '+84900000041', status: 'active' },
+    { label: 'Рабочий', phone: '+84900000042', status: 'active' },
+    { label: 'Не вошёл', phone: '+84900000043', status: 'login_code' },
+  ]).returning();
+  const [conversation] = await db.insert(conversations).values({ channel: 'account', account_id: blocked!.id, peer_id: 9500, peer_name: 'Даша' }).returning();
+  const [draft] = await db.insert(messages).values({
+    conversation_id: conversation!.id, direction: 'out', author: 'agent:hunter', text: 'Сегодня бачата', status: 'draft', meta: { reason: 'Вопрос в чате' },
+  }).returning();
+  const state = async () => {
+    const feed = (await (await call(admin, 'GET', '/admin/inbox')).json()) as InboxFeed;
+    return [feed.conversations[0]!.account_id, ...feed.messages.map((m) => [m.status, m.meta?.account_id])];
+  };
+  const refused = async (path: string, body: object) => {
+    const res = await call(admin, 'POST', path, body);
+    return [res.status, ((await res.json()) as { error: string }).error];
+  };
+  const sendPath = `/admin/messages/${draft!.id}/send`;
+
+  // Не вошедший и несуществующий аккаунт выбрать нельзя; диалог остаётся на прежнем.
+  assert.equal((await call(admin, 'POST', sendPath, { account_id: 'не uuid' })).status, 400);
+  assert.deepEqual(await refused(sendPath, { account_id: away!.id }), [409, 'account_unavailable']);
+  assert.deepEqual(await refused(sendPath, { account_id: crypto.randomUUID() }), [409, 'account_unavailable']);
+  assert.deepEqual(await state(), [blocked!.id, ['draft', undefined]]);
+
+  // Черновик охотника — с рабочего аккаунта: диалог переходит на него, причина черновика сохраняется.
+  assert.equal((await call(admin, 'POST', sendPath, { account_id: working!.id })).status, 204);
+  assert.deepEqual(await state(), [working!.id, ['queued', working!.id]]);
+  const [queued] = await db.select().from(messages).where(eq(messages.id, draft!.id));
+  assert.equal(queued!.meta?.reason, 'Вопрос в чате');
+
+  // Своё сообщение: без выбора — с аккаунта диалога, с выбором — диалог переходит обратно; у сообщения остаётся свой аккаунт.
+  const messagesPath = `/admin/conversations/${conversation!.id}/messages`;
+  assert.equal((await call(admin, 'POST', messagesPath, { text: 'Придёте?' })).status, 204);
+  assert.equal((await call(admin, 'POST', messagesPath, { text: 'Пишу с другого', account_id: blocked!.id })).status, 204);
+  assert.deepEqual(await state(), [blocked!.id, ['queued', blocked!.id], ['queued', working!.id], ['queued', working!.id]]);
+  assert.deepEqual(await refused(messagesPath, { text: 'Вы тут?', account_id: away!.id }), [409, 'account_unavailable']);
+
+  // Аккаунт диалога удалили — без выбора сообщение уходит с первого рабочего.
+  await db.delete(tgAccounts).where(eq(tgAccounts.id, blocked!.id));
+  assert.equal((await call(admin, 'POST', messagesPath, { text: 'Мы снова здесь' })).status, 204);
+  assert.equal((await state())[0], working!.id);
+  // Рабочих аккаунтов нет — отправлять не с чего.
+  await db.delete(tgAccounts).where(eq(tgAccounts.id, working!.id));
+  assert.deepEqual(await refused(messagesPath, { text: 'Вы тут?' }), [409, 'no_account']);
 });
 
 test('охотник: вопрос из чата становится черновиком, который отправляет человек', async () => {
