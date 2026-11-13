@@ -441,19 +441,21 @@ const coldToday = sql<number>`(
 )`;
 const accountFields = {
   id: tgAccounts.id, label: tgAccounts.label, phone: tgAccounts.phone, status: tgAccounts.status,
-  last_error: tgAccounts.last_error, daily_limit: tgAccounts.daily_limit, cold_today: coldToday, created_at: tgAccounts.created_at,
+  last_error: tgAccounts.last_error, daily_limit: tgAccounts.daily_limit, cold_today: coldToday, cold_paused_until: tgAccounts.cold_paused_until, created_at: tgAccounts.created_at,
 };
 
 /**
  * Лимит в коде, а не в тексте роли: человек нам ещё не писал — первых сообщений с аккаунта за сутки не больше
- * `daily_limit`. Ответ тому, кто написал сам, уходит всегда.
+ * `daily_limit`, и ни одного, пока аккаунт на паузе после PEER_FLOOD. Ответ тому, кто написал сам, уходит всегда.
  */
 async function checkDailyLimit(db: Db, conversationId: string, accountId: string): Promise<void> {
   const [replied] = await db.select({ id: messages.id }).from(messages)
     .where(and(eq(messages.conversation_id, conversationId), eq(messages.direction, 'in'))).limit(1);
   if (replied) return;
   // ponytail: проверка и запись не под блокировкой — два одновременных «отправить» могут превысить лимит на одно.
-  const [account] = await db.select({ limit: tgAccounts.daily_limit, cold: coldToday }).from(tgAccounts).where(eq(tgAccounts.id, accountId));
+  const [account] = await db.select({ limit: tgAccounts.daily_limit, cold: coldToday, paused: tgAccounts.cold_paused_until }).from(tgAccounts).where(eq(tgAccounts.id, accountId));
+  // Telegram ограничил аккаунт (PEER_FLOOD): первое сообщение всё равно не дойдёт, а попытка продлит ограничение.
+  if (account?.paused && account.paused > new Date()) throw new AppError('account_limited', 409);
   if (account && account.cold >= account.limit) throw new AppError('daily_limit', 409);
 }
 export const listAccounts = (db: Db): Promise<TgAccount[]> => db.select(accountFields).from(tgAccounts).orderBy(asc(tgAccounts.created_at));

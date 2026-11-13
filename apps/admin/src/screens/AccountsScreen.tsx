@@ -52,7 +52,7 @@ function DailyLimit({ a, onChange }: { a: Account; onChange: (n: number) => void
 
 export function AccountsScreen() {
   const { accounts } = useFeed();
-  const { create, rename, setLimit, login, remove } = useAccounts();
+  const { create, rename, setLimit, unpause, login, remove } = useAccounts();
   const [label, setLabel] = useState('');
   const [phone, setPhone] = useState('');
   const [secrets, setSecrets] = useState<Record<string, string>>({}); // код или пароль по id аккаунта
@@ -75,6 +75,16 @@ export function AccountsScreen() {
             <CardContent className="flex flex-col gap-2">
               {LOGIN_STEP[a.status] && <Hint>{LOGIN_STEP[a.status]}</Hint>}
               {a.status === 'active' && <DailyLimit a={a} onChange={(n) => setLimit({ id: a.id, daily_limit: n })} />}
+              {a.cold_paused_until && new Date(a.cold_paused_until) > new Date() && (
+                <Alert>
+                  <CircleAlertIcon />
+                  <AlertDescription>
+                    Telegram ограничил первые сообщения незнакомым (PEER_FLOOD): до {new Date(a.cold_paused_until).toLocaleDateString('ru')} с аккаунта уходят только ответы
+                    тем, кто написал сам; неотправленное вернулось в черновики. Проверить срок — написать @SpamBot с этого аккаунта.
+                    <Button size="xs" variant="outline" className="mt-2" onClick={() => unpause({ id: a.id })}>Ограничение снято — продолжить</Button>
+                  </AlertDescription>
+                </Alert>
+              )}
               {a.last_error && <Alert variant="destructive"><CircleAlertIcon /><AlertDescription>{a.last_error}</AlertDescription></Alert>}
               {(a.status === 'login_code' || a.status === 'login_password') && (
                 <form

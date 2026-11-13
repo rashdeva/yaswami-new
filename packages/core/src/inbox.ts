@@ -143,6 +143,12 @@ export interface TgAccount {
   daily_limit: number;
   /** Сколько первых сообщений ушло за последние 24 часа (с очередью). */
   cold_today: number;
+  /**
+   * До какого момента первые сообщения с аккаунта не отправляем: Telegram ответил PEER_FLOOD — ограничил аккаунт
+   * за сообщения незнакомым. Срок Telegram не сообщает: ставим паузу на COLD_PAUSE_DAYS, команда может снять раньше.
+   * Ответы тем, кто написал сам, идут и в паузу. null — паузы нет. В Luma такого нет.
+   */
+  cold_paused_until: Date | null;
   created_at: Date;
 }
 
@@ -150,7 +156,12 @@ export const AccountCreateInput = z.object({ label: z.string().trim().min(1).max
 export type AccountCreateInput = z.infer<typeof AccountCreateInput>;
 
 /** Подпись аккаунта в админке; номер и вход не меняются. */
-export const AccountUpdateInput = AccountCreateInput.pick({ label: true }).extend({ daily_limit: z.number().int().min(0).max(200) }).partial();
+export const AccountUpdateInput = AccountCreateInput.pick({ label: true }).extend({
+  daily_limit: z.number().int().min(0).max(200),
+  cold_paused_until: z.null().describe('null — lift the pause on first messages that Telegram\'s PEER_FLOOD caused'),
+}).partial();
+/** Сколько дней не шлём первые сообщения с аккаунта после PEER_FLOOD: Telegram срок не сообщает, обычно это дни. */
+export const COLD_PAUSE_DAYS = 3;
 export type AccountUpdateInput = z.infer<typeof AccountUpdateInput>;
 
 /** Шаг входа: код из Telegram или пароль двухэтапной проверки — что именно, определяет `status` аккаунта. */

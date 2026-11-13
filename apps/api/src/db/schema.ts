@@ -330,6 +330,8 @@ export const tgAccounts = pgTable('tg_accounts', {
   last_error: text(),
   // Сколько первых сообщений за сутки (диалоги, где человек нам ещё не писал). Ответы не считаются (docs/agents-inbox.md).
   daily_limit: integer().notNull().default(20),
+  // Пауза первых сообщений после PEER_FLOOD (сборщик ставит, команда может снять): TgAccount.cold_paused_until.
+  cold_paused_until: at('cold_paused_until'),
   created_at: at('created_at').notNull().defaultNow(),
   session: text(),
   // `sealed` — код или пароль, зашифрованные ключом сборщика (ACCOUNTS_KEY у API); `secret` — открыто, когда ключа у API нет.

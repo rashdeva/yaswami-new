@@ -5,6 +5,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import telegram from 'telegram';
 import { NewMessage, Raw } from 'telegram/events/index.js';
+import { COLD_PAUSE_DAYS } from '@yaswami/core';
 import { connect } from './mtproto.mjs';
 
 const NO_TEXT = '[сообщение без текста]';
@@ -146,6 +147,15 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
       sentIds.get(row.account_id).add(sent.id);
       await store.messageStatus(row.id, 'sent');
     } catch (e) {
+      // PEER_FLOOD — Telegram ограничил аккаунт за сообщения незнакомым. Сообщение не теряем: возвращаем в черновики,
+      // а первые сообщения с аккаунта ставим на паузу — новая попытка только продлит ограничение (COLD_PAUSE_DAYS).
+      if (code(e) === 'PEER_FLOOD') {
+        const until = new Date(Date.now() + COLD_PAUSE_DAYS * 86_400_000);
+        await store.messageStatus(row.id, 'draft');
+        await store.accountUpdate(row.account_id, { cold_paused_until: until, last_error: `Telegram ограничил первые сообщения (PEER_FLOOD): пауза до ${until.toISOString().slice(0, 10)}` });
+        log(`очередь: сообщение ${row.id} вернули в черновики — аккаунт ограничен Telegram (PEER_FLOOD)`);
+        return;
+      }
       await store.messageStatus(row.id, 'failed');
       await store.accountUpdate(row.account_id, { last_error: `Не отправлено: ${code(e)}` });
       log(`очередь: сообщение ${row.id} не отправлено: ${code(e)}`);
