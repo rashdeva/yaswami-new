@@ -1,7 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { HostItem, HostListItem } from '@yaswami/core';
+import { practiceSignupUrl } from '@yaswami/core';
+import { track } from '../analytics.ts';
 import { api } from '../api.ts';
+import { openExternal } from '../tg.ts';
 import { keys } from './keys.ts';
+import { useSession } from './useSession.ts';
 
 /** Каталог организаторов: у кого есть предстоящие события или регулярные занятия. */
 export function useHosts() {
@@ -24,4 +28,18 @@ export function useHost(id: string) {
     },
   });
   return { host: data ?? null, loaded: !!data && !isPlaceholderData, failed: error };
+}
+
+/**
+ * «Записаться» на услугу мастера: намерение записываем в фоне, человека сразу отправляем в чат мастера —
+ * иначе браузер сочтёт новую вкладку всплывающим окном.
+ * ponytail: без входа запись не сохраняется (нажатие видно только в аналитике); вход перед записью — когда заявки начнут подтверждать.
+ */
+export function usePracticeSignup() {
+  const { authed } = useSession();
+  return (host: Pick<HostListItem, 'id' | 'username'>, title: string) => {
+    track('practice_signup_clicked', { host_id: host.id, title, authed });
+    if (authed) api.signUpForPractice(host.id, title).catch(() => {});
+    openExternal(practiceSignupUrl(host.username, title));
+  };
 }
