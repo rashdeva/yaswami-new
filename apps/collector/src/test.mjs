@@ -204,7 +204,7 @@ console.log('cover ok');
 
 // Вопросы «куда сходить» в больших чатах: отбор без ИИ.
 {
-  const { looksLikeLead, pickLeads } = await import('./lead.mjs');
+  const { looksLikeLead, pickLeads, signalOf } = await import('./lead.mjs');
   for (const yes of ['Ребят, куда сегодня можно сходить потанцевать?', 'Чем заняться в Дананге вечером?', 'Есть какие-нибудь мероприятия на выходных?',
     'Подскажите, куда пойти с ребёнком', 'Ищу компанию на покер', 'Где тут можно поиграть в настолки?', "What's on tonight?", 'any events this weekend?',
     'Кто идёт сегодня на концерт?', 'Где в эту пятницу квиз?', 'Есть тут йога по утрам?']) {
@@ -220,15 +220,25 @@ console.log('cover ok');
     { id: 1, date: at(30), message: 'Всем привет', sender: user },
     { id: 2, date: at(29), message: 'Погода огонь', sender: user },
     { id: 3, date: at(28), message: 'Куда сегодня сходить потанцевать?', sender: user },
-    { id: 4, date: at(200), message: 'Куда сходить вечером?', sender: user }, // старое
+    { id: 4, date: at(2 * 24 * 60), message: 'Куда сходить вечером?', sender: user }, // старше суток — для истории есть backfill
     { id: 5, date: at(5), message: 'Чем заняться вечером?', sender: { ...user, bot: true } }, // бот
     { id: 6, date: at(4), message: 'Чем заняться вечером?', sender: { className: 'Channel', id: 7n } }, // от имени канала
+    { id: 7, date: at(300), message: 'Ищу партнёра на бачату по четвергам', sender: user }, // ищет компанию: часы назад — в личку решит API
   ], now);
-  assert.deepEqual(leads, [{
+  assert.deepEqual(leads.map(({ message_id, signal, sent_at }) => [message_id, signal, sent_at]), [
+    [3, 'ask', new Date(at(28) * 1000).toISOString()],
+    [7, 'seek', new Date(at(300) * 1000).toISOString()],
+  ]);
+  assert.deepEqual(leads[0], {
+    signal: 'ask', sent_at: new Date(at(28) * 1000).toISOString(),
     chat: 'danang_chat', message_id: 3, url: 'https://t.me/danang_chat/3',
     author: { id: 42, name: 'Даша К', username: 'dasha_k' },
     text: 'Куда сегодня сходить потанцевать?', context: ['Всем привет', 'Погода огонь'],
-  }]);
+  });
+  // За неделю (разовая догрузка) берётся и старое.
+  assert.deepEqual(pickLeads('danang_chat', [{ id: 4, date: at(2 * 24 * 60), message: 'Куда сходить вечером?', sender: user }], now, 7 * 86_400_000).map((l) => l.message_id), [4]);
+  assert.equal(signalOf('Только приехала, хочу познакомиться'), 'newcomer');
+  assert.equal(signalOf('Ищу партнёра по бизнесу'), null, 'не досуг');
   console.log('leads ok');
 }
 

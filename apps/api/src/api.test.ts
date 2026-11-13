@@ -1172,6 +1172,31 @@ test('отзывы: запрос после события, оценка кно�
   assert.deepEqual(await feedback(82), { count: 2, average: 4, items: [] });
 });
 
+test('охотник: старое сообщение из чата — черновик в личку, а не ответ в чат', async () => {
+  await db.execute(sql`truncate conversations, tg_accounts cascade`);
+  settings.adminIds = [70];
+  settings.hunterUrl = 'http://hunter.test';
+  settings.hunterUserIds = [];
+  const ask = hunter.ask;
+  let asked = '';
+  hunter.ask = async (question) => ((asked = question), 'Привет! Видел, ты искала партнёра на бачату. В четверг в 20:00 социалка в Sol & Luna — скинуть подробности?');
+  try {
+    const sent_at = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    await recordLead(db, {
+      chat: 'DaNang_girls', message_id: 9, url: 'https://t.me/DaNang_girls/9', author: { id: 600, name: 'Аня', username: 'anya_b' },
+      text: 'Ищу партнёра на бачату по четвергам', context: [], sent_at, signal: 'seek',
+    });
+    assert.match(asked, /^Личное сообщение\. Человек писал в чате DaNang_girls 3 дн\. назад\.[\s\S]*Ищет компанию \(Аня\):\nИщу партнёра/);
+    const feed = (await (await call(tma(70, 'Админ'), 'GET', '/admin/inbox')).json()) as InboxFeed;
+    assert.deepEqual(feed.conversations.map((c) => [c.channel, c.peer_id, c.attention]), [['account', 600, 'Черновик в личку']]);
+    const draft = feed.messages.find((m) => m.status === 'draft')!;
+    assert.deepEqual(draft.meta, { reason: 'Писал в чате DaNang_girls 3 дн. назад', source_url: 'https://t.me/DaNang_girls/9' }); // без reply_to — уйдёт в личку
+  } finally {
+    hunter.ask = ask;
+    settings.hunterUrl = '';
+  }
+});
+
 test('охотник: вопрос из чата становится черновиком, который отправляет человек', async () => {
   await db.execute(sql`truncate conversations, tg_accounts cascade`);
   settings.adminIds = [70];
