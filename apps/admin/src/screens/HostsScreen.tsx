@@ -9,25 +9,35 @@ import { Item, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/i
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useHosts } from '@/hooks/useHosts';
 import { useOverview } from '@/hooks/useOverview';
+import { HOST_LABELS } from '@/lib/catalog';
 
 interface Props {
   query: string;
+  /** Показывать только ждущих решения мастеров: у кого есть Practice и статус pending. */
+  queue: boolean;
+  onQueue: (queue: boolean) => void;
   onQuery: (query: string) => void;
   onOpen: (conversation: string) => void;
 }
 
-export function HostsScreen({ query, onQuery, onOpen }: Props) {
+export function HostsScreen({ query, queue, onQueue, onQuery, onOpen }: Props) {
   const { data: hosts, error } = useHosts();
   const overview = useOverview();
   const stats = new Map(overview?.hosts.map((h) => [h.telegram_id, h]));
   const q = query.trim().toLowerCase().replace(/^@/, '');
-  const rows = (hosts ?? [])
+  const waiting = (hosts ?? []).filter((h) => h.status === 'pending' && h.practices.length > 0);
+  const rows = (queue ? waiting : hosts ?? [])
     .filter((h) => !q || [h.name, h.username, h.channel].some((s) => s?.toLowerCase().includes(q)))
     .map((h) => ({ h, s: stats.get(h.telegram_id) }))
     .sort((a, b) => (b.s?.signups ?? 0) - (a.s?.signups ?? 0) || (b.s?.events ?? 0) - (a.s?.events ?? 0));
 
   return (
     <Page title={<>Организаторы <Badge>{hosts?.length ?? '…'}</Badge></>} description="Профили собраны по открытым анонсам. «Записей» — сколько раз на предстоящие события организатора нажали «Записаться» у нас.">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant={queue ? 'outline' : 'default'} onClick={() => onQueue(false)}>Все</Button>
+        <Button size="sm" variant={queue ? 'default' : 'outline'} onClick={() => onQueue(true)}>Ждут решения <Badge variant="secondary">{waiting.length}</Badge></Button>
+        <Hint>Мастера из чатов попадают в каталог только после «Опубликовать» в их карточке.</Hint>
+      </div>
       <Search value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Имя, @username или канал" />
       {!hosts && !error && <Loading />}
       {error && <Failed error={error} />}
@@ -35,7 +45,7 @@ export function HostsScreen({ query, onQuery, onOpen }: Props) {
       {rows.length > 0 && (
         <Table>
           <TableHeader>
-            <TableRow><TableHead>Организатор</TableHead><TableHead>О нём</TableHead><TableHead>Событий</TableHead><TableHead>Записей</TableHead><TableHead>В сервисе</TableHead><TableHead>Переписка</TableHead></TableRow>
+            <TableRow><TableHead>Организатор</TableHead><TableHead>Статус</TableHead><TableHead>О нём</TableHead><TableHead>Событий</TableHead><TableHead>Записей</TableHead><TableHead>В сервисе</TableHead><TableHead>Переписка</TableHead></TableRow>
           </TableHeader>
           <TableBody>
             {rows.map(({ h, s }) => (
@@ -49,7 +59,8 @@ export function HostsScreen({ query, onQuery, onOpen }: Props) {
                     </ItemContent>
                   </Item>
                 </TableCell>
-                <TableCell className="max-w-md align-top whitespace-normal"><Hint>{h.summary ?? '—'}</Hint></TableCell>
+                <TableCell className="align-top"><Badge variant={h.status === 'published' ? 'default' : 'secondary'}>{HOST_LABELS[h.status]}</Badge></TableCell>
+                <TableCell className="max-w-md align-top whitespace-normal"><Hint>{h.practices.length ? h.practices.map((p) => p.title).join(' · ') : h.summary ?? '—'}</Hint></TableCell>
                 <TableCell>{s?.events ?? 0}</TableCell>
                 <TableCell>{s?.signups ?? 0}</TableCell>
                 <TableCell>

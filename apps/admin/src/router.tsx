@@ -60,11 +60,11 @@ const agents = createRoute({ getParentRoute: () => root, path: '/agents', compon
 // --- Организаторы
 
 function HostsPage() {
-  const { q } = hosts.useSearch();
+  const { q, queue } = hosts.useSearch();
   const navigate = useNavigate();
-  return <HostsScreen query={q ?? ''} onQuery={(query) => void navigate({ to: '/hosts', search: { q: query || undefined }, replace: true })} onOpen={(c) => void navigate({ to: '/', search: { c } })} />;
+  return <HostsScreen query={q ?? ''} queue={!!queue} onQueue={(next) => void navigate({ to: '/hosts', search: { q, queue: next || undefined }, replace: true })} onQuery={(query) => void navigate({ to: '/hosts', search: { q: query || undefined, queue }, replace: true })} onOpen={(c) => void navigate({ to: '/', search: { c } })} />;
 }
-const hosts = createRoute({ getParentRoute: () => root, path: '/hosts', component: HostsPage, validateSearch: (s: Record<string, unknown>): { q?: string } => ({ q: str(s.q) }) });
+const hosts = createRoute({ getParentRoute: () => root, path: '/hosts', component: HostsPage, validateSearch: (s: Record<string, unknown>): { q?: string; queue?: boolean } => ({ q: str(s.q), queue: s.queue === true || s.queue === 'true' || undefined }) });
 
 function HostPage() {
   const { id } = host.useParams();

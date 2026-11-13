@@ -287,8 +287,8 @@ console.log('cover ok');
   const resolve = async (u) => (u === 'masha_massage' ? { id: 12, name: 'Маша' } : null);
   assert.equal(await saveOffers({ store, extractOffer, resolve, pause: async () => {} }, [...offers, known]), 2);
   assert.deepEqual(saved, [
-    { telegram_id: 7, username: 'sveta_rehab', name: 'Светлана', summary: 'Тренер-реабилитолог.', practices: [practice] },
-    { telegram_id: 12, username: 'masha_massage', name: 'Маша', summary: 'Тренер-реабилитолог.', practices: [practice] },
+    { telegram_id: 7, username: 'sveta_rehab', name: 'Светлана', summary: 'Тренер-реабилитолог.', practices: [practice], offer_url: 'https://t.me/danang_women/2' },
+    { telegram_id: 12, username: 'masha_massage', name: 'Маша', summary: 'Тренер-реабилитолог.', practices: [practice], offer_url: 'https://t.me/danang_women/4' },
   ]);
   console.log('offers ok');
 }
