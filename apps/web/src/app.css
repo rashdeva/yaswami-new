@@ -296,11 +296,22 @@ h2.today { color: var(--btn); }
 .top .head p { margin: 0; }
 
 /* Нижний таббар, как в iOS: плавающая стеклянная плашка с двумя разделами (TabBar). */
+/* Анимация — на самой плашке, а не на .tabbar: прозрачность или сдвиг у предка отключают backdrop-filter у потомка. */
 .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; justify-content: center; pointer-events: none; }
-.tabbar > div { display: flex; gap: 4px; margin: 0 16px calc(10px + var(--inset-bottom, env(safe-area-inset-bottom))); padding: 5px; border-radius: 99px; pointer-events: auto;
-  background: var(--mat); border: .5px solid var(--stroke); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); box-shadow: inset 0 1px 0 var(--shine), 0 8px 28px rgba(0, 0, 0, .16); }
-.tabbar button { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 112px; padding: 6px 18px 5px; border: 0; border-radius: 99px; background: none; font: inherit; font-size: 11px; font-weight: 500; color: var(--hint); cursor: pointer; }
-.tabbar button[aria-current='page'] { color: var(--btn); background: color-mix(in srgb, var(--btn) 12%, transparent); }
+.tabbar > div { position: relative; display: grid; grid-template-columns: repeat(var(--n), 1fr); width: min(calc(var(--n) * 120px), calc(100vw - 32px)); margin: 0 16px calc(10px + var(--inset-bottom, env(safe-area-inset-bottom))); padding: 5px; border-radius: 99px; pointer-events: auto;
+  background: var(--mat); border: .5px solid var(--stroke); -webkit-backdrop-filter: blur(24px) saturate(190%); backdrop-filter: blur(24px) saturate(190%); box-shadow: inset 0 1px 0 var(--shine), 0 8px 28px rgba(0, 0, 0, .16);
+  animation: tabbar-in .45s cubic-bezier(.2, .9, .3, 1.15) backwards; }
+/* Подложка активной вкладки едет за ней с лёгким перелётом, как пружина в iOS. */
+.tabbar .pill { position: absolute; top: 5px; bottom: 5px; left: 5px; width: calc((100% - 10px) / var(--n)); border-radius: 99px; background: color-mix(in srgb, var(--btn) 14%, transparent);
+  transform: translateX(calc(var(--i) * 100%)); transition: transform .45s cubic-bezier(.34, 1.4, .5, 1); }
+.tabbar button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 12px 5px; border: 0; border-radius: 99px; background: none; font: inherit; font-size: 11px; font-weight: 500; color: var(--hint); cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color .25s, transform .18s cubic-bezier(.3, .7, .4, 1.5); }
+.tabbar button:active { transform: scale(.9); }
+.tabbar button[aria-current='page'] { color: var(--btn); }
+.tabbar button[aria-current='page'] svg { animation: tab-pop .42s cubic-bezier(.3, 1.6, .5, 1); }
 .tabbar svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .tabbar svg .dot { fill: currentColor; stroke: none; }
+@keyframes tabbar-in { from { transform: translateY(120%); opacity: 0; } }
+@keyframes tab-pop { 0% { transform: scale(.82); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .tabbar, .tabbar .pill, .tabbar button, .tabbar svg { animation: none !important; transition: none !important; } }
 .top .tabs:empty { display: none; }

@@ -11,6 +11,7 @@ import { useTelegramBack } from './hooks/useTelegramBack.ts';
 import { useToast } from './hooks/useToast.ts';
 import { ClaimBanner } from './screens/ClaimBanner.tsx';
 import { Tabs } from './screens/Tabs.tsx';
+import type { Tab } from './components/TabBar.tsx';
 import { TabBar } from './components/TabBar.tsx';
 import { haptic, nativeBack } from './tg.ts';
 
@@ -60,28 +61,32 @@ export function App() {
         <div className="air" />
         <Outlet />
         {/* Таббар — на корневых разделах; у страниц события и организатора внизу своя кнопка действия и «назад». */}
-        {(pathname === '/' || pathname === '/hosts' || pathname === '/my') && (
-          <TabBar current={pathname === '/' ? 'feed' : pathname === '/hosts' ? 'hosts' : null} onFeed={() => void navigate({ to: '/' })} onHosts={() => void navigate({ to: '/hosts' })} />
-        )}
+        {(pathname === '/' || pathname === '/hosts' || pathname === '/my') && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/hosts' ? 'hosts' : 'mine'} />}
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </ShellContext>
   );
 }
 
-/** Переключатель «Все события / Мои» со входом и выходом; страница ставит его в свою шапку. */
-export function AppTabs({ current }: { current: 'feed' | 'hosts' | 'mine' }) {
+/** Нижний таббар разделов. «Мои» — тому, кто вошёл или может войти на сайте; организатору без событий — сразу создание. */
+function AppTabBar({ current }: { current: Tab }) {
   const navigate = useNavigate();
-  const { me, authed, canLogin, logout } = useSession();
+  const { me, authed, canLogin } = useSession();
   const { hasEvents } = useMyEvents();
   const canCreate = useFeature('event_create');
+  const tabs: [Tab, () => void][] = [['feed', () => void navigate({ to: '/' })], ['hosts', () => void navigate({ to: '/hosts' })]];
+  if (me || canLogin) tabs.push(['mine', () => (authed ? void navigate({ to: hasEvents || !canCreate ? '/my' : '/new' }) : startLogin('/my'))]);
+  return <TabBar current={current} tabs={tabs} />;
+}
+
+/** Вход и выход на сайте; страница ставит его в свою шапку. В Telegram пусто: человек уже опознан. */
+export function AppTabs() {
+  const { me, canLogin, logout } = useSession();
   const { toast } = useShell();
   return (
     <Tabs
-      current={current}
       me={me ?? null}
       canLogin={canLogin}
-      onMine={() => (authed ? void navigate({ to: hasEvents || !canCreate ? '/my' : '/new' }) : startLogin('/my'))}
       onLogin={() => startLogin(location.pathname)}
       onLogout={() => void logout().catch((e: Error) => toast(e.message))}
     />

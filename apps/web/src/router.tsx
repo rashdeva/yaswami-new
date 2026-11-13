@@ -50,7 +50,7 @@ function FeedPage() {
     if (me && mine.total === null) return <Spinner />;
     if (mine.total) return <Navigate to="/my" replace />;
   }
-  return <FeedScreen city={city} tabs={<AppTabs current="feed" />} lead={<Claims />} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
+  return <FeedScreen city={city} tabs={<AppTabs />} lead={<Claims />} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
 }
 const feed = createRoute({ getParentRoute: () => app, path: '/', component: FeedPage });
 
@@ -81,7 +81,7 @@ const collected = createRoute({ getParentRoute: () => app, path: '/e/$id', compo
 function HostsPage() {
   const navigate = useNavigate();
   const { city } = useSession();
-  return <HostsScreen city={city} tabs={<AppTabs current="hosts" />} onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} />;
+  return <HostsScreen city={city} tabs={<AppTabs />} onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} />;
 }
 const hostsRoute = createRoute({ getParentRoute: () => app, path: '/hosts', component: HostsPage });
 
@@ -131,7 +131,7 @@ function ListPage() {
     <ListScreen
       events={events ?? []}
       collected={seen}
-      tabs={<AppTabs current="mine" />}
+      tabs={<AppTabs />}
       lead={<Claims />}
       onOpen={(id) => void navigate({ to: '/events/$id', params: { id } })}
       onOpenCollected={(item) => void navigate({ to: '/e/$id', params: { id: item.id } })}
