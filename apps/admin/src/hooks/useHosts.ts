@@ -14,7 +14,10 @@ export function useHostActions(id: string) {
   return {
     update: useAct((input: HostUpdateInput) => api.hostUpdate(id, input), {
       undo,
-      onSuccess: (host) => client.setQueryData<Wire<AdminHostView>>(keys.host(id), (old) => old && { ...old, ...host }),
+      onSuccess: (host) => {
+        client.setQueryData<Wire<AdminHostView>>(keys.host(id), (old) => old && { ...old, ...host });
+        void client.invalidateQueries({ queryKey: keys.hosts }); // статус меняет очередь «Ждут решения» в списке
+      },
     }),
     remove: useAct(() => api.hostDelete(id), { undo }),
   };

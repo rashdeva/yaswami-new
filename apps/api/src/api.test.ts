@@ -311,11 +311,13 @@ test('каталог организаторов: с событиями или Pr
   ]);
   await db.insert(hosts).values([
     { telegram_id: 40, username: 'club', name: 'Клуб мафии', summary: 'Играют по пятницам.' },
-    { telegram_id: 41, username: 'dasha_yoga', name: 'Даша', summary: 'Ведёт йогу.', practices: [
+    { telegram_id: 41, username: 'dasha_yoga', name: 'Даша', summary: 'Ведёт йогу.', status: 'published' as const, practices: [
       { title: 'Утренняя йога', topic: 'йога', description: 'Группа у моря.', price: '150k' },
       { title: 'Ремонт телефонов', topic: 'другое', description: null, price: null }, // не наша тема — не показываем
     ] },
     { telegram_id: 42, username: 'nobody', name: 'Без всего' }, // ни событий, ни Practice — не в каталоге
+    // мастер ждёт модерации: Practice есть, но в каталоге его нет, пока команда не одобрит
+    { telegram_id: 43, username: 'new_master', name: 'Новый мастер', practices: [{ title: 'Массаж', topic: 'телесные практики', description: null, price: null }] },
   ]);
 
   const list = (await (await app.request('/hosts')).json()) as HostListItem[];
@@ -325,11 +327,24 @@ test('каталог организаторов: с событиями или Pr
   ]);
   assert.equal(list[1]!.contact_url, 'https://t.me/dasha_yoga');
 
+
   const club = (await (await app.request(`/hosts/${list[0]!.id}`)).json()) as HostItem;
   assert.deepEqual(club.events.map((e) => e.title), ['Мафия']); // неопубликованное не видно
   assert.equal((await app.request('/hosts/not-an-id')).status, 404);
   const [nobody] = await db.select().from(hosts).where(eq(hosts.username, 'nobody'));
   assert.equal((await app.request(`/hosts/${nobody!.id}`)).status, 404);
+
+  // модерация: одобренный мастер появляется в каталоге, отклонённый организатор пропадает даже с событиями
+  const [master] = await db.select().from(hosts).where(eq(hosts.username, 'new_master'));
+  const admins = settings.adminIds;
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  assert.equal((await call(admin, 'PATCH', `/admin/hosts/${master!.id}`, { status: 'published' })).status, 200);
+  assert.deepEqual(((await (await app.request('/hosts')).json()) as HostListItem[]).map((h) => h.username), ['club', 'dasha_yoga', 'new_master']);
+  assert.equal((await call(admin, 'PATCH', `/admin/hosts/${list[0]!.id}`, { status: 'rejected' })).status, 200);
+  assert.deepEqual(((await (await app.request('/hosts')).json()) as HostListItem[]).map((h) => h.username), ['dasha_yoga', 'new_master']);
+  assert.equal((await app.request(`/hosts/${list[0]!.id}`)).status, 404);
+  settings.adminIds = admins;
 });
 
 test('подтверждение владельцем: предлагается по username, создаёт событие, второй раз и чужим — нельзя', async () => {

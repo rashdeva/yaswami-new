@@ -106,6 +106,14 @@ export interface AdminCollectedEventView extends AdminCollectedEvent {
  * Профиль организатора — Host в Luma API (`id`, `name`). Остальное наше: его собирает сборщик по открытому Telegram.
  * `user_id` появляется, когда человек вошёл в сервис.
  */
+/**
+ * Модерация организатора, как у собранных событий. pending — ждёт решения, published — в каталоге, rejected — не показываем.
+ * Организатор с опубликованными событиями виден в каталоге и в pending: его события команда уже одобрила;
+ * Practice же показываются только у published. В Luma такого нет.
+ */
+export const HOST_STATUSES = ['pending', 'published', 'rejected'] as const;
+export type HostStatus = (typeof HOST_STATUSES)[number];
+
 export interface Host {
   id: string;
   user_id: User['id'] | null;
@@ -116,6 +124,8 @@ export interface Host {
   channel: string | null;
   summary: string | null;
   practices: Practice[]; // что ведёт без даты; найдено по его самопредставлению в чате
+  status: HostStatus;
+  offer_url: string | null; // сообщение в чате, из которого сборщик взял мастера: по нему модератор сверяет Practice
   photos_checked_at: Date | null;
   created_at: Date;
 }
@@ -131,6 +141,7 @@ export const HostUpdateInput = z
     bio: text(1000).nullable(),
     channel: username.nullable().describe('Channel username, without @'),
     summary: text(2000).nullable(),
+    status: z.enum(HOST_STATUSES).describe('Moderation: published — show in the public catalogue of organizers, rejected — never show'),
   })
   .partial();
 export type HostUpdateInput = z.infer<typeof HostUpdateInput>;

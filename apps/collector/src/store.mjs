@@ -61,10 +61,10 @@ export function createStore(url) {
     /** Уже знаем, что этот человек ведёт (offers.mjs): объявление повторно в ИИ не отправляем. `who` — Telegram id или username. */
     hasPractices: async (who) => (await sql`
       select 1 from hosts where ${typeof who === 'number' ? sql`telegram_id = ${who}` : sql`username = ${who}`} and practices <> '[]'::jsonb`).length > 0,
-    /** Мастер по своему самопредставлению: Practice заменяем, сводку из профиля (если уже есть) не трогаем. */
+    /** Мастер по своему самопредставлению: Practice заменяем, сводку из профиля (если уже есть) не трогаем. Статус не меняем: новый — pending, ждёт модерации. */
     saveOffer: ({ practices, ...host }) => sql`
       insert into hosts ${sql({ ...host, practices: sql.json(practices) })}
-      on conflict (telegram_id) do update set practices = excluded.practices, username = excluded.username,
+      on conflict (telegram_id) do update set practices = excluded.practices, username = excluded.username, offer_url = excluded.offer_url,
         summary = coalesce(hosts.summary, excluded.summary)`
       .then(() => sql`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`),
     /** Организаторы предстоящих событий с каналом, у которых фото сообщества не смотрели дольше `days` дней. */
