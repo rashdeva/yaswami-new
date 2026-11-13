@@ -42,6 +42,30 @@ src/
 - **Эксперимент или выкатка — `useFlag('имя', значениеПоУмолчанию)`**: флаг PostHog. Значение по умолчанию — то, с чем приложение работает без PostHog (блокировщик, разработка, флаги ещё не пришли). Прав флагом не раздаём — для них возможность.
 - **Размер — сигнал.** Экран длиннее ~150 строк или с пятью `useState` — повод вынести хук или компонент.
 
+## Иконки тем
+
+Иконка Topic — `apps/web/public/topics/<slug>.png`, 192×192, RGBA с настоящей прозрачностью; `slug` — из `TOPIC_GUIDES`. Новая тема без своей иконки не выкладывается: копия `other.png` в ленте неотличима от «другого».
+
+Рисует Codex CLI (`image_generation` включена по умолчанию). В пустой папке вне репозитория, куда скопированы две-три существующие иконки как образец:
+
+```bash
+codex exec --skip-git-repo-check -s workspace-write -i art.png -i cinema.png -i games.png "<промпт>"
+```
+
+Промпт — на английском, по одному предмету на иконку:
+
+```text
+Use your image generation tool to draw a new icon in exactly the same style as the attached reference icons:
+a single glossy 3D object that looks like translucent candy-glass or jelly, soft rounded shapes, bright highlights
+and inner glow, one saturated colour family, slight three-quarter tilt, no text, no shadow on the ground,
+fully transparent background, object fills about 85% of a square canvas.
+<slug>.png — <предмет>, <цвет словами> (around <hex темы из tokens.css>).
+Save as a 192x192 RGBA PNG with real alpha transparency into the current directory under exactly this name.
+If the generator returns a larger image or an opaque background, remove the background and downscale with a script.
+```
+
+Предмет — один, узнаваемый в 40 px (шарик, а не «дети играют»); цвет — тот же, что у темы в `tokens.css`. Результат открой и сравни с соседними иконками, только потом клади в `public/topics`.
+
 ## Проверка
 
 `pnpm typecheck`; затем открыть экран через превью `web` (`.claude/launch.json`) и пройти сценарий руками. Чистые функции и правила покрываются `*.test.ts` рядом с файлом (`node --test`).
