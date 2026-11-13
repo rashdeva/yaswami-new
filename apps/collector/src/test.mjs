@@ -190,6 +190,15 @@ console.log('cover ok');
   queue.push({ id: 'm3', text: 'Сегодня бачата в 19:00', account_id: 'a1', peer_id: '42', peer_username: 'tim', status: 'queued', meta: { reply_to: { chat: 'danang_chat', message_id: 3 } } });
   await sender.tick();
   assert.deepEqual(sentTo.at(-1), ['danang_chat', { message: 'Сегодня бачата в 19:00', replyTo: 3 }]);
+  // На наш ответ в чате ответили — это уходит в API с адресом, куда отвечать; чужие разговоры в чате — нет.
+  const group = { className: 'Channel', id: 500n, username: 'danang_chat' };
+  const inGroup = (message) => handler({ isPrivate: false, message: { out: false, getChat: async () => group, getSender: async () => user, ...message } });
+  await inGroup({ id: 10, message: 'А сколько стоит?', mentioned: true, replyTo: { replyToMsgId: 902 } });
+  await inGroup({ id: 11, message: 'не нам', mentioned: false, replyTo: { replyToMsgId: 5 } });
+  await inGroup({ id: 12, message: 'закрытый чат', mentioned: true, replyTo: { replyToMsgId: 902 }, getChat: async () => ({ ...group, username: null }) });
+  assert.deepEqual(reported.slice(2).map((m) => [m.direction, m.text, m.reply_to]), [
+    ['in', 'А сколько стоит?', { chat: 'danang_chat', message_id: 10 }], ['in', 'закрытый чат', { chat: '-100500', message_id: 12 }],
+  ]);
   console.log('sender ok');
 }
 

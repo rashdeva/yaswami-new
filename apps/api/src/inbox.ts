@@ -2,7 +2,7 @@
 import { createCipheriv, randomBytes } from 'node:crypto';
 import { and, asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type {
-  AccountCreateInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminOverview, AgentKey, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message,
+  AccountCreateInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminOverview, AgentKey, Conversation, ConversationUpdateInput, InboxConversation, InboxFeed, LeadInput, Message, MessageMeta,
   TgAccount, User,
 } from '@yaswami/core';
 import { AGENTS, collectedPath, collectedWhen } from '@yaswami/core';
@@ -61,7 +61,8 @@ export const recordIncoming = (db: Db, m: Incoming) =>
   record(db, { id: m.chatId, name: m.from.first_name, username: m.from.username }, { direction: 'in', author: 'user', text: m.text || NO_TEXT, status: 'received' });
 
 /**
- * Личное сообщение на нашем аккаунте Telegram — о нём сообщает сборщик. Входящее ждёт нас: агента на аккаунтах пока нет.
+ * Сообщение на нашем аккаунте Telegram — о нём сообщает сборщик: личное или ответ нам в чате (`reply_to`).
+ * Входящее ждёт нас; если диалог начала роль (host, hunter) и мы его не забирали, она готовит черновик ответа.
  * Исходящее — мы ответили прямо из Telegram: диалог ведём мы.
  */
 export async function recordAccountMessage(db: Db, input: AccountMessageInput): Promise<void> {
@@ -71,15 +72,23 @@ export async function recordAccountMessage(db: Db, input: AccountMessageInput): 
     await db.update(conversations).set({ mode: 'human' }).where(eq(conversations.id, conversation.id));
     return;
   }
-  const reason = 'Написал на аккаунт';
-  const conversation = await record(db, peer, { direction: 'in', author: 'user', text: input.text, status: 'received' }, reason);
-  await alertAdmins(conversation, reason);
-  // Диалог начала роль host и мы его не забирали — она готовит черновик ответа. Сборщика ответом модели не задерживаем.
-  if (settings.hostUrl && conversation.mode === 'agent') {
-    const [started] = await db.select({ id: messages.id }).from(messages)
-      .where(and(eq(messages.conversation_id, conversation.id), eq(messages.author, 'agent:host'))).limit(1);
-    if (started) void draftHostReply(db, conversation).catch(console.error);
+  const inChat = input.reply_to;
+  if (inChat) {
+    // Нашему аккаунту в чатах отвечают и упоминают его кто угодно; переписка — только с теми, кому писали мы.
+    const [known] = await db.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.channel, 'account'), eq(conversations.peer_id, input.peer.id)));
+    if (!known) return;
   }
+  const reason = inChat ? 'Ответил в чате' : 'Написал на аккаунт';
+  const text = inChat ? `[чат ${inChat.chat}] ${input.text}` : input.text;
+  const conversation = await record(db, peer, { direction: 'in', author: 'user', text, status: 'received' }, reason);
+  await alertAdmins(conversation, reason);
+  // Диалог ведёт роль и мы его не забирали — она готовит черновик ответа. Сборщика ответом модели не задерживаем.
+  if (conversation.mode !== 'agent') return;
+  const [last] = await db.select({ author: messages.author }).from(messages)
+    .where(and(eq(messages.conversation_id, conversation.id), inArray(messages.author, ['agent:host', 'agent:hunter'])))
+    .orderBy(desc(messages.created_at)).limit(1);
+  const role = last?.author === 'agent:host' ? 'host' : last ? 'hunter' : null;
+  if (role && settings[`${role}Url`]) void draftReply(db, conversation, role, inChat).catch(console.error);
 }
 
 /**
@@ -168,20 +177,33 @@ export async function dropHostPitch(db: Db, telegramId: number): Promise<void> {
   for (const { conversation_id } of dropped) await setAttention(db, conversation_id, null);
 }
 
-/** Организатор ответил на наше сообщение: роль host готовит черновик ответа. Прежний неотправленный черновик заменяется. */
-async function draftHostReply(db: Db, conversation: Conversation): Promise<void> {
+/** Что роль hunter должна знать, продолжая разговор: цель — чтобы человек вошёл в сервис; вошёл — только отвечать. */
+async function hunterFacts(db: Db, peerId: number): Promise<string> {
+  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, peerId));
+  if (user) return 'Человек уже пользуется «Я с вами». В сервис не зови и не уговаривай: только отвечай на его вопросы.';
+  const app = bot.username ? `https://t.me/${bot.username}/${bot.appName}` : settings.publicUrl;
+  return `Человек ответил на твоё сообщение; в «Я с вами» он ещё не заходил. Продолжи разговор (раздел «Продолжение разговора»). Все события города — в приложении: ${app}`;
+}
+
+/**
+ * Человек ответил на сообщение роли (host — организатор, hunter — тот, кто спрашивал в чате): она готовит черновик
+ * ответа по всей переписке. Прежний неотправленный черновик заменяется. `replyTo` — отвечать в чате, а не в личку.
+ */
+async function draftReply(db: Db, conversation: Conversation, role: 'host' | 'hunter', replyTo?: MessageMeta['reply_to']): Promise<void> {
   const history = await supportHistory(db, conversation.id);
-  const facts = await hostFacts(db, conversation.peer_username ?? '');
-  const reply = await writing(conversation.id, 'host', (onText) => host.ask([{ role: 'system', content: facts }, ...history], onText));
+  const facts = role === 'host' ? await hostFacts(db, conversation.peer_username ?? '') : await hunterFacts(db, conversation.peer_id);
+  const ask = role === 'host' ? host.ask : hunter.reply;
+  const reply = await writing(conversation.id, role, (onText) => ask([{ role: 'system', content: facts }, ...history], onText));
   if (!reply) return;
+  const whom = role === 'host' ? 'организатору' : replyTo ? 'в чат' : 'человеку';
   await db.delete(messages).where(and(eq(messages.conversation_id, conversation.id), eq(messages.status, 'draft')));
   if (reply.text) {
     await db.insert(messages).values({
-      conversation_id: conversation.id, direction: 'out', author: 'agent:host', text: reply.text, status: 'draft',
-      meta: { reason: reply.human ? `Ответ организатору; роль просит человека: ${reply.human}` : 'Ответ организатору' },
+      conversation_id: conversation.id, direction: 'out', author: `agent:${role}`, text: reply.text, status: 'draft',
+      meta: { reason: reply.human ? `Ответ ${whom}; роль просит человека: ${reply.human}` : `Ответ ${whom}`, ...(replyTo ? { reply_to: replyTo } : {}) },
     });
   }
-  await setAttention(db, conversation.id, reply.human ?? 'Черновик ответа организатору');
+  await setAttention(db, conversation.id, reply.human ?? `Черновик ответа ${whom}`);
 }
 
 /**

@@ -152,12 +152,16 @@ export type AccountUpdateInput = z.infer<typeof AccountUpdateInput>;
 export const AccountLoginInput = z.object({ secret: z.string().trim().min(1).max(200) });
 export type AccountLoginInput = z.infer<typeof AccountLoginInput>;
 
-/** Сборщик сообщает API о личном сообщении на аккаунте: входящем или нашем, написанном прямо из Telegram. */
+/**
+ * Сборщик сообщает API о личном сообщении на аккаунте: входящем или нашем, написанном прямо из Telegram.
+ * `reply_to` — сообщение пришло не в личку: человек ответил нашему аккаунту в чате, отвечать ему надо там же.
+ */
 export const AccountMessageInput = z.object({
   account_id: z.uuid(),
   peer: z.object({ id: z.number().int(), name: z.string().min(1).max(200), username: z.string().nullable() }),
   direction: z.enum(['in', 'out']),
   text: z.string().min(1).max(10_000),
+  reply_to: z.object({ chat: z.string().min(1).max(100), message_id: z.number().int() }).optional(),
 });
 export type AccountMessageInput = z.infer<typeof AccountMessageInput>;
 

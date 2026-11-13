@@ -28,7 +28,7 @@ export function unseal(key, sealed) {
 const code = (e) => e?.errorMessage ?? e?.message ?? String(e);
 
 /**
- * `store` — запросы к базе (store.mjs), `report` — сообщить API о личном сообщении, `reportTyping` — что собеседник
+ * `store` — запросы к базе (store.mjs), `report` — сообщить API о личном сообщении или ответе нам в чате, `reportTyping` — что собеседник
  * набирает сообщение, `connectClient` — клиент MTProto (тесты подставляют свой). `tick()` делает один проход: шаги входа, подключение аккаунтов, отправка очереди.
  */
 export function createSender({ store, apiId, apiHash, key, report, reportTyping = async () => {}, connectClient = connect, log = console.log }) {
@@ -40,14 +40,21 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
     client.addEventHandler(async (event) => {
       try {
         const msg = event.message;
-        if (!event.isPrivate || sentIds.get(account.id)?.has(msg.id)) return;
-        const peer = await msg.getChat();
-        if (!peer || peer.bot || peer.className !== 'User') return;
+        if (sentIds.get(account.id)?.has(msg.id)) return;
+        // В чатах нам интересно одно: человек ответил на наше сообщение (Telegram помечает такой ответ `mentioned`).
+        // Это продолжение разговора, начатого ответом на вопрос «куда сходить»; чей это собеседник, решает API.
+        const inChat = !event.isPrivate;
+        if (inChat && (msg.out || !msg.mentioned || !msg.replyTo)) return;
+        const chat = await msg.getChat();
+        const peer = inChat ? await msg.getSender() : chat;
+        if (!chat || !peer || peer.bot || peer.className !== 'User') return;
         await report({
           account_id: account.id,
           peer: { id: Number(peer.id), name: [peer.firstName, peer.lastName].filter(Boolean).join(' ') || String(peer.id), username: peer.username ?? null },
           direction: msg.out ? 'out' : 'in',
           text: msg.message || NO_TEXT,
+          // Адрес чата — как в lead.mjs: username или полный id; по нему же уйдёт наш ответ.
+          ...(inChat ? { reply_to: { chat: chat.username ?? `-100${chat.id}`, message_id: msg.id } } : {}),
         });
       } catch (e) {
         log(`аккаунт ${account.label}: сообщение не передано в API: ${code(e)}`);
