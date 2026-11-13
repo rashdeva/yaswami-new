@@ -85,6 +85,27 @@ assert.equal(saved['a#1'].topic, 'другое', 'не найденное при
 assert.equal('b#0' in saved, false, 'анонс, на котором ИИ упал, не помечается и не мешает остальным');
 console.log('backfill ok');
 
+const { refreshOld } = await import('./refresh.mjs');
+const refreshed = {};
+const old = (id, title, description) => ({ external_id: id, announcement: { id: id.split('#')[0] }, event: ev(title, D, 'igor', { description }) });
+await refreshOld({
+  store: {
+    withoutMedia: async () => [old('c/1#0', 'Баня', 'Баня.'), old('c/2#0', 'Лекция', 'Лекция.'), old('c/3#0', 'Удалено', 'x'), old('c/4#0', 'Сбой', 'x')],
+    refreshed: async (id, event, media) => { refreshed[id] = { event, media }; },
+  },
+  fetchAlbum: async (id) => id === 'c/3' ? null : [{ id: 1 }],
+  downloadPhotos: async () => [{ number: 1, data: Buffer.from('jpg') }],
+  extract: async (a) => a.id === 'c/4' ? Promise.reject(new Error('503')) : [ev(a.id === 'c/1' ? 'Баня' : 'Другое', D, 'igor', { description: 'Полное описание с программой.' })],
+  saveMedia: async () => [{ type: 'photo', url: 'https://m/1.jpg' }],
+  pause: async () => {}, limit: 10,
+});
+assert.equal(refreshed['c/1#0'].event.description, 'Полное описание с программой.', 'описание заменено полным');
+assert.deepEqual(refreshed['c/1#0'].media, [{ type: 'photo', url: 'https://m/1.jpg' }]);
+assert.ok(refreshed['c/2#0'], 'событие осталось прежним, но публикация отмечена разобранной');
+assert.deepEqual(refreshed['c/3#0'].media, [], 'удалённая публикация отмечена, чтобы не спрашивать снова');
+assert.equal('c/4#0' in refreshed, false, 'сбой ИИ — повторим в следующий проход');
+console.log('refresh ok');
+
 const { channelFromBio, contactFor, fetchChannelPhotos, pickThumb } = await import('./host.mjs');
 const noContact = { telegram_username: null, whatsapp_phone: null };
 assert.equal(contactFor({ ...noContact, telegram_username: '@Anna' }, 'yoga_news', null), '@Anna');

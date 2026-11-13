@@ -57,6 +57,17 @@ export async function fetchPosts(client, chat, numbers) {
   return new Map(messages.filter(Boolean).map((m) => [m.id, m]));
 }
 
+/** Сообщения публикации `id` (<канал>/<номер>) с её альбомом; null — публикации больше нет. */
+export async function fetchAlbum(client, id) {
+  const [, chat, n] = /^(.+)\/(\d+)$/.exec(id);
+  const number = Number(n);
+  // В альбоме не больше десяти сообщений подряд: соседи по обе стороны покрывают его целиком.
+  const around = await fetchPosts(client, chat, Array.from({ length: 19 }, (_, i) => number - 9 + i).filter((x) => x > 0));
+  const msg = around.get(number);
+  if (!msg) return null;
+  return msg.groupedId ? [...around.values()].filter((m) => String(m.groupedId) === String(msg.groupedId)).sort((a, b) => a.id - b.id) : [msg];
+}
+
 // ponytail: username → (id, access_hash) кэшируется только в памяти процесса. При POLL_MINUTES=0 (cron)
 // resolveUsername дёргается на каждый запуск, а это самый флудоопасный вызов — тогда кэш надо класть в state.
 /**
