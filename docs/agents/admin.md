@@ -19,7 +19,7 @@ src/
   hooks/useAct.ts   действие админа: тост при ошибке, тост «Отменить» после отменяемого, после — перечитать данные; useUndo
   screens/          раздел или карточка = композиция: данные из хуков, разметка из components/; про адреса не знает
   components/       свои составные части: Page/Section/Hint/Loading/Nothing, Fields (поля форм), Confirm, History,
-                    EntityLink (все ссылки), Search, Cover, UserPicker, EventFields; чат: Thread, Reply, Draft
+                    EntityLink (все ссылки), Search, Cover, UserPicker, EventFields; чат: Thread, Reply, Draft, AccountSelect
   components/ui/    компоненты shadcn — ставит CLI, руками не правятся
   lib/              чистые функции без React, CSS и import.meta.env: переписка, журнал (подписи, разница снимков), каталог, формы
   index.css         тема shadcn (переменные, светлая и тёмная) и свои анимации
@@ -62,7 +62,7 @@ src/
 - **Формы — react-hook-form + `zodResolver` со схемой из core.** Значения формы — в форме API (null, ISO, массивы); поля из `components/Fields.tsx` переводят их для ввода и обратно. Сохранение — `saveDirty(form, hook.update)`: шлём только изменённые поля, ошибки `invalid_input` встают у полей (`showIssues`).
 - **Удаление, неотменяемое и платное (заказ ролика, перерисовка обложки и ролика) — через `Confirm`** (AlertDialog): в тексте сказать, что случится; у отменяемого удаления — `UNDO_HINT` («можно отменить в журнале»). `alert()`/`confirm()` не используются.
 - **Пустое и загрузка:** `Loading` (скелетон), `Nothing` (пустое состояние), `Failed` (ошибка карточки) из `components/Page.tsx`; списки — таблицы shadcn.
-- **Переписка — компоненты чата shadcn**: `message-scroller`, `message`, `bubble`, дни разделяет `marker` (`components/Thread.tsx`); поле ответа и черновик — `input-group` (`Reply.tsx`, `Draft.tsx`); список людей — `item` с `avatar`, фильтры — `toggle-group`; клавиши в подсказках — `kbd`.
+- **Переписка — компоненты чата shadcn**: `message-scroller`, `message`, `bubble`, дни разделяет `marker` (`components/Thread.tsx`); поле ответа и черновик — `input-group` (`Reply.tsx`, `Draft.tsx`), в обоих — выбор нашего аккаунта (`AccountSelect.tsx`, состояние выбора — `useSendFrom`, правила — `sendFrom` и `switchNote` в `lib/inbox.ts`); список людей — `item` с `avatar`, фильтры — `toggle-group`; клавиши в подсказках — `kbd`.
 - **Клавиши** — `hooks/useInboxKeys.ts`; поле находят по `data-reply`, `data-draft`, `data-search`, выбранную строку — по `data-selected`.
 
 ## Журнал и отмена в интерфейсе

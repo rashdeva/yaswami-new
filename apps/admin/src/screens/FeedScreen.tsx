@@ -10,7 +10,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { isFresh, useConversationActions, useFeed, useThread } from '@/hooks/useInbox';
+import { isFresh, useConversationActions, useFeed, useSendFrom, useThread } from '@/hooks/useInbox';
 import { useInboxKeys } from '@/hooks/useInboxKeys';
 import { useTyping } from '@/hooks/useLive';
 import { draftsOf, eventsOf, feedRows, initials, person, pick, time, via, visible, who } from '@/lib/inbox';
@@ -32,8 +32,9 @@ export function FeedScreen() {
   const open = drawer && !!cur;
   const thread = useThread(open ? cur.c.id : undefined);
   const typing = useTyping();
+  const from = useSendFrom(feed.accounts);
   useInboxKeys({
-    rows, at, onSelect: setSelected, draft, draftText: draft && edited[draft.id],
+    rows, at, onSelect: setSelected, draft, draftText: draft && edited[draft.id], account: cur && from(cur.c).account,
     scope: '[data-selected=true]',
     onToggleThread: () => setDrawer(!drawer), onEscape: () => setDrawer(false),
   });
@@ -49,7 +50,7 @@ export function FeedScreen() {
           <Card key={c.id} size="sm" data-selected={sel} onClick={() => setSelected(`c:${c.id}`)} className="scroll-my-24 data-[selected=true]:ring-2 data-[selected=true]:ring-ring">
             <CardHeader>
               <CardTitle>{c.peer_name} {c.mode === 'human' && <Badge variant="secondary">ведёте вы</Badge>}</CardTitle>
-              <CardDescription>{c.peer_username && `@${c.peer_username} · `}{person(c)}</CardDescription>
+              <CardDescription>{c.peer_username && `@${c.peer_username} · `}{person(c)} · пишет {via(c, feed.accounts)}</CardDescription>
               <CardAction><Badge variant="destructive">{c.attention}</Badge></CardAction>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
@@ -62,9 +63,9 @@ export function FeedScreen() {
                 <Draft
                   draft={pending} text={edited[pending.id]} onEdit={(text) => setEdited({ ...edited, [pending.id]: text })}
                   onSave={(text) => saveDraft({ id: pending.id, text }, { onSuccess: () => setEdited(({ [pending.id]: _, ...rest }) => rest) })}
-                  onSend={() => sendDraft({ id: pending.id, text: edited[pending.id] })} onReject={() => rejectDraft(pending.id)}
+                  onSend={() => sendDraft({ id: pending.id, text: edited[pending.id], account_id: from(c).account })} onReject={() => rejectDraft(pending.id)} from={from(c)}
                 />
-              ) : <Reply onSend={(text) => send({ id: c.id, text })} />}
+              ) : <Reply from={from(c)} onSend={(text) => send({ id: c.id, text, account_id: from(c).account })} />}
             </CardContent>
           </Card>
         );
@@ -83,13 +84,13 @@ export function FeedScreen() {
               <ItemMedia><Avatar size="sm"><AvatarFallback>{initials(m.direction === 'in' ? c.peer_name : 'Я с вами')}</AvatarFallback></Avatar></ItemMedia>
               <ItemContent>
                 <ItemTitle>
-                  {who(c, m, feed.me, via(c, feed.accounts))}
+                  {who(c, m, feed.me, feed.accounts)}
                   {c.mode === 'human' && <Badge variant="secondary">ведёте вы</Badge>}
                   {m.status === 'queued' && <Badge variant="secondary">отправляется</Badge>}
                   {m.status === 'failed' && <Badge variant="destructive">не доставлено</Badge>}
                 </ItemTitle>
                 <ItemDescription className="line-clamp-none whitespace-pre-wrap">{m.text}</ItemDescription>
-                {sel && <Reply onSend={(text) => send({ id: c.id, text })} />}
+                {sel && <Reply from={from(c)} onSend={(text) => send({ id: c.id, text, account_id: from(c).account })} />}
               </ItemContent>
               <ItemDescription>{time(m.created_at)}</ItemDescription>
             </Item>
@@ -103,10 +104,10 @@ export function FeedScreen() {
           <SheetContent className="w-full gap-0 data-[side=right]:sm:max-w-md" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
             <SheetHeader className="border-b">
               <SheetTitle>{cur.c.peer_name}</SheetTitle>
-              <SheetDescription>{cur.c.peer_username && `@${cur.c.peer_username} · `}{person(cur.c)} · {cur.c.mode === 'human' ? 'диалог ведёте вы' : 'отвечает агент'}</SheetDescription>
+              <SheetDescription>{cur.c.peer_username && `@${cur.c.peer_username} · `}{person(cur.c)} · пишет {via(cur.c, feed.accounts)} · {cur.c.mode === 'human' ? 'диалог ведёте вы' : 'отвечает агент'}</SheetDescription>
             </SheetHeader>
-            <Thread conversation={cur.c} messages={thread} me={feed.me} through={via(cur.c, feed.accounts)} typing={typing.filter((t) => t.conversation_id === cur.c.id)} />
-            <Reply className="p-4" onSend={(text) => send({ id: cur.c.id, text })} />
+            <Thread conversation={cur.c} messages={thread} me={feed.me} accounts={feed.accounts} typing={typing.filter((t) => t.conversation_id === cur.c.id)} />
+            <Reply className="p-4" from={from(cur.c)} onSend={(text) => send({ id: cur.c.id, text, account_id: from(cur.c).account })} />
           </SheetContent>
         )}
       </Sheet>

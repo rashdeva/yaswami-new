@@ -5,7 +5,7 @@ import * as z from 'zod';
 import type { User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminGuestUpdateInput,
-  CollectedListInput, CollectedUpdateInput, CoverSetInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostUpdateInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TEMPLATES,
+  CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostUpdateInput, InboxSendInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TEMPLATES,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
@@ -182,9 +182,9 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
     }, async (a) => ({ conversation: await conversationById(db, a.conversation_id), messages: await inboxThread(db, a.conversation_id) }));
 
     tool('admin_messages_send', {
-      title: 'Send message to person', shape: { conversation_id, text: z.string().trim().min(1).max(4000) },
-      description: 'Send a Telegram message to the person in this conversation, on behalf of the team. After it the bot stops auto-replying there and the person\'s next message waits for a human. Cannot be undone. Errors: not_delivered (Telegram refused it: the person blocked the bot), account_gone, daily_limit (the account sent its daily number of first messages to people who have not written to us; replies are not limited).',
-    }, (a) => inboxSend(db, ctx, a.conversation_id, a.text));
+      title: 'Send message to person', shape: { conversation_id, ...InboxSendInput.shape },
+      description: 'Send a Telegram message to the person in this conversation, on behalf of the team. After it the bot stops auto-replying there and the person\'s next message waits for a human. Cannot be undone. `account_id` (from admin_accounts_list) picks which of our Telegram accounts sends it; omit it to keep the account the conversation already uses. Pass another account only when the team names it: the conversation moves to that account and the person sees a new chat from a different number. Errors: not_delivered (Telegram refused it: the person blocked the bot), no_account (no active account to send from), account_unavailable (the account is not active: logging in or failed), daily_limit (the account sent its daily number of first messages to people who have not written to us; replies are not limited).',
+    }, ({ conversation_id: id, ...input }) => inboxSend(db, ctx, id, input));
 
     tool('admin_conversations_update', {
       title: 'Update conversation',
@@ -197,9 +197,9 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
 
     const message_id = z.uuid().describe('Id of a message with status "draft" from admin_conversations_get');
     tool('admin_drafts_send', {
-      title: 'Send agent draft', shape: { message_id, text: z.string().trim().min(1).max(4000).optional().describe('Corrected text; omit to send as written') },
-      description: 'Approve a draft written by an agent (message status "draft"): it is queued and sent from our Telegram account. Only on an explicit go-ahead from the team; cannot be undone. Errors: not_draft (already sent or rejected), no_account, daily_limit (the account sent its daily number of first messages to people who have not written to us; replies are not limited).',
-    }, (a) => sendDraft(db, ctx, a.message_id, a.text));
+      title: 'Send agent draft', shape: { message_id, ...DraftSendInput.shape, text: DraftSendInput.shape.text.describe('Corrected text; omit to send as written') },
+      description: 'Approve a draft written by an agent (message status "draft"): it is queued and sent from our Telegram account. Only on an explicit go-ahead from the team; cannot be undone. `account_id` (from admin_accounts_list) picks which of our Telegram accounts sends it; omit it to keep the account the conversation already uses. Pass another account only when the team names it: the conversation moves to that account and the person sees a new chat from a different number. Errors: not_draft (already sent or rejected), no_account (no active account to send from), account_unavailable (the account is not active: logging in or failed), daily_limit (the account sent its daily number of first messages to people who have not written to us; replies are not limited).',
+    }, ({ message_id: id, ...input }) => sendDraft(db, ctx, id, input));
 
     tool('admin_drafts_update', {
       title: 'Edit agent draft', shape: { message_id, text: z.string().trim().min(1).max(4000) },

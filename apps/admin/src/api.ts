@@ -2,8 +2,8 @@
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
   AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventView, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource,
-  AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, EventUpdateInput, EventView, Host, HostUpdateInput, InboxConversation, SourceUpdateInput,
-  InboxFeed, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
+  AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventUpdateInput, EventView, Host, HostUpdateInput, InboxConversation, SourceUpdateInput,
+  InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
 import { sseEvents } from '@yaswami/core';
 
@@ -24,7 +24,7 @@ const MESSAGES: Record<string, string> = {
   network: 'Нет связи с сервером',
   phone_taken: 'Аккаунт с таким номером уже добавлен',
   not_expected: 'Сейчас аккаунт не ждёт кода или пароля',
-  account_gone: 'Аккаунт, с которого шла переписка, удалён',
+  account_unavailable: 'Этот аккаунт сейчас не на связи: выберите другой или войдите в него в «Аккаунтах»',
   no_account: 'Отправлять не с чего: добавьте аккаунт Telegram в «Аккаунты»',
   daily_limit: 'Аккаунт уже отправил дневной лимит первых сообщений. Ответы тем, кто написал сам, уходят без лимита',
   not_draft: 'Черновик уже отправлен или отклонён',
@@ -118,9 +118,9 @@ export const api = {
     for await (const e of sseEvents(res.body)) on(e);
   },
   inboxThread: (conversation: string) => request<Msg[]>('GET', `/admin/conversations/${id(conversation)}/messages`),
-  inboxSend: (conversation: string, text: string) => request<void>('POST', `/admin/conversations/${id(conversation)}/messages`, { text }),
+  inboxSend: (conversation: string, input: InboxSendInput) => request<void>('POST', `/admin/conversations/${id(conversation)}/messages`, input),
   inboxUpdate: (conversation: string, input: ConversationUpdateInput) => request<Wire<Conversation>>('PATCH', `/admin/conversations/${id(conversation)}`, input),
-  draftSend: (message: string, text?: string) => request<void>('POST', `/admin/messages/${id(message)}/send`, text ? { text } : {}),
+  draftSend: (message: string, input: DraftSendInput) => request<void>('POST', `/admin/messages/${id(message)}/send`, input),
   draftUpdate: (message: string, text: string) => request<Msg>('PATCH', `/admin/messages/${id(message)}`, { text }),
   draftReject: (message: string) => request<void>('DELETE', `/admin/messages/${id(message)}`),
 

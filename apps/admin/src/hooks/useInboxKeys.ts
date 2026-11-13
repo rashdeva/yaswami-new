@@ -11,6 +11,8 @@ interface Options {
   /** Черновик агента в выбранном диалоге и наша правка его текста. */
   draft: Msg | undefined;
   draftText: string | undefined;
+  /** С какого аккаунта отправить черновик (`useSendFrom`). */
+  account?: string;
   /** CSS-селектор области, где лежат поле ответа (`data-reply`) и черновик (`data-draft`) выбранного диалога. */
   scope: string;
   /** O — открыть или закрыть переписку (только «Лента»). */
@@ -19,23 +21,24 @@ interface Options {
   onEscape?: () => void;
 }
 
-export function useInboxKeys({ rows, at, onSelect, draft, draftText, scope, onToggleThread, onEscape }: Options) {
+export function useInboxKeys({ rows, at, onSelect, draft, draftText, account, scope, onToggleThread, onEscape }: Options) {
   const { sendDraft, rejectDraft, toggleMode, done, toggleHidden } = useConversationActions();
   const cur = rows[at];
 
   useEffect(() => {
     const focus = (selector: string) => document.querySelector<HTMLElement>(selector)?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest('[role=alertdialog]')) return; // открыт диалог подтверждения: Enter — его
+      // Открыт диалог подтверждения или список выбора (аккаунт, агент): Enter и стрелки — их.
+      if ((e.target as HTMLElement).closest('[role=alertdialog], [role=combobox], [role=listbox]')) return;
       const typing = (e.target as HTMLElement).closest<HTMLElement>('input, textarea');
       if (e.key === 'Escape') return typing ? typing.blur() : onEscape?.();
       // В черновике Enter — перенос строки, отправка — Cmd/Ctrl+Enter.
-      if (typing?.matches('[data-draft]') && draft && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) return sendDraft({ id: draft.id, text: draftText });
+      if (typing?.matches('[data-draft]') && draft && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) return sendDraft({ id: draft.id, text: draftText, account_id: account });
       if (typing || !cur || e.metaKey || e.ctrlKey || e.altKey) return;
       const key = e.key.toLowerCase(); // вторая буква — та же клавиша в русской раскладке
       if (e.key === 'ArrowDown' || key === 'j') onSelect(rows[Math.min(at + 1, rows.length - 1)]!.key);
       else if (e.key === 'ArrowUp' || key === 'k') onSelect(rows[Math.max(at - 1, 0)]!.key);
-      else if (e.key === 'Enter' && draft) sendDraft({ id: draft.id, text: draftText });
+      else if (e.key === 'Enter' && draft) sendDraft({ id: draft.id, text: draftText, account_id: account });
       else if ((key === 'x' || key === 'ч') && draft) rejectDraft(draft.id);
       else if ((key === 'e' || key === 'у') && draft) focus(`${scope} [data-draft]`);
       else if (e.key === 'Enter' || key === 'r' || key === 'к') focus(`${scope} [data-reply]`);

@@ -1,17 +1,22 @@
 import { ArrowUpIcon } from 'lucide-react';
 import { useState } from 'react';
+import type { From } from '@/components/AccountSelect';
+import { AccountSelect, fromText } from '@/components/AccountSelect';
 import { Confirm } from '@/components/Confirm';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupText, InputGroupTextarea } from '@/components/ui/input-group';
 import { Kbd } from '@/components/ui/kbd';
+import { Hint } from '@/components/Page';
+import { switchNote } from '@/lib/inbox';
 
 /**
  * Поле ответа человеку: Enter спрашивает подтверждение (фокус на «Отправить» — второй Enter отправит), Shift+Enter — перенос строки.
- * `data-reply` — по нему поле находят горячие клавиши.
+ * `data-reply` — по нему поле находят горячие клавиши. `from` — выбор аккаунта, с которого уйдёт сообщение.
  */
-export function Reply({ onSend, className }: { onSend: (text: string) => void; className?: string }) {
+export function Reply({ onSend, from, className }: { onSend: (text: string) => void; from?: From; className?: string }) {
   const [text, setText] = useState('');
   const [asking, setAsking] = useState(false);
   const ask = () => text.trim() && setAsking(true);
+  const note = from && switchNote(from.conversation, from.accounts, from.account);
   return (
     <form
       className={className}
@@ -30,6 +35,7 @@ export function Reply({ onSend, className }: { onSend: (text: string) => void; c
           }}
         />
         <InputGroupAddon align="block-end">
+          {from && <AccountSelect {...from} />}
           <InputGroupText className="min-w-0 truncate">
             <Kbd>Enter</Kbd> отправить <Kbd className="ml-1">Shift+Enter</Kbd> перенос
           </InputGroupText>
@@ -39,9 +45,10 @@ export function Reply({ onSend, className }: { onSend: (text: string) => void; c
           </InputGroupButton>
         </InputGroupAddon>
       </InputGroup>
+      {note && <Hint>{note}</Hint>}
       <Confirm
         open={asking} onOpenChange={setAsking} title="Отправить сообщение?" action="Отправить" destructive={false}
-        description={<>Уйдёт человеку в Telegram — вернуть его нельзя. Бот в этом диалоге замолчит.<span className="mt-2 block whitespace-pre-wrap text-foreground">{text.trim()}</span></>}
+        description={<>Уйдёт человеку в Telegram — вернуть его нельзя. Бот в этом диалоге замолчит.{fromText(from)}<span className="mt-2 block whitespace-pre-wrap text-foreground">{text.trim()}</span></>}
         onConfirm={() => {
           onSend(text.trim());
           setText('');
