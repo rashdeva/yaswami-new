@@ -1,6 +1,9 @@
 // Чистые функции каталога: подписи статусов, контакт для записи из ссылки «Записаться», события организатора.
-import type { AdminCollectedEvent, CollectedStatus, Feature, Guest } from '@yaswami/core';
+import type { AdminCollectedEvent, CollectedStatus, Feature, Guest, HostStatus } from '@yaswami/core';
 import { OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
+
+/** Модерация организатора (HOST_STATUSES в core). */
+export const HOST_LABELS: Record<HostStatus, string> = { pending: 'Ждёт решения', published: 'В каталоге', rejected: 'Отклонён' };
 
 export const COLLECTED_LABELS: Record<CollectedStatus, string> = {
   pending: 'Ждёт решения',

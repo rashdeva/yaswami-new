@@ -447,7 +447,10 @@ async function hostPhotos(db: Db, hostId: string): Promise<CollectedHost['photos
  * `eventTopics` — темы его предстоящих опубликованных событий, по одной на событие.
  */
 function toHostListItem(h: HostRecord, eventTopics: (string | undefined)[]): HostListItem | null {
-  const practices = h.practices.filter((p) => p.topic in TOPIC_GUIDES);
+  // Модерация (HOST_STATUSES): отклонённого не показываем; Practice — только у одобренного. Организатора с опубликованными
+  // событиями видно и до решения: его события команда уже одобрила.
+  if (h.status === 'rejected') return null;
+  const practices = h.status === 'published' ? h.practices.filter((p) => p.topic in TOPIC_GUIDES) : [];
   if (!practices.length && !eventTopics.length) return null;
   const mentioned = new Set([...practices.map((p) => p.topic), ...eventTopics]);
   return {

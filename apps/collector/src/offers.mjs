@@ -72,7 +72,7 @@ export async function saveOffers({ store, extractOffer, resolve, pause }, offers
       // Автор неизвестен (реклама через бота) — ищем мастера по username только для настоящих предложений: поиск флудоопасен.
       const who = offer && (author.id ? author : await resolve(author.username).then((r) => r && { ...author, ...r }));
       if (who) {
-        await store.saveOffer({ telegram_id: who.id, username: who.username, name: who.name, summary: offer.summary || null, practices: offer.practices });
+        await store.saveOffer({ telegram_id: who.id, username: who.username, name: who.name, summary: offer.summary || null, practices: offer.practices, offer_url: url });
         saved++;
         console.log(`мастер @${author.username}: ${offer.practices.map((p) => p.title).join(', ')} (${url})`);
       }

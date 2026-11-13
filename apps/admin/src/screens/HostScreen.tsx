@@ -2,7 +2,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { Host, HostUpdateInput as Input, Wire } from '@yaswami/core';
 import { collectedWhen, HostUpdateInput, INBOX_STAGES } from '@yaswami/core';
-import { MessagesSquareIcon, Trash2Icon } from 'lucide-react';
+import { BanIcon, CheckIcon, MessagesSquareIcon, Trash2Icon } from 'lucide-react';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
@@ -18,7 +18,7 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle }
 import { useCollectedEvents } from '@/hooks/useCollectedEvents';
 import { useHost, useHostActions } from '@/hooks/useHosts';
 import { useOverview } from '@/hooks/useOverview';
-import { COLLECTED_LABELS, hostEvents } from '@/lib/catalog';
+import { COLLECTED_LABELS, HOST_LABELS, hostEvents } from '@/lib/catalog';
 
 const values = (h: Wire<Host>): Input => ({ name: h.name, username: h.username, bio: h.bio, channel: h.channel, summary: h.summary });
 
@@ -37,7 +37,7 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
 
   return (
     <Page
-      title={h.name}
+      title={<>{h.name} <Badge variant={h.status === 'published' ? 'default' : 'secondary'}>{HOST_LABELS[h.status]}</Badge></>}
       description={<>
         <TelegramLink username={h.username} /> · Telegram id {h.telegram_id}
         {h.user_id ? <> · в сервисе: <EntityLink entity="user" id={h.user_id}>карточка пользователя</EntityLink></> : ' · в сервис не входил'}
@@ -45,6 +45,8 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
       </>}
       actions={
         <>
+          {h.status !== 'published' && <Button size="sm" onClick={() => update({ status: 'published' })}><CheckIcon />Опубликовать</Button>}
+          {h.status !== 'rejected' && <Button size="sm" variant="outline" onClick={() => update({ status: 'rejected' })}><BanIcon />Отклонить</Button>}
           {row?.conversation_id && <Button size="sm" variant="outline" onClick={() => onOpen(row.conversation_id!)}><MessagesSquareIcon />Диалог · {INBOX_STAGES[row.stage!]}</Button>}
           <Confirm title={`Удалить профиль «${h.name}»?`} description={`Профиль и фото сообщества пропадут; события каталога останутся. Сборщик может собрать профиль заново. ${UNDO_HINT}`} onConfirm={() => remove(undefined, { onSuccess: onDeleted })}>
             <Button size="sm" variant="outline"><Trash2Icon />Удалить</Button>
@@ -65,6 +67,22 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
           </FieldGroup>
           <SaveBar form={form} />
         </form>
+      </Section>
+
+      <Section title={<>Что ведёт <Badge variant="secondary">{h.practices.length}</Badge></>}>
+        {h.practices.length === 0 && <Hint>Пусто: организатор найден по событиям, а не по самопредставлению.</Hint>}
+        {h.offer_url && <Hint>Из сообщения: <ExternalLink href={h.offer_url}>{h.offer_url.replace('https://', '')}</ExternalLink>. Сверь, что это сам мастер и его занятия.</Hint>}
+        <ItemGroup className="gap-1">
+          {h.practices.map((p) => (
+            <Item key={p.title} size="xs" variant="muted">
+              <ItemContent>
+                <ItemTitle>{p.title}</ItemTitle>
+                {p.description && <ItemDescription>{p.description}</ItemDescription>}
+              </ItemContent>
+              <ItemActions><Badge variant="secondary">{p.topic}</Badge>{p.price && <Badge variant="outline">{p.price}</Badge>}</ItemActions>
+            </Item>
+          ))}
+        </ItemGroup>
       </Section>
 
       <Section title={<>События в каталоге <Badge variant="secondary">{events.length}</Badge></>}>
