@@ -87,6 +87,22 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
         </ItemGroup>
       </Section>
 
+      {h.practice_signups.length > 0 && (
+        <Section title={<>Заявки на услуги <Badge variant="secondary">{h.practice_signups.length}</Badge></>}>
+          <ItemGroup className="gap-1">
+            {h.practice_signups.map((s) => (
+              <Item key={s.id + s.title} size="xs" variant="muted">
+                <ItemContent>
+                  <ItemTitle><EntityLink entity="user" id={s.id}>{s.first_name}</EntityLink> — {s.title}</ItemTitle>
+                  {s.username && <ItemDescription><TelegramLink username={s.username} /></ItemDescription>}
+                </ItemContent>
+                <ItemActions><ItemDescription>{new Date(s.at).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</ItemDescription></ItemActions>
+              </Item>
+            ))}
+          </ItemGroup>
+        </Section>
+      )}
+
       <Section title={<>События в каталоге <Badge variant="secondary">{events.length}</Badge></>}>
         {events.length === 0 && <Hint>Не нашлось: события связываются с организатором по контакту для записи или по каналу.</Hint>}
         <ItemGroup className="gap-1">

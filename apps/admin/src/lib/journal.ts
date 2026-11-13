@@ -80,7 +80,7 @@ export function entityLink(entity: AdminEntity, id: string): EntityLink {
 /** Подписи детей снимка (`KINDS` в apps/api/src/audit.ts). */
 export const CHILDREN: Record<string, string> = {
   ticket_types: 'Типы билетов', guests: 'Гости', shares: 'Отправленные карточки', feedback: 'Отзывы', cover: 'Обложка', signups: 'Записавшиеся',
-  photos: 'Фото', collected_signups: 'Записи на события каталога', contacts: 'В контактах у организаторов', audience: 'Аудитория',
+  photos: 'Фото', practice_signups: 'Заявки на услуги', collected_signups: 'Записи на события каталога', contacts: 'В контактах у организаторов', audience: 'Аудитория',
 };
 
 type Snap = { row?: Record<string, unknown> } & Record<string, unknown>;

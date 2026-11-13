@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  EventUpdateInput, HostCreateInput, HostUpdateInput, InboxSendInput, LeadInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
+  EventUpdateInput, HostCreateInput, HostUpdateInput, InboxSendInput, LeadInput, PracticeSignupInput, RsvpInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -140,6 +140,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/me/collected', async (c) => c.json(await s.myCollectedEvents(db, c.var.actor)))
     .post('/collected-events/:id/claim', async (c) => c.json(await s.claimCollectedEvent(db, c.var.actor, c.req.param('id')), 201))
     .post('/collected-events/:id/signup', async (c) => c.json(await s.signUpForCollectedEvent(db, c.var.actor, c.req.param('id'))))
+    .post('/hosts/:id/practices/signup', json(PracticeSignupInput), async (c) => c.json(await s.signUpForPractice(db, c.var.actor, c.req.param('id'), c.req.valid('json'))))
     .post('/collected-events/:id/visit', json(VisitInput), async (c) => {
       await s.visitCollectedEvent(db, c.var.actor, c.req.param('id'), c.req.valid('json'));
       return c.body(null, 204);

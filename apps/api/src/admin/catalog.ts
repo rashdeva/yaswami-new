@@ -5,7 +5,7 @@ import { normalUsername } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
 import type { Db } from '../db/client.ts';
-import { collectedEvents, collectedEventSignups, hosts, photos, users } from '../db/schema.ts';
+import { collectedEvents, collectedEventSignups, hosts, photos, practiceSignups, users } from '../db/schema.ts';
 import { photoUrl } from '../photos.ts';
 import * as s from '../services.ts';
 
@@ -50,7 +50,10 @@ export async function getHost(db: Db, id: string): Promise<AdminHostView> {
   const [host] = await db.select().from(hosts).where(eq(hosts.id, id));
   if (!host) throw new s.AppError('not_found', 404);
   const shots = await db.select({ id: photos.id, source: photos.source }).from(photos).where(eq(photos.host_id, id)).orderBy(desc(photos.created_at));
-  return { ...host, photos: shots.map((p) => ({ url: photoUrl(p.id), source_url: p.source.replace(/^telegram:/, 'https://t.me/') })) };
+  const practice_signups = await db.select({ id: users.id, first_name: users.first_name, username: users.username, title: practiceSignups.title, at: practiceSignups.created_at })
+    .from(practiceSignups).innerJoin(users, eq(users.id, practiceSignups.user_id))
+    .where(eq(practiceSignups.host_id, id)).orderBy(desc(practiceSignups.created_at));
+  return { ...host, photos: shots.map((p) => ({ url: photoUrl(p.id), source_url: p.source.replace(/^telegram:/, 'https://t.me/') })), practice_signups };
 }
 
 /**

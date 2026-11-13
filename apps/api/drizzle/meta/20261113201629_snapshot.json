@@ -1,5 +1,5 @@
 {
-  "id": "e47e8415-4777-4225-b585-5df55c9c6f5a",
+  "id": "5bbbd792-ce4b-4f45-a10c-dfa5854a4389",
   "prevId": "00f87f5e-00d9-49ab-85b1-58293e96bd97",
   "version": "7",
   "dialect": "postgresql",
@@ -219,44 +219,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.cities": {
-      "name": "cities",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "timezone": {
-          "name": "timezone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.collected_event_signups": {
       "name": "collected_event_signups",
       "schema": "",
@@ -355,13 +317,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "city_id": {
-          "name": "city_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'danang'"
         },
         "announcement": {
           "name": "announcement",
@@ -497,19 +452,6 @@
         }
       },
       "foreignKeys": {
-        "collected_events_city_id_cities_id_fk": {
-          "name": "collected_events_city_id_cities_id_fk",
-          "tableFrom": "collected_events",
-          "tableTo": "cities",
-          "columnsFrom": [
-            "city_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
         "collected_events_claimed_event_id_events_id_fk": {
           "name": "collected_events_claimed_event_id_events_id_fk",
           "tableFrom": "collected_events",
@@ -925,13 +867,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "city_id": {
-          "name": "city_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'danang'"
-        },
         "geo_address_json": {
           "name": "geo_address_json",
           "type": "jsonb",
@@ -1046,19 +981,6 @@
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "events_city_id_cities_id_fk": {
-          "name": "events_city_id_cities_id_fk",
-          "tableFrom": "events",
-          "tableTo": "cities",
-          "columnsFrom": [
-            "city_id"
           ],
           "columnsTo": [
             "id"
@@ -1248,13 +1170,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "city_id": {
-          "name": "city_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'danang'"
-        },
         "bio": {
           "name": "bio",
           "type": "text",
@@ -1336,19 +1251,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "hosts_city_id_cities_id_fk": {
-          "name": "hosts_city_id_cities_id_fk",
-          "tableFrom": "hosts",
-          "tableTo": "cities",
-          "columnsFrom": [
-            "city_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -1645,6 +1547,96 @@
       },
       "isRLSEnabled": false
     },
+    "public.practice_signups": {
+      "name": "practice_signups",
+      "schema": "",
+      "columns": {
+        "host_id": {
+          "name": "host_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "practice_signups_user_idx": {
+          "name": "practice_signups_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "practice_signups_host_id_hosts_id_fk": {
+          "name": "practice_signups_host_id_hosts_id_fk",
+          "tableFrom": "practice_signups",
+          "tableTo": "hosts",
+          "columnsFrom": [
+            "host_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "practice_signups_user_id_users_id_fk": {
+          "name": "practice_signups_user_id_users_id_fk",
+          "tableFrom": "practice_signups",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "practice_signups_host_id_user_id_title_pk": {
+          "name": "practice_signups_host_id_user_id_title_pk",
+          "columns": [
+            "host_id",
+            "user_id",
+            "title"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.shares": {
       "name": "shares",
       "schema": "",
@@ -1753,13 +1745,6 @@
           "notNull": true,
           "default": true
         },
-        "city_id": {
-          "name": "city_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'danang'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1797,19 +1782,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "sources_city_id_cities_id_fk": {
-          "name": "sources_city_id_cities_id_fk",
-          "tableFrom": "sources",
-          "tableTo": "cities",
-          "columnsFrom": [
-            "city_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
