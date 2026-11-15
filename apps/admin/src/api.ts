@@ -2,7 +2,7 @@
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
   AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource,
-  AdminUserView, CollectedStatus, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, HostUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceUpdateInput,
+  AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, HostUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
 import { sseEvents } from '@yaswami/core';
@@ -152,7 +152,7 @@ export const api = {
   feedbackDelete: (event: string, user: number) => request<void>('DELETE', `/admin/events/${id(event)}/feedback/${user}`),
 
   // Собранные события
-  collectedEvents: (status?: CollectedStatus) => request<AdminCollectedEvent[]>('GET', `/admin/collected-events${qs({ status })}`),
+  collectedEvents: (input: CollectedListInput = {}) => request<AdminCollectedEvent[]>('GET', `/admin/collected-events${qs(input)}`),
   collectedEvent: (event: string) => request<Wire<AdminCollectedEventView>>('GET', `/admin/collected-events/${id(event)}`),
   collectedUpdate: (event: string, input: CollectedUpdateInput) => request<AdminCollectedEvent>('PATCH', `/admin/collected-events/${id(event)}`, input),
   collectedDelete: (event: string) => request<void>('DELETE', `/admin/collected-events/${id(event)}`),

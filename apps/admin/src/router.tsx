@@ -112,22 +112,24 @@ const event = createRoute({ getParentRoute: () => root, path: '/events/$id', com
 // --- Каталог: собранные события на модерации и в ленте
 
 function CatalogPage() {
-  const { kind, status, q } = catalog.useSearch();
+  const { kind, status, q, when } = catalog.useSearch();
   const navigate = useNavigate();
   const onKind = (next: CatalogKind) => void navigate({ to: '/catalog', search: { kind: next === 'services' ? next : undefined } });
-  const onFilter = (f: { status: CatalogFilter; query: string }) => void navigate({ to: '/catalog', search: { kind, status: f.status === 'all' ? undefined : f.status, q: f.query || undefined }, replace: true });
+  const onFilter = (f: { status: CatalogFilter; query: string; past?: boolean }) =>
+    void navigate({ to: '/catalog', search: { kind, status: f.status === 'all' ? undefined : f.status, q: f.query || undefined, when: (f.past ?? when === 'past') ? 'past' : undefined }, replace: true });
   // У услуг шага обработки нет: отбор только по их статусам (PRACTICE_STATUSES).
   if (kind === 'services') return <CatalogServicesScreen status={oneOf<PracticeStatus>(status, [...PRACTICE_STATUSES]) ?? 'all'} query={q ?? ''} onFilter={onFilter} onKind={onKind} />;
-  return <CatalogScreen status={status ?? 'all'} query={q ?? ''} onFilter={onFilter} onKind={onKind} />;
+  return <CatalogScreen status={status ?? 'all'} query={q ?? ''} past={when === 'past'} onFilter={onFilter} onKind={onKind} />;
 }
 const catalog = createRoute({
   getParentRoute: () => root,
   path: '/catalog',
   component: CatalogPage,
-  validateSearch: (s: Record<string, unknown>): { kind?: 'services'; status?: CatalogFilter; q?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { kind?: 'services'; status?: CatalogFilter; q?: string; when?: 'past' } => ({
     kind: oneOf<'services'>(s.kind, ['services']),
     status: oneOf<CatalogFilter>(s.status, [...COLLECTED_STATUSES, 'covers', 'queue'] as (CollectedStatus | 'covers' | 'queue')[]),
     q: str(s.q),
+    when: oneOf<'past'>(s.when, ['past']),
   }),
 });
 

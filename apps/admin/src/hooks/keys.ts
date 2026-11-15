@@ -1,5 +1,5 @@
 // Ключи запросов TanStack Query — все здесь: по ним хуки находят и обновляют данные друг друга.
-import type { AdminActionListInput, CollectedStatus } from '@yaswami/core';
+import type { AdminActionListInput } from '@yaswami/core';
 
 export const keys = {
   /** Лента переписки: диалоги, последние сообщения, аккаунты. */
@@ -13,7 +13,7 @@ export const keys = {
   event: (id: string) => ['event', id],
   guests: (event: string) => ['event', event, 'guests'],
   feedback: (event: string) => ['event', event, 'feedback'],
-  collectedEvents: (status?: CollectedStatus) => ['collected-events', status],
+  collectedEvents: (past = false) => ['collected-events', past],
   collectedEvent: (id: string) => ['collected-event', id],
   covers: ['covers'],
   hosts: ['hosts'],

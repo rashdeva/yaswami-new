@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type {
-  AdminCollectedEvent, CollectedStatus, CollectedUpdateInput,
+  AdminCollectedEvent, CollectedListInput, CollectedStatus, CollectedUpdateInput,
   CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, Practice, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
 } from '@yaswami/core';
@@ -374,9 +374,15 @@ export const toAdminItem = (r: CollectedRow): AdminCollectedEvent => ({
 });
 
 /** Все собранные события для админки модерации: ждущие решения сверху, дальше по дате; прошедшие не показываем. */
-export async function listCollectedForAdmin(db: Db, status?: CollectedStatus): Promise<AdminCollectedEvent[]> {
-  const rows = await collectedWithCover(db).where(and(upcomingCollected, status ? eq(collectedEvents.status, status) : undefined))
-    .orderBy(sql`${collectedEvents.status} <> 'pending'`, asc(collectedEvents.starts_at)).limit(500);
+export async function listCollectedForAdmin(db: Db, { status, before }: CollectedListInput = {}): Promise<AdminCollectedEvent[]> {
+  const rows = await collectedWithCover(db)
+    .where(and(
+      before ? sql`coalesce(${collectedEvents.ends_at}, ${collectedEvents.starts_at}) < ${before}::timestamptz` : upcomingCollected,
+      status ? eq(collectedEvents.status, status) : undefined,
+    ))
+    // Прошедшие — свежие сверху: старые нужны реже.
+    .orderBy(...(before ? [desc(collectedEvents.starts_at)] : [sql`${collectedEvents.status} <> 'pending'`, asc(collectedEvents.starts_at)]))
+    .limit(500); // ponytail: без страниц; прошедших станет больше 500 — добавить курсор
   return rows.map(toAdminItem);
 }
 

@@ -240,8 +240,11 @@ export interface AdminCollectedEvent extends CollectedEventItem, Pick<CollectedE
   reactions: number | null; // сколько реакций под публикацией
 }
 
-/** Отбор собранных событий в модерации: без статуса — все. */
-export const CollectedListInput = z.object({ status: z.enum(COLLECTED_STATUSES).optional().describe('Only this status; pending — waiting for a decision') });
+/** Отбор собранных событий в модерации: без статуса — все; без `before` — предстоящие. */
+export const CollectedListInput = z.object({
+  status: z.enum(COLLECTED_STATUSES).optional().describe('Only this status; pending — waiting for a decision'),
+  before: dateTime.optional().describe('Only events that ended before this moment, newest first; pass the current time for past events. Without it — upcoming events'),
+});
 export type CollectedListInput = z.infer<typeof CollectedListInput>;
 
 // Правка и решение модератора — CollectedUpdateInput в admin.ts.
