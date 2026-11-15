@@ -1,6 +1,6 @@
 // «Каталог»: события, собранные из анонсов. Новое ждёт решения; одобренное проходит обработку (обложка и ролик)
 // и выходит в ленту; опубликованное можно снять или удалить. «По одному» — очередь ждущих решения с правкой полей.
-// Поиск и отбор по статусу — в адресе.
+// Поиск, отбор по статусу и «Прошедшие» — в адресе.
 import type { AdminCollectedEvent, CollectedStatus } from '@yaswami/core';
 import { COLLECTED_STATUSES, collectedWhen } from '@yaswami/core';
 import { Cover } from '@/components/Cover';
@@ -35,23 +35,36 @@ const HINTS: Record<CatalogFilter, string> = {
 interface Props {
   status: CatalogFilter;
   query: string;
-  onFilter: (filter: { status: CatalogFilter; query: string }) => void;
+  /** Прошедшие вместо предстоящих. */
+  past: boolean;
+  onFilter: (filter: { status: CatalogFilter; query: string; past?: boolean }) => void;
   /** Переключить каталог на услуги мастеров. */
   onKind: (kind: CatalogKind) => void;
 }
 
-export function CatalogScreen({ status, query, onFilter, onKind }: Props) {
-  const { data: items, error } = useCollectedEvents();
+export function CatalogScreen({ status: asked, query, past, onFilter, onKind }: Props) {
+  const { data: items, error } = useCollectedEvents(past);
   const { data: covers } = useCovers();
   const { update } = useCatalogActions();
+  const status: CatalogFilter = past && (asked === 'queue' || asked === 'covers') ? 'all' : asked;
   const waitingCover = new Set(covers?.map((c) => c.id));
   const inTab = (e: AdminCollectedEvent, tab: CatalogFilter) => (tab === 'all' ? true : tab === 'covers' ? waitingCover.has(e.id) : e.status === (tab === 'queue' ? 'pending' : tab));
   const list = items?.filter((e) => inTab(e, status) && matchCollected(e, query));
-  const tabs: [CatalogFilter, string][] = [['queue', 'По одному'], ['all', 'Все'], ...COLLECTED_STATUSES.map((s) => [s, COLLECTED_LABELS[s]] as [CatalogFilter, string]), ['covers', 'Ждут обложки']];
+  // Очередь и обложки — работа над предстоящими; у прошедших их нет.
+  const tabs: [CatalogFilter, string][] = [
+    ...(past ? [] : [['queue', 'По одному']] as [CatalogFilter, string][]), ['all', 'Все'],
+    ...COLLECTED_STATUSES.map((s) => [s, COLLECTED_LABELS[s]] as [CatalogFilter, string]),
+    ...(past ? [] : [['covers', 'Ждут обложки']] as [CatalogFilter, string][]),
+  ];
 
   return (
     <Page title="Каталог" description={HINTS[status]}>
-      <KindToggle kind="events" onKind={onKind} />
+      <div className="flex flex-wrap items-center gap-2">
+        <KindToggle kind="events" onKind={onKind} />
+        <Tabs value={past ? 'past' : 'upcoming'} onValueChange={(v) => onFilter({ status, query, past: v === 'past' })}>
+          <TabsList><TabsTrigger value="upcoming">Предстоящие</TabsTrigger><TabsTrigger value="past">Прошедшие</TabsTrigger></TabsList>
+        </Tabs>
+      </div>
       <Tabs value={status} onValueChange={(v) => onFilter({ status: v as CatalogFilter, query })}>
         <TabsList className="h-auto flex-wrap">
           {tabs.map(([key, label]) => (

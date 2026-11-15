@@ -913,6 +913,12 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual([await inFeed(), (await app.request('/collected-events/danangevent-7-0')).status], [false, 404]);
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-7-0' }), { error: 'not_approved' });
   assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/collected-events')).status, 403);
+  // Прошедшие не удаляются: в общем списке их нет, с `before` — есть.
+  const past = new Date(Date.now() - 86_400_000);
+  await db.insert(collectedEvents).values({ ...moderated, external_id: 'telegram:danangevent/70#0', starts_at: past, event: { ...moderated.event, starts_at: past.toISOString() } });
+  assert.ok(!(await adminEvents()).some((e) => e.id === 'danangevent-70-0'));
+  const pastList = (await (await call(admin, 'GET', `/admin/collected-events?before=${encodeURIComponent(new Date().toISOString())}`)).json()) as { id: string }[];
+  assert.deepEqual(pastList.map((e) => e.id), ['danangevent-70-0']);
   // Правка без решения: событие остаётся ждать, поля и колонки для выборок меняются, контакт — как у сборщика.
   assert.equal((await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { title: '' })).status, 400);
   const later = new Date(starts_at.getTime() + 3600_000).toISOString().replace('Z', '+00:00');

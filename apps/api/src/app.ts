@@ -246,7 +246,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     })
 
     // Каталог из анонсов: модерация и правка собранных событий (в ленту выходит только опубликованное), обложки, ролики.
-    .get('/admin/collected-events', async (c) => c.json(await s.listCollectedForAdmin(db, CollectedListInput.parse(c.req.query()).status)))
+    .get('/admin/collected-events', async (c) => c.json(await s.listCollectedForAdmin(db, CollectedListInput.parse(c.req.query()))))
     .get('/admin/collected-events/:id', async (c) => c.json(await admin.getCollectedEventSignups(db, c.req.param('id'))))
     .patch('/admin/collected-events/:id', json(CollectedUpdateInput), async (c) => c.json(await admin.updateCollectedEvent(db, ctx(c), c.req.param('id'), c.req.valid('json'))))
     .post('/admin/collected-events/:id/redo', async (c) => {

@@ -1,5 +1,5 @@
 // Каталог: собранные события любого статуса, одно событие с записавшимися, обложки, правки команды и очередь «По одному».
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { AdminCollectedEventView, CollectedUpdateInput, Wire } from '@yaswami/core';
 import { api } from '../api.ts';
@@ -8,8 +8,13 @@ import { useAct } from './useAct.ts';
 
 const POLL_MS = 30_000; // события появляются раз в проход сборщика, чаще опрашивать незачем
 
-/** Все собранные события (без статуса): нужен и счётчик в меню, и отбор в каталоге. */
-export const useCollectedEvents = () => useQuery({ queryKey: keys.collectedEvents(), queryFn: () => api.collectedEvents(), refetchInterval: POLL_MS });
+/** Собранные события любого статуса, предстоящие или прошедшие: нужен и счётчик в меню, и отбор в каталоге. */
+export const useCollectedEvents = (past = false) => useQuery({
+  queryKey: keys.collectedEvents(past),
+  queryFn: () => api.collectedEvents(past ? { before: new Date().toISOString() } : {}),
+  refetchInterval: POLL_MS,
+  placeholderData: keepPreviousData,
+});
 export const useCollectedEvent = (id: string) => useQuery({ queryKey: keys.collectedEvent(id), queryFn: () => api.collectedEvent(id) });
 /** Ждут решения иллюстратора об обложке. */
 export const useCovers = () => useQuery({ queryKey: keys.covers, queryFn: api.covers });
