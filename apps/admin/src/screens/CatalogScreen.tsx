@@ -1,6 +1,6 @@
 // «Каталог»: события, собранные из анонсов. Новое ждёт решения; одобренное проходит обработку (обложка и ролик)
 // и выходит в ленту; опубликованное можно снять или удалить. «По одному» — очередь ждущих решения с правкой полей.
-// Поиск, отбор по статусу и «Прошедшие» — в адресе.
+// «Все» — вместе с прошедшими; вкладки статусов — только предстоящие. Поиск и вкладка — в адресе.
 import type { AdminCollectedEvent, CollectedStatus } from '@yaswami/core';
 import { COLLECTED_STATUSES, collectedWhen } from '@yaswami/core';
 import { Cover } from '@/components/Cover';
@@ -20,10 +20,11 @@ import type { CatalogKind } from '@/screens/CatalogServicesScreen';
 import { KindToggle } from '@/screens/CatalogServicesScreen';
 import { COLLECTED_LABELS, matchCollected } from '@/lib/catalog';
 
-export type CatalogFilter = 'all' | CollectedStatus | 'covers' | 'queue';
+export type CatalogFilter = 'all' | CollectedStatus | 'covers' | 'queue' | 'past';
 
 const HINTS: Record<CatalogFilter, string> = {
-  all: 'Все собранные события.',
+  all: 'Все собранные события: предстоящие, за ними прошедшие.',
+  past: 'Прошедшие события. Они не удаляются, свежие сверху.',
   pending: 'Сборщик разобрал анонс. В ленте события нет, пока вы его не одобрите.',
   approved: 'Одобрены: иллюстратор делает обложку и ролик, после этого событие само выйдет в ленту.',
   published: 'Видны всем. Событие можно снять с публикации или удалить.',
@@ -35,36 +36,29 @@ const HINTS: Record<CatalogFilter, string> = {
 interface Props {
   status: CatalogFilter;
   query: string;
-  /** Прошедшие вместо предстоящих. */
-  past: boolean;
-  onFilter: (filter: { status: CatalogFilter; query: string; past?: boolean }) => void;
+  onFilter: (filter: { status: CatalogFilter; query: string }) => void;
   /** Переключить каталог на услуги мастеров. */
   onKind: (kind: CatalogKind) => void;
 }
 
-export function CatalogScreen({ status: asked, query, past, onFilter, onKind }: Props) {
-  const { data: items, error } = useCollectedEvents(past);
+export function CatalogScreen({ status, query, onFilter, onKind }: Props) {
+  const upcoming = useCollectedEvents();
+  const past = useCollectedEvents(true);
+  const items = upcoming.data && past.data && [...upcoming.data, ...past.data];
+  const error = upcoming.error ?? past.error;
   const { data: covers } = useCovers();
   const { update } = useCatalogActions();
-  const status: CatalogFilter = past && (asked === 'queue' || asked === 'covers') ? 'all' : asked;
   const waitingCover = new Set(covers?.map((c) => c.id));
-  const inTab = (e: AdminCollectedEvent, tab: CatalogFilter) => (tab === 'all' ? true : tab === 'covers' ? waitingCover.has(e.id) : e.status === (tab === 'queue' ? 'pending' : tab));
+  const isPast = new Set(past.data?.map((e) => e.id));
+  // Статусы, очередь и обложки — работа над предстоящими; прошедшие видны в «Все» и «Прошедшие».
+  const inTab = (e: AdminCollectedEvent, tab: CatalogFilter) =>
+    tab === 'all' ? true : tab === 'past' ? isPast.has(e.id) : !isPast.has(e.id) && (tab === 'covers' ? waitingCover.has(e.id) : e.status === (tab === 'queue' ? 'pending' : tab));
   const list = items?.filter((e) => inTab(e, status) && matchCollected(e, query));
-  // Очередь и обложки — работа над предстоящими; у прошедших их нет.
-  const tabs: [CatalogFilter, string][] = [
-    ...(past ? [] : [['queue', 'По одному']] as [CatalogFilter, string][]), ['all', 'Все'],
-    ...COLLECTED_STATUSES.map((s) => [s, COLLECTED_LABELS[s]] as [CatalogFilter, string]),
-    ...(past ? [] : [['covers', 'Ждут обложки']] as [CatalogFilter, string][]),
-  ];
+  const tabs: [CatalogFilter, string][] = [['queue', 'По одному'], ['all', 'Все'], ...COLLECTED_STATUSES.map((s) => [s, COLLECTED_LABELS[s]] as [CatalogFilter, string]), ['covers', 'Ждут обложки'], ['past', 'Прошедшие']];
 
   return (
     <Page title="Каталог" description={HINTS[status]}>
-      <div className="flex flex-wrap items-center gap-2">
-        <KindToggle kind="events" onKind={onKind} />
-        <Tabs value={past ? 'past' : 'upcoming'} onValueChange={(v) => onFilter({ status, query, past: v === 'past' })}>
-          <TabsList><TabsTrigger value="upcoming">Предстоящие</TabsTrigger><TabsTrigger value="past">Прошедшие</TabsTrigger></TabsList>
-        </Tabs>
-      </div>
+      <KindToggle kind="events" onKind={onKind} />
       <Tabs value={status} onValueChange={(v) => onFilter({ status: v as CatalogFilter, query })}>
         <TabsList className="h-auto flex-wrap">
           {tabs.map(([key, label]) => (
