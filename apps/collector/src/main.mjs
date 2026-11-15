@@ -36,6 +36,8 @@ const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-fla
 const extractOffer = createOfferExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 // Поиск по username — самый флудоопасный вызов Telegram: за проход собираем немного профилей, остальные — в следующий.
 const PROFILES_PER_PASS = 15;
+// Профиль пересматриваем раз в неделю: «о себе» и канал меняются, а по каналу берутся фото и источник.
+const PROFILE_REFRESH_DAYS = Number(env.PROFILE_REFRESH_DAYS ?? 7);
 // Username, под которыми не человек (канал, бот, никого). ponytail: помним только в памяти процесса —
 // после перезапуска проверим ещё раз; при POLL_MINUTES=0 (cron) это надо класть в базу.
 const notPeople = new Set();
@@ -56,6 +58,16 @@ async function profileHosts() {
     else notPeople.add(username);
     console.log(`@${username}: ${profile ? `профиль${profile.channel ? `, канал @${profile.channel.username}` : ''}` : 'не человек и не канал'}`);
     await sleep(llmPauseMs);
+  }
+  // Оставшиеся места прохода — тем, чей профиль давно не смотрели: человек мог сменить «о себе» или завести канал.
+  const left = PROFILES_PER_PASS - usernames.length;
+  for (const host of left > 0 ? await store.staleProfiles(PROFILE_REFRESH_DAYS, left) : []) {
+    const profile = await fetchProfile(userbot, host.username);
+    // Под username теперь другой человек или никого: чужое в профиль не пишем.
+    if (profile?.telegram_id !== Number(host.telegram_id)) await store.profileChecked(host.telegram_id);
+    else await store.refreshHost({ telegram_id: profile.telegram_id, bio: profile.bio, channel: profile.channel?.username ?? null, summary: host.has_summary ? null : await summarize(profile) });
+    console.log(`@${host.username}: ${profile?.telegram_id === Number(host.telegram_id) ? 'профиль обновлён' : 'под username уже не он — не обновляем'}`);
+    await sleep(host.has_summary ? 2000 : llmPauseMs);
   }
 }
 
@@ -150,7 +162,8 @@ if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
   })();
 } else console.log('Аккаунты для переписки выключены: нужны ACCOUNTS_KEY, API_URL и COLLECTOR_SECRET');
 
-const cursors = await store.cursors();
+// Отметки читаем заново каждый проход (ниже): команда сбрасывает отметку источника, чтобы перечитать его свежие публикации.
+let cursors = await store.cursors();
 await store.addSources(channels);
 
 // Канал организатора — тоже источник: у него свои события. Каждый новый канал при первом чтении ищется по username
@@ -227,6 +240,7 @@ do {
   const adopted = await store.adoptHostChannels(ADOPT_PER_PASS).catch((e) => console.error('источники:', e.message));
   if (adopted?.length) console.log(`новые источники от организаторов: ${adopted.map((c) => `@${c}`).join(', ')}`);
   const known = await store.upcoming();
+  cursors = await store.cursors();
   for (const source of await store.sources()) {
     await pollChannel(source, known).catch((e) => console.error(`${source.channel}: ${e.message}`));
     await sleep(2000); // не частим с запросами к Telegram

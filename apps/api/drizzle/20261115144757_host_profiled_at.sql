@@ -1,0 +1,1 @@
+ALTER TABLE "hosts" ADD COLUMN "profiled_at" timestamp with time zone;

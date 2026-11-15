@@ -14,7 +14,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, collectedEvents, contacts, conversations, guests, hosts, messages, photos, practices as practicesTable, practiceSignups, sources, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hosts, messages, photos, practices as practicesTable, practiceSignups, sources, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { saveUserPhoto } from './photos.ts';
@@ -1776,8 +1776,18 @@ test('источники: команда добавляет и выключае�
   assert.deepEqual([stub.username, stub.telegram_id, stub.status], ['dato_banya', null, 'pending']);
   assert.deepEqual(await tool('admin_hosts_create', { username: '@dato_banya' }), { error: 'host_exists' });
   assert.equal((await call(admin, 'POST', '/admin/hosts', { username: 'нет' })).status, 400);
+  await db.insert(collectorCursors).values([{ channel: 'Danang_Yoga', last_number: 500 }, { channel: 'lena_tea_club', last_number: 7 }]);
   const bound = (await tool('admin_sources_update', { channel: 'danang_yoga', host_id: stub.id })) as AdminSource;
   assert.deepEqual([bound.host?.id, bound.host?.username, bound.enabled], [stub.id, 'dato_banya', true], 'организатор указан, включённость не тронута');
+  // Сборщик перечитает свежие публикации канала, а канал стал каналом организатора — оттуда фото.
+  assert.deepEqual((await db.select().from(collectorCursors)).map((c) => c.channel), ['lena_tea_club']);
+  assert.equal((await db.select().from(hosts).where(eq(hosts.id, stub.id)))[0]!.channel, 'danang_yoga');
+  // Тот же организатор ещё раз — отметку не сбрасываем; свой канал у организатора не перезаписываем.
+  await db.insert(collectorCursors).values({ channel: 'Danang_Yoga', last_number: 501 });
+  await tool('admin_sources_update', { channel: 'danang_yoga', host_id: stub.id });
+  await tool('admin_sources_update', { channel: 'lena_tea_club', host_id: stub.id });
+  assert.deepEqual((await db.select().from(collectorCursors)).map((c) => c.channel), ['Danang_Yoga']);
+  assert.equal((await db.select().from(hosts).where(eq(hosts.id, stub.id)))[0]!.channel, 'danang_yoga');
   assert.deepEqual(await (await call(admin, 'PATCH', '/admin/sources/danang_yoga', { host_id: randomUUID() })).json(), { error: 'host_not_found' });
 
   // Сборщик (apps/collector/src/store.mjs) находит человека в Telegram: заготовка заполняется на месте, источник остаётся за ней.

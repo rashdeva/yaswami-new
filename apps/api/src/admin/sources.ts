@@ -1,11 +1,11 @@
 // Источники сборщика (Source): каналы и группы, откуда он берёт анонсы. Пишут сюда сборщик (CHANNELS при старте,
 // каналы организаторов каждый проход) и команда — через журнал.
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { AdminSource, SourceCreateInput, SourceUpdateInput } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
 import type { Db } from '../db/client.ts';
-import { hosts, sources } from '../db/schema.ts';
+import { collectorCursors, hosts, sources } from '../db/schema.ts';
 import { AppError, assertCity } from '../services.ts';
 
 // Username в Telegram не различает регистр, поэтому сравниваем по lower().
@@ -41,6 +41,10 @@ export const createSource = (db: Db, ctx: Ctx, input: SourceCreateInput): Promis
 /**
  * Включить или выключить источник, указать или убрать его организатора. Выключенный остаётся в таблице: иначе канал
  * организатора добавился бы снова.
+ *
+ * Указали нового организатора — сборщик перечитает свежие публикации канала (не старше MAX_AGE_DAYS): анонсы без
+ * контакта, которые он раньше пропустил, теперь получат контактом организатора. А если у организатора нет канала,
+ * этот канал становится его каналом: из него берутся фото сообщества.
  */
 export async function updateSource(db: Db, ctx: Ctx, channel: string, input: SourceUpdateInput): Promise<AdminSource> {
   // Журнал и снимок — по каналу так, как он записан: команда может передать его в другом регистре.
@@ -49,7 +53,13 @@ export async function updateSource(db: Db, ctx: Ctx, channel: string, input: Sou
     if (input.host_id && !(await tx.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, input.host_id))).length) throw new AppError('host_not_found', 404);
     await assertCity(tx, input.city_id);
     const values = Object.fromEntries(Object.entries({ enabled: input.enabled, host_id: input.host_id, city_id: input.city_id }).filter(([, v]) => v !== undefined));
+    const before = await getSource(tx, key);
     if (Object.keys(values).length) await tx.update(sources).set(values).where(eq(sources.channel, key));
+    if (input.host_id && input.host_id !== before.host?.id) {
+      await tx.delete(collectorCursors).where(eq(collectorCursors.channel, key));
+      // ponytail: канал организатора — не часть снимка источника, отмена действия его не вернёт; поправить — в карточке организатора.
+      if (!key.startsWith('-')) await tx.update(hosts).set({ channel: key.toLowerCase() }).where(and(eq(hosts.id, input.host_id), isNull(hosts.channel)));
+    }
     return getSource(tx, key);
   });
 }
