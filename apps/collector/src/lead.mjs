@@ -50,26 +50,50 @@ const CONTEXT = 3;
  */
 export function pickLeads(chat, messages, now = Date.now(), maxAgeMs = MAX_AGE_MS) {
   return messages.flatMap((msg, i) => {
-    const sender = msg.sender;
-    if (!msg.message || sender?.className !== 'User' || sender.bot) return [];
+    if (!msg.message || msg.sender?.className !== 'User' || msg.sender.bot) return [];
     const signal = now - msg.date * 1000 <= maxAgeMs && signalOf(msg.message);
     if (!signal) return [];
-    return [{
-      signal,
-      sent_at: new Date(msg.date * 1000).toISOString(),
-      chat,
-      message_id: msg.id,
-      url: /^-?\d+$/.test(chat) ? `https://t.me/c/${chat.replace(/^-100/, '')}/${msg.id}` : `https://t.me/${chat}/${msg.id}`,
-      author: { id: Number(sender.id), name: [sender.firstName, sender.lastName].filter(Boolean).join(' ') || String(sender.id), username: sender.username ?? null },
-      text: msg.message.slice(0, 1000),
-      context: messages.slice(Math.max(0, i - CONTEXT), i).map((m) => m.message).filter(Boolean).map((t) => t.slice(0, 1000)),
-    }];
+    return [{ signal, ...aboutMessage(chat, msg), context: messages.slice(Math.max(0, i - CONTEXT), i).map((m) => m.message).filter(Boolean).map((t) => t.slice(0, 1000)) }];
   });
 }
 
-/** Новые сообщения чата после `afterNumber`: номер последнего, сколько их прочитано, найденные вопросы и самопредставления мастеров. */
-export async function fetchLeads(client, chat, afterNumber) {
+/** Когда, где и кто написал: общее у вопроса «куда сходить» и Находки по Запросу организатора. */
+function aboutMessage(chat, msg) {
+  const sender = msg.sender;
+  return {
+    sent_at: new Date(msg.date * 1000).toISOString(),
+    chat,
+    message_id: msg.id,
+    url: /^-?\d+$/.test(chat) ? `https://t.me/c/${chat.replace(/^-100/, '')}/${msg.id}` : `https://t.me/${chat}/${msg.id}`,
+    author: { id: Number(sender.id), name: [sender.firstName, sender.lastName].filter(Boolean).join(' ') || String(sender.id), username: sender.username ?? null },
+    text: msg.message.slice(0, 1000),
+  };
+}
+
+const escape = (word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Сообщения, которые могут подойти под Запросы организаторов (`searches`: id, query, keywords, host_telegram_id):
+ * от людей, свежие, не длиннее 500 знаков (длинное — объявления), не от самого организатора и хотя бы с одним
+ * ключевым словом Запроса с начала слова. Это дешёвый отбор; подходит ли на самом деле, решает ИИ (extract, search.ts).
+ */
+export function pickSearchCandidates(chat, messages, searches, now = Date.now(), maxAgeMs = MAX_AGE_MS) {
+  const ready = searches.filter((s) => s.keywords?.length).map((s) => ({ ...s, re: new RegExp(`(?<![а-яёa-z])(${s.keywords.map(escape).join('|')})`, 'i') }));
+  if (!ready.length) return [];
+  return messages.flatMap((msg) => {
+    const sender = msg.sender;
+    if (!msg.message || sender?.className !== 'User' || sender.bot || msg.message.length > 500 || now - msg.date * 1000 > maxAgeMs) return [];
+    const fit = ready.filter((s) => s.host_telegram_id !== Number(sender.id) && s.re.test(msg.message));
+    return fit.length ? [{ ...aboutMessage(chat, msg), searches: fit.map(({ id, query }) => ({ id, query })) }] : [];
+  });
+}
+
+/**
+ * Новые сообщения чата после `afterNumber`: номер последнего, сколько их прочитано, найденные вопросы,
+ * самопредставления мастеров и кандидаты в Находки по Запросам организаторов (`searches`).
+ */
+export async function fetchLeads(client, chat, afterNumber, searches = []) {
   if (!client.connected) await client.connect();
   const messages = (await client.getMessages(/^-?\d+$/.test(chat) ? Number(chat) : chat, { limit: 100, minId: afterNumber })).reverse();
-  return { last: messages.at(-1)?.id ?? afterNumber, read: messages.length, leads: pickLeads(chat, messages), offers: pickOffers(chat, messages) };
+  return { last: messages.at(-1)?.id ?? afterNumber, read: messages.length, leads: pickLeads(chat, messages), offers: pickOffers(chat, messages), candidates: pickSearchCandidates(chat, messages, searches) };
 }

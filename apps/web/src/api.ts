@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, CollectedEventItem, EventCreateInput, HostItem, HostListItem, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, RsvpInput, SearchResult, VisitInput, Wire } from '@yaswami/core';
+import type { AppConfig, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, RsvpInput, SearchResult, VisitInput, Wire } from '@yaswami/core';
 import { track } from './analytics.ts';
 import { inTelegram, tg } from './tg.ts';
 
@@ -29,6 +29,7 @@ const MESSAGES: Record<string, string> = {
   unauthorized: 'Не получилось войти. Откройте приложение заново',
   invalid_input: 'Проверьте заполненные поля',
   too_many_requests: 'Слишком много запросов. Подождите минуту',
+  not_host: 'Поиск людей — для организаторов каталога',
 };
 
 export class ApiError extends Error {
@@ -78,4 +79,9 @@ export const api = {
   createEvent: (input: EventCreateInput) => request<EventData>('POST', '/events', input),
   updateEvent: (id: string, input: EventUpdateInput) => request<EventData>('PATCH', `/events/${encodeURIComponent(id)}`, input),
   rsvp: (id: string, input: RsvpInput) => request<EventData>('POST', `/events/${encodeURIComponent(id)}/rsvp`, input),
+  listHostSearches: () => request<Wire<HostSearchList>>('GET', '/host-searches'),
+  createHostSearch: (input: HostSearchCreateInput) => request<Wire<HostSearch>>('POST', '/host-searches', input),
+  updateHostSearch: (id: string, input: HostSearchUpdateInput) => request<Wire<HostSearch>>('PATCH', `/host-searches/${encodeURIComponent(id)}`, input),
+  deleteHostSearch: (id: string) => request<void>('DELETE', `/host-searches/${encodeURIComponent(id)}`),
+  listHostSearchMatches: () => request<Wire<HostSearchMatchList>>('GET', '/host-searches/matches'),
 };

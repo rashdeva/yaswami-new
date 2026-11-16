@@ -747,6 +747,7 @@ export async function me(db: Db, actor: User): Promise<Me> {
     features: featuresOf(actor),
     collected_signups: signups.map((r) => collectedSlug(r.external_id)),
     claimable: claimable.map(toCollectedItem),
+    host_id: (await db.select({ id: hosts.id }).from(hosts).where(eq(hosts.user_id, actor.id)))[0]?.id ?? null,
   };
 }
 

@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  EventUpdateInput, HostCreateInput, HostUpdateInput, InboxSendInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
+  EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -26,6 +26,7 @@ import type { LiveEvent } from './live.ts';
 import { live } from './live.ts';
 import { handleMcp } from './mcp.ts';
 import { getPhoto } from './photos.ts';
+import * as hs from './host-searches.ts';
 import * as s from './services.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
@@ -148,6 +149,14 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     })
 
     .get('/contacts', async (c) => c.json(await s.listContacts(db, c.var.actor)))
+    .get('/host-searches', async (c) => c.json(await hs.listHostSearches(db, c.var.actor)))
+    .post('/host-searches', json(HostSearchCreateInput), async (c) => c.json(await hs.createHostSearch(db, c.var.actor, c.req.valid('json')), 201))
+    .get('/host-searches/matches', async (c) => c.json(await hs.listHostSearchMatches(db, c.var.actor, HostSearchMatchListInput.parse(c.req.query()))))
+    .patch('/host-searches/:id', json(HostSearchUpdateInput), async (c) => c.json(await hs.updateHostSearch(db, c.var.actor, c.req.param('id'), c.req.valid('json'))))
+    .delete('/host-searches/:id', async (c) => {
+      await hs.deleteHostSearch(db, c.var.actor, c.req.param('id'));
+      return c.body(null, 204);
+    })
     .get('/events', async (c) => c.json(await s.listEvents(db, c.var.actor)))
     .post('/events', json(EventCreateInput), async (c) => c.json(await s.createEvent(db, c.var.actor, c.req.valid('json')), 201))
     .get('/events/:id', async (c) => c.json(await s.getEvent(db, c.var.actor, c.req.param('id'))))

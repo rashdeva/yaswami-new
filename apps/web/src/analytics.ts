@@ -12,7 +12,8 @@ const source = inTelegram ? 'telegram' : 'web';
 /**
  * Именованные действия, по ним строятся воронки. Путь гостя: app_opened → feed_viewed → collected_event_viewed →
  * signup_clicked → (login_started → logged_in) → collected_signed_up → host_contacted. Гость события Ясвами:
- * app_opened → event_viewed → rsvp_submitted → link_shared. Организатор: create_opened → event_created → link_shared.
+ * app_opened → event_viewed → rsvp_submitted → link_shared. Организатор: create_opened → event_created → link_shared;
+ * поиск людей: host_searches_viewed → host_search_enabled или host_search_created → host_search_match_opened.
  * «Первый заход» отдельным действием не шлём: в PostHog у шага воронки есть условие «впервые для пользователя».
  */
 type Action =
@@ -21,7 +22,8 @@ type Action =
   | 'hosts_viewed' | 'hosts_filtered' | 'host_viewed' | 'practice_signup_clicked'
   | 'search_viewed' | 'search_result_opened'
   | 'event_viewed' | 'rsvp_submitted' | 'link_shared'
-  | 'my_events_viewed' | 'create_opened' | 'create_denied' | 'event_created' | 'event_updated' | 'event_claimed';
+  | 'my_events_viewed' | 'create_opened' | 'create_denied' | 'event_created' | 'event_updated' | 'event_claimed'
+  | 'host_searches_viewed' | 'host_search_created' | 'host_search_enabled' | 'host_search_paused' | 'host_search_match_opened';
 type Props = Record<string, string | number | boolean | null | undefined>;
 
 // Вход на сайте уводит со страницы; по этой отметке после возврата понимаем, что человек именно вошёл, а не вернулся со старой сессией.

@@ -292,6 +292,37 @@ console.log('cover ok');
   console.log('leads ok');
 }
 
+// Кандидаты в Находки по Запросам организаторов: отбор по ключевым словам без ИИ.
+{
+  const { pickSearchCandidates } = await import('./lead.mjs');
+  const now = 1_800_000_000_000;
+  const at = (minutesAgo) => now / 1000 - minutesAgo * 60;
+  const user = { className: 'User', id: 42n, firstName: 'Лена', username: 'lena', bot: false };
+  const searches = [
+    { id: 's1', query: 'ищут массаж', keywords: ['массаж', 'спин'], host_telegram_id: 7 },
+    { id: 's2', query: 'ищут йогу', keywords: ['йог', 'yoga'], host_telegram_id: 8 },
+    { id: 's3', query: 'новый', keywords: null, host_telegram_id: 9 }, // слова ещё не выведены
+  ];
+  const picked = pickSearchCandidates('danang_chat', [
+    { id: 1, date: at(10), message: 'Болит спина, посоветуйте массажиста', sender: user },
+    { id: 2, date: at(9), message: 'Где тут Yoga по утрам?', sender: user },
+    { id: 3, date: at(8), message: 'Делаю массаж, пишите', sender: { ...user, id: 7n } }, // сам организатор
+    { id: 4, date: at(7), message: 'Убегаю на рынок', sender: user }, // «бег» не с начала слова — и так не в словах
+    { id: 5, date: at(6), message: 'Нужен массаж', sender: { ...user, bot: true } }, // бот
+    { id: 6, date: at(2 * 24 * 60), message: 'Нужен массаж', sender: user }, // старше суток
+    { id: 7, date: at(5), message: 'Массаж ' + 'очень длинное объявление '.repeat(30), sender: user }, // объявление
+    { id: 8, date: at(4), message: 'Пропилен в спинке кресла', sender: user }, // «спин» с начала слова «спинке» — пусть решает ИИ
+    { id: 9, date: at(3), message: 'Подойдёт и ремонт', sender: user },
+  ], searches, now);
+  assert.deepEqual(picked.map((c) => [c.message_id, c.searches.map((s) => s.id)]), [[1, ['s1']], [2, ['s2']], [8, ['s1']]]);
+  assert.deepEqual(picked[0], {
+    sent_at: new Date(at(10) * 1000).toISOString(), chat: 'danang_chat', message_id: 1, url: 'https://t.me/danang_chat/1',
+    author: { id: 42, name: 'Лена', username: 'lena' }, text: 'Болит спина, посоветуйте массажиста', searches: [{ id: 's1', query: 'ищут массаж' }],
+  });
+  assert.deepEqual(pickSearchCandidates('danang_chat', [{ id: 1, date: at(1), message: 'массаж', sender: user }], []), []);
+  console.log('host searches ok');
+}
+
 // Разведка: активность чата и люди с интересом к досугу.
 {
   const { chatStats, pickCandidates } = await import('./scout.mjs');

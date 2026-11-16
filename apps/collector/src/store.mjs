@@ -174,6 +174,17 @@ export function createStore(url) {
     claim: async (id) => (await sql`update messages set status = 'sending' where id = ${id} and status = 'queued' returning id`).length > 0,
     failStuck: () => sql`update messages set status = 'failed' where status = 'sending'`,
     messageStatus: (id, status) => sql`update messages set status = ${status} where id = ${id}`,
+    /** Включённые Запросы организаторов: что ищут, ключевые слова (null — ещё не выведены) и кто организатор в Telegram. */
+    activeSearches: () => sql`
+      select s.id, s.query, s.keywords, h.telegram_id::float8 as host_telegram_id
+      from host_searches s join hosts h on h.id = s.host_id
+      where s.status = 'active' and h.user_id is not null`,
+    /** Ключевые слова Запроса — только если текст не сменился, пока ИИ думал. */
+    saveSearchKeywords: (id, query, keywords) => sql`update host_searches set keywords = ${keywords} where id = ${id} and query = ${query}`,
+    /** Находка по Запросу; то же сообщение второй раз не пишется. */
+    saveSearchMatch: ({ search_id, chat, message_id, url, author, text, sent_at }) => sql`
+      insert into host_search_matches ${sql({ search_id, chat, message_id, url, author_id: author.id, author_name: author.name, author_username: author.username, text, sent_at })}
+      on conflict do nothing`,
     end: () => sql.end(),
   };
 }

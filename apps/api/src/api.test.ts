@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostListItem, InboxFeed, Me, Message, PracticeSignup, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
+import type { AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Me, Message, PracticeSignup, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -14,7 +14,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hosts, messages, photos, practices as practicesTable, practiceSignups, sources, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, messages, photos, practices as practicesTable, practiceSignups, sources, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { saveUserPhoto } from './photos.ts';
@@ -237,7 +237,8 @@ test('MCP: список инструментов, создание событи�
   assert.deepEqual(tools.map((t: { name: string }) => t.name).sort(), [
     'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
-    'events_ticket_types_update', 'events_update', 'hosts_get', 'hosts_list', 'hosts_practices_signup', 'me_collected_list', 'search', 'users_get_self',
+    'events_ticket_types_update', 'events_update', 'host_searches_create', 'host_searches_delete', 'host_searches_list', 'host_searches_matches_list', 'host_searches_update',
+    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'me_collected_list', 'search', 'users_get_self',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
@@ -299,7 +300,7 @@ test('собранные события: витрина без входа, за�
   const guest = tma(20, 'Оля');
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
-  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: 20, first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [] });
+  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: 20, first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [], host_id: null });
 
   // «Мои события»: куда записывался и куда только заходил
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-2-0/visit', {})).status, 204);
@@ -1891,6 +1892,55 @@ test('города: всё прежнее — Дананг; новый горо�
   settings.featuresOn = featuresOn;
 });
 
+test('Запросы организатора: предложения по Practice, правка, Находки только свои', async () => {
+  await insertHosts([
+    { telegram_id: 9101, username: 'masha_massage', name: 'Маша', practices: [{ title: 'Массаж спины', topic: 'телесные практики', description: null, price: null, status: 'published' }] },
+    { telegram_id: 9102, username: 'other_host', name: 'Другой' },
+  ]);
+  const masha = tma(9101, 'Маша');
+  const other = tma(9102, 'Другой');
+
+  // Не организатор — отказ; организатор становится подтверждённым, когда входит (auth.ts).
+  assert.equal((await call(tma(9103, 'Гость'), 'GET', '/host-searches')).status, 403);
+  assert.ok(((await (await call(masha, 'GET', '/me')).json()) as Me).host_id);
+
+  const suggested = (await (await call(masha, 'GET', '/host-searches')).json()) as HostSearchList;
+  assert.deepEqual(suggested.entries.map((e) => [e.query, e.status, e.keywords]), [['ищут массаж спины', 'suggested', null]]);
+  // Второй раз не предлагаем заново.
+  assert.equal(((await (await call(masha, 'GET', '/host-searches')).json()) as HostSearchList).entries.length, 1);
+
+  const id = suggested.entries[0]!.id;
+  const on = (await (await call(masha, 'PATCH', `/host-searches/${id}`, { status: 'active' })).json()) as HostSearch;
+  assert.equal(on.status, 'active');
+  // Сборщик вывел слова; новый текст их сбрасывает.
+  await db.execute(sql`update host_searches set keywords = '{массаж}' where id = ${id}`);
+  const rewritten = (await (await call(masha, 'PATCH', `/host-searches/${id}`, { query: 'ищут массаж, болит спина' })).json()) as HostSearch;
+  assert.deepEqual([rewritten.query, rewritten.keywords, rewritten.status], ['ищут массаж, болит спина', null, 'active']);
+
+  const created = await call(masha, 'POST', '/host-searches', { query: 'ищут остеопата' });
+  assert.equal(created.status, 201);
+  assert.equal(((await created.json()) as HostSearch).status, 'active');
+  assert.equal((await call(masha, 'POST', '/host-searches', { query: 'a' })).status, 400);
+
+  // Чужой Запрос не видно и не поменять.
+  assert.equal((await call(other, 'PATCH', `/host-searches/${id}`, { status: 'paused' })).status, 404);
+  assert.equal((await call(other, 'DELETE', `/host-searches/${id}`)).status, 404);
+
+  const match = (n: number) => ({ search_id: id, chat: 'danang_chat', message_id: n, url: `https://t.me/danang_chat/${n}`, author_id: 77, author_name: 'Лена', author_username: 'lena', text: `болит спина, посоветуйте массаж ${n}`, sent_at: new Date() });
+  await db.insert(hostSearchMatches).values([match(1), match(2), match(3)]);
+  const page = (await (await call(masha, 'GET', '/host-searches/matches?pagination_limit=2')).json()) as HostSearchMatchList;
+  assert.equal(page.entries.length, 2);
+  assert.equal(page.has_more, true);
+  const rest = (await (await call(masha, 'GET', `/host-searches/matches?pagination_limit=2&pagination_cursor=${page.next_cursor}`)).json()) as HostSearchMatchList;
+  assert.deepEqual([rest.entries.length, rest.has_more, rest.next_cursor], [1, false, null]);
+  assert.equal(new Set([...page.entries, ...rest.entries].map((m) => m.message_id)).size, 3);
+  assert.equal(((await (await call(other, 'GET', '/host-searches/matches')).json()) as HostSearchMatchList).entries.length, 0);
+
+  // Удалили Запрос — пропали и его Находки.
+  assert.equal((await call(masha, 'DELETE', `/host-searches/${id}`)).status, 204);
+  assert.equal(((await (await call(masha, 'GET', '/host-searches/matches')).json()) as HostSearchMatchList).entries.length, 0);
+});
+
 test('парность: у каждого инструмента MCP есть маршрут REST и наоборот', async () => {
   const PAIRS: Record<string, string> = {
     collected_events_list: 'GET /collected-events',
@@ -1904,6 +1954,11 @@ test('парность: у каждого инструмента MCP есть м
     users_get_self: 'GET /me',
     me_collected_list: 'GET /me/collected',
     contacts_list: 'GET /contacts',
+    host_searches_list: 'GET /host-searches',
+    host_searches_create: 'POST /host-searches',
+    host_searches_update: 'PATCH /host-searches/:id',
+    host_searches_delete: 'DELETE /host-searches/:id',
+    host_searches_matches_list: 'GET /host-searches/matches',
     events_list: 'GET /events',
     events_create: 'POST /events',
     events_get: 'GET /events/:id',

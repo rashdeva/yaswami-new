@@ -142,3 +142,23 @@ test('сборщик: аккаунты и очередь отправки', asyn
   await store.messageStatus(message!.id, 'sent');
   assert.equal((await sql`select status from messages`)[0]!.status, 'sent');
 });
+
+test('сборщик: Запросы организаторов и Находки', async () => {
+  await sql`insert into users (id, first_name, lang, timezone) values (601, 'Маша', 'ru', 'Asia/Ho_Chi_Minh')`;
+  const [host] = await sql`insert into hosts (telegram_id, username, name, user_id) values (601, 'masha', 'Маша', 601) returning id`;
+  const [stranger] = await sql`insert into hosts (telegram_id, username, name) values (602, 'nobody', 'Никто') returning id`;
+  const [search] = await sql`insert into host_searches (host_id, query) values (${host!.id}, 'ищут массаж') returning id`;
+  await sql`insert into host_searches (host_id, query, status) values (${host!.id}, 'выключен', 'paused')`;
+  await sql`insert into host_searches (host_id, query) values (${stranger!.id}, 'не подтверждён')`; // организатор не входил — не ищем
+
+  assert.deepEqual((await store.activeSearches()).map((s: any) => [s.id, s.query, s.keywords, s.host_telegram_id]), [[search!.id, 'ищут массаж', null, 601]]);
+  // Текст сменился, пока ИИ думал, — старые слова не пишем.
+  await store.saveSearchKeywords(search!.id, 'другой текст', ['йог']);
+  await store.saveSearchKeywords(search!.id, 'ищут массаж', ['массаж', 'спин']);
+  assert.deepEqual((await store.activeSearches())[0].keywords, ['массаж', 'спин']);
+
+  const match = { search_id: search!.id, chat: 'danang_chat', message_id: 1, url: 'https://t.me/danang_chat/1', author: { id: 42, name: 'Лена', username: null }, text: 'Нужен массаж', sent_at: new Date().toISOString() };
+  await store.saveSearchMatch(match);
+  await store.saveSearchMatch(match);
+  assert.deepEqual((await sql`select author_id::int, author_name, author_username, text from host_search_matches`).map((r) => ({ ...r })), [{ author_id: 42, author_name: 'Лена', author_username: null, text: 'Нужен массаж' }]);
+});

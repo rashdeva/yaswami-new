@@ -34,7 +34,8 @@ export function App() {
   // У публичных экранов свой нейтральный цвет; личные выставляют цвет шаблона события сами.
   if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/hosts') || pathname === '/services' || pathname === '/search') && kind !== 'o') setKind('o');
 
-  // Куда ведёт «назад»: событие и поиск → витрина, организатор → каталог, создание → список или витрина. null — корень.
+  // Куда ведёт «назад»: событие и поиск → витрина, организатор → каталог, своё событие и поиск людей → «Мои»,
+  // создание → список или витрина. null — корень.
   const here = { includeSearch: false } as const; // ?signup, ?startapp в адресе маршрут не меняют
   const section = matchRoute({ to: '/events/$id/edit/$section', ...here });
   const edit = matchRoute({ to: '/events/$id/edit', ...here });
@@ -46,7 +47,7 @@ export function App() {
       ? () => void navigate({ to: '/events/$id/edit', params: { id: section.id } })
       : edit
         ? () => void navigate({ to: '/events/$id', params: { id: edit.id } })
-        : matchRoute({ to: '/events/$id', ...here })
+        : matchRoute({ to: '/events/$id', ...here }) || matchRoute({ to: '/people', ...here })
           ? () => void navigate({ to: '/my' })
           : matchRoute({ to: '/new', ...here })
             ? () => void navigate({ to: hasEvents ? '/my' : '/' })

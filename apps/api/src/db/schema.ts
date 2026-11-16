@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -280,6 +280,39 @@ export const practiceSignups = pgTable(
   (t) => [primaryKey({ columns: [t.practice_id, t.user_id] }), index('practice_signups_user_idx').on(t.user_id), index('practice_signups_host_idx').on(t.host_id)],
 );
 
+// Запрос организатора: каких людей он ищет в больших чатах (core/host-searches.ts). Ключевые слова выводит сборщик.
+export const hostSearches = pgTable(
+  'host_searches',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    host_id: uuid().notNull().references(() => hosts.id, { onDelete: 'cascade' }),
+    query: text().notNull(),
+    status: text().$type<HostSearchStatus>().notNull().default('active'),
+    keywords: text().array(), // null — сборщик ещё не вывел; сбрасывается при смене query
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('host_searches_host_idx').on(t.host_id), check('host_searches_status_check', sql`${t.status} in ('suggested', 'active', 'paused')`)],
+);
+
+// Находка по Запросу: сообщение из чата, подошедшее по мнению ИИ. Пишет сборщик (store.mjs, saveSearchMatch).
+export const hostSearchMatches = pgTable(
+  'host_search_matches',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    search_id: uuid().notNull().references(() => hostSearches.id, { onDelete: 'cascade' }),
+    chat: text().notNull(),
+    message_id: integer().notNull(),
+    url: text().notNull(),
+    author_id: telegramId('author_id').notNull(),
+    author_name: text().notNull(),
+    author_username: text(),
+    text: text().notNull(),
+    sent_at: at('sent_at').notNull(),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('host_search_matches_message_idx').on(t.search_id, t.chat, t.message_id), index('host_search_matches_created_idx').on(t.created_at)],
+);
+
 // Аудитория организатора — contacts календаря в Luma API. Организатор у нас — пользователь (events.user_id).
 // Сюда же лягут метки, блокировки и отписки, когда появятся рассылки.
 export const contacts = pgTable(
@@ -448,4 +481,6 @@ export const tablesMatchCore: [
   Same<typeof adminActions.$inferSelect, AdminAction>,
   Same<typeof cities.$inferSelect, City>,
   Same<Omit<typeof practices.$inferSelect, 'host_id' | 'position' | 'created_at'>, Practice>,
-] = [true, true, true, true, true, true, true, true, true, true, true];
+  Same<typeof hostSearches.$inferSelect, HostSearch>,
+  Same<typeof hostSearchMatches.$inferSelect, HostSearchMatch>,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true];
