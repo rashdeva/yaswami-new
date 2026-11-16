@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createExtractor, createOfferExtractor, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
+import { createExtractor, createOfferExtractor, createSearchMatcher, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
 import { connect, downloadCover, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { refreshOld } from './refresh.mjs';
@@ -34,6 +34,7 @@ const extract = extractFor({ city: env.CITY ?? 'Дананг', timezone: env.TIM
 
 const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const extractOffer = createOfferExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
+const matcher = createSearchMatcher({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 // Поиск по username — самый флудоопасный вызов Telegram: за проход собираем немного профилей, остальные — в следующий.
 const PROFILES_PER_PASS = 15;
 // Профиль пересматриваем раз в неделю: «о себе» и канал меняются, а по каналу берутся фото и источник.
@@ -126,14 +127,35 @@ const toApi = async (path, body) => {
 // Большие чаты, где ищем вопросы «куда сходить» (lead.mjs): username без @ через запятую. Анонсы из них не берём.
 const leadChats = (env.LEAD_CHATS ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
 
-async function pollLeads(chat) {
+/** Включённые Запросы организаторов; тем, у кого ещё нет ключевых слов (новый или переписанный), их выводит ИИ. */
+async function activeSearches() {
+  const searches = await store.activeSearches();
+  for (const search of searches.filter((s) => !s.keywords)) {
+    // Не вышло (лимит ИИ) — этот Запрос пропускает проход, остальные ищутся.
+    search.keywords = await matcher.keywords(search.query).catch((e) => (console.error(`слова запроса ${search.id}: ${e.message}`), null));
+    if (search.keywords) await store.saveSearchKeywords(search.id, search.query, search.keywords);
+    await sleep(llmPauseMs);
+  }
+  return searches;
+}
+
+async function pollLeads(chat, searches) {
   const key = `lead:${chat}`; // отметка в той же таблице, что у каналов с анонсами
-  const { last, read, leads, offers } = await fetchLeads(userbot, chat, cursors[key] ?? 0);
+  const { last, read, leads, offers, candidates } = await fetchLeads(userbot, chat, cursors[key] ?? 0, searches);
   for (const lead of leads) await toApi('lead', lead);
+  // Кандидатов в Находки проверяет ИИ: ключевые слова ловят и тех, кто сам предлагает услугу.
+  // ponytail: каждый кандидат — запрос к ИИ; если слова Запроса окажутся слишком общими, ограничить число за проход.
+  let found = 0;
+  for (const { searches: fit, ...message } of candidates) {
+    const ids = await matcher.matching(message.text, fit).catch((e) => (console.error(`находки ${message.url}: ${e.message}`), []));
+    for (const search_id of ids) await store.saveSearchMatch({ search_id, ...message });
+    found += ids.length ? 1 : 0;
+    await sleep(llmPauseMs);
+  }
   if (last !== cursors[key]) await store.saveCursor(key, (cursors[key] = last));
   const masters = await saveOffers({ store, extractOffer, resolve: (u) => resolveAuthor(userbot, u), pause: () => sleep(llmPauseMs) }, offers);
   // Каждый проход — в журнал: иначе не отличить «вопросов нет» от «чат не читается».
-  console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}, мастеров ${masters} из ${offers.length}`);
+  console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}, мастеров ${masters} из ${offers.length}, находок ${found} из ${candidates.length}`);
 }
 
 // Railway проверяет /health при деплое (общий railway.json) и гасит старый контейнер, только когда новый ответил.
@@ -245,8 +267,9 @@ do {
     await pollChannel(source, known).catch((e) => console.error(`${source.channel}: ${e.message}`));
     await sleep(2000); // не частим с запросами к Telegram
   }
+  const searches = leadChats.length ? await activeSearches().catch((e) => (console.error(`запросы организаторов: ${e.message}`), [])) : [];
   for (const chat of env.API_URL && env.COLLECTOR_SECRET ? leadChats : []) {
-    await pollLeads(chat).catch((e) => console.error(`вопросы ${chat}: ${e.message}`));
+    await pollLeads(chat, searches).catch((e) => console.error(`вопросы ${chat}: ${e.message}`));
     await sleep(2000);
   }
   await refreshPosts().catch((e) => console.error(`публикации: ${e.message}`));

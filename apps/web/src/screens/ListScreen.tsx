@@ -28,13 +28,15 @@ interface Props {
   onLogout: (() => void) | null;
   /** Создать событие; null — человеку создание не открыто, кнопки нет. */
   onNew: (() => void) | null;
+  /** Поиск людей под запросы организатора; null — человек не подтверждённый организатор, кнопки нет. */
+  onPeople: (() => void) | null;
   onKind: (kind: Event['kind']) => void;
 }
 
 /** Строка списка: свои события и собранные выглядят одинаково. */
 interface Row { key: string; kind: Event['kind']; icon: string; topic?: string; cover?: string | null; title: string; note: string; start: string; /** Дата и время «на стене» в поясе события: по ним день и время в списке. */ wall: string; past: boolean; open: () => void }
 
-export function ListScreen({ events, collected, lead, onOpen, onOpenCollected, onLogout, onNew, onKind }: Props) {
+export function ListScreen({ events, collected, lead, onOpen, onOpenCollected, onLogout, onNew, onPeople, onKind }: Props) {
   // Событие считается прошедшим через три часа после начала (или после конца, если он задан).
   const now = Date.now();
   const rows: Row[] = [
@@ -74,6 +76,7 @@ export function ListScreen({ events, collected, lead, onOpen, onOpenCollected, o
   return (
     <>
       <div className="top"><h1>Мои события</h1></div>
+      {onPeople && <div className="chips"><button className="chip" onClick={onPeople}>🔎 Поиск людей</button></div>}
       {lead}
       {days.map((list) => {
         const label = dayLabel(list[0]!.wall);

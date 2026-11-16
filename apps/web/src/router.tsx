@@ -4,6 +4,7 @@ import { App, Claims, useClaim, useLogout, useShell } from './App.tsx';
 import { hasCredentials, startLogin } from './api.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
 import { useFeature } from './hooks/useFeature.ts';
+import { contactMatch, useHostSearches } from './hooks/useHostSearches.ts';
 import { useSession } from './hooks/useSession.ts';
 import { useViewed } from './hooks/useViewed.ts';
 import { CollectedScreen } from './screens/CollectedScreen.tsx';
@@ -14,6 +15,7 @@ import { FeedScreen } from './screens/FeedScreen.tsx';
 import { HostScreen } from './screens/HostScreen.tsx';
 import { HostsScreen } from './screens/HostsScreen.tsx';
 import { ListScreen } from './screens/ListScreen.tsx';
+import { PeopleScreen } from './screens/PeopleScreen.tsx';
 import { SearchScreen } from './screens/SearchScreen.tsx';
 import { startParam } from './tg.ts';
 
@@ -147,9 +149,11 @@ function ListPage() {
   const { onKind } = useShell();
   const canCreate = useFeature('event_create');
   const logout = useLogout();
+  const { me } = useSession();
   if (failed) return <Failed error={failed} />;
   if (total === null) return <Spinner />;
-  if (total === 0 && canCreate) return <Navigate to="/new" replace />; // показывать нечего — организатору предлагаем создать
+  // Показывать нечего — организатору предлагаем создать. У организатора каталога здесь ещё и поиск людей: остаётся.
+  if (total === 0 && canCreate && !me?.host_id) return <Navigate to="/new" replace />;
   return (
     <ListScreen
       events={events ?? []}
@@ -160,11 +164,24 @@ function ListPage() {
       onOpenCollected={(item) => void navigate({ to: '/e/$id', params: { id: item.id } })}
       onLogout={logout}
       onNew={canCreate ? () => void navigate({ to: '/new' }) : null}
+      onPeople={me?.host_id ? () => void navigate({ to: '/people' }) : null}
       onKind={onKind}
     />
   );
 }
 const list = createRoute({ getParentRoute: () => personal, path: '/my', component: ListPage });
+
+/** Поиск людей — только подтверждённому организатору; остальным адрес ведёт в «Мои». */
+function PeoplePage() {
+  const { me } = useSession();
+  const { toast } = useShell();
+  const { searches, matches, failed, create, setActive, remove } = useHostSearches();
+  if (!me?.host_id) return <Navigate to="/my" replace />;
+  if (failed) return <Failed error={failed} />;
+  if (!searches || !matches) return <Spinner />;
+  return <PeopleScreen searches={searches} matches={matches} onCreate={create} onActive={setActive} onRemove={remove} onContact={contactMatch} toast={toast} />;
+}
+const people = createRoute({ getParentRoute: () => personal, path: '/people', component: PeoplePage });
 
 function CreatePage() {
   const navigate = useNavigate();
@@ -208,7 +225,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, oldHostsRoute, hostRoute, searchRoute, personal.addChildren([list, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, oldHostsRoute, hostRoute, searchRoute, personal.addChildren([list, people, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 

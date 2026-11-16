@@ -8,7 +8,7 @@ import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { AdminAction, AdminActionList, AdminActionListInput, AdminEntity, User } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import {
-  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hosts, messages, photos, practices, practiceSignups, shares, sources,
+  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hostSearches, hosts, messages, photos, practices, practiceSignups, shares, sources,
   ticketTypes, tgAccounts, users,
 } from './db/schema.ts';
 import { AppError, collectedExternalId } from './services.ts';
@@ -58,7 +58,7 @@ const KINDS: Record<AdminEntity, Kind> = {
     omit: ['views', 'reactions'],
     children: { cover: photos.collected_external_id, signups: collectedEventSignups.external_id },
   },
-  host: { root: hosts, key: hosts.id, children: { photos: photos.host_id, practices: practices.host_id, practice_signups: practiceSignups.host_id } },
+  host: { root: hosts, key: hosts.id, children: { photos: photos.host_id, practices: practices.host_id, practice_signups: practiceSignups.host_id, host_searches: hostSearches.host_id } },
   // Аватар не входит: он подтянется из Telegram при следующем входе. Токены не входят никогда.
   user: {
     root: users, key: users.id, toKey: Number,

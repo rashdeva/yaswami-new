@@ -302,6 +302,13 @@
       "when": 1794754077428,
       "tag": "20261115144757_host_profiled_at",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1794804346788,
+      "tag": "20261116044546_host_searches",
+      "breakpoints": true
     }
   ]
 }
