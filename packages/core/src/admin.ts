@@ -134,6 +134,7 @@ export interface Host {
   status: HostStatus;
   offer_url: string | null; // сообщение в чате, из которого сборщик взял мастера: по нему модератор сверяет Practice
   photos_checked_at: Date | null;
+  profiled_at: Date | null; // когда сборщик последний раз смотрел профиль в Telegram
   created_at: Date;
 }
 

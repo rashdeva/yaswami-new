@@ -109,6 +109,19 @@ test('сборщик: организаторы, их услуги и фото', 
   assert.deepEqual([...await store.photoSources(host!.id)], ['telegram:anna_channel/2']);
   await store.photosChecked(host!.id);
   assert.equal((await store.stalePhotos(7, 5)).length, 0);
+
+  // Пересмотр профилей: только что собранный не трогаем; мастер из чата (offers) ни разу не смотрен — первый в очереди.
+  assert.deepEqual((await store.staleProfiles(7, 5)).map((h: any) => [h.username, Number(h.telegram_id), h.has_summary]), [['boris', 501, false]]);
+  await sql`update hosts set profiled_at = now() - interval '8 days', name = 'Анна (правка команды)' where telegram_id = 500`;
+  assert.deepEqual((await store.staleProfiles(7, 1)).map((h: any) => h.username), ['boris'], 'сначала несмотренные');
+  await store.refreshHost({ telegram_id: 500, bio: 'йога и пилатес', channel: null, summary: 'новая' });
+  const [anna] = await sql`select name, bio, channel, summary from hosts where telegram_id = 500`;
+  assert.deepEqual([anna!.name, anna!.bio, anna!.channel, anna!.summary], ['Анна (правка команды)', 'йога и пилатес', 'anna_channel', 'Ведёт йогу'], 'имя и сводку команды не трогаем, канал не стираем');
+  await store.profileChecked(501);
+  assert.equal((await store.staleProfiles(7, 5)).length, 0);
+  // Отклонённых не пересматриваем и фото им не качаем.
+  await sql`update hosts set status = 'rejected', profiled_at = null, photos_checked_at = null where telegram_id = 500`;
+  assert.deepEqual([(await store.staleProfiles(7, 5)).length, (await store.stalePhotos(7, 5)).length], [0, 0]);
 });
 
 test('сборщик: аккаунты и очередь отправки', async () => {

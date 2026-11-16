@@ -204,6 +204,8 @@ export const hosts = pgTable(
     offer_url: text(), // сообщение, из которого сборщик взял мастера
     // Когда сборщик последний раз смотрел фото в канале; null — ещё не смотрел. Фото может и не оказаться.
     photos_checked_at: at('photos_checked_at'),
+    // Когда сборщик последний раз смотрел профиль в Telegram (bio, канал); раз в PROFILE_REFRESH_DAYS смотрит снова.
+    profiled_at: at('profiled_at'),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [index('hosts_username_idx').on(t.username)],

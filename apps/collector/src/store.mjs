@@ -82,7 +82,26 @@ export function createStore(url) {
       await tx`delete from hosts where ${stub()}`;
       // Пока все пользователи — из Telegram, users.id и есть Telegram id.
       await tx`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`;
+      await tx`update hosts set profiled_at = now() where telegram_id = ${host.telegram_id}`;
     }),
+    /**
+     * Профили, которые сборщик не смотрел дольше `days` дней (или ни разу: мастера из чатов, offers.mjs), кроме
+     * отклонённых. `has_summary` — сводку уже писали: повторно в ИИ не отправляем.
+     */
+    staleProfiles: (days, limit) => sql`
+      select username, telegram_id, summary is not null as has_summary from hosts
+      where telegram_id is not null and status <> 'rejected'
+        and (profiled_at is null or profiled_at < now() - make_interval(days => ${days}))
+      order by profiled_at nulls first limit ${limit}`,
+    /**
+     * Свежее из Telegram: «о себе» и канал. Имя и сводку правит команда, поэтому их не трогаем — сводку пишем, только
+     * если её нет (стереть в карточке — сборщик напишет заново). Канал не стираем: его могла указать команда.
+     */
+    refreshHost: ({ telegram_id, bio, channel, summary }) => sql`
+      update hosts set bio = ${bio}, channel = coalesce(${channel}, channel), summary = coalesce(summary, ${summary}), profiled_at = now()
+      where telegram_id = ${telegram_id}`,
+    /** Профиль посмотрели, но обновить нечем (username теперь чужой или пропал): не спрашиваем снова до следующего срока. */
+    profileChecked: (telegram_id) => sql`update hosts set profiled_at = now() where telegram_id = ${telegram_id}`,
     /** Уже знаем, что этот человек ведёт (offers.mjs): объявление повторно в ИИ не отправляем. `who` — Telegram id или username. */
     hasPractices: async (who) => (await sql`
       select 1 from practices p join hosts h on h.id = p.host_id
@@ -101,11 +120,14 @@ export function createStore(url) {
       }
       await tx`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`;
     }),
-    /** Организаторы предстоящих событий с каналом, у которых фото сообщества не смотрели дольше `days` дней. */
+    /**
+     * Организаторы с каналом, у которых фото сообщества не смотрели дольше `days` дней, кроме отклонённых. Не только
+     * с предстоящими событиями: добавленному командой фото нужны и до первого события.
+     */
     stalePhotos: (days, limit) => sql`
       select id, channel from hosts
-      where channel is not null and (photos_checked_at is null or photos_checked_at < now() - make_interval(days => ${days}))
-        and username in (select telegram_username from collected_events where coalesce(ends_at, starts_at) >= now())
+      where channel is not null and status <> 'rejected'
+        and (photos_checked_at is null or photos_checked_at < now() - make_interval(days => ${days}))
       order by photos_checked_at nulls first limit ${limit}`,
     photoSources: async (hostId) => (await sql`select source from photos where host_id = ${hostId}`).map((r) => r.source),
     /** Фото сообщества: убираем те, которых в канале уже нет среди последних (`sources`), добавляем новые. */
