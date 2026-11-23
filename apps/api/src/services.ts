@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNot
 import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedListInput, CollectedStatus, CollectedUpdateInput,
-  CityFilterInput, CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, Job, JobItem, JobList, JobListInput, MyCollectedItem, Practice, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
+  City, CityFilterInput, CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, Job, JobItem, JobList, JobListInput, MyCollectedItem, Practice, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, UserSelfUpdateInput, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
@@ -136,6 +136,9 @@ const collectedWithCover = (db: Db | Tx) => db
   .select({ ...getTableColumns(collectedEvents), cover_id: photos.id })
   .from(collectedEvents)
   .leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id));
+
+/** Города, где работает сервис, первый — старейший (он же город по умолчанию). Открыт всем: из них гость выбирает свой. */
+export const listCities = (db: Db | Tx): Promise<City[]> => db.select().from(cities).orderBy(asc(cities.created_at));
 
 /** Город команда указывает по id: несуществующий — понятный отказ, а не сбой внешнего ключа. */
 export async function assertCity(db: Db | Tx, id: string | undefined): Promise<void> {
@@ -789,15 +792,18 @@ export async function me(db: Db, actor: User): Promise<Me> {
     claimable: claimable.map(toCollectedItem),
     host_id: (await db.select({ id: hosts.id }).from(hosts).where(eq(hosts.user_id, actor.id)))[0]?.id ?? null,
     subscribed_topics: (await db.select({ topics: subscriptions.topics }).from(subscriptions).where(eq(subscriptions.user_id, actor.id)))[0]?.topics ?? null,
+    city_id: (await db.select({ city_id: users.city_id }).from(users).where(eq(users.id, actor.id)))[0]?.city_id ?? DEFAULT_CITY_ID,
   };
 }
 
 /**
- * Правка своих настроек: Подписка на темы. Список заменяет прежний; [] — отписка, строка остаётся как «уже спрашивали».
- * `notified_at` ставится только при первой записи: сводка расскажет о событиях, вышедших после неё.
+ * Правка своих настроек: Подписка на темы и город; меняется только переданное. Список тем заменяет прежний; [] — отписка,
+ * строка остаётся как «уже спрашивали». `notified_at` ставится только при первой записи: сводка расскажет о событиях, вышедших после неё.
  */
-export async function updateSelf(db: Db, actor: User, { subscribed_topics: topics }: UserSelfUpdateInput): Promise<Me> {
-  await db.insert(subscriptions).values({ user_id: actor.id, topics }).onConflictDoUpdate({ target: subscriptions.user_id, set: { topics } });
+export async function updateSelf(db: Db, actor: User, { subscribed_topics: topics, city_id }: UserSelfUpdateInput): Promise<Me> {
+  await assertCity(db, city_id);
+  if (city_id) await db.update(users).set({ city_id }).where(eq(users.id, actor.id));
+  if (topics) await db.insert(subscriptions).values({ user_id: actor.id, topics }).onConflictDoUpdate({ target: subscriptions.user_id, set: { topics } });
   return me(db, actor);
 }
 

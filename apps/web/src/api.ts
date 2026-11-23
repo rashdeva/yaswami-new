@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, JobItem, JobList, JobListInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, RsvpInput, SearchResult, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
+import type { AppConfig, City, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, JobItem, JobList, JobListInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, RsvpInput, SearchResult, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
 import { track } from './analytics.ts';
 import { inTelegram, tg } from './tg.ts';
 
@@ -63,14 +63,15 @@ export type EventListData = Wire<EventListItem>;
 export const api = {
   config: () => request<AppConfig>('GET', '/config'),
   listTopics: () => request<TopicItem[]>('GET', '/topics'),
+  cities: () => request<Wire<City>[]>('GET', '/cities'),
   me: () => request<Me>('GET', '/me'),
   updateSelf: (input: UserSelfUpdateInput) => request<Me>('PATCH', '/me', input),
   logout: () => request<void>('POST', '/auth/logout'),
-  collected: () => request<CollectedEventItem[]>('GET', '/collected-events'),
+  collected: (city_id: string) => request<CollectedEventItem[]>('GET', `/collected-events?city_id=${encodeURIComponent(city_id)}`),
   collectedEvent: (id: string) => request<CollectedEventItem>('GET', `/collected-events/${encodeURIComponent(id)}`),
-  listHosts: () => request<HostListItem[]>('GET', '/hosts'),
+  listHosts: (city_id: string) => request<HostListItem[]>('GET', `/hosts?city_id=${encodeURIComponent(city_id)}`),
   getHost: (id: string) => request<HostItem>('GET', `/hosts/${encodeURIComponent(id)}`),
-  search: (query: string) => request<Wire<SearchResult>>('GET', `/search?query=${encodeURIComponent(query)}`),
+  search: (query: string, city_id: string) => request<Wire<SearchResult>>('GET', `/search?query=${encodeURIComponent(query)}&city_id=${encodeURIComponent(city_id)}`),
   listJobs: ({ city_id, pagination_cursor, pagination_limit }: JobListInput = {}) =>
     request<Wire<JobList>>('GET', `/jobs?${new URLSearchParams(Object.entries({ city_id, pagination_cursor, pagination_limit }).flatMap(([k, v]) => (v === undefined ? [] : [[k, String(v)]])))}`),
   getJob: (id: string) =>

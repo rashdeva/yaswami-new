@@ -8,7 +8,7 @@ import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { writing } from './live.ts';
 import { collectedUrl } from './notifications.ts';
-import { getCollectedEvent, getEvent, listEvents, myCollectedEvents } from './services.ts';
+import { getCollectedEvent, getEvent, listCities, listEvents, me, myCollectedEvents } from './services.ts';
 import { settings } from './settings.ts';
 import { issueTicket, support } from './support.ts';
 import type { SupportTurn } from './support.ts';
@@ -17,8 +17,8 @@ import { bot, parseIncoming } from './telegram.ts';
 export const REPLIES = {
   /** Подпись к картинке на /start: до 1024 знаков (лимит подписи Telegram). Про создание события не спрашиваем. */
   welcome: [
-    'Привет! Я «Я с вами», афиша сообщества Дананга 👋',
-    'Здесь йога, баня, танцы, покер, лекции и встречи: собираю их из местных каналов, чтобы не искать по десяткам чатов.',
+    'Привет! Я «Я с вами», афиша сообщества вашего города 👋',
+    'Здесь йога, баня, танцы, покер, лекции и встречи: собираю их из местных каналов, чтобы не искать по десяткам чатов. Город выбирается в приложении.',
     '🗓 Подскажу, куда сходить сегодня или в выходные\n✍️ Запишу к организатору в пару нажатий\n🎉 Проводите события сами? Помогу завести событие и собрать гостей',
     'Просто напишите, что ищете, а всю афишу можно открыть в приложении.',
   ].join('\n\n'),
@@ -71,11 +71,14 @@ async function supportContext(db: Db, actor: User): Promise<SupportTurn> {
   const collected = soon(await myCollectedEvents(db, actor), (c) => c.event.starts_at)
     .map(({ event, signed_up }) => `- «${event.title}», ${event.starts_at} — ${signed_up ? 'нажимал «Записаться» (место подтверждает организатор)' : 'только смотрел'}`);
   const section = (title: string, lines: string[]) => `${title}:\n${lines.length ? lines.join('\n') : '- нет'}`;
+  const { city_id } = await me(db, actor);
+  const city = (await listCities(db)).find((c) => c.id === city_id);
   return {
     role: 'system',
     content: [
       `Данные сервиса о собеседнике (${actor.first_name}). Это его собственные события и записи — их можно ему показывать. Данных о других людях здесь нет.`,
       `Билет для инструментов person_* (действует полчаса, человеку не показывай): ${issueTicket(actor.id)}`,
+      `Его город: ${city?.name ?? city_id} (city_id: ${city_id}). Передавай этот city_id в collected_events_list, hosts_list, search и jobs_list, если он не спросил про другой город (их список — cities_list).`,
       section('События, которые он создал', hosted),
       section('События, на которые он ответил', answered),
       section('События из каталога, которые он открывал', collected),

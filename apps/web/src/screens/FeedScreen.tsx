@@ -7,6 +7,7 @@ import { collectedBadges, collectedDayKey, collectedPath, collectedTime, topicIc
 import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
 import { useTopicSubscription } from '../hooks/useTopicSubscription.ts';
 import { useTopics } from '../hooks/useTopics.ts';
+import { CityPicker } from '../components/CityPicker.tsx';
 import { EventRow } from '../components/EventRow.tsx';
 import { dayLabel } from '../format.ts';
 
@@ -53,7 +54,7 @@ export function FeedScreen({ city, lead, onOpen }: Props) {
       <div className="top">
         <div className="head">
           <h1>События</h1>
-          <p>📍 {city}</p>
+          <CityPicker />
           {subscription.topics && !editing && (
             <button className="chip" onClick={() => setEditing(true)}>🔔 {subscription.topics.length ? `Мои темы: ${subscription.topics.length}` : 'Сообщать о новом'}</button>
           )}

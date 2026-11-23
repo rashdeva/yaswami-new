@@ -1,6 +1,7 @@
 // Таблицы Postgres. Источник правды — схемы в @yaswami/core; блок в конце файла роняет typecheck,
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS } from '@yaswami/core';
@@ -22,6 +23,8 @@ export const users = pgTable('users', {
   lang: text().notNull(),
   timezone: text().notNull(),
   features: jsonb().$type<Feature[]>().notNull().default([]),
+  // Город человека: его витрину открывает мини-приложение, о его событиях пишет сводка по темам. Выбирает сам; новый — первый город.
+  city_id: text().notNull().default(DEFAULT_CITY_ID).references((): AnyPgColumn => cities.id),
 });
 
 /**
@@ -563,7 +566,7 @@ export const adminActions = pgTable(
 // Сверка с ядром: типы должны совпадать в обе стороны.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 export const tablesMatchCore: [
-  Same<typeof users.$inferSelect, User>,
+  Same<Omit<typeof users.$inferSelect, 'city_id'>, User>, // город человека — только в Me: остальному коду User он не нужен
   Same<typeof events.$inferSelect, Event>,
   Same<typeof ticketTypes.$inferSelect, TicketType>,
   Same<typeof guests.$inferSelect, Guest>,

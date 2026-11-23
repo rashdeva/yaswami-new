@@ -3,6 +3,7 @@ import type { HostListItem } from '@yaswami/core';
 import { topicIcon } from '@yaswami/core';
 import { useTopics } from '../hooks/useTopics.ts';
 import { track } from '../analytics.ts';
+import { CityPicker } from '../components/CityPicker.tsx';
 import { GuestRow } from '../components/GuestRow.tsx';
 import { PracticeRow } from '../components/PracticeRow.tsx';
 import { useHosts, usePracticeSignup } from '../hooks/useHosts.ts';
@@ -40,7 +41,7 @@ export function HostsScreen({ city, onOpen, onJobs }: Props) {
       <div className="top">
         <div className="head">
           <h1>Услуги</h1>
-          <p>📍 {city} · мастера и частные занятия</p>
+          <CityPicker suffix=" · мастера и частные занятия" />
         </div>
       </div>
       {topics.length > 1 && (

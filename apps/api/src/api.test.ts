@@ -243,7 +243,7 @@ test('MCP: список инструментов, создание событи�
 
   const { tools } = await rpc('tools/list', {});
   assert.deepEqual(tools.map((t: { name: string }) => t.name).sort(), [
-    'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
+    'cities_list', 'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
     'events_ticket_types_update', 'events_update', 'host_searches_create', 'host_searches_delete', 'host_searches_list', 'host_searches_matches_list', 'host_searches_update',
     'hosts_get', 'hosts_list', 'hosts_practices_signup', 'jobs_get', 'jobs_list', 'me_collected_list', 'search', 'topics_list', 'users_get_self', 'users_update_self',
@@ -308,7 +308,7 @@ test('собранные события: витрина без входа, за�
   const guest = tma(20, 'Оля');
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
-  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: await uid(20), first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [], host_id: null, subscribed_topics: null });
+  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: await uid(20), first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [], host_id: null, subscribed_topics: null, city_id: 'danang' });
 
   // «Мои события»: куда записывался и куда только заходил
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-2-0/visit', {})).status, 204);
@@ -1517,11 +1517,23 @@ test('подписка на темы: PATCH /me и MCP, сводка новых 
   await add(5, 'йога');
   assert.deepEqual(await step(at(62)), [], 'ночью не пишем');
   assert.deepEqual(await step(at(72)), ['Событие 5']);
+  // Сводка — только о событиях города человека: переехал — о событиях нового города.
+  await db.execute(sql`insert into cities (id, name, timezone) values ('hanoi', 'Ханой', 'Asia/Ho_Chi_Minh') on conflict do nothing`);
+  await db.update(collectedEvents).set({ city_id: 'hanoi' }).where(eq(collectedEvents.external_id, (await add(7, 'йога').returning())[0]!.external_id));
+  await add(8, 'йога');
+  assert.deepEqual(await step(at(96)), ['Событие 8']);
+  assert.equal(((await (await call(user, 'PATCH', '/me', { city_id: 'hanoi' })).json()) as Me).city_id, 'hanoi');
+  await db.update(collectedEvents).set({ published_at: null }).where(eq(collectedEvents.external_id, 'telegram:subchan/7#0'));
+  assert.deepEqual(await step(at(120)), ['Событие 7']);
+  assert.deepEqual(await (await call(user, 'PATCH', '/me', { city_id: 'nowhere' })).json(), { error: 'city_not_found' });
+  assert.equal((await mcpCall(user, 'users_update_self', { city_id: 'danang' })).body.city_id, 'danang');
+  assert.deepEqual((await mcpCall(user, 'users_get_self', {})).body.subscribed_topics, ['йога'], 'смена города подписку не трогает');
   // Отписка: строка остаётся — спрашивать заново не будем.
   assert.deepEqual(await me(call(user, 'PATCH', '/me', { subscribed_topics: [] })), []);
   await add(6, 'йога');
-  assert.deepEqual(await step(at(120)), []);
+  assert.deepEqual(await step(at(144)), []);
   await db.execute(sql`delete from collected_events where channel = 'subchan'`);
+  await db.execute(sql`delete from cities where id = 'hanoi'`);
 });
 
 test('отзывы: запрос после события, оценка кнопкой, текст ответом, сводка организатору', async () => {
@@ -2250,6 +2262,9 @@ test('города: всё прежнее — Дананг; новый горо�
   // Без city_id витрина показывает первый город: событие и организатор другого города в неё не попадают…
   assert.ok(!(await feed()).includes('tbilisi_chat-1-0'));
   assert.ok(!((await (await call(admin, 'GET', '/hosts')).json()) as HostListItem[]).some((h) => h.username === 'gio_host'));
+  // Список городов открыт всем: из него гость выбирает свой.
+  assert.deepEqual(((await (await app.request('/cities')).json()) as City[]).map((c) => c.id), ['danang', 'tbilisi']);
+  assert.deepEqual(((await tool('cities_list', {})) as City[]).map((c) => c.name), ['Дананг', 'Тифлис']);
   // …а с city_id — только этот город, и в REST, и в MCP.
   assert.deepEqual(((await (await app.request('/collected-events?city_id=tbilisi')).json()) as CollectedEventItem[]).map((e) => e.id), ['tbilisi_chat-1-0']);
   assert.deepEqual(((await tool('collected_events_list', { city_id: 'tbilisi' })) as { id: string }[]).map((e) => e.id), ['tbilisi_chat-1-0']);
@@ -2348,6 +2363,7 @@ test('парность: у каждого инструмента MCP есть м
     collected_events_claim: 'POST /collected-events/:id/claim',
     collected_events_signup: 'POST /collected-events/:id/signup',
     topics_list: 'GET /topics',
+    cities_list: 'GET /cities',
     users_get_self: 'GET /me',
     users_update_self: 'PATCH /me',
     me_collected_list: 'GET /me/collected',

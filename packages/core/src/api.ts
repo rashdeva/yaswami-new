@@ -16,7 +16,7 @@ const isTimeZone = (tz: string) => {
 // В JSON дата — строка ISO с часовым поясом; в Date её превращает бэк.
 export const dateTime = z.iso.datetime({ offset: true }).describe('ISO 8601 with offset, e.g. 2026-11-20T19:00:00+04:00');
 /** Ссылка на город в правках команды. Не указан при создании — город по умолчанию (DEFAULT_CITY_ID). */
-export const cityId = z.string().max(40).describe('City id from admin_cities_list; defaults to the first city');
+export const cityId = z.string().max(40).describe('City id from cities_list; defaults to the first city');
 export const timeZone = z.string().refine(isTimeZone, 'unknown time zone').describe('IANA time zone, e.g. Asia/Tbilisi');
 
 const eventFields = EventSchema.pick({
@@ -343,13 +343,16 @@ export interface Me {
   host_id: string | null;
   /** Подписка на темы: Topic, о новых событиях которых человеку пишет бот. null — ещё не спрашивали, [] — отказался. В Luma такого нет. */
   subscribed_topics: string[] | null;
+  /** Город человека: его витрину открывает мини-приложение, о его событиях пишет сводка по темам. В Luma такого нет. */
+  city_id: string;
 }
 
 /** Правка своих настроек. Пока одна — Подписка на темы; позже сюда же встанут города. В Luma такого нет. */
 export const UserSelfUpdateInput = z.object({
   subscribed_topics: z.array(z.string().refine((t) => t !== OTHER_TOPIC && isTopic(t), 'unknown topic')).max(100)
     .transform((t) => [...new Set(t)]).describe('Topics the user wants to hear about (names from topics_list); the full list replaces the previous one, [] unsubscribes'),
-});
+  city_id: cityId.describe('City the user lives in (id from cities_list): the mini app opens its catalogue, the topic digest tells about its events'),
+}).partial();
 export type UserSelfUpdateInput = z.infer<typeof UserSelfUpdateInput>;
 
 /** Открытые настройки для фронта: из чего собрать ссылку на событие t.me/<бот>/<приложение>?startapp=<id>. */
@@ -357,7 +360,6 @@ export interface AppConfig {
   bot_username: string | null;
   app_name: string;
   web_login: boolean; // на сайте можно войти через Telegram (настроен Client Secret)
-  city: string; // город витрины; пока он один
   free_events_limit: number; // сколько событий создаётся бесплатно
 }
 

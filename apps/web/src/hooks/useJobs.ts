@@ -4,12 +4,14 @@ import { track } from '../analytics.ts';
 import { api } from '../api.ts';
 import { openExternal } from '../tg.ts';
 import { keys } from './keys.ts';
+import { useCity } from './useSession.ts';
 
 /** Вакансии города, свежие сверху, страницами: `more` — подгрузить следующую, null — больше нет. */
 export function useJobs() {
+  const { city_id } = useCity();
   const { data, error, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery({
-    queryKey: keys.jobs,
-    queryFn: ({ pageParam }) => api.listJobs({ pagination_cursor: pageParam }),
+    queryKey: keys.jobs(city_id),
+    queryFn: ({ pageParam }) => api.listJobs({ city_id, pagination_cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.has_more ? last.next_cursor ?? undefined : undefined),
   });
@@ -23,7 +25,8 @@ export function useJobs() {
 
 /** Есть ли хоть одна опубликованная вакансия: по нему показываем вход в раздел. Пока не знаем — входа нет. */
 export function useHasJobs() {
-  const { data } = useQuery({ queryKey: keys.jobsExist, queryFn: () => api.listJobs({ pagination_limit: 1 }), staleTime: 5 * 60_000 });
+  const { city_id } = useCity();
+  const { data } = useQuery({ queryKey: keys.jobsExist(city_id), queryFn: () => api.listJobs({ city_id, pagination_limit: 1 }), staleTime: 5 * 60_000 });
   return !!data?.entries.length;
 }
 
