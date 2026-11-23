@@ -1,6 +1,6 @@
 // Чистые функции каталога: подписи статусов, контакт для записи из ссылки «Записаться», события организатора.
-import type { AdminCollectedEvent, CollectedStatus, Feature, Guest, HostStatus, PracticeStatus } from '@yaswami/core';
-import { OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
+import type { AdminCollectedEvent, CollectedStatus, Feature, Guest, HostStatus, JobStatus, PracticeStatus } from '@yaswami/core';
+import { JOB_TTL_DAYS, OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
 
 /** Модерация организатора (HOST_STATUSES в core). */
 export const HOST_LABELS: Record<HostStatus, string> = { pending: 'Новый', published: 'Проверен', rejected: 'Отклонён' };
@@ -14,6 +14,11 @@ export const HOST_KINDS: Record<HostKind, string> = { events: 'Организа�
 export const hostKind = (events: number, practices: number): HostKind => (events > 0 ? 'events' : practices > 0 ? 'services' : 'none');
 
 export const PRACTICE_LABELS: Record<PracticeStatus, string> = { pending: 'Ждёт решения', published: 'Опубликована', rejected: 'Отклонена' };
+
+export const JOB_LABELS: Record<JobStatus, string> = { pending: 'Ждёт решения', published: 'Опубликована', rejected: 'Отклонена' };
+
+/** Объявление старше JOB_TTL_DAYS дней: гостям вакансия уже не показывается, даже одобренная (liveJob в apps/api/src/services.ts). */
+export const jobExpired = (posted_at: string, now = Date.now()) => now - Date.parse(posted_at) >= JOB_TTL_DAYS * 86_400_000;
 
 export const COLLECTED_LABELS: Record<CollectedStatus, string> = {
   pending: 'Ждёт решения',

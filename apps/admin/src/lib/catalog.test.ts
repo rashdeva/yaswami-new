@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { contactOf, hostEvents, hostKind, matchCollected, topicOptions } from './catalog.ts';
+import { contactOf, hostEvents, hostKind, jobExpired, matchCollected, topicOptions } from './catalog.ts';
 
 const source = 'https://t.me/chan/5';
 
@@ -40,4 +40,10 @@ test('hostKind: события важнее услуг, без того и др�
   assert.equal(hostKind(2, 3), 'events');
   assert.equal(hostKind(0, 1), 'services');
   assert.equal(hostKind(0, 0), 'none');
+});
+
+test('вакансия: объявление старше 30 дней гостям не показывается', () => {
+  const now = Date.parse('2026-11-23T12:00:00Z');
+  assert.ok(!jobExpired('2026-10-25T12:00:00Z', now));
+  assert.ok(jobExpired('2026-10-23T12:00:00Z', now));
 });
