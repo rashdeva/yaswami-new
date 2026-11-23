@@ -22,7 +22,7 @@ import { useHost, useHostActions } from '@/hooks/useHosts';
 import { useOverview } from '@/hooks/useOverview';
 import { COLLECTED_LABELS, HOST_LABELS, hostEvents, PRACTICE_LABELS } from '@/lib/catalog';
 
-const values = (h: Wire<Host>): Input => ({ name: h.name, city_id: h.city_id, username: h.username, bio: h.bio, channel: h.channel, summary: h.summary });
+const values = (h: Wire<Host>): Input => ({ name: h.name, city_id: h.city_id, username: h.username, bio: h.bio, channel: h.channel, instagram_handle: h.instagram_handle, summary: h.summary });
 
 const TOPIC_OPTIONS = [...Object.keys(TOPIC_GUIDES), OTHER_TOPIC].map((t) => [t, t] as const);
 const STATUS_OPTIONS = PRACTICE_STATUSES.map((s) => [s, PRACTICE_LABELS[s]] as const);
@@ -73,6 +73,7 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
               <CityField form={form} />
               <TextField form={form} name="username" label="Username" hint="Без @" />
               <TextField form={form} name="channel" label="Канал" nullable hint="Без @" />
+              <TextField form={form} name="instagram_handle" label="Instagram" nullable hint="Ник без @" />
             </div>
             <AreaField form={form} name="bio" label="О себе (из Telegram)" nullable />
             <AreaField form={form} name="summary" label="Сводка" nullable rows={5} />

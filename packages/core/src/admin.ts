@@ -130,6 +130,7 @@ export interface Host {
   city_id: string; // город: у найденного по событию — город события, иначе город по умолчанию
   bio: string | null;
   channel: string | null;
+  instagram_handle: string | null; // ник в Instagram без @; имя — как у Host в Luma
   summary: string | null;
   status: HostStatus;
   offer_url: string | null; // сообщение в чате, из которого сборщик взял мастера: по нему модератор сверяет Practice
@@ -176,6 +177,7 @@ export const HostUpdateInput = z
     username,
     bio: text(1000).nullable(),
     channel: username.nullable().describe('Channel username, without @'),
+    instagram_handle: z.string().trim().regex(/^@?[\w.]{1,30}$/, 'instagram handle').nullable().describe('Instagram handle, without @'),
     summary: text(2000).nullable(),
     city_id: cityId,
     status: z.enum(HOST_STATUSES).describe('rejected — hide the organizer with all events and practices; published — checked by the team. Each practice is moderated by its own status'),

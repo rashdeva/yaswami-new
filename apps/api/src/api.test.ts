@@ -2130,6 +2130,8 @@ test('города: всё прежнее — Дананг; новый горо�
   // Организатор и событие Ясвами: город указывает команда.
   const [gio] = await db.select().from(hosts).where(eq(hosts.username, 'gio_host'));
   assert.equal(((await (await call(admin, 'PATCH', `/admin/hosts/${gio!.id}`, { city_id: 'danang' })).json()) as Host).city_id, 'danang');
+  assert.equal(((await (await call(admin, 'PATCH', `/admin/hosts/${gio!.id}`, { instagram_handle: '@Gio.Banya' })).json()) as Host).instagram_handle, 'gio.banya');
+  assert.equal((await call(admin, 'PATCH', `/admin/hosts/${gio!.id}`, { instagram_handle: 'https://instagram.com/gio' })).status, 400);
   assert.equal(((await tool('admin_hosts_create', { username: 'nino_wine', city_id: 'tbilisi' })) as Host).city_id, 'tbilisi');
   // Услуги (Practice) живут в профиле мастера и идут за его городом: мастер другого города во вкладку «Услуги» не попадает.
   const [nino] = await db.update(hosts).set({ status: 'published' }).where(eq(hosts.username, 'nino_wine')).returning({ id: hosts.id });
