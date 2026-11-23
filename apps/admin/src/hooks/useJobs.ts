@@ -7,13 +7,14 @@ import { useAct } from './useAct.ts';
 
 export type JobFilter = Pick<AdminJobListInput, 'status'>;
 
-/** Вакансии, свежие сверху; следующая страница — по `next_cursor`. */
-export function useJobs(filter: JobFilter) {
+/** Вакансии, свежие сверху; следующая страница — по `next_cursor`. `poll` — перечитывать раз в столько мс (очередь модерации в «Ленте»). */
+export function useJobs(filter: JobFilter, poll?: number) {
   const q = useInfiniteQuery({
     queryKey: keys.jobs(filter),
     queryFn: ({ pageParam }) => api.jobs({ ...filter, pagination_cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+    refetchInterval: poll,
   });
   return { ...q, entries: q.data?.pages.flatMap((p) => p.entries) };
 }

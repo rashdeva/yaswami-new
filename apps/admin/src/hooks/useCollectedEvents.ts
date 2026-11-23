@@ -6,7 +6,7 @@ import { api } from '../api.ts';
 import { keys } from './keys.ts';
 import { useAct } from './useAct.ts';
 
-const POLL_MS = 30_000; // события появляются раз в проход сборщика, чаще опрашивать незачем
+export const POLL_MS = 30_000; // события появляются раз в проход сборщика, чаще опрашивать незачем
 
 /** Собранные события любого статуса, предстоящие или прошедшие: нужен и счётчик в меню, и отбор в каталоге. */
 export const useCollectedEvents = (past = false) => useQuery({
