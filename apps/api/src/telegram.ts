@@ -16,6 +16,16 @@ let queued = 0;
 let lastSent = 0;
 const lastSentTo = new Map<number, number>();
 
+/**
+ * Есть ли у пользователя Telegram. Вошедшие иначе (через Apple) получают отрицательный id (ADR-0007), и писать им
+ * некуда. Бот пишет только людям, а не в группы (у групп id тоже отрицательные), поэтому знака достаточно.
+ */
+export const hasTelegram = (userId: number) => userId > 0;
+/** Адресат вызова Bot API без Telegram: такой вызов не уходит. */
+const noTelegram = (body: { chat_id?: unknown; user_id?: unknown }) =>
+  [body.chat_id, body.user_id].some((id) => typeof id === 'number' && !hasTelegram(id));
+const NO_TELEGRAM: BotResult = { ok: false, description: 'user has no Telegram' };
+
 /** Настройки бота. Заполняет main.ts; тесты подменяют `call`. Без токена ничего не отправляется. */
 export const bot = {
   token: '',
@@ -25,6 +35,7 @@ export const bot = {
   /** Вызов метода Bot API. Не бросает: недоступный Telegram — это `ok: false`. */
   async call(method: string, body: object): Promise<BotResult> {
     if (!bot.token) return { ok: false, description: 'BOT_TOKEN is not set' };
+    if (noTelegram(body)) return NO_TELEGRAM;
     try {
       const res = await fetch(`https://api.telegram.org/bot${bot.token}/${method}`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000),
@@ -46,6 +57,8 @@ export const bot = {
    * теряет неотправленное. Очереди по чатам или pgmq — когда уведомлений станет много.
    */
   send(method: string, body: { chat_id: number; [field: string]: unknown }, author = 'bot'): Promise<BotResult> {
+    // Не в очередь и не в переписку: иначе у человека без Telegram появился бы диалог из недоставленных сообщений.
+    if (noTelegram(body)) return Promise.resolve(NO_TELEGRAM);
     if (queued >= QUEUE_MAX) return Promise.resolve({ ok: false, description: 'send queue is full' });
     queued++;
     const delivered = tail.then(async () => {

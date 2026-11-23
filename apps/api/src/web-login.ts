@@ -1,19 +1,33 @@
-// Вход на сайте через Telegram (OpenID Connect, https://core.telegram.org/bots/telegram-login):
-// /auth/telegram/login → oauth.telegram.org → /auth/telegram/callback → cookie с токеном доступа.
-// Другие способы входа (телефон, почта) добавляются так же: свой /auth/<способ>/…, в конце — startSession.
-// ponytail: пользователь пока опознаётся по id в Telegram (users.id). Для входа без Telegram понадобится
-// собственный id пользователя и таблица привязанных способов входа.
+// Вход на сайте и в приложении через Telegram (OpenID Connect, https://core.telegram.org/bots/telegram-login):
+// /auth/telegram/login → oauth.telegram.org → /auth/telegram/callback → cookie с токеном доступа, а для приложения
+// (`?app=1`) — переход на app.yaswami://auth?token=… . Вход через Apple (/auth/apple) — только в приложении.
+// Пользователь из Telegram — это его id в Telegram (users.id); вошедший иначе получает отрицательный id и строку
+// в user_identities (ADR-0007). Другие способы входа (телефон, почта) добавляются так же: свой /auth/<способ>/….
+// ponytail: один человек, вошедший и через Telegram, и через Apple, — два разных пользователя. Склейка — когда
+// появится экран «привязать Telegram» в приложении: строка user_identities переезжает к Telegram-пользователю.
 import { createHash, createHmac, createPublicKey, randomBytes, timingSafeEqual, verify } from 'node:crypto';
 import type { JsonWebKey, KeyObject } from 'node:crypto';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
-import { issueToken, revokeToken, upsertUser } from './auth.ts';
+import { AppleLoginInput, GoogleLoginInput } from '@yaswami/core';
+import { issueToken, revokeToken, signInWith, upsertUser } from './auth.ts';
 import type { Db } from './db/client.ts';
+import { settings } from './settings.ts';
 
 export const ISSUER = 'https://oauth.telegram.org';
 export const SESSION_COOKIE = 'ysw_session';
 const SESSION_MAX_AGE_S = 30 * 24 * 60 * 60;
+/** Токен мобильного приложения: живёт дольше сессии сайта — входить в приложение заново раз в месяц никто не станет. */
+const APP_SESSION_MAX_AGE_S = 180 * 24 * 60 * 60;
+/**
+ * Куда вернуть вход в приложение. Приложение открывает вход в ASWebAuthenticationSession / Custom Tabs и ждёт эту схему.
+ * ponytail: на Android схему может перехватить чужое приложение; закрыть — App Links (https-адрес вместо схемы).
+ */
+const APP_RETURN = 'app.yaswami://auth';
+export const APPLE_ISSUER = 'https://appleid.apple.com';
+// Google подписывает id_token с любым из двух вариантов издателя.
+export const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
 const PENDING_COOKIE = 'ysw_login';
 const PENDING_MAX_AGE_S = 600;
 
@@ -26,7 +40,7 @@ const ALGS: Record<string, (data: Buffer, key: KeyObject, sig: Buffer) => boolea
 };
 
 /** Проверяет id_token и возвращает его содержимое; бросает ошибку, если токен чужой, просрочен или подделан. */
-export function verifyIdToken(token: string, jwks: Jwk[], clientId: string, now = Date.now() / 1000): Record<string, unknown> {
+export function verifyIdToken(token: string, jwks: Jwk[], clientId: string | string[], now = Date.now() / 1000, issuer: string | string[] = ISSUER): Record<string, unknown> {
   const [h, p, s] = token.split('.');
   if (!h || !p || !s) throw new Error('id_token is not a JWT');
   const head = JSON.parse(Buffer.from(h, 'base64url').toString()) as { alg: string; kid?: string };
@@ -36,8 +50,8 @@ export function verifyIdToken(token: string, jwks: Jwk[], clientId: string, now 
   if (!jwk) throw new Error('no key for id_token');
   if (!check(Buffer.from(`${h}.${p}`), createPublicKey({ key: jwk, format: 'jwk' }), Buffer.from(s, 'base64url'))) throw new Error('bad signature');
   const claims = JSON.parse(Buffer.from(p, 'base64url').toString()) as Record<string, unknown>;
-  if (claims.iss !== ISSUER) throw new Error('wrong issuer');
-  if (!([] as unknown[]).concat(claims.aud).map(String).includes(clientId)) throw new Error('wrong audience');
+  if (![issuer].flat().includes(String(claims.iss))) throw new Error('wrong issuer');
+  if (!([] as unknown[]).concat(claims.aud).map(String).some((aud) => [clientId].flat().includes(aud))) throw new Error('wrong audience');
   if (!(Number(claims.exp) > now)) throw new Error('expired');
   return claims;
 }
@@ -81,8 +95,9 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
   const redirectUri = `${publicUrl}/api/auth/telegram/callback`;
   const key = createHmac('sha256', botToken).update('yaswami-web-login').digest();
   const cookie = { path: '/', httpOnly: true, sameSite: 'Lax', secure: publicUrl.startsWith('https:') } as const;
-  // Ошибки — простым текстом: в них попадают строки от Telegram и из адреса.
-  const fail = (c: Context, status: 400 | 401 | 502 | 503, message: string) => c.text(`Вход не удался: ${message}\n\nВернуться: ${publicUrl}/`, status);
+  // Ошибки — простым текстом: в них попадают строки от Telegram и из адреса. Приложению — кодом в его схеме.
+  const fail = (c: Context, status: 400 | 401 | 502 | 503, code: string, message: string, app = false) =>
+    app ? c.redirect(`${APP_RETURN}?error=${code}`) : c.text(`Вход не удался: ${message}\n\nВернуться: ${publicUrl}/`, status);
 
   /** Общий конец любого способа входа: токен доступа в cookie, которую скрипты страницы не видят. */
   async function startSession(c: Context, userId: number) {
@@ -91,7 +106,8 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
 
   return new Hono()
     .get('/telegram/login', (c) => {
-      if (!clientSecret || !clientId) return fail(c, 503, 'вход через Telegram на сервере не настроен');
+      const app = c.req.query('app') === '1';
+      if (!clientSecret || !clientId) return fail(c, 503, 'not_configured', 'вход через Telegram на сервере не настроен', app);
       const state = randomBytes(16).toString('base64url');
       const verifier = randomBytes(32).toString('base64url');
       const query = new URLSearchParams({
@@ -99,17 +115,18 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
         code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256',
       });
       // state и PKCE-verifier ждут возврата в подписанной cookie: серверу не нужно хранить незавершённые входы.
-      const pending = { state, verifier, back: safeReturn(c.req.query('return')), exp: Date.now() / 1000 + PENDING_MAX_AGE_S };
+      const pending = { state, verifier, back: safeReturn(c.req.query('return')), app, exp: Date.now() / 1000 + PENDING_MAX_AGE_S };
       setCookie(c, PENDING_COOKIE, seal(pending, key), { ...cookie, maxAge: PENDING_MAX_AGE_S });
       return c.redirect(`${ISSUER}/auth?${String(query).replace(/\+/g, '%20')}`);
     })
     .get('/telegram/callback', async (c) => {
-      const pending = unseal<{ state: string; verifier: string; back: string; exp: number }>(getCookie(c, PENDING_COOKIE), key);
+      const pending = unseal<{ state: string; verifier: string; back: string; app?: boolean; exp: number }>(getCookie(c, PENDING_COOKIE), key);
       deleteCookie(c, PENDING_COOKIE, cookie);
-      if (c.req.query('error')) return fail(c, 400, 'вы отменили вход или Telegram его отклонил');
+      const app = !!pending?.app;
+      if (c.req.query('error')) return fail(c, 400, 'cancelled', 'вы отменили вход или Telegram его отклонил', app);
       const code = c.req.query('code');
       if (!pending || pending.exp < Date.now() / 1000 || !code || pending.state !== c.req.query('state')) {
-        return fail(c, 400, 'запрос устарел или начат в другом браузере — попробуйте ещё раз');
+        return fail(c, 400, 'expired', 'запрос устарел или начат в другом браузере — попробуйте ещё раз', app);
       }
       const res = await fetch(`${ISSUER}/token`, {
         method: 'POST',
@@ -120,7 +137,7 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
       const body = (await res.json().catch(() => ({}))) as { id_token?: string };
       if (!body.id_token) {
         console.error(`web login: token endpoint answered ${res.status}`);
-        return fail(c, 502, 'Telegram не подтвердил вход');
+        return fail(c, 502, 'telegram_failed', 'Telegram не подтвердил вход', app);
       }
       let claims: Record<string, unknown>;
       try {
@@ -128,14 +145,50 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
         claims = verifyIdToken(body.id_token, keys, clientId);
       } catch (e) {
         console.error('web login: id_token rejected:', (e as Error).message);
-        return fail(c, 401, 'ответ Telegram не прошёл проверку');
+        return fail(c, 401, 'invalid_token', 'ответ Telegram не прошёл проверку', app);
       }
       const id = Number(claims.id ?? claims.sub);
-      if (!Number.isSafeInteger(id) || id <= 0) return fail(c, 401, 'Telegram не сообщил, кто вы');
+      if (!Number.isSafeInteger(id) || id <= 0) return fail(c, 401, 'invalid_token', 'Telegram не сообщил, кто вы', app);
       const username = typeof claims.preferred_username === 'string' ? claims.preferred_username : undefined;
       const user = await upsertUser(db, { id, first_name: String(claims.name || username || 'Гость').slice(0, 60), username });
+      if (app) return c.redirect(`${APP_RETURN}?token=${await issueToken(db, user.id, { ttlS: APP_SESSION_MAX_AGE_S })}`);
       await startSession(c, user.id);
       return c.redirect(pending.back);
+    })
+    // Вход через Apple в приложении (App Store требует его рядом со входом через Telegram, правило 4.8): приложение
+    // само получает id_token от Apple и меняет его на наш токен. Имя Apple отдаёт приложению только при первом входе.
+    // ponytail: nonce не проверяем — от повтора защищает короткий срок id_token (10 минут); проверка — если приложение
+    // начнёт передавать nonce.
+    .post('/apple', async (c) => {
+      const { id_token, first_name } = AppleLoginInput.parse(await c.req.json());
+      let sub: unknown;
+      try {
+        const { keys } = (await (await fetch(`${APPLE_ISSUER}/auth/keys`, { signal: AbortSignal.timeout(10_000) })).json()) as { keys: Jwk[] };
+        sub = verifyIdToken(id_token, keys, settings.appleBundleId, undefined, APPLE_ISSUER).sub;
+      } catch (e) {
+        console.error('apple login: id_token rejected:', (e as Error).message);
+        return c.json({ error: 'invalid_token' }, 401);
+      }
+      if (typeof sub !== 'string' || !sub) return c.json({ error: 'invalid_token' }, 401);
+      const user = await signInWith(db, 'apple', sub, first_name);
+      return c.json({ token: await issueToken(db, user.id, { ttlS: APP_SESSION_MAX_AGE_S }) });
+    })
+    // Вход через Google в приложении на Android — так же, как через Apple: приложение меняет id_token Google на наш токен.
+    .post('/google', async (c) => {
+      const { id_token } = GoogleLoginInput.parse(await c.req.json());
+      if (!settings.googleClientIds.length) return c.json({ error: 'not_configured' }, 503);
+      let claims: Record<string, unknown>;
+      try {
+        const { keys } = (await (await fetch('https://www.googleapis.com/oauth2/v3/certs', { signal: AbortSignal.timeout(10_000) })).json()) as { keys: Jwk[] };
+        claims = verifyIdToken(id_token, keys, settings.googleClientIds, undefined, GOOGLE_ISSUERS);
+      } catch (e) {
+        console.error('google login: id_token rejected:', (e as Error).message);
+        return c.json({ error: 'invalid_token' }, 401);
+      }
+      if (typeof claims.sub !== 'string' || !claims.sub) return c.json({ error: 'invalid_token' }, 401);
+      const name = String(claims.given_name || claims.name || '').trim().slice(0, 60) || undefined;
+      const user = await signInWith(db, 'google', claims.sub, name);
+      return c.json({ token: await issueToken(db, user.id, { ttlS: APP_SESSION_MAX_AGE_S }) });
     })
     .post('/logout', async (c) => {
       const token = getCookie(c, SESSION_COOKIE);

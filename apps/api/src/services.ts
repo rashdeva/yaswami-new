@@ -11,7 +11,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { ADDRESS_MAX, DEFAULT_CITY_ID, Feature, JOB_TTL_DAYS, jobContactUrl, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
-import { cities, collectedEvents, collectedEventSignups, contacts, events, guests, hosts, jobs, photos, practices, practiceSignups, ticketTypes, users, visits } from './db/schema.ts';
+import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, jobs, photos, practices, practiceSignups, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
@@ -786,6 +786,29 @@ export async function me(db: Db, actor: User): Promise<Me> {
     host_id: (await db.select({ id: hosts.id }).from(hosts).where(eq(hosts.user_id, actor.id)))[0]?.id ?? null,
   };
 }
+
+/** Имя, под которым остаётся удалённый организатор: его события живут дальше. */
+export const DELETED_USER_NAME = 'Удалённый пользователь';
+
+/**
+ * Удалить свой аккаунт (`DELETE /me`; в Luma такого нет). Ответы на события, токены, способы входа и прочее личное
+ * уходят всегда. Если человек организатор своих событий, строка users остаётся обезличенной: события держат её внешним
+ * ключом, а гостям нужно событие, а не имя организатора.
+ */
+export const deleteSelf = (db: Db, actor: User): Promise<void> =>
+  db.transaction(async (tx) => {
+    const id = actor.id;
+    // Ответы гостя держат внешний ключ без каскада: убираем их сами и сдвигаем rev событий — счётчики изменились.
+    const gone = await tx.delete(guests).where(eq(guests.user_id, id)).returning({ event_id: guests.event_id });
+    if (gone.length) await tx.update(events).set({ rev: sql`${events.rev} + 1` }).where(inArray(events.id, gone.map((g) => g.event_id)));
+    const [hosted] = await tx.select({ n: count() }).from(events).where(eq(events.user_id, id));
+    if (!hosted!.n) return void (await tx.delete(users).where(eq(users.id, id))); // остальное уходит каскадом
+    await tx.update(users).set({ first_name: DELETED_USER_NAME, username: null, features: [] }).where(eq(users.id, id));
+    await tx.update(hosts).set({ user_id: null }).where(eq(hosts.user_id, id));
+    await tx.delete(contacts).where(or(eq(contacts.user_id, id), eq(contacts.host_user_id, id)));
+    // То же, что сделал бы каскад при удалении строки.
+    for (const t of [apiTokens, userIdentities, photos, collectedEventSignups, practiceSignups, visits, eventFeedback]) await tx.delete(t).where(eq(t.user_id, id));
+  });
 
 /** `city_id` передаёт только команда (admin/events.ts): в схемах организатора его нет, его событие получает город по умолчанию. */
 export async function createEvent(db: Db, actor: User, input: EventCreateInput & { city_id?: string }): Promise<EventView> {

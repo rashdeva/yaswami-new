@@ -9,6 +9,7 @@
 | Где | Что там | Чего там нет |
 |---|---|---|
 | `apps/web` | мини-приложение и сайт: React, TanStack Query и Router, свои компоненты и `tokens.css` | правил домена, своих типов запросов и ответов, shadcn и Tailwind |
+| `apps/mobile` | приложение для iOS и Android: Expo, Expo Router, нативные вкладки и системные цвета; типы — из core | правил домена; fetch вне `src/api.ts` |
 | `apps/admin` | админка команды на `/admin`: React, TanStack Query и Router, shadcn/ui | правил домена; кода мини-приложения |
 | `apps/api/src/app.ts`, `mcp.ts` | два тонких входа: REST и MCP | запросов к базе, правил |
 | `apps/api/src/services.ts`, `inbox.ts`, `admin.ts` и соседи | операции: правила доступа, запись, побочные действия | знания о том, кто вызвал — REST или MCP |
@@ -29,6 +30,7 @@
 
 - Меняешь API, MCP, сервисы, схему базы → `docs/agents/api.md`
 - Меняешь `apps/web` → `docs/agents/frontend.md`
+- Меняешь `apps/mobile`, выкладываешь в App Store / Google Play → `apps/mobile/README.md`
 - Меняешь `apps/admin` → `docs/agents/admin.md`
 - Называешь что-то или сверяешься с Luma → `docs/reference/luma/`
 - Трогаешь переписку, админку, роли Hermes → `docs/agents-inbox.md`, `agents/README.md`

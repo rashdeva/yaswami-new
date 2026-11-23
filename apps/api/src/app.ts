@@ -33,7 +33,7 @@ import { bot } from './telegram.ts';
 import { SESSION_COOKIE, webLogin } from './web-login.ts';
 
 const json = <T extends z.ZodType>(schema: T) => validator('json', (value) => schema.parse(value) as z.infer<T>);
-const userId = z.coerce.number().int().positive();
+const userId = z.coerce.number().int(); // отрицательный — пользователь без Telegram (ADR-0007)
 const LIVE_PING_MS = 25_000;
 
 interface Options {
@@ -141,6 +141,11 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     })
 
     .get('/me', async (c) => c.json(await s.me(db, c.var.actor)))
+    // Удалить свой аккаунт (App Store 5.1.1(v)). Только REST: стирать аккаунт по просьбе в переписке модель не должна.
+    .delete('/me', async (c) => {
+      await s.deleteSelf(db, c.var.actor);
+      return c.body(null, 204);
+    })
     .get('/me/collected', async (c) => c.json(await s.myCollectedEvents(db, c.var.actor)))
     .post('/collected-events/:id/claim', async (c) => c.json(await s.claimCollectedEvent(db, c.var.actor, c.req.param('id')), 201))
     .post('/collected-events/:id/signup', async (c) => c.json(await s.signUpForCollectedEvent(db, c.var.actor, c.req.param('id'))))

@@ -529,6 +529,147 @@ test('вход с сайта: выключен без Client Secret, возвр�
   assert.throws(() => verifyIdToken(make(ok, privateKey, { alg: 'none' }), jwks, '42', 1000), /unsupported/);
 });
 
+// Подписанный своим ключом id_token и JWKS к нему: так в тестах отвечают Telegram и Apple.
+function idTokens() {
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const jwks = { keys: [{ ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256' }] };
+  const b64 = (v: object) => Buffer.from(JSON.stringify(v)).toString('base64url');
+  const make = (claims: object) => {
+    const body = `${b64({ alg: 'RS256', kid: 'k1' })}.${b64({ exp: Date.now() / 1000 + 600, ...claims })}`;
+    return `${body}.${sign('sha256', Buffer.from(body), privateKey).toString('base64url')}`;
+  };
+  return { jwks, make };
+}
+
+test('вход в приложение через Telegram (?app=1): токен и ошибки — в схеме приложения', async () => {
+  const web = createApp({ db, botToken: BOT_TOKEN, webLogin: { clientSecret: 'secret', publicUrl: 'https://yaswami.test' } });
+  const start = async () => {
+    const res = await web.request('/auth/telegram/login?app=1');
+    assert.equal(res.status, 302);
+    return { state: new URL(res.headers.get('location')!).searchParams.get('state')!, cookie: res.headers.get('set-cookie')!.split(';')[0]! };
+  };
+  const { jwks, make } = idTokens();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => String(input).endsWith('/token')
+    ? Response.json({ id_token: make({ iss: ISSUER, aud: '123456', id: 9401, name: 'Приложение', preferred_username: 'app_user' }) })
+    : Response.json(jwks);
+  try {
+    const { state, cookie } = await start();
+    const res = await web.request(`/auth/telegram/callback?code=c&state=${state}`, { headers: { cookie } });
+    assert.equal(res.status, 302);
+    const to = new URL(res.headers.get('location')!);
+    assert.equal(`${to.protocol}//${to.host}${to.pathname}`, 'app.yaswami://auth');
+    const token = to.searchParams.get('token')!;
+    assert.match(token, /^ysw_/);
+    assert.doesNotMatch(res.headers.get('set-cookie') ?? '', /ysw_session=ysw_/); // cookie сайта приложению не ставим
+    const me = (await (await call(`Bearer ${token}`, 'GET', '/me')).json()) as Me;
+    assert.equal(me.user.id, 9401);
+
+    const cancelled = await start();
+    const no = await web.request(`/auth/telegram/callback?error=access_denied&state=${cancelled.state}`, { headers: { cookie: cancelled.cookie } });
+    assert.equal(no.headers.get('location'), 'app.yaswami://auth?error=cancelled');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  // Вход не настроен — приложение узнаёт об этом в своей схеме, а не страницей с текстом.
+  assert.equal((await app.request('/auth/telegram/login?app=1')).headers.get('location'), 'app.yaswami://auth?error=not_configured');
+});
+
+test('вход через Apple: отрицательный id, тот же пользователь при повторном входе, Telegram ему не пишет', async () => {
+  const { jwks, make } = idTokens();
+  const asked: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => (asked.push(String(input)), Response.json(jwks));
+  const login = (body: object) => app.request('/auth/apple', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const apple = (claims: object = {}) => make({ iss: 'https://appleid.apple.com', aud: 'app.yaswami', sub: '001234.apple', ...claims });
+  try {
+    const res = await login({ id_token: apple(), first_name: 'Ева' });
+    assert.equal(res.status, 200);
+    assert.deepEqual(asked, ['https://appleid.apple.com/auth/keys']);
+    const { token } = (await res.json()) as { token: string };
+    const me = (await (await call(`Bearer ${token}`, 'GET', '/me')).json()) as Me;
+    assert.ok(me.user.id < 0);
+    assert.equal(me.user.first_name, 'Ева');
+
+    // Повторный вход — тот же человек; имя Apple больше не присылает, прежнее остаётся.
+    const again = (await (await login({ id_token: apple() })).json()) as { token: string };
+    assert.equal(((await (await call(`Bearer ${again.token}`, 'GET', '/me')).json()) as Me).user.id, me.user.id);
+    assert.equal(((await (await call(`Bearer ${again.token}`, 'GET', '/me')).json()) as Me).user.first_name, 'Ева');
+    // Новый человек без имени — «Гость».
+    const guest = (await (await login({ id_token: apple({ sub: 'other.apple' }) })).json()) as { token: string };
+    assert.equal(((await (await call(`Bearer ${guest.token}`, 'GET', '/me')).json()) as Me).user.first_name, 'Гость');
+
+    assert.deepEqual(await (await login({ id_token: apple({ aud: 'other.app' }) })).json(), { error: 'invalid_token' });
+    assert.equal((await login({ id_token: apple({ iss: ISSUER }) })).status, 401);
+    assert.equal((await login({ id_token: apple({ exp: 1 }) })).status, 401);
+    assert.equal((await login({})).status, 400);
+
+    // Записался на событие — организатору уведомление идёт как обычно, а самому гостю бот ничего не шлёт.
+    const event = await newEvent(tma(9402, 'Организатор'));
+    assert.equal((await call(`Bearer ${token}`, 'POST', `/events/${event.event.id}/rsvp`, { approval_status: 'approved' })).status, 200);
+    sent.length = 0;
+    assert.deepEqual(await bot.send('sendMessage', { chat_id: me.user.id, text: 'привет' }), { ok: false, description: 'user has no Telegram' });
+    assert.equal(sent.length, 0);
+    assert.equal((await db.select().from(conversations).where(eq(conversations.peer_id, me.user.id))).length, 0);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('вход через Google: только наш клиент и издатель Google, имя из токена', async () => {
+  const { jwks, make } = idTokens();
+  const asked: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => (asked.push(String(input)), Response.json(jwks));
+  const login = (body: object) => app.request('/auth/google', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const google = (claims: object = {}) => make({ iss: 'https://accounts.google.com', aud: 'web.apps.googleusercontent.com', sub: '1077', given_name: 'Линь', ...claims });
+  const before = settings.googleClientIds;
+  try {
+    settings.googleClientIds = [];
+    assert.equal((await login({ id_token: google() })).status, 503);
+    settings.googleClientIds = ['web.apps.googleusercontent.com'];
+    const res = await login({ id_token: google() });
+    assert.equal(res.status, 200);
+    assert.deepEqual(asked, ['https://www.googleapis.com/oauth2/v3/certs']);
+    const me = (await (await call(`Bearer ${((await res.json()) as { token: string }).token}`, 'GET', '/me')).json()) as Me;
+    assert.ok(me.user.id < 0);
+    assert.equal(me.user.first_name, 'Линь');
+    // Издатель без https — тоже Google; тот же sub — тот же человек.
+    const again = (await (await login({ id_token: google({ iss: 'accounts.google.com' }) })).json()) as { token: string };
+    assert.equal(((await (await call(`Bearer ${again.token}`, 'GET', '/me')).json()) as Me).user.id, me.user.id);
+    // Токен для чужого клиента или от чужого издателя — отказ.
+    assert.equal((await login({ id_token: google({ aud: 'other.apps.googleusercontent.com' }) })).status, 401);
+    assert.equal((await login({ id_token: google({ iss: 'https://appleid.apple.com' }) })).status, 401);
+    assert.equal((await login({})).status, 400);
+  } finally {
+    settings.googleClientIds = before;
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('DELETE /me: без своих событий пользователь удаляется, организатор — обезличивается', async () => {
+  // Гость: ответ на событие, токен — всё уходит вместе со строкой.
+  const event = await newEvent(tma(9403, 'Хозяйка'));
+  assert.equal((await call(tma(9404, 'Гость'), 'POST', `/events/${event.event.id}/rsvp`, { approval_status: 'approved' })).status, 200);
+  const token = `Bearer ${await issueToken(db, 9404)}`;
+  assert.equal((await call(token, 'DELETE', '/me')).status, 204);
+  assert.equal((await db.select().from(users).where(eq(users.id, 9404))).length, 0);
+  assert.equal((await call(token, 'GET', '/me')).status, 401);
+  assert.equal((await db.select().from(guests).where(eq(guests.user_id, 9404))).length, 0);
+
+  // Организатор: события остаются, имя и профиль — нет.
+  await insertHosts([{ telegram_id: 9403, username: 'hostess9403', name: 'Хозяйка', user_id: 9403 }]);
+  const own = `Bearer ${await issueToken(db, 9403)}`;
+  assert.equal((await call(own, 'DELETE', '/me')).status, 204);
+  const [left] = await db.select().from(users).where(eq(users.id, 9403));
+  assert.deepEqual([left?.first_name, left?.username], ['Удалённый пользователь', null]);
+  assert.equal((await call(own, 'GET', '/me')).status, 401);
+  assert.equal((await db.select().from(hosts).where(eq(hosts.telegram_id, 9403)))[0]?.user_id, null);
+  assert.equal((await db.select().from(eventsTable).where(eq(eventsTable.id, event.event.id))).length, 1);
+
+  assert.equal((await app.request('/me', { method: 'DELETE' })).status, 401);
+});
+
 test('страницы для поисковиков: содержимое и разметка экранированы', () => {
   const event: CollectedEventItem = {
     id: 'danangevent-1-0', title: 'Йога <b>& чай</b>', description: '</script><script>alert(1)</script> $& утро',
@@ -2060,7 +2201,7 @@ test('парность: у каждого инструмента MCP есть м
   const MCP_ONLY = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update'];
   const REST_ONLY = [
     'GET /health', 'GET /config', 'GET /photos/:id', 'POST /telegram/webhook', 'POST /internal/account-message', 'POST /internal/account-typing', 'POST /internal/lead', 'GET /admin/live',
-    'GET /auth/telegram/login', 'GET /auth/telegram/callback', 'POST /auth/logout', 'POST /tokens', 'DELETE /tokens',
+    'GET /auth/telegram/login', 'GET /auth/telegram/callback', 'POST /auth/logout', 'POST /auth/apple', 'POST /auth/google', 'POST /tokens', 'DELETE /tokens', 'DELETE /me',
     'POST /collected-events/:id/visit', 'POST /events/:id/visit',
     'POST /admin/accounts/:id/login',
   ];

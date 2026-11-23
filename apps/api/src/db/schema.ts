@@ -1,7 +1,7 @@
 // Таблицы Postgres. Источник правды — схемы в @yaswami/core; блок в конце файла роняет typecheck,
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
@@ -18,6 +18,25 @@ export const users = pgTable('users', {
   timezone: text().notNull(),
   features: jsonb().$type<Feature[]>().notNull().default([]),
 });
+
+/**
+ * Id пользователей, вошедших не через Telegram (ADR-0007): отрицательные, в Telegram id пользователей положительные.
+ * По знаку id и видно, можно ли человеку написать в Telegram (`hasTelegram` в telegram.ts).
+ */
+export const localUserIds = pgSequence('users_local_id_seq', { startWith: -1, increment: -1, maxValue: -1, minValue: -Number.MAX_SAFE_INTEGER });
+
+/** Способ входа (CONTEXT.md): кем человека знает внешний поставщик. В Luma такого нет. Вход через Telegram здесь не пишется: его subject — сам users.id. */
+export const IDENTITY_PROVIDERS = ['apple', 'google'] as const;
+export const userIdentities = pgTable(
+  'user_identities',
+  {
+    provider: text({ enum: IDENTITY_PROVIDERS }).notNull(),
+    subject: text().notNull(), // sub из id_token поставщика
+    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.provider, t.subject] }), index('user_identities_user_idx').on(t.user_id)],
+);
 
 // Город (City в @yaswami/core). `city_id` у источников, собранных событий, организаторов и событий Ясвами по умолчанию —
 // первый город: так его получает всё, что было до городов, и всё, чему город не указали (в том числе записи сборщика).

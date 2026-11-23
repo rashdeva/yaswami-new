@@ -1,12 +1,12 @@
 // Способы войти: initData мини-приложения Telegram и токен доступа — в заголовке (REST и MCP вне Telegram)
 // или в cookie сайта (её ставит вход через Telegram в web-login.ts).
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, isNull, lt, or } from 'drizzle-orm';
+import { and, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
 import type { User } from '@yaswami/core';
 import { dropHostPitch } from './inbox.ts';
 import type { Db } from './db/client.ts';
-import type { TokenScope } from './db/schema.ts';
-import { apiTokens, hosts, users } from './db/schema.ts';
+import type { IDENTITY_PROVIDERS, TokenScope } from './db/schema.ts';
+import { apiTokens, hosts, userIdentities, users } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
 
 const INIT_DATA_MAX_AGE_S = 24 * 60 * 60;
@@ -57,6 +57,22 @@ export async function upsertUser(db: Db, tg: TelegramUser): Promise<User> {
   // Аватар сохраняем в фоне: вход не ждёт загрузки картинки.
   void saveUserPhoto(db, user!.id);
   return user!;
+}
+
+/**
+ * Вход не через Telegram (способ входа, CONTEXT.md): находит пользователя по способу входа или заводит нового
+ * с отрицательным id (ADR-0007). Имя — только при создании: поставщик (Apple) сообщает его один раз.
+ */
+export async function signInWith(db: Db, provider: (typeof IDENTITY_PROVIDERS)[number], subject: string, firstName = 'Гость'): Promise<User> {
+  const [known] = await db.select({ user: users }).from(userIdentities).innerJoin(users, eq(users.id, userIdentities.user_id))
+    .where(and(eq(userIdentities.provider, provider), eq(userIdentities.subject, subject)));
+  if (known) return known.user;
+  return db.transaction(async (tx) => {
+    const [user] = await tx.insert(users)
+      .values({ id: sql`nextval('users_local_id_seq')`, first_name: firstName, username: null, lang: 'ru', timezone: 'UTC' }).returning();
+    await tx.insert(userIdentities).values({ provider, subject, user_id: user!.id });
+    return user!;
+  });
 }
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');

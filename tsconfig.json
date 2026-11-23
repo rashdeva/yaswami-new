@@ -14,6 +14,6 @@
     "types": ["node"]
   },
   "include": ["apps/*/src", "apps/*/*.ts", "packages/*/src"],
-  // У мини-приложения и админки свои конфиги: там браузер и JSX, а не Node.
-  "exclude": ["apps/web", "apps/admin"]
+  // У мини-приложения, админки и приложения для телефонов свои конфиги: там браузер и JSX, а не Node.
+  "exclude": ["apps/web", "apps/admin", "apps/mobile"]
 }

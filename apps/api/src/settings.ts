@@ -43,6 +43,13 @@ export const settings = {
   hostKey: process.env.HOST_KEY ?? '',
   /** Общий со сборщиком секрет: им он подписывает сообщения с аккаунтов Telegram. Пусто — приём закрыт. */
   collectorSecret: process.env.COLLECTOR_SECRET ?? '',
+  /** Bundle id приложения для iOS: им Apple подписывает id_token (поле aud) при входе через Apple. */
+  appleBundleId: process.env.APPLE_BUNDLE_ID ?? 'app.yaswami',
+  /**
+   * OAuth-клиенты Google, которым приложение запрашивает id_token (поле aud) при входе через Google, через запятую.
+   * Это Web client ID из Google Cloud Console: им приложение на Android подписывает запрос. Пусто — вход через Google закрыт.
+   */
+  googleClientIds: (process.env.GOOGLE_CLIENT_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   /** Telegram id тех, кому открыта админка переписки (/admin), через запятую. */
   adminIds: (process.env.ADMIN_IDS ?? '').split(',').map(Number).filter(Boolean),
   /** Сколько сообщений в минуту один человек может прислать боту: каждый ответ роли поддержки — запрос к ИИ. */

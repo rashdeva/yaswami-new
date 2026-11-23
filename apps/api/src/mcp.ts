@@ -221,7 +221,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
   // Токен с областью действия проходит сюда ради person_*; остальное отсекает `allowed` в `tool`.
   if (isAdmin(actor) || allowed) {
     const ONLY_TEAM = 'Only on an explicit instruction from the team. Logged; undo with admin_actions_undo.';
-    const user_id = z.number().int().positive().describe('Telegram id of the user (admin_users_search)');
+    const user_id = z.number().int().describe('Id of the user (admin_users_search); negative for users who signed in without Telegram');
 
     // --- Переписка (docs/agents-inbox.md)
     const conversation_id = z.uuid().describe('Conversation id from admin_conversations_list');
