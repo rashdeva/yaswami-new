@@ -32,17 +32,19 @@ export function App() {
   const [kind, setKind] = useState<Event['kind']>('o');
 
   // У публичных экранов свой нейтральный цвет; личные выставляют цвет шаблона события сами.
-  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/hosts') || pathname === '/services' || pathname === '/search') && kind !== 'o') setKind('o');
+  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/hosts') || pathname.startsWith('/jobs') || pathname === '/services' || pathname === '/search') && kind !== 'o') setKind('o');
 
-  // Куда ведёт «назад»: событие и поиск → витрина, организатор → каталог, своё событие и поиск людей → «Мои»,
+  // Куда ведёт «назад»: событие и поиск → витрина, организатор и вакансии → каталог, вакансия → вакансии, своё событие и поиск людей → «Мои»,
   // создание → список или витрина. null — корень.
   const here = { includeSearch: false } as const; // ?signup, ?startapp в адресе маршрут не меняют
   const section = matchRoute({ to: '/events/$id/edit/$section', ...here });
   const edit = matchRoute({ to: '/events/$id/edit', ...here });
   const back = matchRoute({ to: '/e/$id', ...here }) || matchRoute({ to: '/search', ...here })
     ? () => void navigate({ to: '/' })
-    : matchRoute({ to: '/hosts/$id', ...here })
+    : matchRoute({ to: '/hosts/$id', ...here }) || matchRoute({ to: '/jobs', ...here })
       ? () => void navigate({ to: '/services' })
+    : matchRoute({ to: '/jobs/$id', ...here })
+      ? () => void navigate({ to: '/jobs' })
     : section
       ? () => void navigate({ to: '/events/$id/edit', params: { id: section.id } })
       : edit

@@ -22,6 +22,7 @@ const MESSAGES: Record<string, string> = {
   ticket_required: 'Выберите билет',
   ticket_unknown: 'Такого билета больше нет',
   not_found: 'Событие не найдено',
+  job_not_found: 'Вакансия не найдена', // бэк отвечает общим not_found — getJob подменяет код, чтобы текст был про вакансию
   forbidden: 'Это может только организатор',
   feature_off: 'Создавать события пока могут только организаторы',
   events_limit: 'Бесплатные события закончились. Подписка для большего числа скоро появится',
@@ -67,10 +68,11 @@ export const api = {
   collectedEvent: (id: string) => request<CollectedEventItem>('GET', `/collected-events/${encodeURIComponent(id)}`),
   listHosts: () => request<HostListItem[]>('GET', '/hosts'),
   getHost: (id: string) => request<HostItem>('GET', `/hosts/${encodeURIComponent(id)}`),
-  search: (query: string) => request<SearchResult>('GET', `/search?query=${encodeURIComponent(query)}`),
+  search: (query: string) => request<Wire<SearchResult>>('GET', `/search?query=${encodeURIComponent(query)}`),
   listJobs: ({ city_id, pagination_cursor, pagination_limit }: JobListInput = {}) =>
     request<Wire<JobList>>('GET', `/jobs?${new URLSearchParams(Object.entries({ city_id, pagination_cursor, pagination_limit }).flatMap(([k, v]) => (v === undefined ? [] : [[k, String(v)]])))}`),
-  getJob: (id: string) => request<Wire<JobItem>>('GET', `/jobs/${encodeURIComponent(id)}`),
+  getJob: (id: string) =>
+    request<Wire<JobItem>>('GET', `/jobs/${encodeURIComponent(id)}`).catch((e: ApiError) => { throw e.code === 'not_found' ? new ApiError('job_not_found') : e; }),
   signUpForPractice: (id: string, practice_id: string) => request<PracticeSignup>('POST', `/hosts/${encodeURIComponent(id)}/practices/signup`, { practice_id }, true),
   claim: (id: string) => request<EventData>('POST', `/collected-events/${encodeURIComponent(id)}/claim`),
   signUp: (id: string) => request<CollectedEventItem>('POST', `/collected-events/${encodeURIComponent(id)}/signup`, undefined, true),

@@ -14,12 +14,14 @@ const source = inTelegram ? 'telegram' : 'web';
  * signup_clicked → (login_started → logged_in) → collected_signed_up → host_contacted. Гость события Ясвами:
  * app_opened → event_viewed → rsvp_submitted → link_shared. Организатор: create_opened → event_created → link_shared;
  * поиск людей: host_searches_viewed → host_search_enabled или host_search_created → host_search_match_opened.
+ * Вакансии: jobs_viewed → job_viewed → job_contact_clicked (отклик в базе не хранится — считаем только здесь).
  * «Первый заход» отдельным действием не шлём: в PostHog у шага воронки есть условие «впервые для пользователя».
  */
 type Action =
   | 'app_opened' | 'login_started' | 'logged_in' | 'logged_out'
   | 'feed_viewed' | 'feed_filtered' | 'collected_event_viewed' | 'signup_clicked' | 'collected_signed_up' | 'host_contacted' | 'host_channel_opened'
   | 'hosts_viewed' | 'hosts_filtered' | 'host_viewed' | 'practice_signup_clicked'
+  | 'jobs_viewed' | 'job_viewed' | 'job_contact_clicked'
   | 'search_viewed' | 'search_result_opened'
   | 'event_viewed' | 'rsvp_submitted' | 'link_shared'
   | 'my_events_viewed' | 'create_opened' | 'create_denied' | 'event_created' | 'event_updated' | 'event_claimed'

@@ -8,6 +8,10 @@ export const keys = {
   /** Каталог организаторов и страница одного. */
   hosts: ['hosts'],
   host: (id: string) => ['host', id],
+  /** Вакансии: список страницами, «есть ли хоть одна» для входа в раздел и карточка. */
+  jobs: ['jobs'],
+  jobsExist: ['jobs', 'exist'],
+  job: (id: string) => ['job', id],
   /** Единый поиск по каталогу. */
   search: (query: string) => ['search', query],
   /** «Мои события»: свои и собранные, куда заходил. */

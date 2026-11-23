@@ -10,10 +10,12 @@ import { useViewed } from '../hooks/useViewed.ts';
 interface Props {
   city: string;
   onOpen: (host: HostListItem) => void;
+  /** Вход в раздел «Вакансии»; null — опубликованных вакансий нет, входа нет. */
+  onJobs: (() => void) | null;
 }
 
 /** Вкладка «Услуги»: мастера города и под каждым — его услуги (Practice) с записью; фильтр по темам. Открыта без входа. */
-export function HostsScreen({ city, onOpen }: Props) {
+export function HostsScreen({ city, onOpen, onJobs }: Props) {
   const { hosts, failed } = useHosts();
   const signUp = usePracticeSignup();
   const [topic, pickTopic] = useState<string | null>(null);
@@ -48,6 +50,13 @@ export function HostsScreen({ city, onOpen }: Props) {
               <img src={topicIcon(t)} alt="" />{t[0]!.toUpperCase() + t.slice(1)}
             </button>
           ))}
+        </div>
+      )}
+      {onJobs && (
+        <div className="group jobs-entry">
+          <button className="plain" onClick={onJobs}>
+            <div className="guest"><div>💼 Вакансии<small>Работа в городе: кого ищут работодатели</small></div><span>›</span></div>
+          </button>
         </div>
       )}
       {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}

@@ -4,6 +4,7 @@ import { App, Claims, useClaim, useLogout, useShell } from './App.tsx';
 import { hasCredentials, startLogin } from './api.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
 import { useFeature } from './hooks/useFeature.ts';
+import { useHasJobs } from './hooks/useJobs.ts';
 import { contactMatch, useHostSearches } from './hooks/useHostSearches.ts';
 import { useSession } from './hooks/useSession.ts';
 import { useViewed } from './hooks/useViewed.ts';
@@ -14,6 +15,8 @@ import { EventScreen } from './screens/EventScreen.tsx';
 import { FeedScreen } from './screens/FeedScreen.tsx';
 import { HostScreen } from './screens/HostScreen.tsx';
 import { HostsScreen } from './screens/HostsScreen.tsx';
+import { JobScreen } from './screens/JobScreen.tsx';
+import { JobsScreen } from './screens/JobsScreen.tsx';
 import { ListScreen } from './screens/ListScreen.tsx';
 import { PeopleScreen } from './screens/PeopleScreen.tsx';
 import { SearchScreen } from './screens/SearchScreen.tsx';
@@ -84,7 +87,14 @@ const collected = createRoute({ getParentRoute: () => app, path: '/e/$id', compo
 function HostsPage() {
   const navigate = useNavigate();
   const { city } = useSession();
-  return <HostsScreen city={city} onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} />;
+  const hasJobs = useHasJobs();
+  return (
+    <HostsScreen
+      city={city}
+      onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })}
+      onJobs={hasJobs ? () => void navigate({ to: '/jobs' }) : null}
+    />
+  );
 }
 const hostsRoute = createRoute({ getParentRoute: () => app, path: '/services', component: HostsPage });
 // Старый адрес вкладки: раньше она называлась «Организаторы». Страница мастера осталась на /hosts/$id — это Host.
@@ -99,6 +109,23 @@ function HostPage() {
 }
 const hostRoute = createRoute({ getParentRoute: () => app, path: '/hosts/$id', component: HostPage });
 
+/** Вакансии: вход — со вкладки «Услуги», и только когда они есть; сам адрес открыт всегда. */
+function JobsPage() {
+  const navigate = useNavigate();
+  const { city } = useSession();
+  const { onBack } = useShell();
+  return <JobsScreen city={city} onBack={onBack} onOpen={(job) => void navigate({ to: '/jobs/$id', params: { id: job.id } })} />;
+}
+const jobsRoute = createRoute({ getParentRoute: () => app, path: '/jobs', component: JobsPage });
+
+function JobPage() {
+  const { id } = jobRoute.useParams();
+  const { city } = useSession();
+  const { onBack } = useShell();
+  return <JobScreen key={id} id={id} city={city} onBack={onBack} />;
+}
+const jobRoute = createRoute({ getParentRoute: () => app, path: '/jobs/$id', component: JobPage });
+
 /** Поиск. Запрос живёт в адресе (?q=): находками можно поделиться ссылкой, а «назад» браузера возвращает к ним. */
 function SearchPage() {
   const { q = '' } = searchRoute.useSearch();
@@ -109,7 +136,9 @@ function SearchPage() {
       onQuery={(next) => void navigate({ to: '/search', search: { q: next || undefined }, replace: true })}
       onOpen={(entry) => void (entry.type === 'event'
         ? navigate({ to: '/e/$id', params: { id: entry.event.id } })
-        : navigate({ to: '/hosts/$id', params: { id: entry.host.id } }))}
+        : entry.type === 'job'
+          ? navigate({ to: '/jobs/$id', params: { id: entry.job.id } })
+          : navigate({ to: '/hosts/$id', params: { id: entry.host.id } }))}
     />
   );
 }
@@ -225,7 +254,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, oldHostsRoute, hostRoute, searchRoute, personal.addChildren([list, people, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, oldHostsRoute, hostRoute, jobsRoute, jobRoute, searchRoute, personal.addChildren([list, people, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 
