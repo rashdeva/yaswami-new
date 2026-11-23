@@ -23,7 +23,7 @@ export const looksLikeLead = (text) =>
   text.length >= 8 && text.length <= 300 && (ASKS.test(text) || (text.includes('?') && ACTIVITY.test(text)));
 
 import { pickOffers } from './offers.mjs';
-import { pickJobs } from './jobs.mjs';
+import { looksLikeJob, pickJobs, RESUME } from './jobs.mjs';
 
 // Чем занимается человек: первое совпавшее слово — тема (по корню).
 export const TOPIC = /(?<![а-яёa-z])(бачат|сальс|кизомб|танц|йог|медитац|квиз|настолк|покер|мафи[яюи]|волейбол|футбол|баскетбол|падел|теннис|бег|пробежк|сёрф|серф|фридайв|дайв|нетворкинг|митап|лекци|мастер[- ]класс|экскурси|вечеринк|тусовк|концерт|караоке|стендап|кино|bachata|salsa|yoga|quiz|poker|volleyball|basketball|tennis|surf|party|meetup)[а-яёa-z]*/i;
@@ -32,10 +32,23 @@ const SEEK = /(ищу|ищем|нужен|нужна)\s+(партн[её]р|па
 // Только приехал, хочет знакомиться: слабый сигнал, роль пишет, только если есть что-то по теме.
 const NEWCOMER = /(только|недавно)\s+(приехал|переехал|прилетел)|хочу\s+(познакомиться|найти\s+друзей)|new\s+(here|in\s+town)|just\s+(moved|arrived)/i;
 
-/** Какой сигнал интереса в сообщении: seek, ask, newcomer или null. Длинное (объявления, истории) — не сигнал. */
+// Просит посоветовать мастера или услугу: «посоветуйте массажиста», «ищу тренера по теннису», «кто учит английскому».
+// ponytail: наивный список услуг — те, что бывают в каталоге (Practice); расширять по тому, что реально просят. Есть ли
+// подходящий мастер, решает охотник: нет — пропустит. «Ищу няню» сюда не входит: это наём, а не услуга из каталога.
+const SERVICE = /(?<![а-яёa-z])(массаж|остеопат|мануальн|тренер|инструктор|репетитор|преподавател|учител[яьюе]|уроки|психолог|психотерапевт|коуч|логопед|маникюр|педикюр|парикмахер|косметолог|визажист|тату|фотограф|нутрициолог|massage|coach|tutor|teacher|trainer)/i;
+const REQUEST = /посоветуйте|подскажите|порекомендуйте|(?<![а-яё])(ищу|ищем|нужен|нужна|нужны)(?![а-яё])|кто\s+(знает|может\s+посоветовать|делает|учит|занимается)|есть\s+(ли\s+)?(тут|здесь|у\s+кого|кто)|recommend|looking\s+for/i;
+
+/**
+ * Какой сигнал в сообщении: job — сам ищет работу (резюме бывает длинным); seek — ищет компанию на занятие;
+ * service — просит посоветовать мастера; ask — «куда сходить»; newcomer — только приехал; иначе null.
+ * Длинное (объявления, истории) — не сигнал, кроме резюме.
+ */
 export function signalOf(text) {
+  if (RESUME.test(text) && text.length <= 3000) return 'job';
   if (text.length > 500) return null;
   if (SEEK.test(text) && TOPIC.test(text)) return 'seek';
+  // Вакансия («ищем тренера в студию») — не просьба об услуге: её берёт jobs.mjs.
+  if (text.length <= 300 && REQUEST.test(text) && SERVICE.test(text) && !looksLikeJob(text)) return 'service';
   if (looksLikeLead(text)) return 'ask';
   return NEWCOMER.test(text) ? 'newcomer' : null;
 }
@@ -90,12 +103,12 @@ export function pickSearchCandidates(chat, messages, searches, now = Date.now(),
 }
 
 /**
- * Что берём из сообщений чата. Вакансии — из любого; вопросы «куда сходить», мастеров и кандидатов в Находки — только
- * при `leads`: чат о работе (только в JOB_CHATS) их не даёт — людям оттуда мы не пишем и мастеров там не ищем.
+ * Что берём из сообщений чата. Вакансии и тех, кто сам ищет работу (сигнал job), — из любого; вопросы «куда сходить»,
+ * просьбы об услуге, мастеров и кандидатов в Находки — только при `leads`: чат о работе (только в JOB_CHATS) их не даёт.
  */
 export function pickFromChat(chat, messages, { leads = true, searches = [] } = {}) {
   return {
-    leads: leads ? pickLeads(chat, messages) : [],
+    leads: pickLeads(chat, messages).filter((l) => leads || l.signal === 'job'),
     offers: leads ? pickOffers(chat, messages) : [],
     candidates: leads ? pickSearchCandidates(chat, messages, searches) : [],
     jobs: pickJobs(chat, messages),
