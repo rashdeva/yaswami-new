@@ -9,14 +9,22 @@ import { setLinkConfig } from '../format.ts';
 import { served } from '../served.ts';
 import { keys } from './keys.ts';
 
-/** Запрос «кто я» — один на useSession и useCity. Не получилось узнать, кто это, — считаем, что не вошёл. */
-const meQuery = { queryKey: keys.me, queryFn: (): Promise<Me | null> => api.me(), staleTime: Infinity };
+/**
+ * Общие запросы приложения (кто я, настройки, города) читают многие компоненты, и они появляются и исчезают вместе со
+ * экранами. Без `retryOnMount: false` упавший запрос повторялся бы при монтировании каждого нового читателя, а повтор без
+ * данных возвращает `me` в undefined: витрина меняется на спиннер и обратно, и так по кругу, пока API лежит.
+ * Повторяет их перезагрузка страницы («Попробовать ещё раз»).
+ */
+const shared = { staleTime: Infinity, retryOnMount: false } as const;
+
+/** Запрос «кто я» — один на всех: useSession, useCity, useTopicSubscription. Не получилось узнать, кто это, — считаем, что не вошёл. */
+export const meQuery = { queryKey: keys.me, queryFn: (): Promise<Me | null> => api.me(), ...shared };
 
 /** Кто вошёл и настройки сервера. `me`: undefined — ещё выясняем, null — не вошёл. */
 export function useSession() {
   const client = useQueryClient();
   const navigate = useNavigate();
-  const config = useQuery({ queryKey: keys.config, queryFn: () => api.config().then((c) => (setLinkConfig(c), c)), staleTime: Infinity }).data;
+  const config = useQuery({ queryKey: keys.config, queryFn: () => api.config().then((c) => (setLinkConfig(c), c)), ...shared }).data;
   const { data, isPending } = useQuery(meQuery);
   const city = useCity().name;
   const me = isPending ? undefined : data ?? null;
@@ -93,7 +101,7 @@ const storeCity = (id: string) => {
 export function useCity() {
   const client = useQueryClient();
   // Города приходят вместе со страницей (served.cities): название города есть сразу.
-  const cities = useQuery({ queryKey: keys.cities, queryFn: api.cities, initialData: served.cities, staleTime: Infinity }).data ?? [];
+  const cities = useQuery({ queryKey: keys.cities, queryFn: api.cities, initialData: served.cities, ...shared }).data ?? [];
   const me = useQuery(meQuery).data;
   const guest = useQuery({ queryKey: keys.guestCity, queryFn: storedCity, staleTime: Infinity }).data;
   // Сохранённого города больше нет (команда его убрала) — первый город, а не пустая витрина.
