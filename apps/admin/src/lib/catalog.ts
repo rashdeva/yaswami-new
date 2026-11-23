@@ -5,6 +5,14 @@ import { OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
 /** Модерация организатора (HOST_STATUSES в core). */
 export const HOST_LABELS: Record<HostStatus, string> = { pending: 'Новый', published: 'Проверен', rejected: 'Отклонён' };
 
+/**
+ * Кто перед нами в «Мастерах»: у организатора есть предстоящие события в каталоге, у мастера — только Practice,
+ * у остальных нет ни того, ни другого — чаще всего это случайный человек из чата, а не организатор.
+ */
+export type HostKind = 'events' | 'services' | 'none';
+export const HOST_KINDS: Record<HostKind, string> = { events: 'Организаторы', services: 'Мастера', none: 'Без событий и услуг' };
+export const hostKind = (events: number, practices: number): HostKind => (events > 0 ? 'events' : practices > 0 ? 'services' : 'none');
+
 export const PRACTICE_LABELS: Record<PracticeStatus, string> = { pending: 'Ждёт решения', published: 'Опубликована', rejected: 'Отклонена' };
 
 export const COLLECTED_LABELS: Record<CollectedStatus, string> = {

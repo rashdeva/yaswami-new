@@ -1,6 +1,6 @@
 // Организаторы собранных событий: список, профиль и правки команды.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AdminHostView, HostUpdateInput, PracticeStatus, Wire } from '@yaswami/core';
+import type { AdminHostView, HostStatus, HostUpdateInput, PracticeStatus, Wire } from '@yaswami/core';
 import { api } from '../api.ts';
 import { keys } from './keys.ts';
 import { useAct } from './useAct.ts';
@@ -14,6 +14,9 @@ export const useHostCreate = () => useAct(api.hostCreate, { undo: (_input, host)
 /** Решение по одной услуге из «Каталога»: меняется только она — два решения подряд по услугам одного мастера не мешают друг другу. */
 export const usePracticeStatus = () =>
   useAct(({ practice_id, status }: { host_id: string; practice_id: string; status: PracticeStatus }) => api.practiceUpdate(practice_id, { status }), { undo: ({ host_id }) => ['host', host_id] });
+
+/** Решение по организатору прямо из списка. */
+export const useHostStatus = () => useAct(({ id, status }: { id: string; status: HostStatus }) => api.hostUpdate(id, { status }), { undo: ({ id }) => ['host', id] });
 
 export function useHostActions(id: string) {
   const client = useQueryClient();

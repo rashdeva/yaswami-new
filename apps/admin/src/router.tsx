@@ -2,7 +2,7 @@
 // Ссылки на карточки сущностей рисует components/EntityLink.tsx — второе и последнее место, где известны адреса.
 import { createRootRoute, createRoute, createRouter, useNavigate } from '@tanstack/react-router';
 import type { AdminEntity, AgentKey, CollectedStatus, PracticeStatus } from '@yaswami/core';
-import { ADMIN_ENTITIES, AGENTS, COLLECTED_STATUSES, PRACTICE_STATUSES } from '@yaswami/core';
+import { ADMIN_ENTITIES, AGENTS, COLLECTED_STATUSES, HOST_STATUSES, PRACTICE_STATUSES } from '@yaswami/core';
 import { App } from '@/App';
 import type { EventsWhen } from '@/hooks/useEvents';
 import { AccountsScreen } from '@/screens/AccountsScreen';
@@ -19,7 +19,9 @@ import { EventScreen } from '@/screens/EventScreen';
 import { EventsScreen } from '@/screens/EventsScreen';
 import { FeedScreen } from '@/screens/FeedScreen';
 import { HostScreen } from '@/screens/HostScreen';
+import type { HostFilter } from '@/screens/HostsScreen';
 import { HostsScreen } from '@/screens/HostsScreen';
+import type { HostKind } from '@/lib/catalog';
 import { PeopleScreen } from '@/screens/PeopleScreen';
 import { UserScreen } from '@/screens/UserScreen';
 import { UsersScreen } from '@/screens/UsersScreen';
@@ -63,11 +65,16 @@ const agents = createRoute({ getParentRoute: () => root, path: '/agents', compon
 // --- Мастера
 
 function HostsPage() {
-  const { q } = hosts.useSearch();
+  const { q, status, kind } = hosts.useSearch();
   const navigate = useNavigate();
-  return <HostsScreen query={q ?? ''} onQuery={(query) => void navigate({ to: '/hosts', search: { q: query || undefined }, replace: true })} onOpen={(c) => void navigate({ to: '/', search: { c } })} onCreated={(id) => void navigate({ to: '/hosts/$id', params: { id } })} />;
+  // Без статуса в адресе — те, кто ждёт решения: за этим сюда и приходят.
+  const onFilter = (f: { status: HostFilter; kind: HostKind | undefined; query: string }) => void navigate({ to: '/hosts', search: { status: f.status === 'pending' ? undefined : f.status, kind: f.kind, q: f.query || undefined }, replace: true });
+  return <HostsScreen status={status ?? 'pending'} kind={kind} query={q ?? ''} onFilter={onFilter} onOpen={(c) => void navigate({ to: '/', search: { c } })} onCreated={(id) => void navigate({ to: '/hosts/$id', params: { id } })} />;
 }
-const hosts = createRoute({ getParentRoute: () => root, path: '/hosts', component: HostsPage, validateSearch: (s: Record<string, unknown>): { q?: string } => ({ q: str(s.q) }) });
+const hosts = createRoute({
+  getParentRoute: () => root, path: '/hosts', component: HostsPage,
+  validateSearch: (s: Record<string, unknown>): { q?: string; status?: HostFilter; kind?: HostKind } => ({ q: str(s.q), status: oneOf<HostFilter>(s.status, ['all', ...HOST_STATUSES]), kind: oneOf<HostKind>(s.kind, ['events', 'services', 'none']) }),
+});
 
 function HostPage() {
   const { id } = host.useParams();

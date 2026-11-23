@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { contactOf, hostEvents, matchCollected, topicOptions } from './catalog.ts';
+import { contactOf, hostEvents, hostKind, matchCollected, topicOptions } from './catalog.ts';
 
 const source = 'https://t.me/chan/5';
 
@@ -34,4 +34,10 @@ test('темы: справочник, «другое» и своя тема со
   assert.ok(plain.includes('другое'));
   assert.deepEqual(topicOptions('другое').length, plain.length, 'тема из справочника не повторяется');
   assert.deepEqual(topicOptions('шахматы').at(-1), ['шахматы', 'шахматы']);
+});
+
+test('hostKind: события важнее услуг, без того и другого — none', () => {
+  assert.equal(hostKind(2, 3), 'events');
+  assert.equal(hostKind(0, 1), 'services');
+  assert.equal(hostKind(0, 0), 'none');
 });
