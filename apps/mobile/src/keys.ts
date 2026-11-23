@@ -2,13 +2,13 @@
 export const keys = {
   me: ['me'] as const,
   topics: ['topics'] as const,
-  feed: ['collected'] as const,
+  feed: (city: string) => ['feed', city] as const,
   collected: (id: string) => ['collected', id] as const,
   event: (id: string) => ['event', id] as const,
   mine: ['mine'] as const,
-  hosts: ['hosts'] as const,
+  hosts: (city: string) => ['hosts', city] as const,
   host: (id: string) => ['host', id] as const,
-  jobs: ['jobs'] as const,
+  jobs: (city: string) => ['jobs', city] as const,
   job: (id: string) => ['job', id] as const,
-  search: (query: string) => ['search', query] as const,
+  search: (query: string, city: string) => ['search', city, query] as const,
 };

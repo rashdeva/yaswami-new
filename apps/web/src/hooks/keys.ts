@@ -7,10 +7,12 @@ export const keys = {
   guestCity: ['guest-city'],
   /** Темы (Topic): список живёт в базе. */
   topics: ['topics'],
-  /** Витрина: собранные события города. `['collected']` — витрины всех городов разом. */
+  /** Витрина: собранные события города; `allCollected` — витрины всех городов разом. */
+  allCollected: ['collected'],
   collected: (city: string) => ['collected', city],
   collectedEvent: (id: string) => ['collected-event', id],
   /** Каталог организаторов и страница одного. */
+  allHosts: ['hosts'],
   hosts: (city: string) => ['hosts', city],
   host: (id: string) => ['host', id],
   /** Вакансии: список страницами, «есть ли хоть одна» для входа в раздел и карточка. */

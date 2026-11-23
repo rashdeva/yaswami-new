@@ -20,7 +20,7 @@ const event: Event = {
   status: 'published', widget_id: null, rev: 0, created_at: new Date(),
 };
 const item: CollectedEventItem = {
-  id: 'danangevent-7-0', title: 'Йога на пляже', description: '', starts_at: '2026-11-14T19:00:00+07:00', ends_at: null, place: null,
+  id: 'danangevent-7-0', city_id: 'danang', title: 'Йога на пляже', description: '', starts_at: '2026-11-14T19:00:00+07:00', ends_at: null, place: null,
   address: null, price: null, tags: [], claimed_event_id: null, source_url: 'https://t.me/danangevent/7', signup_url: 'https://t.me/danangevent/7',
 };
 const from = { id: 5, first_name: 'Аня', username: 'anna_yoga', language_code: 'ru' };

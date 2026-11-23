@@ -20,7 +20,7 @@ export function useCollectedEvent(id: string, authed: boolean, toast: (text: str
     queryFn: () => api.collectedEvent(id),
     initialData: () =>
       (served.event?.id === id ? served.event : undefined)
-      ?? client.getQueriesData<CollectedEventItem[]>({ queryKey: ['collected'] }).flatMap(([, list]) => list ?? []).find((e) => e.id === id)
+      ?? client.getQueriesData<CollectedEventItem[]>({ queryKey: keys.allCollected }).flatMap(([, list]) => list ?? []).find((e) => e.id === id)
       ?? client.getQueryData<MyEvents>(keys.mine)?.seen.find((c) => c.event.id === id)?.event,
   });
 

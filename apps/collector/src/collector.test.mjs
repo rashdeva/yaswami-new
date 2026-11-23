@@ -493,9 +493,19 @@ console.log('cover ok');
 
 // Город разовых скриптов: канал «про город», если в названии есть основа любого написания города.
 {
-  const { cityMatcher } = await import('./find-sources.mjs');
+  const { cityMatcher, chatsToRead } = await import('./city.mjs');
   const local = cityMatcher(['Дананг', 'Da Nang', 'Хойан']);
   assert.ok(['Футбол в Дананге', 'DaNang surf', 'da nang yoga', 'Хойан танцы'].every((t) => local.test(t)));
   assert.ok(!local.test('Нячанг футбол'));
   assert.ok(cityMatcher(['Ханой']).test('Йога в Ханое'));
+  assert.ok(cityMatcher(['St. Petersburg (SPb)']).test('Йога st. petersburg (spb)'), 'спецсимволы названия — как текст');
+  assert.ok(!cityMatcher(['St. Petersburg']).test('stx petersburg'));
+  // Чаты разовых скриптов: без аргументов — источники нужного вида; чат не из базы — в первом городе.
+  const store = {
+    chats: async () => [{ chat: 'Big', leads: true, city_id: 'hanoi', city: 'Ханой' }, { chat: 'work', leads: false, city_id: 'danang', city: 'Дананг' }],
+    cities: async () => [{ id: 'danang', name: 'Дананг' }, { id: 'hanoi', name: 'Ханой' }],
+  };
+  assert.deepEqual((await chatsToRead(store, [], ['leads'])).map((c) => c.chat), ['Big']);
+  assert.deepEqual((await chatsToRead(store, [], ['leads', 'jobs'])).map((c) => c.chat), ['Big', 'work']);
+  assert.deepEqual((await chatsToRead(store, ['@big', 'other'], ['leads'])).map((c) => [c.chat, c.city_id, c.city]), [['Big', 'hanoi', 'Ханой'], ['other', 'danang', 'Дананг']]);
 }

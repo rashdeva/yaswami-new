@@ -7,10 +7,9 @@
 // Источник добавляет человек — в админке («Источники»). Сессия — SCOUT_SESSION, как у scout.mjs.
 import { setTimeout as sleep } from 'node:timers/promises';
 import telegram from 'telegram';
-import postgres from 'postgres';
-import { DEFAULT_CITY_ID } from '@yaswami/core';
 import { looksLikeEvent } from '@yaswami/extract';
 import { connect } from './mtproto.mjs';
+import { scoutCity } from './city.mjs';
 import { contactsIn } from './offers.mjs';
 import { createStore } from './store.mjs';
 
@@ -22,20 +21,6 @@ const TOPICS = {
   танцы: ['танцы', 'бачата', 'сальса', 'кизомба', 'hip hop', 'dance'], йога: ['йога', 'пилатес', 'yoga', 'pilates'],
   настолки: ['настолки', 'настольные игры', 'board games'], бег: ['бег', 'running'], квиз: ['квиз', 'quiz'],
 };
-/** Название города и его другие написания; канал «про город», если в названии есть основа любого из них (без окончания: «Дананге»). */
-export function cityMatcher(names) {
-  const stems = names.map((n) => n.trim().toLowerCase().replace(/[аяоеыиуьй]$/, '').replace(/\s+/g, '\\s?')).filter(Boolean);
-  return new RegExp(stems.join('|'), 'i');
-}
-
-/** Город разовых скриптов (find-sources, scout): CITY_ID или первый, с CITY_ALIASES. */
-export async function scoutCity(store, { CITY_ID = DEFAULT_CITY_ID, CITY_ALIASES = '' } = process.env) {
-  const city = (await store.cities()).find((c) => c.id === CITY_ID);
-  if (!city) throw new Error(`Города ${CITY_ID} нет в таблице cities`);
-  const names = [city.name, ...CITY_ALIASES.split(',').map((a) => a.trim()).filter(Boolean)];
-  return { ...city, names, local: cityMatcher(names) };
-}
-
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { TG_API_ID, TG_API_HASH, SCOUT_SESSION, DATABASE_URL } = process.env;
   if (!SCOUT_SESSION || !DATABASE_URL) throw new Error('Нужны SCOUT_SESSION (npm run login SCOUT_SESSION) и DATABASE_URL');
@@ -44,13 +29,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const store = createStore(DATABASE_URL);
   const city = await scoutCity(store);
   const chats = process.env.SCOUT_CHATS?.split(',') ?? (await store.chats()).filter((c) => c.leads && c.city_id === city.id).map((c) => c.chat);
+  const known = await store.knownChannels();
   await store.end();
-
-  const known = new Map();
-  const sql = postgres(DATABASE_URL, { onnotice: () => {} });
-  for (const s of await sql`select channel, enabled from sources`) known.set(s.channel.toLowerCase(), s.enabled ? 'есть' : 'выключен');
-  for (const h of await sql`select lower(username) u from hosts where username is not null`) if (!known.has(h.u)) known.set(h.u, 'организатор');
-  await sql.end();
 
   const client = connect({ apiId: TG_API_ID, apiHash: TG_API_HASH, session: SCOUT_SESSION });
   await client.connect();

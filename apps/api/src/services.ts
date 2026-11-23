@@ -11,7 +11,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { ADDRESS_MAX, DEFAULT_CITY_ID, Feature, JOB_TTL_DAYS, jobContactUrl, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
-import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, jobs, photos, practices, practiceSignups, subscriptions, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
+import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, jobs, photos, practices, practiceSignups, sources, subscriptions, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
@@ -118,11 +118,11 @@ export function collectedExternalId(slug: string): string {
 }
 
 type CollectedRow = typeof collectedEvents.$inferSelect & { cover_id?: string | null };
-const toCollectedItem = ({ external_id, event, announcement, claimed_event_id, cover_id, video_url }: CollectedRow): CollectedEventItem => {
+const toCollectedItem = ({ external_id, city_id, event, announcement, claimed_event_id, cover_id, video_url }: CollectedRow): CollectedEventItem => {
   const { telegram_username, whatsapp_phone, url, ...shown } = event;
   const id = collectedSlug(external_id);
   return {
-    id, ...shown, claimed_event_id, cover_url: cover_id ? photoUrl(cover_id) : null, video_url, media: announcement.media ?? [], source_url: announcement.url,
+    id, ...shown, city_id, claimed_event_id, cover_url: cover_id ? photoUrl(cover_id) : null, video_url, media: announcement.media ?? [], source_url: announcement.url,
     signup_url: collectedSignupUrl(event, announcement.url, settings.publicUrl + collectedPath(id)),
   };
 };
@@ -138,7 +138,17 @@ const collectedWithCover = (db: Db | Tx) => db
   .leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id));
 
 /** Города, где работает сервис, первый — старейший (он же город по умолчанию). Открыт всем: из них гость выбирает свой. */
-export const listCities = (db: Db | Tx): Promise<City[]> => db.select().from(cities).orderBy(asc(cities.created_at));
+export const listCities = (db: Db | Tx): Promise<City[]> => db.select().from(cities).orderBy(asc(cities.created_at), asc(cities.id));
+
+/** Город человека (`users.city_id`) целиком: название и часовой пояс нужны роли поддержки. */
+export async function cityOf(db: Db | Tx, userId: number): Promise<City> {
+  const [row] = await db.select({ city: cities }).from(users).innerJoin(cities, eq(cities.id, users.city_id)).where(eq(users.id, userId));
+  if (!row) throw new AppError('not_found', 404);
+  return row.city;
+}
+
+/** Канал источника по username: в Telegram регистр не важен. */
+export const sameChannel = (channel: string) => sql`lower(${sources.channel}) = lower(${channel})`;
 
 /** Город команда указывает по id: несуществующий — понятный отказ, а не сбой внешнего ключа. */
 export async function assertCity(db: Db | Tx, id: string | undefined): Promise<void> {
@@ -792,7 +802,7 @@ export async function me(db: Db, actor: User): Promise<Me> {
     claimable: claimable.map(toCollectedItem),
     host_id: (await db.select({ id: hosts.id }).from(hosts).where(eq(hosts.user_id, actor.id)))[0]?.id ?? null,
     subscribed_topics: (await db.select({ topics: subscriptions.topics }).from(subscriptions).where(eq(subscriptions.user_id, actor.id)))[0]?.topics ?? null,
-    city_id: (await db.select({ city_id: users.city_id }).from(users).where(eq(users.id, actor.id)))[0]?.city_id ?? DEFAULT_CITY_ID,
+    city_id: (await cityOf(db, actor.id)).id,
   };
 }
 
@@ -801,9 +811,11 @@ export async function me(db: Db, actor: User): Promise<Me> {
  * строка остаётся как «уже спрашивали». `notified_at` ставится только при первой записи: сводка расскажет о событиях, вышедших после неё.
  */
 export async function updateSelf(db: Db, actor: User, { subscribed_topics: topics, city_id }: UserSelfUpdateInput): Promise<Me> {
-  await assertCity(db, city_id);
-  if (city_id) await db.update(users).set({ city_id }).where(eq(users.id, actor.id));
-  if (topics) await db.insert(subscriptions).values({ user_id: actor.id, topics }).onConflictDoUpdate({ target: subscriptions.user_id, set: { topics } });
+  await db.transaction(async (tx) => {
+    await assertCity(tx, city_id);
+    if (city_id) await tx.update(users).set({ city_id }).where(eq(users.id, actor.id));
+    if (topics) await tx.insert(subscriptions).values({ user_id: actor.id, topics }).onConflictDoUpdate({ target: subscriptions.user_id, set: { topics } });
+  });
   return me(db, actor);
 }
 

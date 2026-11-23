@@ -6,15 +6,19 @@ import { DEFAULT_CITY_ID } from '@yaswami/core';
 import { identify, track } from '../analytics.ts';
 import { api, hasCredentials } from '../api.ts';
 import { setLinkConfig } from '../format.ts';
+import { served } from '../served.ts';
 import { keys } from './keys.ts';
+
+/** Запрос «кто я» — один на useSession и useCity. Не получилось узнать, кто это, — считаем, что не вошёл. */
+const meQuery = { queryKey: keys.me, queryFn: (): Promise<Me | null> => api.me(), staleTime: Infinity };
 
 /** Кто вошёл и настройки сервера. `me`: undefined — ещё выясняем, null — не вошёл. */
 export function useSession() {
   const client = useQueryClient();
   const navigate = useNavigate();
   const config = useQuery({ queryKey: keys.config, queryFn: () => api.config().then((c) => (setLinkConfig(c), c)), staleTime: Infinity }).data;
-  // Не получилось узнать, кто это, — считаем, что не вошёл.
-  const { data, isPending } = useQuery({ queryKey: keys.me, queryFn: (): Promise<Me | null> => api.me(), staleTime: Infinity });
+  const { data, isPending } = useQuery(meQuery);
+  const city = useCity().name;
   const me = isPending ? undefined : data ?? null;
   // Аналитика узнаёт, чьи это действия; после выхода — снова аноним.
   const known = me !== undefined;
@@ -58,7 +62,7 @@ export function useSession() {
     authed: !!me,
     /** Возможности, открытые человеку; экраны спрашивают через `useFeature`. */
     features: me?.features ?? [],
-    city: useCity().name,
+    city,
     // Войти на сайте можно, когда сервер это умеет, а человек открыл страницу не из Telegram.
     canLogin: !!config?.web_login && !hasCredentials,
     claim: claim.mutateAsync,
@@ -88,11 +92,13 @@ const storeCity = (id: string) => {
  */
 export function useCity() {
   const client = useQueryClient();
-  const cities = useQuery({ queryKey: keys.cities, queryFn: api.cities, staleTime: Infinity }).data ?? [];
-  // Тот же запрос, что в useSession: TanStack Query отправит его один раз.
-  const me = useQuery({ queryKey: keys.me, queryFn: (): Promise<Me | null> => api.me(), staleTime: Infinity }).data;
+  // Города приходят вместе со страницей (served.cities): название города есть сразу.
+  const cities = useQuery({ queryKey: keys.cities, queryFn: api.cities, initialData: served.cities, staleTime: Infinity }).data ?? [];
+  const me = useQuery(meQuery).data;
   const guest = useQuery({ queryKey: keys.guestCity, queryFn: storedCity, staleTime: Infinity }).data;
-  const city_id = me?.city_id ?? guest ?? DEFAULT_CITY_ID;
+  // Сохранённого города больше нет (команда его убрала) — первый город, а не пустая витрина.
+  const known = (id: string | null | undefined) => id && (!cities.length || cities.some((c) => c.id === id)) ? id : null;
+  const city_id = known(me?.city_id) ?? known(guest) ?? DEFAULT_CITY_ID;
   useEffect(() => { if (me?.city_id) storeCity(me.city_id); }, [me?.city_id]);
   const set = useMutation({
     mutationFn: async (id: string) => {
@@ -103,6 +109,12 @@ export function useCity() {
       client.setQueryData(keys.me, await api.updateSelf({ city_id: id }));
     },
     onSuccess: (_, id) => track('city_changed', { city_id: id }),
+    // Сервер не принял — возвращаем то, что на нём на самом деле.
+    onError: () => {
+      if (me) storeCity(me.city_id);
+      client.setQueryData(keys.guestCity, me?.city_id ?? storedCity());
+      void client.invalidateQueries({ queryKey: keys.me });
+    },
   });
   return { city_id, name: cities.find((c) => c.id === city_id)?.name ?? '', cities, set: set.mutate };
 }

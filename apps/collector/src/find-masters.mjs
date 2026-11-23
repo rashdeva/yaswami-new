@@ -1,9 +1,10 @@
 // Мастера из истории чатов: npm run find-masters [чат …]. Разовый запуск руками: сборщик сам смотрит только новые сообщения
 // (pollLeads), а этот скрипт проходит назад на SCOUT_DAYS дней (по умолчанию 30) по чатам с kind leads из источников или по чатам из аргументов
-// (мастер из чата не из базы получает первый город).
+// (чат не из базы читается в первом городе).
 // Пишет в hosts через тот же saveOffers, что и сборщик. Сессия — SCOUT_SESSION: сессию сборщика рядом с Railway не открываем.
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createOfferExtractor } from '@yaswami/extract';
+import { chatsToRead } from './city.mjs';
 import { connect } from './mtproto.mjs';
 import { pickOffers, resolveAuthor, saveOffers } from './offers.mjs';
 import { createStore } from './store.mjs';
@@ -13,8 +14,7 @@ if (!SCOUT_SESSION || !DATABASE_URL || !GEMINI_API_KEY) throw new Error('Нуж�
 const days = Number(process.env.SCOUT_DAYS ?? 30);
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const store = createStore(DATABASE_URL);
-const known = await store.chats();
-const chats = args.length ? args.map((a) => known.find((c) => c.chat.toLowerCase() === a.toLowerCase()) ?? { chat: a }) : known.filter((c) => c.leads);
+const chats = await chatsToRead(store, args, ['leads']);
 
 const client = connect({ apiId: TG_API_ID, apiHash: TG_API_HASH, session: SCOUT_SESSION });
 await client.connect();

@@ -24,7 +24,7 @@ export function useHost(id: string) {
     queryKey: keys.host(id),
     queryFn: () => api.getHost(id),
     placeholderData: () => {
-      const listed = client.getQueriesData<HostListItem[]>({ queryKey: ['hosts'] }).flatMap(([, list]) => list ?? []).find((h) => h.id === id);
+      const listed = client.getQueriesData<HostListItem[]>({ queryKey: keys.allHosts }).flatMap(([, list]) => list ?? []).find((h) => h.id === id);
       return listed && ({ ...listed, photos: [], events: [] } satisfies HostItem);
     },
   });

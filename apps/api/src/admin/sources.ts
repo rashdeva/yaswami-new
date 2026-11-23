@@ -6,10 +6,8 @@ import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
 import type { Db } from '../db/client.ts';
 import { collectorCursors, hosts, sources } from '../db/schema.ts';
-import { AppError, assertCity } from '../services.ts';
+import { AppError, assertCity, sameChannel } from '../services.ts';
 
-// Username в Telegram не различает регистр, поэтому сравниваем по lower().
-const sameChannel = (channel: string) => sql`lower(${sources.channel}) = lower(${channel})`;
 const selectSources = (db: Db) => db
   .select({
     channel: sources.channel, kind: sources.kind, enabled: sources.enabled, city_id: sources.city_id, created_at: sources.created_at, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,

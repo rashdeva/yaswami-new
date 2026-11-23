@@ -2,8 +2,8 @@
 // сообщения, а этот скрипт проходит назад на SCOUT_DAYS дней (по умолчанию 30) по чатам с kind leads и jobs из источников или по чатам
 // из аргументов (вакансия из чата не из базы получает первый город). Пишет в jobs через тот же saveJobs, что и сборщик. Сессия — SCOUT_SESSION: сессию сборщика рядом с Railway не открываем.
 import { setTimeout as sleep } from 'node:timers/promises';
-import { DEFAULT_CITY_ID } from '@yaswami/core';
 import { createJobExtractor } from '@yaswami/extract';
+import { chatsToRead } from './city.mjs';
 import { connect } from './mtproto.mjs';
 import { pickJobs, saveJobs } from './jobs.mjs';
 import { createStore } from './store.mjs';
@@ -13,9 +13,7 @@ if (!SCOUT_SESSION || !DATABASE_URL || !GEMINI_API_KEY) throw new Error('Нуж�
 const days = Number(process.env.SCOUT_DAYS ?? 30);
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const store = createStore(DATABASE_URL);
-const known = await store.chats();
-const first = { city_id: DEFAULT_CITY_ID, city: (await store.cities()).find((c) => c.id === DEFAULT_CITY_ID)?.name };
-const chats = args.length ? args.map((a) => known.find((c) => c.chat.toLowerCase() === a.toLowerCase()) ?? { chat: a, ...first }) : known;
+const chats = await chatsToRead(store, args, ['leads', 'jobs']);
 
 const client = connect({ apiId: TG_API_ID, apiHash: TG_API_HASH, session: SCOUT_SESSION });
 await client.connect();

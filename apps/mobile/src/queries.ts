@@ -1,9 +1,10 @@
 // Данные экранов: useQuery на чтение, useMutation на изменение. Экран зовёт хук, api.* видит только этот файл.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CollectedEventItem, Me, RsvpInput } from '@yaswami/core';
-import { collectedDayKey, setTopics, TOPIC_GUIDES } from '@yaswami/core';
+import { collectedDayKey, DEFAULT_CITY_ID, setTopics, TOPIC_GUIDES } from '@yaswami/core';
 import { api } from './api';
 import { keys } from './keys';
+import { useSession } from './session';
 
 /**
  * Темы в порядке фильтров. Список живёт в базе; до ответа сервера — темы из сборки. Ответ кладётся в реестр ядра
@@ -14,9 +15,18 @@ export function useTopics(): string[] {
   return Object.keys(TOPIC_GUIDES);
 }
 
+/**
+ * Город, чью витрину, мастеров, вакансии и поиск показывает приложение: город вошедшего (`me.city_id`, выбирается
+ * в мини-приложении), иначе первый. ponytail: своего выбора города в приложении нет, пока оно только для Вьетнама.
+ */
+function useCityId(): string {
+  return useSession().me?.city_id ?? DEFAULT_CITY_ID;
+}
+
 /** Витрина, разбитая по дням: список уже отсортирован по началу. */
 export function useFeed() {
-  const q = useQuery({ queryKey: keys.feed, queryFn: api.collected });
+  const city = useCityId();
+  const q = useQuery({ queryKey: keys.feed(city), queryFn: () => api.collected(city) });
   const days: { key: string; data: CollectedEventItem[] }[] = [];
   for (const item of q.data ?? []) {
     const key = collectedDayKey(item.starts_at);
@@ -32,7 +42,7 @@ export function useCollected(id: string) {
   const q = useQuery({
     queryKey: keys.collected(id),
     queryFn: () => api.collectedEvent(id),
-    placeholderData: () => client.getQueryData<CollectedEventItem[]>(keys.feed)?.find((e) => e.id === id),
+    placeholderData: () => client.getQueriesData<CollectedEventItem[]>({ queryKey: ['feed'] }).flatMap(([, list]) => list ?? []).find((e) => e.id === id),
   });
   const signUp = useMutation({
     mutationFn: () => api.signUp(id),
@@ -69,13 +79,20 @@ export function useMine(enabled: boolean) {
   });
 }
 
-export const useHosts = () => useQuery({ queryKey: keys.hosts, queryFn: api.hosts });
+export function useHosts() {
+  const city = useCityId();
+  return useQuery({ queryKey: keys.hosts(city), queryFn: () => api.hosts(city) });
+}
 export const useHost = (id: string) => useQuery({ queryKey: keys.host(id), queryFn: () => api.host(id) });
-export const useJobs = () => useQuery({ queryKey: keys.jobs, queryFn: api.jobs });
+export function useJobs() {
+  const city = useCityId();
+  return useQuery({ queryKey: keys.jobs(city), queryFn: () => api.jobs(city) });
+}
 export const useJob = (id: string) => useQuery({ queryKey: keys.job(id), queryFn: () => api.job(id) });
 
 /** Поиск начинается с двух букв — так же проверяет сервер. */
 export function useSearch(query: string) {
   const q = query.trim();
-  return useQuery({ queryKey: keys.search(q), queryFn: () => api.search(q), enabled: q.length >= 2, placeholderData: (prev) => prev });
+  const city = useCityId();
+  return useQuery({ queryKey: keys.search(q, city), queryFn: () => api.search(q, city), enabled: q.length >= 2, placeholderData: (prev) => prev });
 }
