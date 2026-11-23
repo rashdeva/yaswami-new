@@ -55,6 +55,7 @@ export const ENTITIES: Record<AdminEntity, string> = {
   contact: 'Контакт',
   source: 'Источник',
   city: 'Город',
+  job: 'Вакансия',
 };
 
 /** Куда ведёт сущность в админке; null — своей карточки нет (сообщение, контакт). */

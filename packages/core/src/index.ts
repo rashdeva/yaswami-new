@@ -9,3 +9,4 @@ export * from './inbox.ts';
 export * from './admin.ts';
 export * from './sse.ts';
 export * from './host-searches.ts';
+export * from './jobs.ts';
