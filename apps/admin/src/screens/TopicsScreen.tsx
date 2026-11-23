@@ -14,7 +14,7 @@ import { useTopics } from '@/hooks/useTopics';
 
 const DESCRIPTION = 'Темы, по которым раскладываются события и услуги. Новая тема сразу появляется в фильтрах и подписках, сборщик начинает относить к ней анонсы, а события без темы с её метками переходят в неё. Иконку рисует иллюстратор за несколько минут; свою можно загрузить. Список тем — это и то, что мы публикуем: событие без темы в ленту не попадает. Сборщик добавляет темы сам, когда метка встречается у нескольких организаторов, — такие помечены «сборщик». Лишнюю тему выключите: события сохранят её имя, и её можно включить обратно.';
 const ORIGIN = { built_in: null, team: 'команда', collector: 'сборщик' } as const;
-const EMPTY = { name: '', slug: '', emoji: '', color: '#64748b', what: '', why: '', first: '', not_for: '', tags: '' };
+const EMPTY = { name: '', slug: '', emoji: '', color: '#64748b', what: '', why: '', first: '', not_for: '', tags: '', split_from: '' };
 type Draft = typeof EMPTY;
 const GUIDE: [keyof Draft, string][] = [
   ['what', 'Что это: что происходит на таком событии'],
@@ -38,12 +38,12 @@ export function TopicsScreen() {
   const [invalid, setInvalid] = useState<string | null>(null);
   const set = (key: keyof Draft) => (e: { target: { value: string } }) => setDraft((d) => ({ ...d, [key]: e.target.value }));
   const reset = () => (setEditing(null), setDraft(EMPTY), setInvalid(null));
-  const edit = (t: Wire<AdminTopic>) => (setEditing(t.name), setInvalid(null), setDraft({ name: t.name, slug: t.slug, emoji: t.emoji, color: t.color, what: t.what, why: t.why, first: t.first, not_for: t.not_for, tags: t.tags.join(', ') }));
-  const propose = (c: TopicCandidate) => (setEditing(null), setInvalid(null), setDraft({ ...EMPTY, name: c.tag, tags: c.tag }));
+  const edit = (t: Wire<AdminTopic>) => (setEditing(t.name), setInvalid(null), setDraft({ name: t.name, slug: t.slug, emoji: t.emoji, color: t.color, what: t.what, why: t.why, first: t.first, not_for: t.not_for, tags: t.tags.join(', '), split_from: '' }));
+  const propose = (c: TopicCandidate) => (setEditing(null), setInvalid(null), setDraft({ ...EMPTY, name: c.tag, tags: c.tag, split_from: c.inside ?? '' }));
   const submit = () => {
-    const parsed = TopicCreateInput.safeParse({ ...draft, tags: tagsOf(draft.tags) });
+    const parsed = TopicCreateInput.safeParse({ ...draft, tags: tagsOf(draft.tags), split_from: draft.split_from || undefined });
     if (!parsed.success) return setInvalid(`Проверьте поле «${String(parsed.error.issues[0]!.path[0])}»: имя — по-русски, slug — латиницей (banya), цвет — #rrggbb, тексты гида — до 400 знаков.`);
-    const { name, slug, ...rest } = parsed.data;
+    const { name, slug, split_from, ...rest } = parsed.data;
     if (editing) update({ name: editing, ...rest }, { onSuccess: reset });
     else create(parsed.data, { onSuccess: reset });
   };
@@ -52,10 +52,10 @@ export function TopicsScreen() {
     <Page title={<>Темы <Badge>{topics?.filter((t) => t.enabled).length ?? 0}</Badge></>} description={DESCRIPTION}>
       {!!candidates?.length && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Метки событий без темы:</span>
+          <span className="text-muted-foreground">Метки, из которых может выйти тема:</span>
           {candidates.map((c) => (
-            <span key={c.tag} title={c.examples.join(' · ')}>
-              <Button size="xs" variant="outline" onClick={() => propose(c)}>{c.tag} · {c.events_count} соб. · {c.hosts_count} орг.</Button>
+            <span key={`${c.tag}|${c.inside}`} title={c.examples.join(' · ')}>
+              <Button size="xs" variant="outline" onClick={() => propose(c)}>{c.tag}{c.inside && ` (в «${c.inside}»)`} · {c.events_count} соб. · {c.hosts_count} орг.</Button>
             </span>
           ))}
         </div>
@@ -69,6 +69,7 @@ export function TopicsScreen() {
         </div>
         {GUIDE.map(([key, label]) => <Textarea key={key} rows={2} placeholder={label} value={draft[key]} onChange={set(key)} />)}
         <Input placeholder="Метки через запятую: цигун, тайцзи — события без темы с ними перейдут сюда" value={draft.tags} onChange={set('tags')} />
+        {draft.split_from && !editing && <p className="text-muted-foreground text-sm">Выделяется из темы «{draft.split_from}»: её события с этими метками перейдут в новую, а подписанные на «{draft.split_from}» получат и её.</p>}
         {invalid && <p className="text-destructive text-sm" role="alert">{invalid}</p>}
         <div className="flex gap-2">
           <Button type="submit" variant="outline">{editing ? `Сохранить «${editing}»` : 'Добавить тему'}</Button>

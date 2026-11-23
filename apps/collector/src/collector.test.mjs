@@ -88,12 +88,13 @@ assert.deepEqual(mergeEvents({ ...ev('Баня', D), what_happens: [] }, { ...ev
   const { curateTopics, syncTopics } = await import('./topics.mjs');
   const builtIn = Object.entries(TOPIC_GUIDES).map(([name, g]) => ({ name, ...g }));
   const rows = [{ name: 'йога', slug: 'yoga', emoji: '🧘', color: '#e8891a', what: 'w', why: 'y', first: 'f', not_for: 'n' }];
-  const candidates = [{ tag: 'новый год', events_count: 9, hosts_count: 5, examples: [] }, { tag: 'падел', events_count: 6, hosts_count: 3, examples: [] }];
+  const candidates = [{ tag: 'новый год', inside: 'обучение', events_count: 9, hosts_count: 5, examples: [] }, { tag: 'падел', inside: 'спорт', events_count: 6, hosts_count: 3, examples: [] }];
+  const moved = [];
   const asked = [];
   const store = {
     topics: async () => rows,
-    topicCandidates: async (minEvents, minHosts) => (assert.deepEqual([minEvents, minHosts], [5, 3]), candidates),
-    addTopic: async (t) => (rows.push(t), true),
+    topicCandidates: async (limits) => (assert.deepEqual(limits, { minEvents: 5, minHosts: 3, splitEvents: 10, splitHosts: 5 }), candidates),
+    addTopic: async (t, from) => (rows.push(t), moved.push(from), true),
   };
   const proposeTopic = async (c) => (asked.push(c.tag), c.tag === 'падел' ? { name: 'ракеточный спорт', slug: 'racket', emoji: '🏓', color: '#0ea5e9', what: 'w', why: 'y', first: 'f', not_for: 'n', tags: ['падел'] } : null);
   assert.equal(await syncTopics({ store }), 1);
@@ -101,6 +102,7 @@ assert.deepEqual(mergeEvents({ ...ev('Баня', D), what_happens: [] }, { ...ev
   assert.equal(await curateTopics({ store, proposeTopic }), null, '«новый год» — не тема');
   assert.equal(await curateTopics({ store, proposeTopic }), 'ракеточный спорт');
   assert.deepEqual(asked, ['новый год', 'падел'], 'об отклонённой метке второй раз не спрашиваем');
+  assert.deepEqual(moved, [{ from: 'спорт', tag: 'падел' }], 'тема выделена из широкой: её события с меткой переедут');
   assert.deepEqual(Object.keys(TOPIC_GUIDES), ['йога', 'ракеточный спорт'], 'новая тема сразу в реестре: следующий анонс её получит');
   setTopics(builtIn);
 }

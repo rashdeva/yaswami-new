@@ -313,11 +313,13 @@ export const TopicCreateInput = z.object({
   first: guideText('Guide: how to get through the first visit — what to bring, what is normal'),
   not_for: guideText('Guide: who should be careful or check something beforehand'),
   tags: z.array(z.string().trim().toLowerCase().min(1).max(40)).max(30).default([])
-    .describe('Tags that mean this topic (e.g. «цигун», «тайцзи»): events and practices with topic «другое» and one of these tags move to the topic'),
+    .describe('Tags that mean this topic (e.g. «цигун», «тайцзи»): events with topic «другое» and one of these tags move to the topic'),
+  split_from: z.string().optional()
+    .describe('Name of an existing broad topic this one is carved out of (`inside` of a candidate): its events carrying one of `tags` move to the new topic too, and people subscribed to the broad topic get subscribed to the new one'),
 });
 export type TopicCreateInput = z.infer<typeof TopicCreateInput>;
 
-export const TopicUpdateInput = TopicCreateInput.omit({ name: true, slug: true, tags: true }).partial().extend({
+export const TopicUpdateInput = TopicCreateInput.omit({ name: true, slug: true, tags: true, split_from: true }).partial().extend({
   tags: TopicCreateInput.shape.tags.unwrap().optional(),
   enabled: z.boolean().optional().describe('false hides the topic: it leaves filters, subscriptions and the list the collector chooses from; events keep it and can be shown again'),
   icon_url: z.string().max(4_000_000).optional().describe('New icon: https link from the image generator or a data URL (png/jpeg). Square, one object on a plain white background'),
@@ -334,14 +336,22 @@ export interface AdminTopic extends TopicItem {
   created_at: Date;
 }
 
+/** Порог для метки внутри существующей темы: столько событий у стольких разных организаторов. То же число — в store.mjs сборщика. */
+export const TOPIC_SPLIT_MIN = { events: 10, hosts: 5 } as const;
+
 export const TopicCandidateListInput = z.object({
   min_events: z.coerce.number().int().min(1).max(100).default(3).describe('Only tags met in at least this many events'),
 });
 export type TopicCandidateListInput = z.infer<typeof TopicCandidateListInput>;
 
-/** Кандидат в темы: Tag, который копится у событий без темы («другое») за последние 90 дней. */
+/**
+ * Кандидат в темы за последние 90 дней: Tag, который копится у событий без темы («другое») или стал заметным видом
+ * занятий внутри широкой темы («мафия» внутри «игр»). Во втором случае порог выше — TOPIC_SPLIT_MIN.
+ */
 export interface TopicCandidate {
   tag: string;
+  inside: string | null; // тема, в которой сейчас лежат события с меткой; null — без темы
+  inside_events_count: number; // сколько всего событий в этой теме: метка на половину темы — это сама тема, а не её часть
   events_count: number;
   hosts_count: number; // сколько разных контактов для записи: один организатор с расписанием — ещё не тема
   examples: string[]; // названия событий — текст посторонних людей

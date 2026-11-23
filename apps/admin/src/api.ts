@@ -31,6 +31,8 @@ const MESSAGES: Record<string, string> = {
   account_limited: 'Telegram ограничил этот аккаунт за сообщения незнакомым (PEER_FLOOD): первые сообщения на паузе. Ответы тем, кто написал сам, уходят',
   not_draft: 'Черновик уже отправлен или отклонён',
   source_exists: 'Этот канал уже есть в источниках',
+  topic_exists: 'Тема с таким именем или slug уже есть',
+  topic_not_found: 'Нет темы, из которой выделяем',
   city_exists: 'Город с таким id уже есть',
   city_not_found: 'Такого города нет: добавьте его в «Городах»',
   host_exists: 'Организатор с таким username уже есть',

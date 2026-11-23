@@ -220,16 +220,29 @@ test('сборщик: темы из базы, кандидаты из меток
   await add(3, 'падел', 'b');
   await add(4, 'свечи', 'a');
   await add(5, 'падел', 'c', 'спорт'); // с темой — не в счёт
-  assert.deepEqual((await store.topicCandidates(1, 1)).map((c: any) => [c.tag, c.events_count, c.hosts_count]), [['падел', 3, 2], ['свечи', 1, 1]]);
-  assert.deepEqual((await store.topicCandidates(3, 3)).length, 0, 'три события у двух организаторов — ещё не тема');
+  const limits = (minEvents: number, minHosts: number) => ({ minEvents, minHosts, splitEvents: 2, splitHosts: 2 });
+  assert.deepEqual((await store.topicCandidates(limits(1, 1))).map((c: any) => [c.tag, c.inside, c.events_count, c.hosts_count]), [['падел', null, 3, 2], ['свечи', null, 1, 1]]);
+  assert.deepEqual((await store.topicCandidates(limits(3, 3))).length, 0, 'три события у двух организаторов — ещё не тема');
 
   const topic = { name: 'ракеточный спорт', slug: 'racket', emoji: '🏓', color: '#0EA5E9', what: 'w', why: 'y', first: 'f', not_for: 'n', tags: ['падел', 'пиклбол'] };
   assert.equal(await store.addTopic(topic), true);
   assert.equal(await store.addTopic({ ...topic, slug: 'racket2' }), false, 'имя занято');
   assert.deepEqual((await sql`select origin, color, position from topics where name = ${topic.name}`).map((r) => ({ ...r })), [{ origin: 'collector', color: '#0ea5e9', position: 13 }]);
   assert.deepEqual((await sql`select event->>'topic' as topic from collected_events order by external_id`).map((r) => r.topic), ['ракеточный спорт', 'ракеточный спорт', 'ракеточный спорт', 'другое', 'спорт']);
-  assert.deepEqual((await store.topicCandidates(1, 1)).map((c: any) => c.tag), ['свечи']);
-  assert.equal((await store.topics()).at(-1).name, 'ракеточный спорт');
+  assert.deepEqual((await store.topicCandidates(limits(1, 1))).map((c: any) => c.tag), ['свечи']);
+
+  // Метка внутри широкой темы: кандидат со своим порогом; выделенная тема забирает события только с этой меткой
+  // (метки от ИИ могут быть шире темы) и достаётся подписанным на широкую.
+  await add(6, 'мафия', 'a', 'игры');
+  await add(7, 'мафия', 'b', 'игры');
+  await add(8, 'игра', 'c', 'игры');
+  await sql`insert into users (id, first_name, lang, timezone) values (901, 'Зоя', 'ru', 'UTC'), (902, 'Лев', 'ru', 'UTC')`;
+  await sql`insert into subscriptions (user_id, topics) values (901, ${sql.json(['игры'])}), (902, ${sql.json(['йога'])})`;
+  assert.deepEqual((await store.topicCandidates(limits(5, 5))).map((c: any) => [c.tag, c.inside, c.events_count, c.inside_events_count]), [['мафия', 'игры', 2, 3]]);
+  assert.equal(await store.addTopic({ ...topic, name: 'мафия', slug: 'mafia', tags: ['мафия', 'игра'] }, { from: 'игры', tag: 'мафия' }), true);
+  assert.deepEqual((await sql`select event->>'topic' as topic from collected_events where external_id in ('telegram:t/6#0', 'telegram:t/7#0', 'telegram:t/8#0') order by external_id`).map((r) => r.topic), ['мафия', 'мафия', 'игры']);
+  assert.deepEqual((await sql`select topics from subscriptions order by user_id`).map((r) => r.topics), [['игры', 'мафия'], ['йога']]);
+  assert.deepEqual((await store.topics()).slice(-2).map((t: any) => t.name), ['ракеточный спорт', 'мафия']);
   await sql`delete from topics where origin <> 'built_in'`;
 });
 
