@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { CityBadge } from '@/components/City';
 import { EntityLink, TelegramLink } from '@/components/EntityLink';
 import { Failed, Hint, Loading, Nothing, Page } from '@/components/Page';
+import { ActionsCell, ActionsHead } from '@/components/RowActions';
 import { Search } from '@/components/Search';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -87,7 +88,7 @@ export function HostsScreen({ status, kind, query, onFilter, onOpen, onCreated }
       {rows.length > 0 && (
         <Table>
           <TableHeader>
-            <TableRow><TableHead>Организатор</TableHead><TableHead>Статус</TableHead><TableHead>Услуги и о нём</TableHead><TableHead>Событий</TableHead><TableHead>Записей</TableHead><TableHead>В сервисе</TableHead><TableHead>Переписка</TableHead><TableHead /></TableRow>
+            <TableRow><TableHead>Организатор</TableHead><TableHead>Статус</TableHead><TableHead>Услуги и о нём</TableHead><TableHead>Событий</TableHead><TableHead>Записей</TableHead><TableHead>В сервисе</TableHead><TableHead>Переписка</TableHead><ActionsHead /></TableRow>
           </TableHeader>
           <TableBody>
             {rows.map(({ h, s, kind: k }) => (
@@ -105,22 +106,22 @@ export function HostsScreen({ status, kind, query, onFilter, onOpen, onCreated }
                 <TableCell className="align-top"><Badge variant={h.status === 'pending' ? 'default' : h.status === 'rejected' ? 'outline' : 'secondary'}>{HOST_LABELS[h.status]}</Badge> <Badge variant="outline">{HOST_KINDS[k]}</Badge>{!h.telegram_id && h.status === 'pending' && <> <Badge variant="outline">проверяется</Badge></>}
                 </TableCell>
                 <TableCell className="max-w-md align-top whitespace-normal"><Hint>{h.practices.length ? h.practices.map((p) => p.title).join(' · ') : h.summary ?? '—'}</Hint></TableCell>
-                <TableCell>{s?.events ?? 0}</TableCell>
-                <TableCell>{s?.signups ?? 0}</TableCell>
-                <TableCell>
+                <TableCell className="align-top">{s?.events ?? 0}</TableCell>
+                <TableCell className="align-top">{s?.signups ?? 0}</TableCell>
+                <TableCell className="align-top">
                   {h.user_id ? <Badge variant="outline"><EntityLink entity="user" id={h.user_id}>вошёл</EntityLink></Badge> : <Hint>нет</Hint>}
                 </TableCell>
-                <TableCell>
+                <TableCell className="align-top">
                   {s?.conversation_id
                     ? <Button variant="outline" size="xs" onClick={() => onOpen(s.conversation_id!)}>{INBOX_STAGES[s.stage!]}</Button>
                     : <Hint>не писали</Hint>}
                 </TableCell>
-                <TableCell>
-                  <ButtonGroup className="justify-end">
+                <ActionsCell className="align-top">
+                  <ButtonGroup>
                     {h.status !== 'published' && <Button size="xs" onClick={() => decide({ id: h.id, status: 'published' })}>{h.status === 'rejected' ? 'Вернуть' : 'Проверен'}</Button>}
                     {h.status !== 'rejected' && <Button size="xs" variant="outline" onClick={() => decide({ id: h.id, status: 'rejected' })}>Отклонить</Button>}
                   </ButtonGroup>
-                </TableCell>
+                </ActionsCell>
               </TableRow>
             ))}
           </TableBody>
