@@ -208,7 +208,10 @@ await store.addSources(channels);
 // ponytail: при перезапуске GramJS заново ищет все источники; если их станут сотни — хранить сущности в сессии.
 const ADOPT_PER_PASS = Number(env.ADOPT_PER_PASS ?? 5);
 
-async function pollChannel({ channel, host_username, city_id, city, timezone }, known) {
+// Источник, события которого команда стабильно одобряет, модерацию пропускает (store.trustedChannels). 0 — выключено.
+const AUTO_APPROVE_MIN = Number(env.AUTO_APPROVE_MIN ?? 5);
+
+async function pollChannel({ channel, host_username, city_id, city, timezone }, known, trusted) {
   const extract = extractFor({ city, timezone });
   const fresh = (await fetchChatAnnouncements(userbot, channel, cursors[channel] ?? 0))
     .sort((a, b) => a.announcement.number - b.announcement.number);
@@ -237,11 +240,13 @@ async function pollChannel({ channel, host_username, city_id, city, timezone }, 
       // Дубль дополняет запись первого анонса, а не создаёт вторую.
       const external_id = same?.external_id ?? `telegram:${announcement.id}#${i}`;
       if (!same && bucket) media ??= await saveMedia(announcement, photos, album);
+      const status = trusted.has(channel) ? 'approved' : 'pending'; // у известного события upsert статус не меняет
       await store.upsert({
         external_id, channel, city_id, announcement: media ? { ...announcement, media } : announcement, event: merged,
-        signup_url: signupUrl(merged, announcement, signupMessage),
+        signup_url: signupUrl(merged, announcement, signupMessage), status,
       });
-      if (same) same.event = merged; else known.push({ external_id, city_id, event, status: 'pending' });
+      if (same) same.event = merged; else known.push({ external_id, city_id, event, status });
+      if (!same && status === 'approved') console.log(`${external_id}: одобрено само — доверенный источник`);
     }
     // Сдвигаем отметку только после записи событий: упали посередине — повторим с этой же публикации.
     cursors[channel] = announcement.number;
@@ -281,8 +286,9 @@ do {
   if (adopted?.length) console.log(`новые источники от организаторов: ${adopted.map((c) => `@${c}`).join(', ')}`);
   const known = await store.upcoming();
   cursors = await store.cursors();
+  const trusted = new Set(AUTO_APPROVE_MIN > 0 ? await store.trustedChannels(AUTO_APPROVE_MIN) : []);
   for (const source of await store.sources()) {
-    await pollChannel(source, known).catch((e) => console.error(`${source.channel}: ${e.message}`));
+    await pollChannel(source, known, trusted).catch((e) => console.error(`${source.channel}: ${e.message}`));
     await sleep(2000); // не частим с запросами к Telegram
   }
   const searches = leadChats.length ? await activeSearches().catch((e) => (console.error(`запросы организаторов: ${e.message}`), [])) : [];
