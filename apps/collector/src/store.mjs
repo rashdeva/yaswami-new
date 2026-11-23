@@ -53,6 +53,14 @@ export function createStore(url) {
     addFoundSources: async (city_id, channels) => channels.length ? (await sql`
       insert into sources ${sql(channels.map((channel) => ({ channel, city_id, kind: 'announcements' })))}
       on conflict do nothing returning channel`).map((r) => r.channel) : [],
+    /** Каналы и группы, которые аккаунт `account` уже нашёл по username (tg_peers): [{ username, peer_id, access_hash }]. */
+    peers: (account) => sql`select username, peer_id, access_hash from tg_peers where account = ${account}`,
+    savePeers: (account, peers) => peers.length ? sql`
+      insert into tg_peers ${sql(peers.map((p) => ({ account, ...p })))}
+      on conflict (account, username) do update set peer_id = excluded.peer_id, access_hash = excluded.access_hash, updated_at = now()` : [],
+    /** Источник, которого больше нет в Telegram, — выключить с причиной; команда видит её в «Источниках» и может включить. */
+    disableSource: (channel, reason) => sql`
+      update sources set enabled = false, disabled_reason = ${reason} where lower(channel) = lower(${channel}) and enabled`,
     /** Каналы организаторов, которых ещё нет в источниках, — не больше `limit` за раз; возвращает добавленные. */
     adoptHostChannels: async (limit) => (await sql`
       insert into sources (channel, host_id, city_id)
@@ -102,7 +110,7 @@ export function createStore(url) {
     sources: () => sql`
       select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
       from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id
-      where s.enabled and s.kind = 'announcements' order by s.created_at`,
+      where s.enabled and s.kind = 'announcements' order by s.created_at, s.channel`,
     /**
      * Включённые чаты, где ищем не анонсы: `leads` — вопросы, мастера и вакансии (бывший LEAD_CHATS), иначе только
      * вакансии (JOB_CHATS). Мастера и вакансии получают город чата (`city_id`, `city` — его название для ИИ).

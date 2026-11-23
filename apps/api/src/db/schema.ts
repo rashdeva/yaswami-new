@@ -459,6 +459,8 @@ export const sources = pgTable(
     city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
     // Что сборщик берёт из чата: анонсы событий, вопросы и мастеров с вакансиями (бывший LEAD_CHATS) или только вакансии (JOB_CHATS).
     kind: text({ enum: SOURCE_KINDS }).notNull().default('announcements'),
+    // Почему выключен сборщиком: канала больше нет в Telegram или он стал закрытым. null — выключила команда или включён.
+    disabled_reason: text(),
     created_at: at('created_at').notNull().defaultNow(),
   },
   // Username в Telegram не различает регистр: @Tea и @tea — один канал.
@@ -478,6 +480,18 @@ export const sourceSearches = pgTable('source_searches', {
   created_at: at('created_at').notNull().defaultNow(),
   finished_at: at('finished_at'),
 });
+
+// Каналы и группы, которые читающий аккаунт сборщика уже нашёл по username: id и access_hash. При старте сборщик
+// кладёт их в сессию GramJS, чтобы не искать заново: поиск по username (contacts.ResolveUsername) Telegram ограничивает
+// в сутки, а GramJS помнит найденное только до перезапуска. access_hash действителен только для своего аккаунта —
+// отсюда `account` (Telegram id читающего аккаунта). Пишет и читает только сборщик. В Luma такого нет.
+export const tgPeers = pgTable('tg_peers', {
+  account: text().notNull(),
+  username: text().notNull(), // в нижнем регистре, как его хранит GramJS
+  peer_id: text().notNull(), // -100… у каналов и групп
+  access_hash: text().notNull(),
+  updated_at: at('updated_at').notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.account, t.username] })]);
 
 // Номер последней разобранной публикации по каждому источнику сборщика.
 export const collectorCursors = pgTable('collector_cursors', {
