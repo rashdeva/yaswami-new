@@ -73,6 +73,17 @@ test('сборщик: события, источники и отметки', asy
   assert.equal((await store.unprofiled()).length, 0);
   await sql`update collected_events set status = 'approved'`;
   assert.deepEqual((await store.unprofiled()).map((r: any) => [r.username, r.city_id]), [['anna_yoga', 'danang']]);
+
+  // Доверенный источник: одобренных не меньше порога и ни одного отклонённого. Статус пишется только при вставке.
+  assert.deepEqual(await store.trustedChannels(1), ['danang']);
+  assert.deepEqual(await store.trustedChannels(2), []);
+  const second = { ...row, external_id: 'telegram:danang/43#0', status: 'approved' };
+  await store.upsert(second);
+  await store.upsert({ ...second, status: 'pending' });
+  assert.equal((await sql`select status from collected_events where external_id = ${second.external_id}`)[0]!.status, 'approved');
+  assert.deepEqual(await store.trustedChannels(2), ['danang']);
+  await sql`update collected_events set status = 'rejected' where external_id = ${second.external_id}`;
+  assert.deepEqual(await store.trustedChannels(1), []);
 });
 
 test('сборщик: организаторы, их услуги и фото', async () => {

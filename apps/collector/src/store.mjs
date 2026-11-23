@@ -76,10 +76,19 @@ export function createStore(url) {
     upcoming: () => sql`
       select external_id, city_id, event, status, exists(select 1 from photos p where p.collected_external_id = e.external_id) as has_cover
       from collected_events e where coalesce(ends_at, starts_at) >= now()`,
-    /** Новое событие или дополнение уже известного. Публикация остаётся от первого анонса. */
-    upsert: ({ external_id, channel, city_id, announcement, event, signup_url }) => sql`
+    /**
+     * Доверенные источники: за 90 дней команда одобрила из них не меньше `min` событий и ни одного не отклонила.
+     * Их новые события сборщик пишет сразу одобренными. Одно отклонение — и источник снова идёт через модерацию.
+     */
+    trustedChannels: async (min) => (await sql`
+      select channel from collected_events where created_at > now() - interval '90 days'
+      group by channel
+      having count(*) filter (where status in ('approved', 'published')) >= ${min} and count(*) filter (where status = 'rejected') = 0`)
+      .map((r) => r.channel),
+    /** Новое событие или дополнение уже известного. Публикация и решение модерации остаются от первого анонса. */
+    upsert: ({ external_id, channel, city_id, announcement, event, signup_url, status = 'pending' }) => sql`
       insert into collected_events ${sql({
-        external_id, channel, city_id, signup_url,
+        external_id, channel, city_id, signup_url, status,
         announcement: sql.json(announcement),
         event: sql.json(event),
         starts_at: event.starts_at,
