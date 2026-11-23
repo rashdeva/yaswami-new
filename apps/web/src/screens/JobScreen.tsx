@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { postedLabel } from '../format.ts';
 import { contactJob, useJob } from '../hooks/useJobs.ts';
+import { jobSource } from '../format.ts';
+import { openExternal } from '../tg.ts';
 import { useViewed } from '../hooks/useViewed.ts';
 
 interface Props {
@@ -40,10 +42,11 @@ export function JobScreen({ id, city, onBack }: Props) {
           {job.employer && <div><span>🏢</span><span>{job.employer}</span></div>}
           <div><span>💰</span><span>{job.pay ?? 'оплата по договорённости'}</span></div>
           <div><span>🗓</span><span>Объявление от {postedLabel(job.posted_at)}</span></div>
+          <div><span>🔗</span><a href={job.source_url} onClick={(e) => { e.preventDefault(); openExternal(job.source_url); }}>Источник: {jobSource(job.source_url)}</a></div>
         </div>
       </div>
       {job.description && <div className="group"><div className="meta"><div className="text">{job.description}</div></div></div>}
-      <p className="note">Вакансия собрана из открытого чата о работе. Отвечает сам работодатель.</p>
+      <p className="note">Вакансию мы нашли в чате о работе и пересказали коротко — как она звучала у работодателя, смотрите в источнике. Отвечает сам работодатель.</p>
 
       <div className="main"><div>
         <button className="cta" onClick={() => contactJob(job)}>Написать</button>

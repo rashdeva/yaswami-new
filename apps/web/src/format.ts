@@ -69,3 +69,9 @@ export function dayLabel(wall: string): string {
   const key = collectedDayKey(wall);
   return key === localDate() ? 'Сегодня' : key === localDate(1) ? 'Завтра' : collectedDay(wall);
 }
+
+/** Откуда вакансия, для подписи ссылки на исходное объявление: «чат @danang_rabota»; у закрытого чата username нет. */
+export const jobSource = (sourceUrl: string) => {
+  const chat = sourceUrl.match(/^https:\/\/t\.me\/(?!c\/)(\w+)\//)?.[1];
+  return chat ? `чат @${chat}` : 'объявление в чате';
+};
