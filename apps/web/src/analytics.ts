@@ -54,7 +54,7 @@ export function initAnalytics() {
   track('app_opened', { start: !startParam ? 'none' : startParam.startsWith('c_') ? 'collected_event' : 'event', ref: startRef, tag: startTag });
 }
 
-/** Привязывает действия к пользователю: id в PostHog — Telegram id, тот же, что в админке. `null` — не вошёл. */
+/** Привязывает действия к пользователю: id в PostHog — id пользователя (не Telegram id), тот же, что в админке. `null` — не вошёл. */
 export function identify(user: { id: number; first_name: string; username: string | null; features: string[] } | null) {
   if (!on) return;
   if (!user) return void (posthog._isIdentified() && posthog.reset());

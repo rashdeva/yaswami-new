@@ -187,7 +187,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
 
     // Админка: только для ADMIN_IDS. Каждое изменение пишется в журнал с тем, кто его сделал (audit.ts).
     .use('/admin/*', async (c, next) => {
-      requireAdmin(c.var.actor);
+      await requireAdmin(db, c.var.actor);
       await next();
     })
     .get('/admin/inbox', async (c) => c.json(await inboxFeed(db, c.var.actor)))

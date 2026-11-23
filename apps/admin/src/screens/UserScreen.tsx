@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item';
 import { useContacts, useUser, useUserActions } from '@/hooks/useUsers';
-import { APPROVAL_LABELS, EVENT_STATUS_LABELS, FEATURE_LABELS } from '@/lib/catalog';
+import { APPROVAL_LABELS, EVENT_STATUS_LABELS, FEATURE_LABELS, IDENTITY_LABELS } from '@/lib/catalog';
 import { wallParts } from '@/lib/form';
 
 const values = (u: User): Input => ({ first_name: u.first_name, username: u.username, lang: u.lang, timezone: u.timezone, features: u.features });
@@ -33,7 +33,7 @@ export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => voi
   return (
     <Page
       title={u.first_name}
-      description={<>{u.username && <><TelegramLink username={u.username} /> · </>}Telegram id {u.id} · <PostHogLink userId={u.id} /></>}
+      description={<>{u.username && <><TelegramLink username={u.username} /> · </>}{u.telegram_id ? `Telegram id ${u.telegram_id}` : 'без Telegram: бот ему не пишет'} · вход: {u.identities.map((i) => IDENTITY_LABELS[i]).join(', ') || '—'} · id {u.id} · <PostHogLink userId={u.id} /></>}
       actions={
         <>
           <Confirm

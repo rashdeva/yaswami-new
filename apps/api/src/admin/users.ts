@@ -1,12 +1,12 @@
 // Пользователи сервиса и аудитория организаторов (контакты) глазами команды.
 import { asc, count, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
-import type { AdminContact, AdminUserView, User, UserUpdateInput } from '@yaswami/core';
+import type { AdminContact, AdminUser, AdminUserView, User, UserUpdateInput } from '@yaswami/core';
 import { normalUsername } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
 import { revokeTokens } from '../auth.ts';
 import type { Db } from '../db/client.ts';
-import { collectedEventSignups, contacts, events, guests, users } from '../db/schema.ts';
+import { collectedEventSignups, contacts, events, guests, userIdentities, users } from '../db/schema.ts';
 import * as s from '../services.ts';
 import { verifyTicket } from '../support.ts';
 
@@ -23,11 +23,21 @@ export async function userByTicket(db: Db, ticket: string): Promise<User> {
   return user;
 }
 
+/** Пользователи для команды: к каждому — Telegram id и способы входа из user_identities (ADR-0008). */
+async function withIdentities(db: Db, list: User[]): Promise<AdminUser[]> {
+  const rows = list.length ? await db.select().from(userIdentities).where(inArray(userIdentities.user_id, list.map((u) => u.id))) : [];
+  return list.map((u) => {
+    const mine = rows.filter((r) => r.user_id === u.id);
+    const telegram = mine.find((r) => r.provider === 'telegram');
+    return { ...u, telegram_id: telegram ? Number(telegram.subject) : null, identities: mine.map((r) => r.provider) };
+  });
+}
+
 /** Люди, которые пользовались сервисом, по части имени или @username; без запроса — первые 50 по имени. */
-export const searchUsers = (db: Db, query?: string): Promise<User[]> =>
-  db.select().from(users)
+export const searchUsers = async (db: Db, query?: string): Promise<AdminUser[]> =>
+  withIdentities(db, await db.select().from(users)
     .where(query ? or(ilike(users.first_name, `%${query}%`), ilike(users.username, `%${query.replace(/^@/, '')}%`)) : undefined)
-    .orderBy(asc(users.first_name)).limit(query ? 20 : 50);
+    .orderBy(asc(users.first_name)).limit(query ? 20 : 50));
 
 export async function getUser(db: Db, id: number): Promise<AdminUserView> {
   const user = await userById(db, id);
@@ -35,7 +45,7 @@ export async function getUser(db: Db, id: number): Promise<AdminUserView> {
     .where(eq(guests.user_id, id)).orderBy(desc(guests.registered_at));
   const signups = await db.select({ external_id: collectedEventSignups.external_id }).from(collectedEventSignups).where(eq(collectedEventSignups.user_id, id));
   return {
-    user,
+    user: (await withIdentities(db, [user]))[0]!,
     events: await db.select().from(events).where(eq(events.user_id, id)).orderBy(desc(events.start_at)),
     guests: answers.map((r) => ({ ...r.guest, event_name: r.event_name })),
     collected_signups: signups.map((r) => s.collectedSlug(r.external_id)),

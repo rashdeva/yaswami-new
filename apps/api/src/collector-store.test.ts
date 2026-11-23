@@ -76,7 +76,9 @@ test('сборщик: события, источники и отметки', asy
 });
 
 test('сборщик: организаторы, их услуги и фото', async () => {
-  await sql`insert into users (id, first_name, lang, timezone) values (500, 'Анна', 'ru', 'UTC')`;
+  // Пользователь 777 входил через Telegram 500: id пользователя и Telegram id разные (ADR-0008).
+  await sql`insert into users (id, first_name, lang, timezone) values (777, 'Анна', 'ru', 'UTC')`;
+  await sql`insert into user_identities (provider, subject, user_id) values ('telegram', '500', 777)`;
   // Заготовка команды заполняется на месте; вошедший в сервис сразу привязан.
   const [stub] = await sql`insert into hosts (username, name) values ('anna_yoga', '@anna_yoga') returning id`;
   await sql`insert into hosts (username, name) values ('nobody_here', '@nobody_here')`;
@@ -84,7 +86,7 @@ test('сборщик: организаторы, их услуги и фото', 
   await store.rejectRequestedHost('nobody_here');
   await store.saveHost({ telegram_id: 500, username: 'anna_yoga', name: 'Анна', bio: 'йога', channel: 'anna_channel', summary: 'Ведёт йогу', city_id: 'danang' });
   const [host] = await sql`select id, name, user_id, status from hosts where telegram_id = 500`;
-  assert.deepEqual([host!.id, host!.name, Number(host!.user_id)], [stub!.id, 'Анна', 500]);
+  assert.deepEqual([host!.id, host!.name, Number(host!.user_id)], [stub!.id, 'Анна', 777]);
   assert.equal((await store.requestedHosts()).length, 0);
   assert.equal((await store.unprofiled()).length, 0);
   assert.deepEqual([...await store.adoptHostChannels(5)], ['anna_channel']);

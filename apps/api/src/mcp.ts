@@ -33,15 +33,15 @@ const SCOPE_TOOLS: Record<TokenScope, Set<string>> = {
   catalog: new Set(['collected_events_list', 'hosts_list', 'jobs_list', 'jobs_get', 'search']),
 };
 
-function buildServer(db: Db, actor: User, scope: TokenScope | null) {
+function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolean) {
   const server = new McpServer({ name: 'yaswami', version: '0.1.0' });
   const allowed = scope && SCOPE_TOOLS[scope];
 
   // Админ (оператор в командном чате) может выполнить любой «пользовательский» инструмент от имени другого человека:
   // так он управляет чем угодно в сервисе. Гостю параметр недоступен; роль поддержки эти инструменты не получает вовсе.
-  const asAdmin = isAdmin(actor) && !allowed;
+  const asAdmin = team && !allowed;
   const ctx: Ctx = { actor, via: 'mcp' }; // для журнала: агент действует как владелец токена
-  const AS_USER = { as_user_id: z.number().int().optional().describe('Admin only: act on behalf of this user (Telegram id, see admin_users_search or host_id in admin_events_list). Omit to act as yourself.') };
+  const AS_USER = { as_user_id: z.number().int().optional().describe('Admin only: act on behalf of this user (user id — not a Telegram id; see admin_users_search or host_id in admin_events_list). Omit to act as yourself.') };
 
   // Ошибка правил (нет мест, нет прав) — это ответ инструмента, а не сбой протокола: модель должна её прочитать.
   // `asUser` — инструмент действует от имени человека: `run` получает его вторым аргументом (для не-админа это он сам),
@@ -219,9 +219,9 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
   // Операции команды над всем сервисом — только тем, кому открыта админка: через них работают Hermes и оператор.
   // Каждое изменение пишется в журнал (admin_actions_list) и, если можно, отменяется admin_actions_undo.
   // Токен с областью действия проходит сюда ради person_*; остальное отсекает `allowed` в `tool`.
-  if (isAdmin(actor) || allowed) {
+  if (team || allowed) {
     const ONLY_TEAM = 'Only on an explicit instruction from the team. Logged; undo with admin_actions_undo.';
-    const user_id = z.number().int().describe('Id of the user (admin_users_search); negative for users who signed in without Telegram');
+    const user_id = z.number().int().describe('Id of the user (admin_users_search). It is our id, not a Telegram id: the person\'s Telegram id is `telegram_id` in admin_users_get');
 
     // --- Переписка (docs/agents-inbox.md)
     const conversation_id = z.uuid().describe('Conversation id from admin_conversations_list');
@@ -483,7 +483,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
     // --- Пользователи и аудитория (admin/users.ts)
     tool('admin_users_search', {
       title: 'Find user', readOnly: true, shape: UserSearchInput.shape,
-      description: 'Find people who have used the service, by name or username; without query — the first 50 by name. Returns their Telegram id — pass it as as_user_id to act on their behalf, or to admin_users_get.',
+      description: 'Find people who have used the service, by name or username; without query — the first 50 by name. Returns their user id (`id`) — pass it as as_user_id to act on their behalf, or to admin_users_get — and `telegram_id` (null for people who signed in with Apple or Google).',
     }, (a) => admin.searchUsers(db, a.query));
 
     tool('admin_users_get', {
@@ -561,7 +561,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null) {
 
 /** Один запрос — один сервер: состояния между запросами нет, поэтому сервис масштабируется без общих сессий. */
 export async function handleMcp(db: Db, actor: User, request: Request, scope: TokenScope | null = null): Promise<Response> {
-  const server = buildServer(db, actor, scope);
+  const server = buildServer(db, actor, scope, await isAdmin(db, actor));
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   return transport.handleRequest(request);

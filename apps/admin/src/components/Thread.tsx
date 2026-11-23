@@ -23,7 +23,7 @@ function Follow({ at }: { at: string }) {
 interface Props {
   conversation: Conv;
   messages: Msg[];
-  /** Наш Telegram id — чтобы подписать свои сообщения «Вы». */
+  /** Наш id пользователя (не Telegram id): им подписаны свои сообщения `admin:<id>` — показываем «Вы». */
   me: number;
   /** Наши аккаунты: в подписи сообщения — тот, через который оно прошло. */
   accounts: Account[];

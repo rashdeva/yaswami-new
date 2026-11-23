@@ -1,8 +1,11 @@
 // Чистые функции каталога: подписи статусов, контакт для записи из ссылки «Записаться», события организатора.
-import type { AdminCollectedEvent, CollectedStatus, Feature, Guest, HostStatus, JobStatus, PracticeStatus } from '@yaswami/core';
+import type { AdminCollectedEvent, CollectedStatus, Feature, Guest, HostStatus, IdentityProvider, JobStatus, PracticeStatus } from '@yaswami/core';
 import { JOB_TTL_DAYS, OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
 
 /** Модерация организатора (HOST_STATUSES в core). */
+/** Способы входа человека (user_identities, ADR-0008). */
+export const IDENTITY_LABELS: Record<IdentityProvider, string> = { telegram: 'Telegram', apple: 'Apple', google: 'Google' };
+
 export const HOST_LABELS: Record<HostStatus, string> = { pending: 'Новый', published: 'Проверен', rejected: 'Отклонён' };
 
 /**

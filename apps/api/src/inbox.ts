@@ -7,6 +7,8 @@ import type {
   TgAccount, User,
 } from '@yaswami/core';
 import { AGENTS, collectedPath, collectedWhen, LEAD_REPLY_HOURS } from '@yaswami/core';
+// Цикл с auth.ts (dropHostPitch) безопасен: обе стороны берут только функции и зовут их после загрузки.
+import { telegramIdOf, userIdByTelegram, usersByTelegram } from './auth.ts';
 import type { Ctx } from './audit.ts';
 import { audited } from './audit.ts';
 import type { Db } from './db/client.ts';
@@ -182,8 +184,7 @@ export async function dropHostPitch(db: Db, telegramId: number): Promise<void> {
 
 /** Что роль hunter должна знать, продолжая разговор: цель — чтобы человек вошёл в сервис; вошёл — только отвечать. */
 async function hunterFacts(db: Db, peerId: number): Promise<string> {
-  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, peerId));
-  if (user) return 'Человек уже пользуется «Я с вами». В сервис не зови и не уговаривай: только отвечай на его вопросы.';
+  if ((await userIdByTelegram(db, peerId)) !== null) return 'Человек уже пользуется «Я с вами». В сервис не зови и не уговаривай: только отвечай на его вопросы.';
   const app = bot.username ? `https://t.me/${bot.username}/${bot.appName}` : settings.publicUrl;
   return `Человек ответил на твоё сообщение; в «Я с вами» он ещё не заходил. Продолжи разговор (раздел «Продолжение разговора»). Все события города — в приложении: ${app}`;
 }
@@ -308,7 +309,8 @@ export const logSent = (db: Db) => async (method: string, body: { chat_id: numbe
   // Виджет не прошёл — следом то же уходит обычным сообщением (notifications.ts); неудачную попытку не пишем.
   // Оповещение нам самим (alertAdmins) — не переписка с человеком.
   if ((method === 'sendWidget' && !result.ok) || author === 'alert') return;
-  const [user] = await db.select().from(users).where(eq(users.id, body.chat_id));
+  const userId = await userIdByTelegram(db, body.chat_id); // chat_id — Telegram id собеседника, не users.id
+  const [user] = userId === null ? [] : await db.select().from(users).where(eq(users.id, userId));
   const text = typeof body.text === 'string' ? body.text : typeof body.caption === 'string' ? body.caption : NO_TEXT;
   await record(db, { id: body.chat_id, name: user?.first_name, username: user?.username }, { direction: 'out', author, text, status: result.ok ? 'sent' : 'failed' });
 };
@@ -336,9 +338,14 @@ export async function supportHistory(db: Db, id: string): Promise<SupportTurn[]>
   return rows.reverse().filter((m) => m.status !== 'failed' && m.status !== 'draft').map((m) => ({ role: m.direction === 'in' ? 'user' : 'assistant', content: m.text }));
 }
 
-export const isAdmin = (actor: User) => settings.adminIds.includes(actor.id);
-export function requireAdmin(actor: User) {
-  if (!isAdmin(actor)) throw new AppError('forbidden', 403);
+/** Человек из команды: его Telegram id в ADMIN_IDS. Сверяем Telegram, а не users.id (ADR-0008). */
+export async function isAdmin(db: Db, actor: User): Promise<boolean> {
+  if (!settings.adminIds.length) return false;
+  const telegramId = await telegramIdOf(db, actor.id);
+  return telegramId !== null && settings.adminIds.includes(telegramId);
+}
+export async function requireAdmin(db: Db, actor: User) {
+  if (!(await isAdmin(db, actor))) throw new AppError('forbidden', 403);
 }
 
 /** Кто собеседник и на каком он шаге: по профилям организаторов, пользователям сервиса и самой переписке. */
@@ -346,7 +353,7 @@ async function withStages(db: Db, rows: Conversation[]): Promise<InboxConversati
   if (!rows.length) return [];
   const peers = rows.map((c) => c.peer_id);
   const organizers = new Map((await db.select({ id: hosts.telegram_id, user_id: hosts.user_id }).from(hosts).where(inArray(hosts.telegram_id, peers))).map((h) => [h.id, h.user_id]));
-  const members = new Set((await db.select({ id: users.id }).from(users).where(inArray(users.id, peers))).map((u) => u.id));
+  const members = new Set((await usersByTelegram(db, peers)).keys()); // собеседники, которые уже входили в сервис
   const ours = sql`${messages.direction} = 'out' and ${messages.status} in ('sent', 'queued', 'sending')`;
   const facts = new Map((await db
     .select({
@@ -520,7 +527,7 @@ export async function conversationById(db: Db, id: string): Promise<Conversation
 
 /**
  * Мы пишем человеку сами: сообщение уходит через бота, а диалог переходит к нам — бот в нём замолкает.
- * Автор — `admin:<telegram id>` из админки или `agent`, когда пишет агент через MCP. Не отменяется: ушло в Telegram.
+ * Автор — `admin:<id пользователя>` из админки или `agent`, когда пишет агент через MCP. Не отменяется: ушло в Telegram.
  */
 export const inboxSend = (db: Db, ctx: Ctx, id: string, input: InboxSendInput) =>
   audited(db, ctx, { action: 'admin_messages_send', entity: 'conversation', id, input, undoable: false }, async (db) => {

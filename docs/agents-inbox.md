@@ -38,7 +38,7 @@ conversations  id, channel (bot | account), account_id? → tg_accounts, peer_id
                last_message_at, unread_count
                unique (channel, account_id, peer_id)
 messages       id, conversation_id, direction (in | out),
-               author (user | agent:<имя> | admin:<telegram id>),
+               author (user | agent:<имя> | admin:<id пользователя>),
                text, status (received | draft | queued | sent | failed),
                telegram_message_id?, error?, created_at
 ```
