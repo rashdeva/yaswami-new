@@ -425,7 +425,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
 
     tool('admin_hosts_update', {
       title: 'Edit organizer profile', shape: { host_id, ...HostUpdateInput.shape },
-      description: `Change an organizer profile: name, username, channel, summary, bio, city, and practices — the whole list of services they run (remove or add one, reorder; send every practice you keep with its \`id\`). To approve, reject or fix one practice use admin_practices_update. Only passed fields change. ${ONLY_TEAM} Errors: city_not_found, practice_not_found (an \`id\` in the list is not a practice of this organizer).`,
+      description: `Change an organizer profile: name, username, channel, Instagram handle, summary, bio, city, and practices — the whole list of services they run (remove or add one, reorder; send every practice you keep with its \`id\`). To approve, reject or fix one practice use admin_practices_update. Only passed fields change. ${ONLY_TEAM} Errors: city_not_found, practice_not_found (an \`id\` in the list is not a practice of this organizer).`,
     }, ({ host_id: id, ...input }) => admin.updateHost(db, ctx, id, input));
 
     tool('admin_practices_update', {

@@ -225,6 +225,7 @@ export const hosts = pgTable(
     city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
     bio: text(),
     channel: text(), // username канала: личный канал из профиля или ссылка из «о себе»
+    instagram_handle: text(), // ник в Instagram без @, в нижнем регистре; имя — как у Host в Luma. Ставит команда
     summary: text(),
     // Модерация (HOST_STATUSES): новые — pending; отклонённый не виден целиком. Что он ведёт без даты — в таблице practices.
     status: text().$type<HostStatus>().notNull().default('pending'),

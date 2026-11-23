@@ -1,0 +1,1 @@
+ALTER TABLE "hosts" ADD COLUMN "instagram_handle" text;

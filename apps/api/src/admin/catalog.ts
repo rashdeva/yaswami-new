@@ -81,7 +81,8 @@ export const createHost = (db: Db, ctx: Ctx, input: HostCreateInput): Promise<Ad
 export const updateHost = (db: Db, ctx: Ctx, id: string, { practices: list, ...input }: HostUpdateInput): Promise<AdminHost> =>
   audited(db, ctx, { action: 'admin_hosts_update', entity: 'host', id, input: { ...input, ...(list ? { practices: list } : {}) } }, async (tx) => {
     await s.assertCity(tx, input.city_id);
-    const values = { ...input, ...(input.username ? { username: normalUsername(input.username) } : {}), ...(input.channel ? { channel: normalUsername(input.channel) } : {}) };
+    const values = { ...input, ...(input.username ? { username: normalUsername(input.username) } : {}), ...(input.channel ? { channel: normalUsername(input.channel) } : {}),
+      ...(input.instagram_handle ? { instagram_handle: input.instagram_handle.replace(/^@/, '').toLowerCase() } : {}) };
     const [host] = Object.keys(values).length
       ? await tx.update(hosts).set(values).where(eq(hosts.id, id)).returning()
       : await tx.select().from(hosts).where(eq(hosts.id, id));
