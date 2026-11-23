@@ -1,6 +1,7 @@
-// «Лента»: сверху диалоги, которые ждут нас, ниже — живой поток всех сообщений; переписка выезжает сбоку.
+// «Лента»: сверху диалоги, которые ждут нас, под ними — очередь модерации, ниже — живой поток всех сообщений; переписка выезжает сбоку.
 import { useState } from 'react';
 import { Draft } from '@/components/Draft';
+import { ModerationQueue } from '@/components/ModerationQueue';
 import { Reply } from '@/components/Reply';
 import { Thread } from '@/components/Thread';
 import { Hint, Page } from '@/components/Page';
@@ -70,6 +71,8 @@ export function FeedScreen() {
           </Card>
         );
       })}
+
+      <ModerationQueue />
 
       <Marker variant="separator"><MarkerContent>Все сообщения</MarkerContent></Marker>
       {events.length === 0 && <Hint>Пока никто не писал.</Hint>}

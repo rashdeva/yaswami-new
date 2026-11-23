@@ -5,7 +5,8 @@ import { api } from '../api.ts';
 import { keys } from './keys.ts';
 import { useAct } from './useAct.ts';
 
-export const useHosts = () => useQuery({ queryKey: keys.hosts, queryFn: api.hosts });
+/** `poll` — перечитывать раз в столько мс: нужно очереди модерации в «Ленте», списки перечитывает `useAct`. */
+export const useHosts = (poll?: number) => useQuery({ queryKey: keys.hosts, queryFn: api.hosts, refetchInterval: poll });
 export const useHost = (id: string) => useQuery({ queryKey: keys.host(id), queryFn: () => api.host(id) });
 
 /** Добавить организатора по username: профиль заполнит сборщик на следующем проходе. */
