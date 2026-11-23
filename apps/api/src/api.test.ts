@@ -22,6 +22,7 @@ import { saveUserPhoto } from './photos.ts';
 import { listCollectedForAdmin, requestNextCover, requestNextVideo } from './services.ts';
 import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
+import { digestTopics } from './subscriptions.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
 
 import { host, hunter, illustrator, parseIllustration, parseSupportReply, support, verifyTicket } from './support.ts';
@@ -241,7 +242,7 @@ test('MCP: список инструментов, создание событи�
     'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
     'events_ticket_types_update', 'events_update', 'host_searches_create', 'host_searches_delete', 'host_searches_list', 'host_searches_matches_list', 'host_searches_update',
-    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'jobs_get', 'jobs_list', 'me_collected_list', 'search', 'users_get_self',
+    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'jobs_get', 'jobs_list', 'me_collected_list', 'search', 'users_get_self', 'users_update_self',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
@@ -303,7 +304,7 @@ test('собранные события: витрина без входа, за�
   const guest = tma(20, 'Оля');
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
-  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: await uid(20), first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [], host_id: null });
+  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: await uid(20), first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [], host_id: null, subscribed_topics: null });
 
   // «Мои события»: куда записывался и куда только заходил
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-2-0/visit', {})).status, 204);
@@ -1401,6 +1402,44 @@ test('лимит аккаунта: первых сообщений за сутк
   assert.equal((await send(await dialog(605), 'Здравствуйте!')).status, 204);
 });
 
+test('подписка на темы: PATCH /me и MCP, сводка новых событий — не чаще раза в сутки и не ночью', async () => {
+  const user = tma(1200, 'Зоя');
+  const me = async (res: Response | Promise<Response>) => ((await (await res).json()) as Me).subscribed_topics;
+  assert.equal(await me(call(user, 'GET', '/me')), null, 'ещё не спрашивали');
+  assert.equal((await call(user, 'PATCH', '/me', { subscribed_topics: ['рыбалка'] })).status, 400, 'темы — только из списка Topic');
+  assert.deepEqual(await me(call(user, 'PATCH', '/me', { subscribed_topics: ['йога', 'йога', 'баня'] })), ['йога', 'баня']);
+  assert.deepEqual((await mcpCall(user, 'users_update_self', { subscribed_topics: ['йога'] })).body.subscribed_topics, ['йога']);
+  await db.update(users).set({ timezone: 'UTC' }).where(eq(users.id, await uid(1200)));
+
+  // Полдень UTC через два дня: подписка (сейчас) заведомо старше суток.
+  const t0 = new Date(Date.now() + 2 * 86_400_000);
+  t0.setUTCHours(12, 0, 0, 0);
+  const at = (hours: number) => new Date(t0.getTime() + hours * 3600_000);
+  const starts_at = at(24 * 30);
+  const add = (n: number, topic: string, status: 'published' | 'pending' = 'published') => db.insert(collectedEvents).values({
+    external_id: `telegram:subchan/${n}#0`, channel: 'subchan', status, starts_at, signup_url: '', announcement: { url: `https://t.me/subchan/${n}` },
+    event: { title: `Событие ${n}`, description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null, topic },
+  });
+  const digests = () => sent.filter(([m, b]) => m === 'sendWidget' && b.chat_id === 1200).map(([, b]) => JSON.parse(b.public_data).t);
+  const step = async (now: Date) => (sent.length = 0, await digestTopics(db, now), digests());
+
+  await add(1, 'йога');
+  await add(2, 'баня'); // не его тема
+  await add(3, 'йога', 'pending'); // не в ленте
+  assert.deepEqual(await step(at(0)), ['Событие 1']);
+  await add(4, 'йога');
+  assert.deepEqual(await step(at(1)), [], 'сутки ещё не прошли');
+  assert.deepEqual(await step(at(24)), ['Событие 4'], 'накопленное приходит следующей сводкой, уже показанное не повторяется');
+  await add(5, 'йога');
+  assert.deepEqual(await step(at(62)), [], 'ночью не пишем');
+  assert.deepEqual(await step(at(72)), ['Событие 5']);
+  // Отписка: строка остаётся — спрашивать заново не будем.
+  assert.deepEqual(await me(call(user, 'PATCH', '/me', { subscribed_topics: [] })), []);
+  await add(6, 'йога');
+  assert.deepEqual(await step(at(120)), []);
+  await db.execute(sql`delete from collected_events where channel = 'subchan'`);
+});
+
 test('отзывы: запрос после события, оценка кнопкой, текст ответом, сводка организатору', async () => {
   const { event } = await newEvent(tma(80, 'Миша'));
   for (const id of [80, 81, 82]) await call(tma(id, `G${id}`), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved' });
@@ -2215,6 +2254,7 @@ test('парность: у каждого инструмента MCP есть м
     collected_events_claim: 'POST /collected-events/:id/claim',
     collected_events_signup: 'POST /collected-events/:id/signup',
     users_get_self: 'GET /me',
+    users_update_self: 'PATCH /me',
     me_collected_list: 'GET /me/collected',
     contacts_list: 'GET /contacts',
     host_searches_list: 'GET /host-searches',

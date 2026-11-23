@@ -55,7 +55,7 @@ const KINDS: Record<AdminEntity, Kind> = {
   collected_event: {
     root: collectedEvents, key: collectedEvents.external_id, toKey: (id) => collectedExternalId(id),
     // Отклик на публикацию сборщик обновляет каждый проход: в снимке он делал бы любую отмену «изменено с тех пор».
-    omit: ['views', 'reactions'],
+    omit: ['views', 'reactions', 'published_at'], // published_at ставит сводка подписчикам
     children: { cover: photos.collected_external_id, signups: collectedEventSignups.external_id },
   },
   host: { root: hosts, key: hosts.id, children: { photos: photos.host_id, practices: practices.host_id, practice_signups: practiceSignups.host_id, host_searches: hostSearches.host_id } },

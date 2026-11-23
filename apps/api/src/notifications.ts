@@ -2,7 +2,7 @@
 // про моменты ничего не знает.
 import { readFileSync } from 'node:fs';
 import type { CollectedEventItem, Event, User } from '@yaswami/core';
-import { ADDRESS_MAX, collectedPath, collectedWhen, NAME_MAX } from '@yaswami/core';
+import { ADDRESS_MAX, collectedPath, collectedWhen, NAME_MAX, TOPIC_GUIDES } from '@yaswami/core';
 import { telegramIdOf } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { settings } from './settings.ts';
@@ -48,6 +48,10 @@ const open = (event: Event) => ({ text: 'Открыть событие', url: ev
 const starsOf = (rating: number) => '★'.repeat(rating) + '☆'.repeat(5 - rating);
 const COMMENT_SHOWN = 60;
 const FRESH_SHOWN = 3;
+const DIGEST_SHOWN = 3;
+const DIGEST_TITLE = 40;
+/** Лента: мини-приложение в Telegram, а пока имя бота неизвестно — сайт. */
+const feedUrl = () => (bot.username ? `https://t.me/${bot.username}/${bot.appName}` : settings.publicUrl);
 
 export const templates = {
   /** Гостю после события: как прошло? Оценка — кнопками под сообщением, текст — ответом на следующее сообщение бота. */
@@ -99,6 +103,20 @@ export const templates = {
       ],
     };
   },
+  /** Подписчику тем: новые события ленты по его Topic с прошлой сводки (subscriptions.ts). Темы меняются в ленте. */
+  topic_digest: ({ items }: { items: Pick<CollectedEventItem, 'id' | 'title' | 'starts_at' | 'topic'>[] }): Card => ({
+    emoji: '🔔', colors: ['#0891b2', '#6366f1'], label: 'Новое по вашим темам',
+    title: items.length === 1 ? cut(items[0]!.title, NAME_MAX) : `Новых событий: ${items.length}`,
+    rows: [
+      ...items.slice(0, DIGEST_SHOWN).map((e): [string, string] =>
+        [TOPIC_GUIDES[e.topic ?? '']?.emoji ?? '✨', `${cut(e.title, DIGEST_TITLE)} · ${collectedWhen(e.starts_at)}`]),
+      ...(items.length > DIGEST_SHOWN ? [['…', `и ещё ${items.length - DIGEST_SHOWN} — в ленте`] as [string, string]] : []),
+    ],
+    buttons: [
+      ...items.slice(0, DIGEST_SHOWN).map((e) => ({ text: cut(e.title, DIGEST_TITLE), url: collectedUrl(e.id) })),
+      { text: 'Все события и мои темы', url: feedUrl() },
+    ],
+  }),
   /** Гостю: запись принята. */
   rsvp_confirmed: ({ event }: { event: Event }): Card => ({
     emoji: '✅', colors: ['#6366f1', '#a855f7'], label: 'Вы записаны', title: event.name,

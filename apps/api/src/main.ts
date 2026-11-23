@@ -11,6 +11,7 @@ import { AppError, getCollectedEvent, listCollectedEvents, startVideoLoop } from
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 import { startFeedbackLoop } from './feedback.ts';
+import { startSubscriptionsLoop } from './subscriptions.ts';
 
 const { DATABASE_URL, BOT_TOKEN, APP_NAME = 'app', PORT = '3000', TG_CLIENT_SECRET = '', TELEGRAM_WEBHOOK_SECRET = '' } = process.env;
 const { publicUrl: PUBLIC_URL, city: CITY } = settings;
@@ -43,6 +44,8 @@ const api = createApp({
 
 // После событий бот просит у гостей отзыв и шлёт организаторам сводки. Без токена отправлять нечем.
 if (BOT_TOKEN) startFeedbackLoop(db);
+// Подписчикам тем — сводка новых событий ленты, не чаще раза в сутки.
+if (BOT_TOKEN) startSubscriptionsLoop(db);
 startVideoLoop(db); // без роли illustrator (ILLUSTRATOR_URL пуст) ничего не делает
 
 // Один сервер на всё: REST под /api, MCP на /mcp, админка под /admin, остальное — собранное мини-приложение.

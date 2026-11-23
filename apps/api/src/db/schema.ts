@@ -46,6 +46,15 @@ export const userIdentities = pgTable(
   (t) => [primaryKey({ columns: [t.provider, t.subject] }), uniqueIndex('user_identities_user_provider_uq').on(t.user_id, t.provider)],
 );
 
+// Подписка на темы (CONTEXT.md): строка появляется, когда человек ответил на вопрос «что интересно» — в том числе
+// отказом (`topics` = []). `notified_at` — до какого момента события ему уже показаны: при подписке — её время, после
+// сводки — время сводки. В Luma такого нет. Города позже встанут сюда же колонкой.
+export const subscriptions = pgTable('subscriptions', {
+  user_id: userId('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  topics: jsonb().$type<string[]>().notNull(),
+  notified_at: at('notified_at').notNull().defaultNow(),
+});
+
 // Город (City в @yaswami/core). `city_id` у источников, собранных событий, организаторов и событий Ясвами по умолчанию —
 // первый город: так его получает всё, что было до городов, и всё, чему город не указали (в том числе записи сборщика).
 export const cities = pgTable('cities', {
@@ -202,6 +211,9 @@ export const collectedEvents = pgTable(
     // обработки иллюстратором, published — в ленте, rejected — отклонено или снято с публикации. В ленту и на
     // страницу события попадает только published. Отклонённое остаётся в базе: повторный анонс не создаст его заново.
     status: text().$type<CollectedStatus>().notNull().default('pending'),
+    // Когда событие впервые вышло в ленту: по нему сводка подписчикам отличает новое. Ставит сама сводка
+    // (subscriptions.ts) — путей в published несколько; повторная публикация после снятия отметку не меняет.
+    published_at: at('published_at'),
     created_at: at('created_at').notNull().defaultNow(),
     updated_at: at('updated_at').notNull().defaultNow(),
   },

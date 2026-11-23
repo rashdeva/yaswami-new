@@ -5,7 +5,7 @@ import * as z from 'zod';
 import type { CollectedEventItem, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, AdminGuestUpdateInput, CityCreateInput, CityUpdateInput,
-  CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TEMPLATES,
+  CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TEMPLATES, UserSelfUpdateInput,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
@@ -215,6 +215,11 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
     title: 'Who am I', readOnly: true, asUser: true, shape: {},
     description: 'The user behind this token, the catalogue events they signed up for and the ones they can claim as their own.',
   }, (_a, me, db) => s.me(db, me));
+
+  tool('users_update_self', {
+    title: 'Update my settings', asUser: true, shape: UserSelfUpdateInput.shape,
+    description: 'Set the topics the user is subscribed to: once a day the bot tells them about new catalogue events of these topics. The list replaces the previous one; [] unsubscribes. Current value — `subscribed_topics` in users_get_self (null: never asked). Call only when the user asked for it. Errors: invalid_input.',
+  }, (a, me, db) => s.updateSelf(db, me, a));
 
   // Операции команды над всем сервисом — только тем, кому открыта админка: через них работают Hermes и оператор.
   // Каждое изменение пишется в журнал (admin_actions_list) и, если можно, отменяется admin_actions_undo.

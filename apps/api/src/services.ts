@@ -5,13 +5,13 @@ import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedListInput, CollectedStatus, CollectedUpdateInput,
   CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, Job, JobItem, JobList, JobListInput, MyCollectedItem, Practice, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
-  TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
+  TicketTypeCreateInput, TicketTypeUpdateInput, User, UserSelfUpdateInput, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
 import { ADDRESS_MAX, DEFAULT_CITY_ID, Feature, JOB_TTL_DAYS, jobContactUrl, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
-import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, jobs, photos, practices, practiceSignups, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
+import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, jobs, photos, practices, practiceSignups, subscriptions, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
@@ -786,7 +786,17 @@ export async function me(db: Db, actor: User): Promise<Me> {
     collected_signups: signups.map((r) => collectedSlug(r.external_id)),
     claimable: claimable.map(toCollectedItem),
     host_id: (await db.select({ id: hosts.id }).from(hosts).where(eq(hosts.user_id, actor.id)))[0]?.id ?? null,
+    subscribed_topics: (await db.select({ topics: subscriptions.topics }).from(subscriptions).where(eq(subscriptions.user_id, actor.id)))[0]?.topics ?? null,
   };
+}
+
+/**
+ * Правка своих настроек: Подписка на темы. Список заменяет прежний; [] — отписка, строка остаётся как «уже спрашивали».
+ * `notified_at` ставится только при первой записи: сводка расскажет о событиях, вышедших после неё.
+ */
+export async function updateSelf(db: Db, actor: User, { subscribed_topics: topics }: UserSelfUpdateInput): Promise<Me> {
+  await db.insert(subscriptions).values({ user_id: actor.id, topics }).onConflictDoUpdate({ target: subscriptions.user_id, set: { topics } });
+  return me(db, actor);
 }
 
 /** Имя, под которым остаётся удалённый организатор: его события живут дальше. */

@@ -63,6 +63,7 @@
 | Собранное событие (в Luma такого нет) | `collected_events_*`, `/collected-events` | `collected_events_signup` |
 | Правка одной услуги — Practice (в Luma такого нет) | `admin_practices_update`, `/admin/practices/:id`; запись на неё — по `practice_id` | `PATCH /admin/practices/<id>` `{ "status": "published" }` |
 | Вакансия — Job (в Luma такого нет) | `jobs_*`, `/jobs`; для команды `admin_jobs_*`, `/admin/jobs`; ссылка «Написать» — `contact_url` | `PATCH /admin/jobs/<id>` `{ "status": "published" }` |
+| Правка своих настроек; сейчас одна — Подписка на темы (в Luma такого нет) | `users_update_self`, `PATCH /me`, поле `subscribed_topics` — в пару к `users_get_self` | `PATCH /me` `{ "subscribed_topics": ["йога"] }` |
 | Единый поиск по каталогу: события, услуги и вакансии (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
 
 Новый публичный ресурс каталога добавляется в поиск в том же PR (так добавлены вакансии — `type: 'job'`): ещё один `type` в `SearchEntry` и ещё один запрос в `search` (`services.ts`).

@@ -65,6 +65,9 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 .chips { display: flex; gap: 8px; padding: 0 16px 12px; overflow-x: auto; scrollbar-width: none; }
 .chip { flex: none; border-radius: 99px; padding: 7px 14px; font-size: 14px; font-weight: 500; cursor: pointer; }
 .top + .chips { margin-top: 14px; }
+.topics-ask .chips { flex-wrap: wrap; overflow-x: visible; }
+.topics-ask .cta-row { margin: 4px 16px 0; }
+.head .chip { margin: 12px 0 0; }
 .chip img { width: 20px; height: 20px; vertical-align: -5px; margin-right: 6px; }
 .chip[aria-pressed='true'] { background: var(--text); color: var(--bg); border-color: transparent; }
 

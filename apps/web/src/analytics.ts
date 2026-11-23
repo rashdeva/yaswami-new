@@ -19,7 +19,7 @@ const source = inTelegram ? 'telegram' : 'web';
  */
 type Action =
   | 'app_opened' | 'login_started' | 'logged_in' | 'logged_out'
-  | 'feed_viewed' | 'feed_filtered' | 'collected_event_viewed' | 'signup_clicked' | 'collected_signed_up' | 'host_contacted' | 'host_channel_opened'
+  | 'feed_viewed' | 'feed_filtered' | 'topics_subscribed' | 'topics_skipped' | 'collected_event_viewed' | 'signup_clicked' | 'collected_signed_up' | 'host_contacted' | 'host_channel_opened'
   | 'hosts_viewed' | 'hosts_filtered' | 'host_viewed' | 'practice_signup_clicked'
   | 'jobs_viewed' | 'job_viewed' | 'job_contact_clicked'
   | 'search_viewed' | 'search_result_opened'
