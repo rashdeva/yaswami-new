@@ -520,8 +520,10 @@ export async function getHost(db: Db, id: string): Promise<HostItem> {
 const UUID = /^[0-9a-f-]{36}$/i;
 /** Что видит гость: одобрено командой и объявление повторяли не раньше JOB_TTL_DAYS дней назад. */
 const liveJob = and(eq(jobs.status, 'published'), sql`${jobs.posted_at} > now() - make_interval(days => ${JOB_TTL_DAYS})`);
-const toJobItem = ({ id, city_id, title, employer, description, pay, posted_at, telegram_username }: Job): JobItem =>
-  ({ id, city_id, title, employer, description, pay, posted_at, contact_url: jobContactUrl(telegram_username, title), url: `${settings.publicUrl}/jobs/${id}` });
+const toJobItem = ({ id, city_id, title, employer, description, pay, posted_at, telegram_username, announcement }: Job): JobItem => {
+  const url = `${settings.publicUrl}/jobs/${id}`;
+  return { id, city_id, title, employer, description, pay, posted_at, contact_url: jobContactUrl(telegram_username, title, url), source_url: announcement.url, url };
+};
 
 /** Страница вакансий, свежие сверху. Курсор — id последней на прошлой странице. */
 export async function jobPage(db: Db, where: SQL | undefined, { pagination_cursor: cursor, pagination_limit: limit = 50 }: JobListInput) {

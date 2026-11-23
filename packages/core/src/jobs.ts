@@ -27,13 +27,17 @@ export interface Job {
   created_at: Date;
 }
 
-/** Куда ведёт «Написать» у вакансии: чат работодателя в Telegram с готовым сообщением. */
-export const jobContactUrl = (username: string, title: string) =>
-  `https://t.me/${username}?text=${encodeURIComponent(`Здравствуйте! Пишу по вакансии «${title}». Нашёл её на Ясвами.`)}`;
+/**
+ * Куда ведёт «Написать» у вакансии: чат работодателя в Telegram с готовым сообщением. В сообщении — страница вакансии
+ * на Ясвами (как у события): по ней работодатель поймёт, о какой вакансии речь и откуда пришёл человек.
+ */
+export const jobContactUrl = (username: string, title: string, pageUrl: string) =>
+  `https://t.me/${username}?text=${encodeURIComponent(`Здравствуйте! Пишу по вакансии «${title}». Нашёл её на Ясвами: ${pageUrl}`)}`;
 
 /** Вакансия для гостя: без исходного сообщения и автора; контакт — готовой ссылкой. */
 export interface JobItem extends Pick<Job, 'id' | 'city_id' | 'title' | 'employer' | 'description' | 'pay' | 'posted_at'> {
   contact_url: string; // jobContactUrl
+  source_url: string; // исходное объявление в чате: откуда вакансия и как она звучала у работодателя
   url: string; // страница вакансии в Ясвами: её даём человеку, которому вакансию предложили
 }
 

@@ -1723,8 +1723,10 @@ test('вакансии: гость видит одобренные и свежи
   // Без входа: только одобренные, свежие, своего города; свежие сверху. Контакт — ссылкой, исходного сообщения нет.
   const all = await list();
   assert.deepEqual([titles(all.entries), all.has_more, all.next_cursor], [['Официант в кафе', 'Бариста'], false, null]);
-  assert.deepEqual(Object.keys(all.entries[0]!).sort(), ['city_id', 'contact_url', 'description', 'employer', 'id', 'pay', 'posted_at', 'title', 'url']);
+  assert.deepEqual(Object.keys(all.entries[0]!).sort(), ['city_id', 'contact_url', 'description', 'employer', 'id', 'pay', 'posted_at', 'source_url', 'title', 'url']);
   assert.ok(all.entries[0]!.contact_url.startsWith('https://t.me/lotus_hr?text='));
+  assert.ok(decodeURIComponent(all.entries[0]!.contact_url).endsWith('Нашёл её на Ясвами: ' + all.entries[0]!.url)); // работодатель видит, о какой вакансии речь
+  assert.match(all.entries[0]!.source_url, /^https:\/\/t\.me\//); // исходное объявление
   assert.ok(all.entries[0]!.url.endsWith('/jobs/' + all.entries[0]!.id)); // страница вакансии: её даёт человеку охотник
   assert.deepEqual(titles((await list('?city_id=nhatrang')).entries), ['Официант в Нячанге']);
   // Страницы: курсор ведёт дальше; кривой курсор — ошибка входа.
