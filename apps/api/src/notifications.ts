@@ -1,10 +1,12 @@
 // Уведомления бота: момент → шаблон → виджет. Новый момент — это новая запись в `templates`; отправка (`notify`)
 // про моменты ничего не знает.
 import { readFileSync } from 'node:fs';
-import type { CollectedEventItem, Event, User } from '@yaswami/core';
+import { eq } from 'drizzle-orm';
+import type { CollectedEventItem, Event, Notification, User } from '@yaswami/core';
 import { ADDRESS_MAX, collectedPath, collectedWhen, NAME_MAX, TOPIC_GUIDES } from '@yaswami/core';
 import { telegramIdOf } from './auth.ts';
 import type { Db } from './db/client.ts';
+import { users } from './db/schema.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 
@@ -143,11 +145,14 @@ export function toWidget(card: Card) {
 }
 
 /**
- * Отправляет уведомление пользователю в Telegram. Без Telegram (вошёл через Apple или Google) — молча ничего.
+ * Отправляет уведомление пользователю в Telegram. Без Telegram (вошёл через Apple или Google) или если он выключил
+ * это уведомление в профиле (`muted_notifications`) — молча ничего.
  * Никогда не бросает: недоставленное уведомление не должно ломать действие, которое его вызвало.
  */
-export async function notify<K extends Moment>(db: Db, userId: number, moment: K, payload: MomentPayload<K>): Promise<void> {
+export async function notify<K extends Moment & Notification>(db: Db, userId: number, moment: K, payload: MomentPayload<K>): Promise<void> {
   try {
+    const [user] = await db.select({ muted: users.muted_notifications }).from(users).where(eq(users.id, userId));
+    if (user?.muted.includes(moment)) return;
     const chatId = await telegramIdOf(db, userId); // users.id — не Telegram id (ADR-0008)
     if (chatId !== null) await sendCard(chatId, moment, payload);
   } catch (e) {

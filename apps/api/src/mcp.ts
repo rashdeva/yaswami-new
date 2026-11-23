@@ -229,7 +229,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
 
   tool('users_update_self', {
     title: 'Update my settings', asUser: true, shape: UserSelfUpdateInput.shape,
-    description: 'Set the topics the user is subscribed to and the city they live in; only passed fields change. Once a day the bot tells them about new catalogue events of these topics in their city. The topic list replaces the previous one; [] unsubscribes. Current values — `subscribed_topics` (null: never asked) and `city_id` in users_get_self. Call only when the user asked for it. Errors: invalid_input, city_not_found.',
+    description: 'Set the topics the user is subscribed to, the city they live in and the bot notifications they turned off (`muted_notifications`: topic_digest, rsvp_confirmed, guest_registered, feedback_request, feedback_received); only passed fields change. Once a day the bot tells them about new catalogue events of these topics in their city. The topic list replaces the previous one; [] unsubscribes. Current values — `subscribed_topics` (null: never asked) and `city_id` in users_get_self. Call only when the user asked for it. Errors: invalid_input, city_not_found.',
   }, (a, me, db) => s.updateSelf(db, me, a));
 
   // Операции команды над всем сервисом — только тем, кому открыта админка: через них работают Hermes и оператор.

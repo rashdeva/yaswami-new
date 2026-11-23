@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import type { JobItem, Wire } from '@yaswami/core';
+import { ProfileButton } from '../components/Avatar.tsx';
 import { JobRow } from '../components/JobRow.tsx';
 import { useJobs } from '../hooks/useJobs.ts';
 import { useViewed } from '../hooks/useViewed.ts';
@@ -7,11 +8,10 @@ import { useViewed } from '../hooks/useViewed.ts';
 interface Props {
   city: string;
   onOpen: (job: Wire<JobItem>) => void;
-  onBack: (() => void) | null;
 }
 
-/** Раздел «Вакансии»: объявления работодателей города, свежие сверху. Открыт без входа. */
-export function JobsScreen({ city, onOpen, onBack }: Props) {
+/** Вкладка «Вакансии»: объявления работодателей города, свежие сверху. Открыта без входа. */
+export function JobsScreen({ city, onOpen }: Props) {
   const { jobs, failed, more, loadingMore } = useJobs();
   useViewed('jobs_viewed');
   useEffect(() => { document.title = `Вакансии в городе ${city} — Я с вами`; }, [city]);
@@ -19,7 +19,7 @@ export function JobsScreen({ city, onOpen, onBack }: Props) {
   return (
     <>
       <div className="top">
-        {onBack && <button className="chip" onClick={onBack}>← Услуги</button>}
+        <ProfileButton />
         <div className="head">
           <h1>Вакансии</h1>
           <p>📍 {city} · работа в городе</p>

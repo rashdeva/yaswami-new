@@ -323,7 +323,6 @@ h2.today { color: var(--btn); }
 /* шапка ленты: заголовок и город в одну строку — меньше места до событий */
 .top .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .top .head p { margin: 0; }
-.head select.city { border: 0; background: none; font: inherit; color: inherit; padding: 0; text-decoration: underline dotted; cursor: pointer; }
 
 /* Нижний таббар, как в iOS: плавающая стеклянная плашка с двумя разделами (TabBar). */
 /* Анимация — на самой плашке, а не на .tabbar: прозрачность или сдвиг у предка отключают backdrop-filter у потомка. */
@@ -358,9 +357,28 @@ h2.today { color: var(--btn); }
 .job + .job { border-top: .5px solid var(--line); }
 .job .guest > div { min-width: 0; overflow-wrap: anywhere; }
 .jobs { margin-top: 14px; }
-.jobs-entry { margin-bottom: 10px; }
-.top + .jobs-entry { margin-top: 14px; }
 .chips.more { justify-content: center; padding: 12px 16px 0; }
 .search input { outline: none; }
 .search + .note { margin-bottom: 12px; }
 .feed .group { margin: 0; }
+
+/* Аватарка в шапке разделов → профиль; в профиле — крупная. */
+.top { position: relative; }
+.profile-btn { position: absolute; top: 24px; right: 16px; border: 0; background: none; padding: 0; cursor: pointer; }
+.avatar { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: var(--glass); color: var(--hint); font-weight: 600; font-size: 16px; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.avatar svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.avatar.big { width: 72px; height: 72px; font-size: 30px; }
+.avatar.big svg { width: 40px; height: 40px; }
+.profile-head { display: flex; align-items: center; gap: 14px; }
+.profile-head h1 { margin: 0; }
+.top:has(.profile-btn) .head { padding-right: 48px; }
+.row.switch span { flex: 1; }
+.chips.wrap { flex-wrap: wrap; overflow-x: visible; }
+/* Переключатель в духе iOS из обычного чекбокса (role="switch"). */
+.row.switch input { flex: none; appearance: none; width: 51px; height: 31px; padding: 0; border-radius: 99px; background: var(--line); position: relative; cursor: pointer; transition: background .2s; }
+.row.switch input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, .2); transition: transform .2s; }
+.row.switch input:checked { background: #34c759; }
+.row.switch input:checked::after { transform: translateX(20px); }
+.row.switch input:focus-visible { outline: 2px solid var(--btn); outline-offset: 2px; }
+.row select { cursor: pointer; }

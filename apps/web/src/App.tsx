@@ -34,14 +34,14 @@ export function App() {
   // У публичных экранов свой нейтральный цвет; личные выставляют цвет шаблона события сами.
   if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/hosts') || pathname.startsWith('/jobs') || pathname === '/services' || pathname === '/search') && kind !== 'o') setKind('o');
 
-  // Куда ведёт «назад»: событие и поиск → витрина, организатор и вакансии → каталог, вакансия → вакансии, своё событие и поиск людей → «Мои»,
-  // создание → список или витрина. null — корень.
+  // Куда ведёт «назад»: событие, поиск и профиль → витрина, организатор → каталог, вакансия → вакансии, своё событие и поиск людей → профиль,
+  // создание → профиль или витрина. null — корень (вкладки таббара).
   const here = { includeSearch: false } as const; // ?signup, ?startapp в адресе маршрут не меняют
   const section = matchRoute({ to: '/events/$id/edit/$section', ...here });
   const edit = matchRoute({ to: '/events/$id/edit', ...here });
-  const back = matchRoute({ to: '/e/$id', ...here }) || matchRoute({ to: '/search', ...here })
+  const back = matchRoute({ to: '/e/$id', ...here }) || matchRoute({ to: '/search', ...here }) || matchRoute({ to: '/my', ...here })
     ? () => void navigate({ to: '/' })
-    : matchRoute({ to: '/hosts/$id', ...here }) || matchRoute({ to: '/jobs', ...here })
+    : matchRoute({ to: '/hosts/$id', ...here })
       ? () => void navigate({ to: '/services' })
     : matchRoute({ to: '/jobs/$id', ...here })
       ? () => void navigate({ to: '/jobs' })
@@ -55,7 +55,7 @@ export function App() {
             ? () => void navigate({ to: hasEvents ? '/my' : '/' })
             : null;
   useTelegramBack(back);
-  const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/my' || pathname === '/search';
+  const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/jobs' || pathname === '/search';
 
   return (
     <ShellContext value={{ toast: showToast, onKind: setKind, onBack: nativeBack ? null : back }}>
@@ -63,21 +63,17 @@ export function App() {
         <div className="air" />
         <Outlet />
         {/* Таббар — на корневых разделах; у страниц события и организатора внизу своя кнопка действия и «назад». */}
-        {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/services' ? 'hosts' : pathname === '/my' ? 'mine' : null} />}
+        {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/services' ? 'hosts' : pathname === '/jobs' ? 'jobs' : null} />}
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </ShellContext>
   );
 }
 
-/** Нижний таббар разделов. «Мои» — тому, кто вошёл или может войти на сайте; организатору без событий — сразу создание. */
+/** Нижний таббар разделов: события, услуги, вакансии. Мои события — в профиле, за аватаркой в шапке. */
 function AppTabBar({ current }: { current: Tab | null }) {
   const navigate = useNavigate();
-  const { me, authed, canLogin } = useSession();
-  const { hasEvents } = useMyEvents();
-  const canCreate = useFeature('event_create');
-  const tabs: [Tab, () => void][] = [['feed', () => void navigate({ to: '/' })], ['hosts', () => void navigate({ to: '/services' })]];
-  if (me || canLogin) tabs.push(['mine', () => void navigate({ to: authed && !hasEvents && canCreate ? '/new' : '/my' })]);
+  const tabs: [Tab, () => void][] = [['feed', () => void navigate({ to: '/' })], ['hosts', () => void navigate({ to: '/services' })], ['jobs', () => void navigate({ to: '/jobs' })]];
   return <TabBar current={current} tabs={tabs} searching={current === null} onSearch={() => void navigate({ to: '/search' })} />;
 }
 

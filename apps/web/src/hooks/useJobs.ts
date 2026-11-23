@@ -23,13 +23,6 @@ export function useJobs() {
   };
 }
 
-/** Есть ли хоть одна опубликованная вакансия: по нему показываем вход в раздел. Пока не знаем — входа нет. */
-export function useHasJobs() {
-  const { city_id } = useCity();
-  const { data } = useQuery({ queryKey: keys.jobsExist(city_id), queryFn: () => api.listJobs({ city_id, pagination_limit: 1 }), staleTime: 5 * 60_000 });
-  return !!data?.entries.length;
-}
-
 /** Одна вакансия. `failed` с текстом «Вакансия не найдена» — её нет, она не одобрена или объявлению больше 30 дней. */
 export function useJob(id: string) {
   const { data, error } = useQuery({ queryKey: keys.job(id), queryFn: () => api.getJob(id) });

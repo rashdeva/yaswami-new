@@ -2,7 +2,7 @@
 import * as z from 'zod';
 import type { Event, Feature, Guest, TicketType, User } from './schema.ts';
 import type { JobItem } from './jobs.ts';
-import { Event as EventSchema, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
+import { Event as EventSchema, Notification, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
 import { OTHER_TOPIC, isTopic } from './topics.ts';
 
 const isTimeZone = (tz: string) => {
@@ -345,13 +345,16 @@ export interface Me {
   subscribed_topics: string[] | null;
   /** Город человека: его витрину открывает мини-приложение, о его событиях пишет сводка по темам. В Luma такого нет. */
   city_id: string;
+  /** Уведомления бота, которые человек выключил. В Luma такого нет. */
+  muted_notifications: Notification[];
 }
 
-/** Правка своих настроек: Подписка на темы и город; меняется только переданное. В Luma такого нет. */
+/** Правка своих настроек: Подписка на темы, город и выключенные уведомления; меняется только переданное. В Luma такого нет. */
 export const UserSelfUpdateInput = z.object({
   subscribed_topics: z.array(z.string().refine((t) => t !== OTHER_TOPIC && isTopic(t), 'unknown topic')).max(100)
     .transform((t) => [...new Set(t)]).describe('Topics the user wants to hear about (names from topics_list); the full list replaces the previous one, [] unsubscribes'),
   city_id: cityId.describe('City the user lives in (id from cities_list): the mini app opens its catalogue, the topic digest tells about its events'),
+  muted_notifications: z.array(Notification).max(20).transform((n) => [...new Set(n)]).describe('Bot notifications the user turned off; the full list replaces the previous one, [] turns all on'),
 }).partial();
 export type UserSelfUpdateInput = z.infer<typeof UserSelfUpdateInput>;
 

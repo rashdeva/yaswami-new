@@ -4,7 +4,6 @@ import { App, Claims, useClaim, useLogout, useShell } from './App.tsx';
 import { hasCredentials, startLogin } from './api.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
 import { useFeature } from './hooks/useFeature.ts';
-import { useHasJobs } from './hooks/useJobs.ts';
 import { contactMatch, useHostSearches } from './hooks/useHostSearches.ts';
 import { useSession } from './hooks/useSession.ts';
 import { useViewed } from './hooks/useViewed.ts';
@@ -18,6 +17,7 @@ import { HostsScreen } from './screens/HostsScreen.tsx';
 import { JobScreen } from './screens/JobScreen.tsx';
 import { JobsScreen } from './screens/JobsScreen.tsx';
 import { ListScreen } from './screens/ListScreen.tsx';
+import { ProfileScreen } from './screens/ProfileScreen.tsx';
 import { PeopleScreen } from './screens/PeopleScreen.tsx';
 import { SearchScreen } from './screens/SearchScreen.tsx';
 import { startParam } from './tg.ts';
@@ -87,14 +87,7 @@ const collected = createRoute({ getParentRoute: () => app, path: '/e/$id', compo
 function HostsPage() {
   const navigate = useNavigate();
   const { city } = useSession();
-  const hasJobs = useHasJobs();
-  return (
-    <HostsScreen
-      city={city}
-      onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })}
-      onJobs={hasJobs ? () => void navigate({ to: '/jobs' }) : null}
-    />
-  );
+  return <HostsScreen city={city} onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} />;
 }
 const hostsRoute = createRoute({ getParentRoute: () => app, path: '/services', component: HostsPage });
 // Старый адрес вкладки: раньше она называлась «Организаторы». Страница мастера осталась на /hosts/$id — это Host.
@@ -109,12 +102,11 @@ function HostPage() {
 }
 const hostRoute = createRoute({ getParentRoute: () => app, path: '/hosts/$id', component: HostPage });
 
-/** Вакансии: вход — со вкладки «Услуги», и только когда они есть; сам адрес открыт всегда. */
+/** Вакансии — вкладка таббара. */
 function JobsPage() {
   const navigate = useNavigate();
   const { city } = useSession();
-  const { onBack } = useShell();
-  return <JobsScreen city={city} onBack={onBack} onOpen={(job) => void navigate({ to: '/jobs/$id', params: { id: job.id } })} />;
+  return <JobsScreen city={city} onOpen={(job) => void navigate({ to: '/jobs/$id', params: { id: job.id } })} />;
 }
 const jobsRoute = createRoute({ getParentRoute: () => app, path: '/jobs', component: JobsPage });
 
@@ -172,7 +164,8 @@ function Private() {
 }
 const personal = createRoute({ getParentRoute: () => app, id: 'private', component: Private });
 
-function ListPage() {
+/** Мои события — в профиле вошедшего. */
+function MyEvents() {
   const navigate = useNavigate();
   const { events, collected: seen, total, failed } = useMyEvents();
   const { onKind } = useShell();
@@ -181,13 +174,10 @@ function ListPage() {
   const { me } = useSession();
   if (failed) return <Failed error={failed} />;
   if (total === null) return <Spinner />;
-  // Показывать нечего — организатору предлагаем создать. У организатора каталога здесь ещё и поиск людей: остаётся.
-  if (total === 0 && canCreate && !me?.host_id) return <Navigate to="/new" replace />;
   return (
     <ListScreen
       events={events ?? []}
       collected={seen}
-     
       lead={<Claims />}
       onOpen={(id) => void navigate({ to: '/events/$id', params: { id } })}
       onOpenCollected={(item) => void navigate({ to: '/e/$id', params: { id: item.id } })}
@@ -198,7 +188,20 @@ function ListPage() {
     />
   );
 }
-const list = createRoute({ getParentRoute: () => personal, path: '/my', component: ListPage });
+
+/** Профиль: открыт и гостю — у него город и вход; у вошедшего ещё темы, уведомления и мои события. */
+function ProfilePage() {
+  const { me, canLogin } = useSession();
+  const canCreate = useFeature('event_create');
+  const { onBack } = useShell();
+  if (me === undefined) return <Spinner />;
+  return (
+    <ProfileScreen name={me?.user.first_name ?? null} host={!!me?.host_id || canCreate} onLogin={!me && canLogin ? () => startLogin('/my') : null} onBack={onBack}>
+      {me && <MyEvents />}
+    </ProfileScreen>
+  );
+}
+const list = createRoute({ getParentRoute: () => app, path: '/my', component: ProfilePage });
 
 /** Поиск людей — только подтверждённому организатору; остальным адрес ведёт в «Мои». */
 function PeoplePage() {
@@ -254,7 +257,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, oldHostsRoute, hostRoute, jobsRoute, jobRoute, searchRoute, personal.addChildren([list, people, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, oldHostsRoute, hostRoute, jobsRoute, jobRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 

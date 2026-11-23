@@ -3,7 +3,7 @@ import type { HostListItem } from '@yaswami/core';
 import { topicIcon } from '@yaswami/core';
 import { useTopics } from '../hooks/useTopics.ts';
 import { track } from '../analytics.ts';
-import { CityPicker } from '../components/CityPicker.tsx';
+import { ProfileButton } from '../components/Avatar.tsx';
 import { GuestRow } from '../components/GuestRow.tsx';
 import { PracticeRow } from '../components/PracticeRow.tsx';
 import { useHosts, usePracticeSignup } from '../hooks/useHosts.ts';
@@ -12,12 +12,10 @@ import { useViewed } from '../hooks/useViewed.ts';
 interface Props {
   city: string;
   onOpen: (host: HostListItem) => void;
-  /** Вход в раздел «Вакансии»; null — опубликованных вакансий нет, входа нет. */
-  onJobs: (() => void) | null;
 }
 
 /** Вкладка «Услуги»: мастера города и под каждым — его услуги (Practice) с записью; фильтр по темам. Открыта без входа. */
-export function HostsScreen({ city, onOpen, onJobs }: Props) {
+export function HostsScreen({ city, onOpen }: Props) {
   const { hosts, failed } = useHosts();
   const signUp = usePracticeSignup();
   const [topic, pickTopic] = useState<string | null>(null);
@@ -39,9 +37,10 @@ export function HostsScreen({ city, onOpen, onJobs }: Props) {
   return (
     <>
       <div className="top">
+        <ProfileButton />
         <div className="head">
           <h1>Услуги</h1>
-          <CityPicker suffix=" · мастера и частные занятия" />
+          <p>📍 {city} · мастера и частные занятия</p>
         </div>
       </div>
       {topics.length > 1 && (
@@ -52,13 +51,6 @@ export function HostsScreen({ city, onOpen, onJobs }: Props) {
               <img src={topicIcon(t)} alt="" />{t[0]!.toUpperCase() + t.slice(1)}
             </button>
           ))}
-        </div>
-      )}
-      {onJobs && (
-        <div className="group jobs-entry">
-          <button className="plain" onClick={onJobs}>
-            <div className="guest"><div>💼 Вакансии<small>Работа в городе: кого ищут работодатели</small></div><span>›</span></div>
-          </button>
         </div>
       )}
       {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}

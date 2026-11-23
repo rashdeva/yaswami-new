@@ -365,6 +365,13 @@
       "when": 1795460846326,
       "tag": "20261123190726_user_city",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1795462049709,
+      "tag": "20261123192729_muted_notifications",
+      "breakpoints": true
     }
   ]
 }

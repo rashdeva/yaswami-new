@@ -308,7 +308,7 @@ test('собранные события: витрина без входа, за�
   const guest = tma(20, 'Оля');
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
-  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: await uid(20), first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [], host_id: null, subscribed_topics: null, city_id: 'danang' });
+  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: await uid(20), first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [], host_id: null, subscribed_topics: null, city_id: 'danang', muted_notifications: [] });
 
   // «Мои события»: куда записывался и куда только заходил
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-2-0/visit', {})).status, 204);
@@ -1528,10 +1528,18 @@ test('подписка на темы: PATCH /me и MCP, сводка новых 
   assert.deepEqual(await (await call(user, 'PATCH', '/me', { city_id: 'nowhere' })).json(), { error: 'city_not_found' });
   assert.equal((await mcpCall(user, 'users_update_self', { city_id: 'danang' })).body.city_id, 'danang');
   assert.deepEqual((await mcpCall(user, 'users_get_self', {})).body.subscribed_topics, ['йога'], 'смена города подписку не трогает');
+  // Выключил сводку в профиле — не приходит, хотя темы те же; включил — снова приходит.
+  assert.deepEqual(((await (await call(user, 'PATCH', '/me', { muted_notifications: ['topic_digest', 'topic_digest'] })).json()) as Me).muted_notifications, ['topic_digest']);
+  assert.equal((await call(user, 'PATCH', '/me', { muted_notifications: ['spam'] })).status, 400);
+  await add(9, 'йога');
+  assert.deepEqual(await step(at(144)), []);
+  assert.deepEqual((await mcpCall(user, 'users_update_self', { muted_notifications: [] })).body.muted_notifications, []);
+  await add(10, 'йога');
+  assert.deepEqual(await step(at(168)), ['Событие 10']);
   // Отписка: строка остаётся — спрашивать заново не будем.
   assert.deepEqual(await me(call(user, 'PATCH', '/me', { subscribed_topics: [] })), []);
   await add(6, 'йога');
-  assert.deepEqual(await step(at(144)), []);
+  assert.deepEqual(await step(at(192)), []);
   await db.execute(sql`delete from collected_events where channel = 'subchan'`);
   await db.execute(sql`delete from cities where id = 'hanoi'`);
 });

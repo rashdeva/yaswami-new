@@ -77,7 +77,7 @@ export function ListScreen({ events, collected, lead, onOpen, onOpenCollected, o
 
   return (
     <>
-      <div className="top"><h1>Мои события</h1></div>
+      <h2>Мои события</h2>
       {onPeople && <div className="chips"><button className="chip" onClick={onPeople}>🔎 Поиск людей</button></div>}
       {lead}
       {days.map((list) => {

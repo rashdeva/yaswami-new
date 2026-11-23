@@ -4,7 +4,7 @@ import { parseStart } from './start.ts';
 interface Inset { top: number; bottom: number; left: number; right: number }
 interface WebApp {
   initData: string;
-  initDataUnsafe: { start_param?: string };
+  initDataUnsafe: { start_param?: string; user?: { photo_url?: string } };
   colorScheme: 'light' | 'dark';
   ready(): void;
   expand(): void;
