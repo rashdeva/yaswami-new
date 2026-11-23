@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
+  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -85,6 +85,10 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/candidates', async (c) => c.json(await admin.listTopicCandidates(db, TopicCandidateListInput.parse(c.req.query()))))
     .post('/', json(TopicCreateInput), async (c) => c.json(await admin.createTopic(db, ctx(c), c.req.valid('json')), 201))
     .patch('/:name', json(TopicUpdateInput), async (c) => c.json(await admin.updateTopic(db, ctx(c), c.req.param('name'), c.req.valid('json'))));
+  // Поиск источников для города (admin/sources.ts) — по той же причине отдельно.
+  const adminSourceSearches: Hono<Env> = new Hono<Env>()
+    .get('/', async (c) => c.json(await admin.listSourceSearches(db, c.req.query('city_id'))))
+    .post('/', json(SourceSearchCreateInput), async (c) => c.json(await admin.requestSourceSearch(db, ctx(c), c.req.valid('json')), 202));
 
   const open = new Hono<Env>()
     .use(bodyLimit({ maxSize: BODY_MAX, onError: (c) => c.json({ error: 'too_large' }, 413) }))
@@ -352,6 +356,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       return c.body(null, 204);
     });
   app.route('/admin/topics', adminTopics); // после `.use('/admin/*')`: только команде
+  app.route('/admin/source-searches', adminSourceSearches);
   return app;
 }
 

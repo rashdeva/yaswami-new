@@ -195,7 +195,7 @@ export type PracticeUpdateInput = z.infer<typeof PracticeUpdateInput>;
 
 // --- Города (в Luma такого нет)
 
-export const CityCreateInput = City.pick({ id: true, name: true }).extend({ timezone: timeZone });
+export const CityCreateInput = City.pick({ id: true, name: true }).extend({ timezone: timeZone, aliases: City.shape.aliases.optional() });
 export type CityCreateInput = z.infer<typeof CityCreateInput>;
 
 /** `id` не меняется: он стоит в `city_id` у источников, событий и организаторов. */

@@ -5,7 +5,7 @@ import * as z from 'zod';
 import type { CollectedEventItem, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, AdminGuestUpdateInput, CityCreateInput, CityUpdateInput,
-  CityFilterInput, CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TEMPLATES, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSelfUpdateInput,
+  CityFilterInput, CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TEMPLATES, cityId, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSelfUpdateInput,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
@@ -495,6 +495,16 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
       title: 'Edit announcement source', shape: { channel: z.string().describe('Channel from admin_sources_list'), ...SourceUpdateInput.shape },
       description: `Stop or resume reading a source (e.g. when an organizer's channel turns out to be someone else's or not about events), or set the organizer it belongs to: announcements without a contact then get this organizer as the contact. Only passed fields change. ${ONLY_TEAM} Errors: not_found, host_not_found, city_not_found.`,
     }, ({ channel, ...input }) => admin.updateSource(db, ctx, channel, input));
+
+    tool('admin_source_searches_list', {
+      title: 'Source searches', readOnly: true, shape: { city_id: cityId.optional().describe('Only searches of this city') },
+      description: 'Latest searches for new sources, newest first. The collector runs one for a city by itself when the city is new and then every 30 days, and adds found channels with enough announcement-like posts as sources; groups and the rest stay in `results` for the team: `event_like` — posts in 30 days that look like announcements, `kind` — the suggested source kind, `added` — already a source. To add one call admin_sources_create.',
+    }, (a) => admin.listSourceSearches(db, a.city_id));
+
+    tool('admin_source_searches_create', {
+      title: 'Search sources for a city', shape: SourceSearchCreateInput.shape,
+      description: `Ask the collector to search Telegram for channels and groups of a city by its name and aliases (admin_cities_update) now, without waiting for the monthly search; it runs on the collector's next pass and takes a few minutes. While a search of the city is queued or running, returns that one. ${ONLY_TEAM} Errors: city_not_found.`,
+    }, (a) => admin.requestSourceSearch(db, ctx, a));
 
     // --- Темы (admin/topics.ts)
     tool('admin_topics_list', {
