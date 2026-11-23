@@ -26,7 +26,7 @@ before(async () => {
   await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
   await db.$client.end();
   sql = postgres(url.href, { max: 1, onnotice: () => {} });
-  await sql`truncate users, collected_events, hosts, tg_accounts, conversations, collector_cursors, jobs cascade`;
+  await sql`truncate users, collected_events, hosts, tg_accounts, conversations, collector_cursors, jobs, tg_peers cascade`;
   await sql`delete from sources`;
   await sql`delete from cities where id <> 'danang'`; // города из прошлого запуска
   store = createStore(url.href);
@@ -265,4 +265,21 @@ test('сборщик: поиск источников — очередь гор�
   const again = await store.takeSourceSearch();
   await store.finishSourceSearch(again.id, { error: 'FLOOD_WAIT' });
   assert.deepEqual((await sql`select status, error from source_searches where id = ${again.id}`).map((r) => [r.status, r.error]), [['failed', 'FLOOD_WAIT']]);
+});
+
+test('сборщик: найденные каналы аккаунта и выключение пропавшего источника', async () => {
+  await store.savePeers('100', [{ username: 'danang_yoga', peer_id: '-1001', access_hash: '11' }, { username: 'tea', peer_id: '-1002', access_hash: '22' }]);
+  await store.savePeers('100', [{ username: 'tea', peer_id: '-1003', access_hash: '33' }]); // канал сменил владельца username
+  await store.savePeers('100', []);
+  await store.savePeers('200', [{ username: 'tea', peer_id: '-1002', access_hash: '99' }]); // у другого аккаунта свой access_hash
+  assert.deepEqual((await store.peers('100')).map((p: any) => [p.username, p.peer_id, p.access_hash]).sort(), [['danang_yoga', '-1001', '11'], ['tea', '-1003', '33']]);
+  assert.equal((await store.peers('300')).length, 0);
+
+  await sql`delete from sources`;
+  await store.addSources(['DanceHall']);
+  await store.disableSource('dancehall', 'В Telegram нет канала с таким username');
+  assert.deepEqual((await sql`select enabled, disabled_reason from sources`).map((r) => [r.enabled, r.disabled_reason]), [[false, 'В Telegram нет канала с таким username']]);
+  assert.equal((await store.sources()).length, 0, 'выключенный не читается');
+  await store.disableSource('dancehall', 'другая причина'); // уже выключен — причину не переписываем
+  assert.equal((await sql`select disabled_reason from sources`)[0]!.disabled_reason, 'В Telegram нет канала с таким username');
 });

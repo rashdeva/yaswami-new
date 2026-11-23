@@ -50,6 +50,22 @@ const got = await fetchChatAnnouncements(albumClient, 'yoga', 0);
 assert.deepEqual(got.map((g) => [g.announcement.number, g.album.map((m) => m.id)]), [[8, [7, 8, 9]], [6, [6]]], 'альбом — все сообщения с тем же groupedId');
 assert.equal('album' in got[0].announcement, false, 'сообщения Telegram не попадают в jsonb публикации');
 console.log('mtproto ok');
+// Найденные каналы переживают перезапуск: сессия GramJS отдаёт канал по username без поиска в Telegram.
+{
+  const { loadPeers, newPeers, goneReason } = await import('./mtproto.mjs');
+  const { StringSession } = (await import('telegram/sessions/index.js')).default;
+  const client = { session: new StringSession('') };
+  loadPeers(client, [{ username: 'danang_yoga', peer_id: '-1001234567890', access_hash: '987654321' }]);
+  const peer = client.session.getInputEntity('danang_yoga');
+  assert.deepEqual([peer.className, String(peer.channelId), String(peer.accessHash)], ['InputPeerChannel', '1234567890', '987654321']);
+  client.session._entities.add(['-1005', '55', 'new_chat', undefined, 'Новый чат']);
+  client.session._entities.add(['42', '7', 'some_person', undefined, 'Человек']); // людей не храним: только каналы и группы
+  assert.deepEqual(newPeers(client, new Set(['danang_yoga'])), [{ username: 'new_chat', peer_id: '-1005', access_hash: '55' }]);
+  assert.equal(goneReason(new Error('No user has "dancehalldanang" as username')), 'В Telegram нет канала с таким username');
+  assert.equal(goneReason({ errorMessage: 'CHANNEL_PRIVATE', message: '400: CHANNEL_PRIVATE' }), 'Канал удалён или стал закрытым');
+  assert.equal(goneReason(new Error('FLOOD_WAIT_300')), null, 'временная ошибка источник не выключает');
+}
+console.log('peers ok');
 assert.equal(toAnnouncement('-1001234567890', msg)[0].url, 'https://t.me/c/1234567890/7', 'ссылка закрытого канала');
 
 const ev = (title, starts_at, telegram_username = null, extra = {}) =>

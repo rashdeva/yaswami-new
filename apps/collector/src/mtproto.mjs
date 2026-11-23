@@ -68,8 +68,31 @@ export async function fetchAlbum(client, id) {
   return msg.groupedId ? [...around.values()].filter((m) => String(m.groupedId) === String(msg.groupedId)).sort((a, b) => a.id - b.id) : [msg];
 }
 
-// ponytail: username → (id, access_hash) кэшируется только в памяти процесса. При POLL_MINUTES=0 (cron)
-// resolveUsername дёргается на каждый запуск, а это самый флудоопасный вызов — тогда кэш надо класть в state.
+/**
+ * Найденные раньше каналы и группы — в сессию GramJS: по username она отдаёт их без contacts.ResolveUsername, самого
+ * флудоопасного вызова (лимит в сутки). Сессия хранит строки [id, access_hash, username, телефон, имя].
+ * ponytail: лезем во внутренний `_entities` MemorySession (GramJS 2.26) — после обновления GramJS проверить.
+ */
+export function loadPeers(client, peers) {
+  for (const p of peers) client.session._entities.add([p.peer_id, p.access_hash, p.username, undefined, p.username]);
+}
+
+/** Каналы и группы с username из сессии, которых нет среди `known` (username): их сохранить. */
+export const newPeers = (client, known) => [...client.session._entities]
+  .filter(([id, hash, username]) => username && String(id).startsWith('-') && !known.has(username))
+  .map(([id, hash, username]) => ({ username, peer_id: String(id), access_hash: String(hash) }));
+
+/**
+ * Ошибка значит, что читать нечего и не будет: username свободен или занят не каналом, канал удалён или закрыт для
+ * нас. Такой источник выключаем, а не пробуем каждый проход. Возвращает причину словами или null — ошибка временная.
+ */
+export function goneReason(e) {
+  const m = String(e?.errorMessage ?? e?.message ?? '');
+  if (/No user has|USERNAME_NOT_OCCUPIED|USERNAME_INVALID/.test(m)) return 'В Telegram нет канала с таким username';
+  if (/CHANNEL_PRIVATE|CHANNEL_INVALID|CHANNEL_PUBLIC_GROUP_NA/.test(m)) return 'Канал удалён или стал закрытым';
+  return null;
+}
+
 /**
  * Новые публикации источника. У каждой — `album`: сообщения с её фото и видео. В альбоме текст несёт одно сообщение,
  * остальные — только медиа с тем же groupedId. ponytail: альбом, разрезанный границей пачки из 100, теряет часть медиа.

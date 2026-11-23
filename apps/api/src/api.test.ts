@@ -2177,6 +2177,12 @@ test('источники: команда добавляет и выключае�
   assert.equal((await call(admin, 'POST', `/admin/actions/${off.id}/undo`)).status, 201);
   assert.equal(((await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[])[0]!.enabled, true);
   assert.equal((await call(admin, 'PATCH', '/admin/sources/nobody_here', { enabled: true })).status, 404);
+  // Канала не стало — сборщик выключил источник с причиной (store.disableSource); команда включила — причина ушла.
+  await db.update(sources).set({ enabled: false, disabled_reason: 'В Telegram нет канала с таким username' }).where(eq(sources.channel, 'Danang_Yoga'));
+  const gone = ((await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[]).find((x) => x.channel === 'Danang_Yoga')!;
+  assert.deepEqual([gone.enabled, gone.disabled_reason], [false, 'В Telegram нет канала с таким username']);
+  const back = (await (await call(admin, 'PATCH', '/admin/sources/danang_yoga', { enabled: true })).json()) as AdminSource;
+  assert.deepEqual([back.enabled, back.disabled_reason], [true, null]);
 
   // Организатор по username: заготовка без telegram_id, её сразу можно указать у источника.
   const made = await call(admin, 'POST', '/admin/hosts', { username: 'https://t.me/Dato_Banya' });

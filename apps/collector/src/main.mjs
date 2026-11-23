@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createExtractor, createJobExtractor, createOfferExtractor, createSearchMatcher, createSummarizer, createTopicProposer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
-import { connect, downloadCover, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
+import { connect, goneReason, loadPeers, newPeers, downloadCover, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { refreshOld } from './refresh.mjs';
 import { createBucket } from './bucket.mjs';
 import { curateTopics, syncTopics } from './topics.mjs';
@@ -196,6 +196,25 @@ if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
   })();
 } else console.log('Аккаунты для переписки выключены: нужны ACCOUNTS_KEY, API_URL и COLLECTOR_SECRET');
 
+// Каналы, найденные раньше этим аккаунтом, — сразу в сессию: после перезапуска (выкладки) не ищем их по username заново.
+await userbot.connect();
+const account = String((await userbot.getMe()).id);
+const peers = await store.peers(account);
+loadPeers(userbot, peers);
+const savedPeers = new Set(peers.map((p) => p.username));
+async function savePeers() {
+  const fresh = newPeers(userbot, savedPeers);
+  await store.savePeers(account, fresh);
+  for (const p of fresh) savedPeers.add(p.username);
+}
+
+/** Сбой чтения источника: канала больше нет — выключаем с причиной, чтобы не искать его каждый проход; иначе — в журнал. */
+async function failed(channel, label, e) {
+  const reason = goneReason(e);
+  if (reason) await store.disableSource(channel, reason);
+  console.error(`${label}: ${e.message}${reason ? ' — источник выключен' : ''}`);
+}
+
 // Отметки читаем заново каждый проход (ниже): команда сбрасывает отметку источника, чтобы перечитать его свежие публикации.
 let cursors = await store.cursors();
 await store.requeueSourceSearches();
@@ -207,7 +226,6 @@ for (const [list, kind] of [[channels, 'announcements'], [chatList(env.LEAD_CHAT
 
 // Канал организатора — тоже источник: у него свои события. Каждый новый канал при первом чтении ищется по username
 // (флудоопасно) и отдаёт до 100 публикаций в ИИ, поэтому добавляем по несколько за проход.
-// ponytail: при перезапуске GramJS заново ищет все источники; если их станут сотни — хранить сущности в сессии.
 const ADOPT_PER_PASS = Number(env.ADOPT_PER_PASS ?? 5);
 
 // Источник, события которого команда стабильно одобряет, модерацию пропускает (store.trustedChannels). 0 — выключено.
@@ -320,15 +338,16 @@ do {
   cursors = await store.cursors();
   const trusted = new Set(AUTO_APPROVE_MIN > 0 ? await store.trustedChannels(AUTO_APPROVE_MIN) : []);
   for (const source of await store.sources()) {
-    await pollChannel(source, known, trusted).catch((e) => console.error(`${source.channel}: ${e.message}`));
+    await pollChannel(source, known, trusted).catch((e) => failed(source.channel, source.channel, e));
     await sleep(2000); // не частим с запросами к Telegram
   }
+  await savePeers().catch((e) => console.error(`каналы: ${e.message}`));
   await sourceSearch().catch((e) => console.error(`поиск источников: ${e.message}`));
   const chats = await store.chats();
   const searches = chats.some((c) => c.leads) ? await activeSearches().catch((e) => (console.error(`запросы организаторов: ${e.message}`), [])) : [];
   // Вопросы уходят в API: без его адреса из чатов берём только вакансии.
   for (const chat of chats) {
-    await pollLeads(chat, Boolean(chat.leads && env.API_URL && env.COLLECTOR_SECRET), searches).catch((e) => console.error(`вопросы ${chat.chat}: ${e.message}`));
+    await pollLeads(chat, Boolean(chat.leads && env.API_URL && env.COLLECTOR_SECRET), searches).catch((e) => failed(chat.chat, `вопросы ${chat.chat}`, e));
     await sleep(2000);
   }
   await refreshPosts().catch((e) => console.error(`публикации: ${e.message}`));
@@ -339,6 +358,7 @@ do {
   }).catch((e) => console.error(`повторный разбор: ${e.message}`));
   await profileHosts().catch((e) => console.error(`профили: ${e.message}`));
   await refreshPhotos().catch((e) => console.error(`фото: ${e.message}`));
+  await savePeers().catch((e) => console.error(`каналы: ${e.message}`));
   if (pollMinutes) await sleep(pollMinutes * 60_000);
 } while (pollMinutes);
 await userbot.disconnect();
