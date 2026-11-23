@@ -196,9 +196,11 @@ if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
 
 // Отметки читаем заново каждый проход (ниже): команда сбрасывает отметку источника, чтобы перечитать его свежие публикации.
 let cursors = await store.cursors();
-await store.addSources(channels);
-await store.addSources(chatList(env.LEAD_CHATS), 'leads');
-await store.addSources(chatList(env.JOB_CHATS), 'jobs');
+// Канал, который уже есть в источниках с другим видом, не переделываем — вид правит команда; но говорим о нём:
+// иначе чат из LEAD_CHATS молча остался бы источником анонсов и вопросы из него не собирались бы.
+for (const [list, kind] of [[channels, 'announcements'], [chatList(env.LEAD_CHATS), 'leads'], [chatList(env.JOB_CHATS), 'jobs']]) {
+  for (const s of await store.addSources(list, kind)) console.warn(`источник @${s.channel} — вид ${s.kind}, а в окружении он как ${kind}: поменяйте вид в админке («Источники»), если нужно`);
+}
 
 // Канал организатора — тоже источник: у него свои события. Каждый новый канал при первом чтении ищется по username
 // (флудоопасно) и отдаёт до 100 публикаций в ИИ, поэтому добавляем по несколько за проход.

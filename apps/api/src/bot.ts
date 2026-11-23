@@ -8,7 +8,7 @@ import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { writing } from './live.ts';
 import { collectedUrl } from './notifications.ts';
-import { getCollectedEvent, getEvent, listCities, listEvents, me, myCollectedEvents } from './services.ts';
+import { cityOf, getCollectedEvent, getEvent, listEvents, myCollectedEvents } from './services.ts';
 import { settings } from './settings.ts';
 import { issueTicket, support } from './support.ts';
 import type { SupportTurn } from './support.ts';
@@ -71,14 +71,13 @@ async function supportContext(db: Db, actor: User): Promise<SupportTurn> {
   const collected = soon(await myCollectedEvents(db, actor), (c) => c.event.starts_at)
     .map(({ event, signed_up }) => `- «${event.title}», ${event.starts_at} — ${signed_up ? 'нажимал «Записаться» (место подтверждает организатор)' : 'только смотрел'}`);
   const section = (title: string, lines: string[]) => `${title}:\n${lines.length ? lines.join('\n') : '- нет'}`;
-  const { city_id } = await me(db, actor);
-  const city = (await listCities(db)).find((c) => c.id === city_id);
+  const city = await cityOf(db, actor.id);
   return {
     role: 'system',
     content: [
       `Данные сервиса о собеседнике (${actor.first_name}). Это его собственные события и записи — их можно ему показывать. Данных о других людях здесь нет.`,
       `Билет для инструментов person_* (действует полчаса, человеку не показывай): ${issueTicket(actor.id)}`,
-      `Его город: ${city?.name ?? city_id} (city_id: ${city_id}). Передавай этот city_id в collected_events_list, hosts_list, search и jobs_list, если он не спросил про другой город (их список — cities_list).`,
+      `Его город: ${city.name} (city_id: ${city.id}, часовой пояс ${city.timezone}). Передавай этот city_id в collected_events_list, hosts_list, search и jobs_list, если он не спросил про другой город (их список — cities_list); в этом поясе — время событий, которые он создаёт.`,
       section('События, которые он создал', hosted),
       section('События, на которые он ответил', answered),
       section('События из каталога, которые он открывал', collected),

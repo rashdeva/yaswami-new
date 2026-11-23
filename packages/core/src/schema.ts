@@ -40,6 +40,7 @@ export const User = z.object({
   lang: z.string(),
   timezone: z.string(),
   features: z.array(Feature), // включённое лично этому человеку; в Luma такого нет
+  city_id: z.string(), // город человека: его витрину открывает приложение; в Luma такого нет
 });
 export type User = z.infer<typeof User>;
 

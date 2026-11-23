@@ -63,7 +63,8 @@
 | Собранное событие (в Luma такого нет) | `collected_events_*`, `/collected-events` | `collected_events_signup` |
 | Правка одной услуги — Practice (в Luma такого нет) | `admin_practices_update`, `/admin/practices/:id`; запись на неё — по `practice_id` | `PATCH /admin/practices/<id>` `{ "status": "published" }` |
 | Вакансия — Job (в Luma такого нет) | `jobs_*`, `/jobs`; для команды `admin_jobs_*`, `/admin/jobs`; ссылка «Написать» — `contact_url` | `PATCH /admin/jobs/<id>` `{ "status": "published" }` |
-| Правка своих настроек; сейчас одна — Подписка на темы (в Luma такого нет) | `users_update_self`, `PATCH /me`, поле `subscribed_topics` — в пару к `users_get_self` | `PATCH /me` `{ "subscribed_topics": ["йога"] }` |
+| Правка своих настроек: Подписка на темы и город (в Luma такого нет) | `users_update_self`, `PATCH /me`, поля `subscribed_topics` и `city_id`, меняется только переданное — в пару к `users_get_self` | `PATCH /me` `{ "city_id": "danang" }` |
+| Город — City (в Luma такого нет: там город — поле адреса) | `cities_list`, `/cities`; для команды `admin_cities_*`, `/admin/cities`; в выдачах каталога — вход `city_id`, без него — первый город | `GET /collected-events?city_id=danang` |
 | Тема — Topic (в Luma такого нет) | `topics_list`, `/topics`; для команды `admin_topics_*`, `/admin/topics`; ключ — `name`, выключение — `enabled: false` вместо удаления; кандидаты из меток — `admin_topics_candidates` | `PATCH /admin/topics/<name>` `{ "enabled": false }` |
 | Единый поиск по каталогу: события, услуги и вакансии (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
 

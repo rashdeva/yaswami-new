@@ -18,7 +18,19 @@ export function createStore(url) {
      * Источники из CHANNELS (LEAD_CHATS, JOB_CHATS — с `kind` leads, jobs): добавляем те, которых ещё нет, в первый город.
      * Выключенный, перенесённый в другой город или сменивший вид в админке так и остаётся.
      */
-    addSources: (channels, kind = 'announcements') => channels.length ? sql`insert into sources ${sql(channels.map((channel) => ({ channel, kind })))} on conflict do nothing` : [],
+    addSources: async (channels, kind = 'announcements') => {
+      if (!channels.length) return [];
+      await sql`insert into sources ${sql(channels.map((channel) => ({ channel, kind })))} on conflict do nothing`;
+      // Уже были с другим видом: сборщик их не переделывает (вид правит команда), но о расхождении скажет.
+      return sql`select channel, kind from sources where lower(channel) in ${sql(channels.map((c) => c.toLowerCase()))} and kind <> ${kind}`;
+    },
+    /** Что уже известно (find-sources): username источника → «есть» или «выключен», username организатора → «организатор». */
+    knownChannels: async () => {
+      const known = new Map();
+      for (const s of await sql`select channel, enabled from sources`) known.set(s.channel.toLowerCase(), s.enabled ? 'есть' : 'выключен');
+      for (const h of await sql`select lower(username) u from hosts where username is not null`) if (!known.has(h.u)) known.set(h.u, 'организатор');
+      return known;
+    },
     /** Каналы организаторов, которых ещё нет в источниках, — не больше `limit` за раз; возвращает добавленные. */
     adoptHostChannels: async (limit) => (await sql`
       insert into sources (channel, host_id, city_id)
@@ -64,7 +76,7 @@ export function createStore(url) {
       return true;
     }),
     /** Города, первый — старейший: разовые скрипты (find-sources, scout, backfill-jobs) берут из них название города. */
-    cities: () => sql`select id, name from cities order by created_at, id`,
+    cities: () => sql`select id, name from cities order by created_at, id`, // порядок — как у listCities в API
     sources: () => sql`
       select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
       from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id

@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { createApp } from './app.ts';
 import { createDb } from './db/client.ts';
+import { DEFAULT_CITY_ID } from '@yaswami/core';
 import { eventPage, feedPage, inject, notFoundPage, sitemap } from './pages.ts';
 import type { Page } from './pages.ts';
 import { AppError, getCollectedEvent, listCities, listCollectedEvents, startVideoLoop } from './services.ts';
@@ -78,25 +79,29 @@ const WEB = 'apps/web/dist'; // появляется после `pnpm build:web`
 if (existsSync(WEB)) {
   // Витрина и страница собранного события приходят с сервера уже с содержимым (pages.ts): их читают поисковики.
   const template = readFileSync(`${WEB}/index.html`, 'utf8');
-  const html = (page: Page) =>
-    new Response(inject(template, page), { status: page.status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } });
+  // Города — в каждую страницу: приложение сразу знает название города, не дожидаясь GET /cities.
+  const html = async (page: Page) => {
+    const withCities = { ...page, initial: { ...page.initial, cities: await listCities(db) } };
+    return new Response(inject(template, withCities), { status: page.status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } });
+  };
+  const cityName = async (id: string) => (await listCities(db)).find((c) => c.id === id)?.name ?? '';
   server
-    // Страницы для поисковиков — первого города; ?city_id= — другого. Название — из таблицы cities.
-    // ponytail: у страницы события тоже название первого города; у события другого города — неверное, поправить, когда его станут искать.
-    .get('/', async (c) => {
-      const all = await listCities(db);
-      const city = all.find((x) => x.id === c.req.query('city_id')) ?? all[0]!;
-      return html(feedPage(await listCollectedEvents(db, { city_id: city.id }), PUBLIC_URL, city.name));
-    })
+    // Витрина для поисковиков — первого города: её же приложение берёт как ленту первого города (served.feed).
+    .get('/', async () => html(feedPage(await listCollectedEvents(db), PUBLIC_URL, await cityName(DEFAULT_CITY_ID))))
     .get('/e/:id', async (c) => {
       try {
-        return html(eventPage(await getCollectedEvent(db, c.req.param('id')), PUBLIC_URL, (await listCities(db))[0]!.name));
+        const event = await getCollectedEvent(db, c.req.param('id'));
+        return html(eventPage(event, PUBLIC_URL, await cityName(event.city_id)));
       } catch (e) {
         if (e instanceof AppError && e.status === 404) return html(notFoundPage(PUBLIC_URL));
         throw e;
       }
     })
-    .get('/sitemap.xml', async (c) => c.body(sitemap(await listCollectedEvents(db), PUBLIC_URL), 200, { 'content-type': 'application/xml' }))
+    // События всех городов: страница события есть у каждого.
+    .get('/sitemap.xml', async (c) => {
+      const events = (await Promise.all((await listCities(db)).map((city) => listCollectedEvents(db, { city_id: city.id })))).flat();
+      return c.body(sitemap(events, PUBLIC_URL), 200, { 'content-type': 'application/xml' });
+    })
     .get('/robots.txt', (c) => c.text(`User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: ${PUBLIC_URL}/sitemap.xml\n`))
     .use('*', serveStatic({ root: WEB, onFound: (path, c) => c.header('Cache-Control', cache(path)) }))
     .get('*', serveStatic({ root: WEB, path: 'index.html', onFound: (_path, c) => c.header('Cache-Control', 'no-cache') }));

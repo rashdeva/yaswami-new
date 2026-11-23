@@ -237,6 +237,7 @@ export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_usern
   signup_url: string; // куда ведёт «Записаться»: к организатору, а не в Ясвами
   source_url: string; // публикация, из которой взято событие
   claimed_event_id: Event['id'] | null; // организатор подтвердил событие: запись идёт через событие Ясвами
+  city_id: string; // город события: достаётся от источника, команда может сменить
   hosts?: CollectedHost[]; // как hosts у события в Luma; только в ответе на одно событие, в списках его нет
   signups_count?: number; // сколько человек нажали «Записаться» в Ясвами (это интерес, не подтверждённое место); только в ответе на одно событие
   cover_url?: string | null; // обложка 9:16: фото анонса или нарисованная; нет — показываем иконку темы
@@ -252,7 +253,6 @@ export type CollectedStatus = (typeof COLLECTED_STATUSES)[number];
 /** Собранное событие в админке модерации: любого статуса, с источником и контактами, которые витрина прячет. */
 export interface AdminCollectedEvent extends CollectedEventItem, Pick<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {
   status: CollectedStatus;
-  city_id: string; // город: достаётся от источника, команда может сменить
   channel: string; // источник: канал или группа, откуда анонс
   source_text: string | null; // текст публикации-источника: с ним модератор сверяет, что извлёк ИИ
   // Отклик на публикацию-источник — только для команды: в витрине из него получается лишь пометка «Популярное».
@@ -347,7 +347,7 @@ export interface Me {
   city_id: string;
 }
 
-/** Правка своих настроек. Пока одна — Подписка на темы; позже сюда же встанут города. В Luma такого нет. */
+/** Правка своих настроек: Подписка на темы и город; меняется только переданное. В Luma такого нет. */
 export const UserSelfUpdateInput = z.object({
   subscribed_topics: z.array(z.string().refine((t) => t !== OTHER_TOPIC && isTopic(t), 'unknown topic')).max(100)
     .transform((t) => [...new Set(t)]).describe('Topics the user wants to hear about (names from topics_list); the full list replaces the previous one, [] unsubscribes'),

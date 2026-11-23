@@ -8,7 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import telegram from 'telegram';
 import { connect } from './mtproto.mjs';
 import { signalOf, TOPIC } from './lead.mjs';
-import { scoutCity } from './find-sources.mjs';
+import { scoutCity } from './city.mjs';
 import { createStore } from './store.mjs';
 
 const MAX_PER_CHAT = 5000; // ponytail: болтливый чат обрезается; если важен — искать в нём по словам (messages.Search)

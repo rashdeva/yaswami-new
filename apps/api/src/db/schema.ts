@@ -566,7 +566,7 @@ export const adminActions = pgTable(
 // Сверка с ядром: типы должны совпадать в обе стороны.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 export const tablesMatchCore: [
-  Same<Omit<typeof users.$inferSelect, 'city_id'>, User>, // город человека — только в Me: остальному коду User он не нужен
+  Same<typeof users.$inferSelect, User>,
   Same<typeof events.$inferSelect, Event>,
   Same<typeof ticketTypes.$inferSelect, TicketType>,
   Same<typeof guests.$inferSelect, Guest>,

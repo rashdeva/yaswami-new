@@ -686,7 +686,7 @@ test('DELETE /me: без своих событий пользователь уд
 
 test('страницы для поисковиков: содержимое и разметка экранированы', () => {
   const event: CollectedEventItem = {
-    id: 'danangevent-1-0', title: 'Йога <b>& чай</b>', description: '</script><script>alert(1)</script> $& утро',
+    id: 'danangevent-1-0', city_id: 'danang', title: 'Йога <b>& чай</b>', description: '</script><script>alert(1)</script> $& утро',
     starts_at: '2026-11-14T19:00:00+07:00', ends_at: null, place: 'My Khe', address: null, price: '100k', tags: [],
     topic: 'баня', what_happens: ['Парение <i>'], takeaway: null,
     signup_url: 'https://t.me/anna_yoga', source_url: 'https://t.me/danangevent/1', claimed_event_id: null,
@@ -2266,7 +2266,7 @@ test('города: всё прежнее — Дананг; новый горо�
   assert.deepEqual(((await (await app.request('/cities')).json()) as City[]).map((c) => c.id), ['danang', 'tbilisi']);
   assert.deepEqual(((await tool('cities_list', {})) as City[]).map((c) => c.name), ['Дананг', 'Тифлис']);
   // …а с city_id — только этот город, и в REST, и в MCP.
-  assert.deepEqual(((await (await app.request('/collected-events?city_id=tbilisi')).json()) as CollectedEventItem[]).map((e) => e.id), ['tbilisi_chat-1-0']);
+  assert.deepEqual(((await (await app.request('/collected-events?city_id=tbilisi')).json()) as CollectedEventItem[]).map((e) => [e.id, e.city_id]), [['tbilisi_chat-1-0', 'tbilisi']]);
   assert.deepEqual(((await tool('collected_events_list', { city_id: 'tbilisi' })) as { id: string }[]).map((e) => e.id), ['tbilisi_chat-1-0']);
   assert.deepEqual(((await (await app.request('/hosts?city_id=tbilisi')).json()) as HostListItem[]).map((h) => h.username), ['gio_host']);
   assert.deepEqual(((await tool('hosts_list', { city_id: 'tbilisi' })) as HostListItem[]).map((h) => h.username), ['gio_host']);
