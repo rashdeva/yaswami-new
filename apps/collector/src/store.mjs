@@ -77,31 +77,44 @@ export function createStore(url) {
     topics: () => sql`
       select name, slug, emoji, color, what, why, first, not_for from topics where enabled order by position, created_at`,
     /**
-     * Кандидаты в темы: метки событий без темы («другое») за 90 дней, которые встретились не меньше чем в `minEvents`
-     * событиях у `minHosts` разных организаторов и ещё не тема и не метка темы (в том числе выключенной).
+     * Кандидаты в темы за 90 дней, кроме меток существующих тем (в том числе выключенных): метка событий без темы
+     * («другое», `inside` = null) от `minEvents` событий у `minHosts` организаторов и метка внутри существующей темы
+     * (`inside`) — от `splitEvents` у `splitHosts`. Тот же запрос — в API (admin/topics.ts).
      */
-    topicCandidates: (minEvents, minHosts) => sql`
-      select lower(t) as tag, count(*)::int as events_count, count(distinct coalesce(e.telegram_username, e.channel))::int as hosts_count,
-        (array_agg(e.event->>'title' order by e.created_at desc))[1:5] as examples
-      from collected_events e, jsonb_array_elements_text(e.event->'tags') t
-      where e.event->>'topic' = 'другое' and e.created_at > now() - interval '90 days'
-        and lower(t) not in (select name from topics union all select jsonb_array_elements_text(tags) from topics)
-      group by 1 having count(*) >= ${minEvents} and count(distinct coalesce(e.telegram_username, e.channel)) >= ${minHosts}
-      order by 2 desc, 1 limit 10`,
+    topicCandidates: ({ minEvents, minHosts, splitEvents, splitHosts }) => sql`
+      with recent as (
+        select event, created_at, event->>'topic' as topic, coalesce(telegram_username, channel) as host
+        from collected_events where event ? 'topic' and created_at > now() - interval '90 days'
+      ), totals as (select topic, count(*)::int as n from recent group by 1)
+      select lower(t) as tag, nullif(r.topic, 'другое') as inside, max(totals.n) as inside_events_count,
+        count(*)::int as events_count, count(distinct r.host)::int as hosts_count,
+        (array_agg(r.event->>'title' order by r.created_at desc))[1:5] as examples
+      from recent r join totals using (topic), jsonb_array_elements_text(r.event->'tags') t
+      where lower(t) not in (select name from topics union all select jsonb_array_elements_text(tags) from topics)
+      group by 1, r.topic
+      having case when r.topic = 'другое'
+        then count(*) >= ${minEvents} and count(distinct r.host) >= ${minHosts}
+        else count(*) >= ${splitEvents} and count(distinct r.host) >= ${splitHosts} end
+      order by 4 desc, 1 limit 20`,
     /**
-     * Новая тема от сборщика (origin = collector): события без темы с её метками переходят в неё. false — имя или slug
-     * заняты. Иконку нарисует иллюстратор: очередь иконок в API (apps/api/src/topics.ts).
+     * Новая тема от сборщика (origin = collector). События без темы с её метками переходят в неё. Тема, выделенная из
+     * широкой (`from`), забирает у той события только с меткой-кандидатом `tag` — метки, которые добавил ИИ, могут
+     * оказаться шире темы, — а подписанные на широкую тему получают и новую. false — имя или slug заняты.
+     * Иконку нарисует иллюстратор: очередь иконок в API (apps/api/src/topics.ts).
      */
-    addTopic: ({ name, slug, emoji, color, what, why, first, not_for, tags }) => sql.begin(async (tx) => {
+    addTopic: ({ name, slug, emoji, color, what, why, first, not_for, tags }, { from = null, tag = null } = {}) => sql.begin(async (tx) => {
       const added = await tx`
         insert into topics (name, slug, emoji, color, what, why, first, not_for, tags, origin, position)
         values (${name}, ${slug}, ${emoji}, ${color.toLowerCase()}, ${what}, ${why}, ${first}, ${not_for}, ${tx.json(tags)}, 'collector', (select coalesce(max(position), 0) + 1 from topics))
         on conflict do nothing returning name`;
       if (!added.length) return false;
-      if (tags.length) {
-        await tx`
-          update collected_events set event = jsonb_set(event, '{topic}', to_jsonb(${name}::text)), updated_at = now()
-          where event->>'topic' = 'другое' and exists (select 1 from jsonb_array_elements_text(event->'tags') t where lower(t) in ${tx(tags)})`;
+      const move = (topic, withTags) => tx`
+        update collected_events set event = jsonb_set(event, '{topic}', to_jsonb(${name}::text)), updated_at = now()
+        where event->>'topic' = ${topic} and exists (select 1 from jsonb_array_elements_text(event->'tags') t where lower(t) in ${tx(withTags)})`;
+      if (tags.length) await move('другое', tags);
+      if (from && tag) {
+        await move(from, [tag]);
+        await tx`update subscriptions set topics = topics || to_jsonb(${name}::text) where topics ? ${from} and not topics ? ${name}`;
       }
       return true;
     }),

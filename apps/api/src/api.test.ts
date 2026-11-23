@@ -1474,15 +1474,29 @@ test('темы: список из базы; команда добавляет, �
     settings.illustratorUrl = '';
   }
 
+  // Метка, ставшая заметной внутри широкой темы (10 событий у 5 организаторов), — тоже кандидат; выделенная тема
+  // забирает её события, а подписанные на широкую тему получают и новую.
+  for (let n = 10; n < 20; n++) await add(n, 'Мафия', 'игры');
+  await add(20, 'квиз', 'игры'); // одного события мало
+  const inner = ((await mcpCall(admin, 'admin_topics_candidates', {})).body as TopicCandidate[]).find((c) => c.inside);
+  assert.deepEqual([inner?.tag, inner?.inside, inner?.events_count, inner?.hosts_count, inner?.inside_events_count], ['мафия', 'игры', 10, 10, 11]);
+  assert.equal((await call(guest, 'PATCH', '/me', { subscribed_topics: ['игры'] })).status, 200);
+  const mafia = { ...input, name: 'мафия', slug: 'mafia', tags: ['мафия'] };
+  assert.equal((await call(admin, 'POST', '/admin/topics', { ...mafia, split_from: 'нет такой' })).status, 404);
+  const split = (await (await call(admin, 'POST', '/admin/topics', { ...mafia, split_from: 'игры' })).json()) as AdminTopic;
+  assert.equal(split.events_count, 10, 'события с меткой ушли из «игр» в новую тему');
+  assert.equal(((await (await app.request('/collected-events/topicchan-20-0')).json()) as CollectedEventItem).topic, 'игры', 'остальные остались');
+  assert.deepEqual(((await (await call(guest, 'GET', '/me')).json()) as Me).subscribed_topics, ['игры', 'мафия']);
+
   // Выключенная тема уходит из списка и подписок; событие хранит её имя.
   const off = (await mcpCall(admin, 'admin_topics_update', { name: 'цигун', enabled: false })).body as AdminTopic;
   assert.equal(off.enabled, false);
-  assert.equal((await listed()).length, 12);
+  assert.equal((await listed()).length, 13);
   assert.equal((await call(guest, 'PATCH', '/me', { subscribed_topics: ['цигун'] })).status, 400);
   assert.equal((await call(admin, 'PATCH', '/admin/topics/нет такой', { enabled: false })).status, 404);
 
   await db.execute(sql`delete from collected_events where channel = 'topicchan'`);
-  await db.delete(topicsTable).where(eq(topicsTable.name, 'цигун'));
+  await db.execute(sql`delete from topics where origin <> 'built_in'`);
   await refreshTopics(db);
 });
 

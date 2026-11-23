@@ -14,20 +14,22 @@ export async function syncTopics({ store }) {
 const declined = new Set();
 
 /**
- * Одна новая тема за проход: самой частой метке-кандидату ИИ пишет гид или отказывает (свойство события, бренд,
- * то, что мы не публикуем). Порог — `minEvents` событий у `minHosts` организаторов: расписание одной студии — не тема.
- * События тему всё равно получают только после одобрения командой: новая тема сама ничего не публикует.
+ * Одна новая тема за проход: самой частой метке-кандидату ИИ пишет гид или отказывает (синоним самой темы, формат,
+ * свойство события, бренд, то, что мы не публикуем). Кандидаты двух видов: метка событий без темы — от `minEvents`
+ * событий у `minHosts` организаторов (расписание одной студии — не тема), и метка внутри широкой темы («мафия»
+ * в «играх») — порог выше, `splitEvents` у `splitHosts`: ИИ почти всегда находит событию какую-то тему, и без второго
+ * вида список не рос бы вовсе. События тему всё равно получают только после одобрения командой.
  */
-export async function curateTopics({ store, proposeTopic, minEvents = 5, minHosts = 3 }) {
-  const candidate = (await store.topicCandidates(minEvents, minHosts)).find((c) => !declined.has(c.tag));
+export async function curateTopics({ store, proposeTopic, minEvents = 5, minHosts = 3, splitEvents = 10, splitHosts = 5 }) {
+  const candidate = (await store.topicCandidates({ minEvents, minHosts, splitEvents, splitHosts })).find((c) => !declined.has(c.tag));
   if (!candidate) return null;
   const topic = await proposeTopic(candidate);
-  if (!topic || !(await store.addTopic(topic))) {
+  if (!topic || !(await store.addTopic(topic, { from: candidate.inside, tag: candidate.tag }))) {
     declined.add(candidate.tag);
     console.log(`тема из метки «${candidate.tag}»: ${topic ? `«${topic.name}» уже есть` : 'не тема'}`);
     return null;
   }
   await syncTopics({ store });
-  console.log(`новая тема «${topic.name}» из метки «${candidate.tag}» (${candidate.events_count} соб., ${candidate.hosts_count} орг.)`);
+  console.log(`новая тема «${topic.name}» из метки «${candidate.tag}»${candidate.inside ? ` внутри «${candidate.inside}»` : ''} (${candidate.events_count} соб., ${candidate.hosts_count} орг.)`);
   return topic.name;
 }
