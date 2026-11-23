@@ -129,8 +129,9 @@ async function hostFacts(db: Db, username: string): Promise<string> {
     .orderBy(asc(collectedEvents.starts_at))
     .limit(10);
   const app = bot.username ? `https://t.me/${bot.username}/${bot.appName}` : settings.publicUrl;
-  const [profile] = await db.select({ user_id: hosts.user_id }).from(hosts).where(eq(hosts.username, username));
+  const [profile] = await db.select({ user_id: hosts.user_id, city: cities.name }).from(hosts).innerJoin(cities, eq(cities.id, hosts.city_id)).where(eq(hosts.username, username));
   return [
+    ...(profile ? [`Город организатора: ${profile.city}.`] : []),
     // Цель роли — чтобы организатор вошёл в сервис. Вошёл — продавать больше нечего, только отвечать.
     ...(profile?.user_id ? ['Организатор уже вошёл в «Я с вами». Ничего не предлагай и не уговаривай: только отвечай на его вопросы.'] : []),
     'Данные сервиса об организаторе. События собраны из его открытых анонсов; «записались» — столько человек нажали «Записаться» в «Я с вами» (это интерес, места подтверждает он сам).',

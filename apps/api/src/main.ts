@@ -7,7 +7,7 @@ import { createApp } from './app.ts';
 import { createDb } from './db/client.ts';
 import { eventPage, feedPage, inject, notFoundPage, sitemap } from './pages.ts';
 import type { Page } from './pages.ts';
-import { AppError, getCollectedEvent, listCollectedEvents, startVideoLoop } from './services.ts';
+import { AppError, getCollectedEvent, listCities, listCollectedEvents, startVideoLoop } from './services.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 import { startFeedbackLoop } from './feedback.ts';
@@ -15,7 +15,7 @@ import { startSubscriptionsLoop } from './subscriptions.ts';
 import { refreshTopics, startTopicsLoop } from './topics.ts';
 
 const { DATABASE_URL, BOT_TOKEN, APP_NAME = 'app', PORT = '3000', TG_CLIENT_SECRET = '', TELEGRAM_WEBHOOK_SECRET = '' } = process.env;
-const { publicUrl: PUBLIC_URL, city: CITY } = settings;
+const { publicUrl: PUBLIC_URL } = settings;
 if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
 if (!TG_CLIENT_SECRET) console.warn('TG_CLIENT_SECRET is not set: login on the website is disabled');
 if (!BOT_TOKEN) console.warn('BOT_TOKEN is not set: Telegram login is disabled, only access tokens work');
@@ -81,10 +81,16 @@ if (existsSync(WEB)) {
   const html = (page: Page) =>
     new Response(inject(template, page), { status: page.status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } });
   server
-    .get('/', async () => html(feedPage(await listCollectedEvents(db), PUBLIC_URL, CITY)))
+    // Страницы для поисковиков — первого города; ?city_id= — другого. Название — из таблицы cities.
+    // ponytail: у страницы события тоже название первого города; у события другого города — неверное, поправить, когда его станут искать.
+    .get('/', async (c) => {
+      const all = await listCities(db);
+      const city = all.find((x) => x.id === c.req.query('city_id')) ?? all[0]!;
+      return html(feedPage(await listCollectedEvents(db, { city_id: city.id }), PUBLIC_URL, city.name));
+    })
     .get('/e/:id', async (c) => {
       try {
-        return html(eventPage(await getCollectedEvent(db, c.req.param('id')), PUBLIC_URL, CITY));
+        return html(eventPage(await getCollectedEvent(db, c.req.param('id')), PUBLIC_URL, (await listCities(db))[0]!.name));
       } catch (e) {
         if (e instanceof AppError && e.status === 404) return html(notFoundPage(PUBLIC_URL));
         throw e;

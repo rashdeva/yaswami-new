@@ -81,6 +81,11 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
     url: collectedUrl(e.id),
   });
 
+  tool('cities_list', {
+    title: 'Cities', readOnly: true, shape: {},
+    description: 'Cities the service works in, the first one first: it is the default city. Pass `id` as `city_id` to collected_events_list, hosts_list, search and jobs_list to see another city; the user\'s own city is `city_id` in users_get_self.',
+  }, () => s.listCities(db));
+
   tool('collected_events_list', {
     title: 'Upcoming events in the city', readOnly: true, shape: CityFilterInput.shape,
     description: 'Public catalogue: upcoming events of one city (`city_id`, default the first city) collected from organizers\' announcements, ordered by start time. `url` opens the event in the Telegram mini app, where a person reads details and signs up; `id` names the event for an event card. Use it to answer "where to go" and "what is on".',
@@ -224,7 +229,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
 
   tool('users_update_self', {
     title: 'Update my settings', asUser: true, shape: UserSelfUpdateInput.shape,
-    description: 'Set the topics the user is subscribed to: once a day the bot tells them about new catalogue events of these topics. The list replaces the previous one; [] unsubscribes. Current value — `subscribed_topics` in users_get_self (null: never asked). Call only when the user asked for it. Errors: invalid_input.',
+    description: 'Set the topics the user is subscribed to and the city they live in; only passed fields change. Once a day the bot tells them about new catalogue events of these topics in their city. The topic list replaces the previous one; [] unsubscribes. Current values — `subscribed_topics` (null: never asked) and `city_id` in users_get_self. Call only when the user asked for it. Errors: invalid_input, city_not_found.',
   }, (a, me, db) => s.updateSelf(db, me, a));
 
   // Операции команды над всем сервисом — только тем, кому открыта админка: через них работают Hermes и оператор.

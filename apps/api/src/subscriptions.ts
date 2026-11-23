@@ -1,4 +1,4 @@
-// Подписка на темы (CONTEXT.md): раз в сутки бот рассказывает подписчику о новых событиях ленты по его Topic.
+// Подписка на темы (CONTEXT.md): раз в сутки бот рассказывает подписчику о новых событиях ленты его города по его Topic.
 // Сама подписка меняется операцией users/update-self (services.ts); здесь — только сводка.
 import { and, eq, gt, gte, isNull, lt, sql } from 'drizzle-orm';
 import type { Db } from './db/client.ts';
@@ -25,19 +25,19 @@ export async function digestTopics(db: Db, now = new Date()): Promise<void> {
   await db.update(collectedEvents).set({ published_at: now }).where(and(eq(collectedEvents.status, 'published'), isNull(collectedEvents.published_at)));
 
   const due = await db
-    .select({ user_id: subscriptions.user_id, topics: subscriptions.topics, notified_at: subscriptions.notified_at, timezone: users.timezone })
+    .select({ user_id: subscriptions.user_id, topics: subscriptions.topics, notified_at: subscriptions.notified_at, timezone: users.timezone, city_id: users.city_id })
     .from(subscriptions).innerJoin(users, eq(users.id, subscriptions.user_id))
     .where(and(sql`jsonb_array_length(${subscriptions.topics}) > 0`, lt(subscriptions.notified_at, new Date(now.getTime() - DIGEST_EVERY_MS))));
   if (!due.length) return;
   // ponytail: все предстоящие события в память и фильтр на каждого подписчика; при тысячах подписчиков — один запрос с join по теме.
   const fresh = await db
-    .select({ external_id: collectedEvents.external_id, event: collectedEvents.event, published_at: collectedEvents.published_at })
+    .select({ external_id: collectedEvents.external_id, city_id: collectedEvents.city_id, event: collectedEvents.event, published_at: collectedEvents.published_at })
     .from(collectedEvents)
     .where(and(eq(collectedEvents.status, 'published'), gt(collectedEvents.starts_at, now), gte(collectedEvents.published_at, new Date(Math.min(...due.map((d) => d.notified_at.getTime()))))))
     .orderBy(collectedEvents.starts_at);
 
-  for (const { user_id, topics, notified_at, timezone } of due) {
-    const items = fresh.filter((e) => e.published_at! > notified_at && topics.includes(e.event.topic ?? ''))
+  for (const { user_id, topics, notified_at, timezone, city_id } of due) {
+    const items = fresh.filter((e) => e.city_id === city_id && e.published_at! > notified_at && topics.includes(e.event.topic ?? ''))
       .map(({ external_id, event: { title, starts_at, topic } }) => ({ id: collectedSlug(external_id), title, starts_at, topic }));
     const hour = hourIn(timezone, now);
     if (!items.length || hour < DAY_HOURS[0] || hour >= DAY_HOURS[1]) continue;

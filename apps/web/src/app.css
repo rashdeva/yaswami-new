@@ -323,6 +323,7 @@ h2.today { color: var(--btn); }
 /* шапка ленты: заголовок и город в одну строку — меньше места до событий */
 .top .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .top .head p { margin: 0; }
+.head select.city { border: 0; background: none; font: inherit; color: inherit; padding: 0; text-decoration: underline dotted; cursor: pointer; }
 
 /* Нижний таббар, как в iOS: плавающая стеклянная плашка с двумя разделами (TabBar). */
 /* Анимация — на самой плашке, а не на .tabbar: прозрачность или сдвиг у предка отключают backdrop-filter у потомка. */

@@ -96,8 +96,9 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       return c.json({ error: 'internal' }, 500);
     })
     .get('/health', (c) => c.text('ok'))
-    .get('/config', (c) => c.json({ bot_username: null, app_name: 'app', ...config, web_login, city: settings.city, free_events_limit: settings.freeEventsLimit } satisfies AppConfig))
+    .get('/config', (c) => c.json({ bot_username: null, app_name: 'app', ...config, web_login, free_events_limit: settings.freeEventsLimit } satisfies AppConfig))
     // До проверки входа: витрину собранных событий видит и анонимный посетитель.
+    .get('/cities', async (c) => c.json(await s.listCities(db)))
     .get('/collected-events', async (c) => c.json(await s.listCollectedEvents(db, CityFilterInput.parse(c.req.query()))))
     .get('/collected-events/:id', async (c) => c.json(await s.getCollectedEvent(db, c.req.param('id'))))
     .get('/hosts', async (c) => c.json(await s.listHosts(db, CityFilterInput.parse(c.req.query()))))

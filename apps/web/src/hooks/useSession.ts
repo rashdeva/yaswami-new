@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import type { Me } from '@yaswami/core';
+import { DEFAULT_CITY_ID } from '@yaswami/core';
 import { identify, track } from '../analytics.ts';
 import { api, hasCredentials } from '../api.ts';
 import { setLinkConfig } from '../format.ts';
@@ -57,10 +58,51 @@ export function useSession() {
     authed: !!me,
     /** Возможности, открытые человеку; экраны спрашивают через `useFeature`. */
     features: me?.features ?? [],
-    city: config?.city ?? 'Дананг',
+    city: useCity().name,
     // Войти на сайте можно, когда сервер это умеет, а человек открыл страницу не из Telegram.
     canLogin: !!config?.web_login && !hasCredentials,
     claim: claim.mutateAsync,
     logout: logout.mutateAsync,
   };
+}
+
+// Город гостя без входа — в браузере: важен только ему и только здесь. У вошедшего город в `me`, он же копируется сюда,
+// чтобы после перезапуска витрина его города открывалась, не дожидаясь `me`.
+const CITY_KEY = 'city_id';
+const storedCity = (): string | null => {
+  try {
+    return localStorage.getItem(CITY_KEY);
+  } catch {
+    return null;
+  }
+};
+const storeCity = (id: string) => {
+  try {
+    localStorage.setItem(CITY_KEY, id);
+  } catch { /* приватное окно: выбор живёт до перезагрузки */ }
+};
+
+/**
+ * Город человека: его витрину, «Услуги», вакансии и поиск показывает приложение. `cities` — из чего выбрать; `set` —
+ * сменить: вошедшему пишем на сервер (по нему же идёт сводка по темам), гостю — в браузер.
+ */
+export function useCity() {
+  const client = useQueryClient();
+  const cities = useQuery({ queryKey: keys.cities, queryFn: api.cities, staleTime: Infinity }).data ?? [];
+  // Тот же запрос, что в useSession: TanStack Query отправит его один раз.
+  const me = useQuery({ queryKey: keys.me, queryFn: (): Promise<Me | null> => api.me(), staleTime: Infinity }).data;
+  const guest = useQuery({ queryKey: keys.guestCity, queryFn: storedCity, staleTime: Infinity }).data;
+  const city_id = me?.city_id ?? guest ?? DEFAULT_CITY_ID;
+  useEffect(() => { if (me?.city_id) storeCity(me.city_id); }, [me?.city_id]);
+  const set = useMutation({
+    mutationFn: async (id: string) => {
+      storeCity(id);
+      client.setQueryData(keys.guestCity, id);
+      if (!me) return;
+      client.setQueryData<Me | null>(keys.me, (m) => m && { ...m, city_id: id });
+      client.setQueryData(keys.me, await api.updateSelf({ city_id: id }));
+    },
+    onSuccess: (_, id) => track('city_changed', { city_id: id }),
+  });
+  return { city_id, name: cities.find((c) => c.id === city_id)?.name ?? '', cities, set: set.mutate };
 }

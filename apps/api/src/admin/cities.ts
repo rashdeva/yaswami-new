@@ -1,6 +1,6 @@
 // Города (City): к ним относятся источники, собранные события, организаторы и события Ясвами. Новый город добавляет
 // команда; после этого ему можно завести источники — сборщик читает их в часовом поясе города.
-import { asc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { City, CityCreateInput, CityUpdateInput } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
@@ -8,7 +8,8 @@ import type { Db } from '../db/client.ts';
 import { cities } from '../db/schema.ts';
 import { AppError } from '../services.ts';
 
-export const listCities = (db: Db): Promise<City[]> => db.select().from(cities).orderBy(asc(cities.created_at));
+// Список тот же, что видит гость (GET /cities).
+export { listCities } from '../services.ts';
 
 export const createCity = (db: Db, ctx: Ctx, input: CityCreateInput): Promise<City> =>
   audited(db, ctx, { action: 'admin_cities_create', entity: 'city', id: (c) => c.id, input }, async (tx) => {

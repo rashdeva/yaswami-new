@@ -5,11 +5,12 @@ import { track } from '../analytics.ts';
 import { api } from '../api.ts';
 import { openExternal } from '../tg.ts';
 import { keys } from './keys.ts';
-import { useSession } from './useSession.ts';
+import { useCity, useSession } from './useSession.ts';
 
-/** Каталог организаторов: у кого есть предстоящие события или регулярные занятия. */
+/** Каталог организаторов города человека: у кого есть предстоящие события или регулярные занятия. */
 export function useHosts() {
-  const { data, error } = useQuery({ queryKey: keys.hosts, queryFn: api.listHosts });
+  const { city_id } = useCity();
+  const { data, error } = useQuery({ queryKey: keys.hosts(city_id), queryFn: () => api.listHosts(city_id) });
   return { hosts: data ?? null, failed: error };
 }
 
@@ -23,7 +24,7 @@ export function useHost(id: string) {
     queryKey: keys.host(id),
     queryFn: () => api.getHost(id),
     placeholderData: () => {
-      const listed = client.getQueryData<HostListItem[]>(keys.hosts)?.find((h) => h.id === id);
+      const listed = client.getQueriesData<HostListItem[]>({ queryKey: ['hosts'] }).flatMap(([, list]) => list ?? []).find((h) => h.id === id);
       return listed && ({ ...listed, photos: [], events: [] } satisfies HostItem);
     },
   });

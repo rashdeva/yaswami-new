@@ -6,8 +6,6 @@ export const settings = {
   publicUrl: (process.env.PUBLIC_URL ?? (RAILWAY_PUBLIC_DOMAIN ? `https://${RAILWAY_PUBLIC_DOMAIN}` : `http://localhost:${PORT}`)).replace(/\/$/, ''),
   /** Токен командного бота Hermes (тот же, что TELEGRAM_BOT_TOKEN сервиса hermes): через него идут оповещения «ждёт человека». Пусто — их шлёт бот «Я с вами». */
   teamBotToken: process.env.TEAM_BOT_TOKEN ?? '',
-  /** Название города витрины для страниц сайта; сами города и их часовые пояса — в таблице cities. */
-  city: process.env.CITY ?? 'Дананг',
   /** Возможности, открытые всем без личного включения (имена из Feature в core), через запятую. */
   featuresOn: (process.env.FEATURES_ON ?? '').split(',').map((f) => f.trim()).filter(Boolean),
   /** Сколько событий организатор создаёт бесплатно; дальше — по подписке (её пока нет). */
