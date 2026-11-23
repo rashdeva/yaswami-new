@@ -54,9 +54,9 @@ export function TopicsScreen() {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-muted-foreground">Метки событий без темы:</span>
           {candidates.map((c) => (
-            <Button key={c.tag} size="xs" variant="outline" title={c.examples.join(' · ')} onClick={() => propose(c)}>
-              {c.tag} · {c.events_count} соб. · {c.hosts_count} орг.
-            </Button>
+            <span key={c.tag} title={c.examples.join(' · ')}>
+              <Button size="xs" variant="outline" onClick={() => propose(c)}>{c.tag} · {c.events_count} соб. · {c.hosts_count} орг.</Button>
+            </span>
           ))}
         </div>
       )}

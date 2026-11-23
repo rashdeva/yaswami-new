@@ -1,6 +1,7 @@
 // Все ключи запросов.
 export const keys = {
   me: ['me'] as const,
+  topics: ['topics'] as const,
   feed: ['collected'] as const,
   collected: (id: string) => ['collected', id] as const,
   event: (id: string) => ['event', id] as const,

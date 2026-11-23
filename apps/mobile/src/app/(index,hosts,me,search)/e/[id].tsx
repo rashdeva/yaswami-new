@@ -9,11 +9,12 @@ import { Badges } from '@/components/event-row';
 import { Row, Section } from '@/components/section';
 import { State } from '@/components/state';
 import { topicIconUrl } from '@/format';
-import { useCollected } from '@/queries';
+import { useCollected, useTopics } from '@/queries';
 import { useSession } from '@/session';
 import { colors } from '@/theme';
 
 export default function CollectedEvent() {
+  useTopics(); // темы из базы: перерисоваться, когда пришли
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: event, error, refetch, signUp } = useCollected(id);
   const { me } = useSession();

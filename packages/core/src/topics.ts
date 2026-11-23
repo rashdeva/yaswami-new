@@ -134,8 +134,11 @@ export const OTHER_TOPIC = 'другое';
 /** Короткое имя Topic латиницей: файл иконки и ключ цвета темы (`data-topic` в apps/web/src/tokens.css). У «другого» и у событий, собранных до появления поля, — `other`. */
 export const topicSlug = (topic?: string | null) => (topic && TOPIC_GUIDES[topic]?.slug) || 'other';
 
-/** Иконка Topic: из базы, а у первых тем и у «другого» — файл сборки. */
-export const topicIcon = (topic?: string | null) => (topic && TOPIC_GUIDES[topic]?.icon_url) || `/topics/${topicSlug(topic)}.png`;
+/** Иконка Topic: из базы, у первых тем — файл сборки. Новой теме, пока иконку не нарисовали, — иконка «другого». */
+export const topicIcon = (topic?: string | null) => {
+  const guide = topic ? TOPIC_GUIDES[topic] : undefined;
+  return guide?.icon_url || `/topics/${guide && hasBuiltInIcon(guide.slug) ? guide.slug : 'other'}.png`;
+};
 
 // Темы, чьи иконки лежат файлами в сборке сайта: им иконку из базы ждать не нужно.
 const BUILT_IN_SLUGS = new Set(Object.values(TOPIC_GUIDES).map((g) => g.slug));

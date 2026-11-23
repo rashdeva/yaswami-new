@@ -1,9 +1,18 @@
 // Данные экранов: useQuery на чтение, useMutation на изменение. Экран зовёт хук, api.* видит только этот файл.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CollectedEventItem, Me, RsvpInput } from '@yaswami/core';
-import { collectedDayKey } from '@yaswami/core';
+import { collectedDayKey, setTopics, TOPIC_GUIDES } from '@yaswami/core';
 import { api } from './api';
 import { keys } from './keys';
+
+/**
+ * Темы в порядке фильтров. Список живёт в базе; до ответа сервера — темы из сборки. Ответ кладётся в реестр ядра
+ * (TOPIC_GUIDES): по нему находятся гид, эмодзи и иконка. Экран, который их показывает, зовёт этот хук.
+ */
+export function useTopics(): string[] {
+  useQuery({ queryKey: keys.topics, queryFn: async () => { const topics = await api.topics(); setTopics(topics); return topics; }, staleTime: 5 * 60_000 });
+  return Object.keys(TOPIC_GUIDES);
+}
 
 /** Витрина, разбитая по дням: список уже отсортирован по началу. */
 export function useFeed() {
