@@ -48,8 +48,19 @@ export type TicketTypeUpdateInput = z.infer<typeof TicketTypeUpdateInput>;
 
 export { RsvpInput };
 
+/** Вход через Apple в приложении: id_token от Apple и имя, которое Apple отдаёт только при первом входе. В Luma такого нет. */
+export const AppleLoginInput = z.object({
+  id_token: z.string().min(1).max(8000),
+  first_name: z.string().trim().min(1).max(60).optional(),
+});
+export type AppleLoginInput = z.infer<typeof AppleLoginInput>;
+
+/** Вход через Google в приложении: id_token от Google, имя Google кладёт в сам токен. В Luma такого нет. */
+export const GoogleLoginInput = z.object({ id_token: z.string().min(1).max(8000) });
+export type GoogleLoginInput = z.infer<typeof GoogleLoginInput>;
+
 /** Заход на событие. `ref` — id пользователя, по чьей ссылке пришли (хвост `-r<id>` в startapp). */
-export const VisitInput = z.object({ ref: z.number().int().positive().optional() });
+export const VisitInput = z.object({ ref: z.number().int().optional() });
 export type VisitInput = z.infer<typeof VisitInput>;
 
 /** Поиск человека среди пользователей сервиса; без запроса — список. */

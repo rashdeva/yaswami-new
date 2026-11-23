@@ -34,7 +34,7 @@ export const Feature = z.enum([
 export type Feature = z.infer<typeof Feature>;
 
 export const User = z.object({
-  id: z.number().int().positive(), // telegram id
+  id: z.number().int(), // id в Telegram; отрицательный — вошёл не через Telegram (ADR-0007)
   first_name: z.string().min(1),
   username: z.string().nullable(),
   lang: z.string(),

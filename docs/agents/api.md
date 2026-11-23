@@ -21,6 +21,7 @@
 | `POST /admin/accounts/:id/login` | шаг входа в наш аккаунт Telegram — код и пароль — вводит человек в админке: секреты не проходят через модель |
 | `/telegram/webhook`, `/internal/*` | вход для Telegram и сборщика, не операция сервиса |
 | `/config`, `/photos/:id`, `/health`, `…/visit` | обслуживание интерфейса: настройки, картинки, счётчик заходов |
+| `DELETE /me` | удалить аккаунт может только сам человек из приложения или сайта: модель не должна стирать его по просьбе в переписке |
 | `GET /admin/live` | поток для экрана админки (кто пишет, «в переписке новое»): мгновенное состояние, а не операция — модели в нём нечего делать |
 
 | Только MCP | Почему |
@@ -73,6 +74,8 @@
 ## Вход и его границы
 
 - **Способы:** `tma <initData>` из мини-приложения, cookie сайта, токен `ysw_…` (`auth.ts`). Сессия сайта живёт 30 дней — и cookie, и её токен в базе (`api_tokens.expires_at`); токен, выпущенный для MCP-клиента, бессрочный, его отзывают.
+- **Приложение для телефона** (`web-login.ts`) получает токен на 180 дней: через Telegram — `GET /auth/telegram/login?app=1`, в конце переход на `app.yaswami://auth?token=…` (ошибка — `?error=<код>`); через Apple — `POST /auth/apple` `{ id_token, first_name? }` → `{ token }`; через Google (Android) — `POST /auth/google` `{ id_token }` → `{ token }`, имя берётся из токена, клиенты — `GOOGLE_CLIENT_IDS` (не задан — `503 not_configured`). Все входы сходятся в `signInWith` (`auth.ts`).
+- **id пользователя — не Telegram id (ADR-0008).** Telegram — способ входа: строка `('telegram', <tg id>)` в `user_identities`. Боту (`chat_id`, `user_id` в Bot API) — только Telegram id из `telegramIdOf(db, userId)`; `null` — писать некуда, молча пропустить. Из Telegram (апдейт, `peer_id`, `hosts.telegram_id`) к пользователю — `userIdByTelegram` / `usersByTelegram`. Уведомление — `notify(db, userId, …)`, оно само найдёт чат. Права команды — `isAdmin(db, actor)`: `ADMIN_IDS` — это Telegram id. В тестах — `uid(<telegram id>)`, а не сам Telegram id.
 - **Область действия токена** (`api_tokens.scope`, `TOKEN_SCOPES` в `db/schema.ts`) — для ролей Hermes, с которыми говорят посторонние: такому токену доступен только MCP и только инструменты из `SCOPE_TOOLS` в `mcp.ts`, REST отвечает 403. Новой роли с доступом к MCP — своя область, а не токен админа. Выпуск: `pnpm api:token <id> <имя> <область>`.
 - **Лимиты:** `REQUESTS_PER_MINUTE` запросов в минуту на вошедшего (429 `too_many_requests`), тело запроса — до 8 МБ (413 `too_large`); оба — в `app.ts`. Анонимные запросы к витрине не считаются.
 - **Заголовки безопасности** ставит `main.ts` (`secureHeaders`); фрейм запрещён только `/admin`: мини-приложение Telegram открывает во фрейме.

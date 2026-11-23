@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p apps/web && tsc --noEmit -p apps/admin",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p apps/web && tsc --noEmit -p apps/admin && tsc --noEmit -p apps/mobile",
     "test": "node --env-file-if-exists=.env --test \"packages/**/*.test.ts\" \"apps/**/*.test.ts\" \"apps/**/*.test.mjs\"",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",

@@ -37,7 +37,7 @@ export interface AdminEventView extends EventView {
 
 /** Событие от имени пользователя: `user_id` — организатор; его лимит бесплатных событий действует. */
 export const AdminEventCreateInput = EventCreateInput.extend({
-  user_id: UserSchema.shape.id.describe('Telegram id of the host (admin_users_search)'),
+  user_id: UserSchema.shape.id.describe('User id of the host (admin_users_search), not a Telegram id'),
   city_id: cityId.optional(),
 });
 export type AdminEventCreateInput = z.infer<typeof AdminEventCreateInput>;
@@ -212,9 +212,19 @@ export const UserUpdateInput = z
   .partial();
 export type UserUpdateInput = z.infer<typeof UserUpdateInput>;
 
+/** Поставщики способов входа (CONTEXT.md). Telegram — один из них: users.id — не Telegram id (ADR-0008). В Luma такого нет. */
+export const IDENTITY_PROVIDERS = ['telegram', 'apple', 'google'] as const;
+export type IdentityProvider = (typeof IDENTITY_PROVIDERS)[number];
+
+/** Пользователь для команды: `id` — наш, `telegram_id` — куда ему пишет бот (null — вошёл без Telegram), `identities` — как он входит. */
+export interface AdminUser extends User {
+  telegram_id: number | null;
+  identities: IdentityProvider[];
+}
+
 /** Пользователь, его события и ответы на чужие, собранные события, на которые он записался (их id для адреса). */
 export interface AdminUserView {
-  user: User;
+  user: AdminUser;
   events: Event[];
   guests: (Guest & { event_name: string })[];
   collected_signups: string[];
@@ -231,13 +241,13 @@ export interface AdminContact {
 }
 
 export const AdminContactListInput = z.object({
-  host_user_id: z.coerce.number().int().optional().describe('Only the audience of this host (Telegram id)'),
+  host_user_id: z.coerce.number().int().optional().describe('Only the audience of this host (user id, not Telegram id)'),
 });
 export type AdminContactListInput = z.infer<typeof AdminContactListInput>;
 
 // --- Журнал действий команды (в Luma такого нет; ADR-0004)
 
-/** Чего касается действие. `entity_id` — id в API: у собранного события — его адрес, у пользователя — Telegram id. */
+/** Чего касается действие. `entity_id` — id в API: у собранного события — его адрес, у пользователя — его id (не Telegram id). */
 export const ADMIN_ENTITIES = ['event', 'collected_event', 'host', 'user', 'account', 'conversation', 'message', 'contact', 'source', 'city', 'job'] as const;
 export type AdminEntity = (typeof ADMIN_ENTITIES)[number];
 

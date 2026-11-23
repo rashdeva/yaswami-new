@@ -9,6 +9,7 @@
 | Где | Что там | Чего там нет |
 |---|---|---|
 | `apps/web` | мини-приложение и сайт: React, TanStack Query и Router, свои компоненты и `tokens.css` | правил домена, своих типов запросов и ответов, shadcn и Tailwind |
+| `apps/mobile` | приложение для iOS и Android: Expo, Expo Router, нативные вкладки и системные цвета; типы — из core | правил домена; fetch вне `src/api.ts` |
 | `apps/admin` | админка команды на `/admin`: React, TanStack Query и Router, shadcn/ui | правил домена; кода мини-приложения |
 | `apps/api/src/app.ts`, `mcp.ts` | два тонких входа: REST и MCP | запросов к базе, правил |
 | `apps/api/src/services.ts`, `inbox.ts`, `admin.ts` и соседи | операции: правила доступа, запись, побочные действия | знания о том, кто вызвал — REST или MCP |
@@ -23,12 +24,14 @@
 2. **Имена — как в Luma.** Перед тем как назвать ресурс, поле, путь или инструмент, найди аналог в `docs/reference/luma/` и возьми имя оттуда. Аналога нет — имя наше, и в комментарии у типа сказано, что в Luma такого нет.
 3. **Логика отдельно от UI.** Компонент рисует и зовёт хук; данные, запросы и правила живут в хуках и чистых функциях. Так и в `apps/web`, и в `apps/admin`.
 4. **Слова — из `CONTEXT.md`.** Термин домена пишется так, как он там определён, в коде, тестах и текстах.
-5. **Проверка перед «готово»:** `pnpm typecheck` и `pnpm test` (нужен `pnpm db:up`) проходят; на новую операцию есть тест через HTTP в `apps/api/src/api.test.ts`. То же самое CI запускает на каждый PR (`.github/workflows/ci.yml`): `main` сам выкладывается в прод.
+5. **id пользователя — не Telegram id.** `users.id` и все `user_id` — наш id; Telegram — способ входа, строка в `user_identities`. От пользователя к Telegram и обратно — только `telegramIdOf` / `userIdByTelegram` из `apps/api/src/auth.ts`, никогда «`chat_id: user.id`» или «`users.id = telegram_id`». Так и в коде, и в тестах (`uid()` в `api.test.ts`), и в описаниях инструментов MCP. Почему — ADR-0008.
+6. **Проверка перед «готово»:** `pnpm typecheck` и `pnpm test` (нужен `pnpm db:up`) проходят; на новую операцию есть тест через HTTP в `apps/api/src/api.test.ts`. То же самое CI запускает на каждый PR (`.github/workflows/ci.yml`): `main` сам выкладывается в прод.
 
 ## Что читать под задачу
 
 - Меняешь API, MCP, сервисы, схему базы → `docs/agents/api.md`
 - Меняешь `apps/web` → `docs/agents/frontend.md`
+- Меняешь `apps/mobile`, выкладываешь в App Store / Google Play → `apps/mobile/README.md`
 - Меняешь `apps/admin` → `docs/agents/admin.md`
 - Называешь что-то или сверяешься с Luma → `docs/reference/luma/`
 - Трогаешь переписку, админку, роли Hermes → `docs/agents-inbox.md`, `agents/README.md`

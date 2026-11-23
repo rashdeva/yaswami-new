@@ -26,7 +26,7 @@ export function useUserActions(id: number) {
   return {
     update: useAct((input: UserUpdateInput) => api.userUpdate(id, input), {
       undo,
-      onSuccess: (user) => client.setQueryData<Wire<AdminUserView>>(keys.user(id), (old) => old && { ...old, user }),
+      onSuccess: (user) => client.setQueryData<Wire<AdminUserView>>(keys.user(id), (old) => old && { ...old, user: { ...old.user, ...user } }),
     }),
     remove: useAct(() => api.userDelete(id), { undo }),
     /** Выйти на всех устройствах и отозвать токены агентов: не отменяется. */
