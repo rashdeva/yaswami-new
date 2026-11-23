@@ -12,7 +12,7 @@ import { telegramIdOf, userIdByTelegram, usersByTelegram } from './auth.ts';
 import type { Ctx } from './audit.ts';
 import { audited } from './audit.ts';
 import type { Db } from './db/client.ts';
-import { collectedEvents, collectedEventSignups, conversations, hosts, messages, tgAccounts, users } from './db/schema.ts';
+import { cities, collectedEvents, collectedEventSignups, conversations, hosts, messages, sources, tgAccounts, users } from './db/schema.ts';
 import { live, USER_TYPING_MS, writing } from './live.ts';
 import { AppError, collectedSlug } from './services.ts';
 import { settings } from './settings.ts';
@@ -228,9 +228,13 @@ export async function recordLead(db: Db, lead: LeadInput): Promise<void> {
   const direct = lead.signal === 'job' || hoursAgo > LEAD_REPLY_HOURS;
   const when = hoursAgo < 24 ? 'сегодня' : `${Math.round(hoursAgo / 24)} дн. назад`;
   const what = { ask: 'Вопрос', seek: 'Ищет компанию', newcomer: 'Недавно приехал', service: 'Ищет мастера или услугу', job: 'Ищет работу' }[lead.signal ?? 'ask'];
+  // Город чата — из источников (kind leads или jobs): в нём охотник ищет события, мастеров и вакансии. Чата нет — первый город.
+  const [city] = await db.select({ id: cities.id, name: cities.name }).from(sources).innerJoin(cities, eq(cities.id, sources.city_id))
+    .where(sql`lower(${sources.channel}) = lower(${lead.chat})`);
+  const where = city ? `Город чата: ${city.name} (city_id: ${city.id}).\n` : '';
   const text = await hunter.ask(direct
-    ? `Личное сообщение. Человек писал в чате ${lead.chat} ${when}.\n\n${before}${what} (${lead.author.name}):\n${lead.text}`
-    : `Чат: ${lead.chat}\n\n${before}${what} (${lead.author.name}):\n${lead.text}`);
+    ? `Личное сообщение. Человек писал в чате ${lead.chat} ${when}.\n${where}\n${before}${what} (${lead.author.name}):\n${lead.text}`
+    : `Чат: ${lead.chat}\n${where}\n${before}${what} (${lead.author.name}):\n${lead.text}`);
   // В журнал — чтобы было видно, что охотник делает с найденными вопросами (сам текст вопроса не пишем).
   console.log(`охотник: ${lead.url} — ${text ? (direct ? 'черновик в личку' : 'черновик') : 'пропустил или роль недоступна'}`);
   if (!text) return;

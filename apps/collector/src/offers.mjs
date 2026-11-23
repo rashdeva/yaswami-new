@@ -60,10 +60,11 @@ export async function resolveAuthor(client, username) {
 
 /**
  * Разобрать самопредставления ИИ и сохранить мастеров. `resolve(username)` — кто это в Telegram (resolveAuthor).
+ * Новый мастер получает город чата `city_id` (без него — первый город); у известного город не меняется.
  * У кого Practice уже есть, пропускаем: мастера повторяют
  * рекламу каждый день, а запросы к ИИ ограничены. ponytail: Practice не обновляются; обновлять, если мастера жалуются.
  */
-export async function saveOffers({ store, extractOffer, resolve, pause }, offers) {
+export async function saveOffers({ store, extractOffer, resolve, pause, city_id }, offers) {
   let saved = 0;
   for (const { url, author, text } of offers) {
     if (await store.hasPractices(author.id ?? author.username)) continue;
@@ -72,7 +73,7 @@ export async function saveOffers({ store, extractOffer, resolve, pause }, offers
       // Автор неизвестен (реклама через бота) — ищем мастера по username только для настоящих предложений: поиск флудоопасен.
       const who = offer && (author.id ? author : await resolve(author.username).then((r) => r && { ...author, ...r }));
       if (who) {
-        await store.saveOffer({ telegram_id: who.id, username: who.username, name: who.name, summary: offer.summary || null, practices: offer.practices, offer_url: url });
+        await store.saveOffer({ telegram_id: who.id, username: who.username, name: who.name, summary: offer.summary || null, practices: offer.practices, offer_url: url, ...(city_id && { city_id }) });
         saved++;
         console.log(`мастер @${author.username}: ${offer.practices.map((p) => p.title).join(', ')} (${url})`);
       }

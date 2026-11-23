@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
+  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -98,9 +98,9 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/health', (c) => c.text('ok'))
     .get('/config', (c) => c.json({ bot_username: null, app_name: 'app', ...config, web_login, city: settings.city, free_events_limit: settings.freeEventsLimit } satisfies AppConfig))
     // До проверки входа: витрину собранных событий видит и анонимный посетитель.
-    .get('/collected-events', async (c) => c.json(await s.listCollectedEvents(db)))
+    .get('/collected-events', async (c) => c.json(await s.listCollectedEvents(db, CityFilterInput.parse(c.req.query()))))
     .get('/collected-events/:id', async (c) => c.json(await s.getCollectedEvent(db, c.req.param('id'))))
-    .get('/hosts', async (c) => c.json(await s.listHosts(db)))
+    .get('/hosts', async (c) => c.json(await s.listHosts(db, CityFilterInput.parse(c.req.query()))))
     .get('/hosts/:id', async (c) => c.json(await s.getHost(db, c.req.param('id'))))
     .get('/search', async (c) => c.json(await s.search(db, SearchInput.parse(c.req.query()))))
     .get('/jobs', async (c) => c.json(await s.listJobs(db, JobListInput.parse(c.req.query()))))

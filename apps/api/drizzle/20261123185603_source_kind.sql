@@ -1,0 +1,1 @@
+ALTER TABLE "sources" ADD COLUMN "kind" text DEFAULT 'announcements' NOT NULL;

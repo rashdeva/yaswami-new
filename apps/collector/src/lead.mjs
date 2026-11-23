@@ -115,13 +115,6 @@ export function pickFromChat(chat, messages, { leads = true, searches = [] } = {
   };
 }
 
-/** Чаты прохода без повторов (регистр не важен) и берём ли из каждого вопросы и мастеров: да — только у чатов из LEAD_CHATS. */
-export function chatsToPoll(leadChats, jobChats) {
-  const lead = new Set(leadChats.map((c) => c.toLowerCase()));
-  const seen = new Set();
-  return [...leadChats, ...jobChats].filter((c) => !seen.has(c.toLowerCase()) && seen.add(c.toLowerCase())).map((chat) => ({ chat, leads: lead.has(chat.toLowerCase()) }));
-}
-
 /**
  * Новые сообщения чата после `afterNumber`: номер последнего, сколько их прочитано и найденное в них (pickFromChat).
  */

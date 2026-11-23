@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNot
 import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedListInput, CollectedStatus, CollectedUpdateInput,
-  CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, Job, JobItem, JobList, JobListInput, MyCollectedItem, Practice, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
+  CityFilterInput, CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, Job, JobItem, JobList, JobListInput, MyCollectedItem, Practice, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, UserSelfUpdateInput, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
@@ -143,13 +143,11 @@ export async function assertCity(db: Db | Tx, id: string | undefined): Promise<v
 }
 
 /**
- * Предстоящие собранные события для витрины. Открыты всем: это пересказ публичных анонсов.
- * ponytail: витрина одна и показывает первый город (DEFAULT_CITY_ID); события других городов видит только команда.
- * Появится витрина второго города — город станет параметром здесь и в listHosts.
+ * Предстоящие собранные события города для витрины; без города — первого (DEFAULT_CITY_ID). Открыты всем: это пересказ публичных анонсов.
  */
-export async function listCollectedEvents(db: Db): Promise<CollectedEventItem[]> {
+export async function listCollectedEvents(db: Db, { city_id = DEFAULT_CITY_ID }: CityFilterInput = {}): Promise<CollectedEventItem[]> {
   const rows = await collectedWithCover(db)
-    .where(and(upcomingCollected, published, eq(collectedEvents.city_id, DEFAULT_CITY_ID)))
+    .where(and(upcomingCollected, published, eq(collectedEvents.city_id, city_id)))
     .orderBy(asc(collectedEvents.starts_at))
     .limit(500); // ponytail: без постраничной выдачи, пока событий одного города меньше лимита
   const popular = popularIds(rows, (r) => r.external_id);
@@ -500,11 +498,11 @@ async function upcomingTopicsByHost(db: Db, username?: string): Promise<Map<stri
   return byHost;
 }
 
-/** Каталог организаторов: у кого есть предстоящие события или Practice. Открыт всем, как витрина событий. */
-export async function listHosts(db: Db): Promise<HostListItem[]> {
+/** Каталог организаторов города (без города — первого): у кого есть предстоящие события или Practice. Открыт всем, как витрина событий. */
+export async function listHosts(db: Db, { city_id = DEFAULT_CITY_ID }: CityFilterInput = {}): Promise<HostListItem[]> {
   const [topics, offered] = await Promise.all([upcomingTopicsByHost(db), practicesByHost(db)]);
   // ponytail: все профили за раз, без постраничной выдачи, пока организаторов одного города — сотни
-  return (await db.select().from(hosts).where(eq(hosts.city_id, DEFAULT_CITY_ID)))
+  return (await db.select().from(hosts).where(eq(hosts.city_id, city_id)))
     .flatMap((h) => toHostListItem(h, offered.get(h.id) ?? [], topics.get(h.username) ?? []) ?? [])
     .sort((a, b) => b.upcoming_count - a.upcoming_count || b.practices.length - a.practices.length || a.name.localeCompare(b.name));
 }
@@ -581,9 +579,9 @@ const jsonText = (column: typeof collectedEvents.event, key: string) => sql`${co
 
 /**
  * Единый поиск по публичному каталогу: события из ленты, услуги из вкладки «Услуги» и вакансии, самое подходящее первым. Открыт всем.
- * Город — тот же, что у витрины (DEFAULT_CITY_ID): чужой город не видно ни в ленте, ни в поиске.
+ * Ищет в одном городе, как витрина: без `city_id` — в первом (DEFAULT_CITY_ID).
  */
-export async function search(db: Db, { query, pagination_limit: limit = SEARCH_LIMIT }: SearchInput): Promise<SearchResult> {
+export async function search(db: Db, { query, city_id = DEFAULT_CITY_ID, pagination_limit: limit = SEARCH_LIMIT }: SearchInput): Promise<SearchResult> {
   const e = (key: string) => jsonText(collectedEvents.event, key);
   const event = searchMatch(query, e('title'), [e('place'), e('address'), e('tags'), e('topic'), e('for_whom')], [e('description'), e('what_happens'), e('takeaway')]);
   const practice = searchMatch(query, sql`${practices.title}`, [sql`${practices.topic}`], [sql`${practices.description}`]);
@@ -596,11 +594,11 @@ export async function search(db: Db, { query, pagination_limit: limit = SEARCH_L
   const [events, offers, vacancies, topics, offered] = await Promise.all([
     db.select({ ...getTableColumns(collectedEvents), cover_id: photos.id, score: eventScore })
       .from(collectedEvents).leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id))
-      .where(and(upcomingCollected, published, eq(collectedEvents.city_id, DEFAULT_CITY_ID), event.where)).orderBy(desc(eventScore)).limit(limit),
+      .where(and(upcomingCollected, published, eq(collectedEvents.city_id, city_id), event.where)).orderBy(desc(eventScore)).limit(limit),
     db.select({ host: hosts, id: practices.id, score: practice.score })
       .from(practices).innerJoin(hosts, eq(hosts.id, practices.host_id))
-      .where(and(eq(practices.status, 'published'), ne(hosts.status, 'rejected'), eq(hosts.city_id, DEFAULT_CITY_ID), practice.where)),
-    db.select({ job: jobs, score: job.score }).from(jobs).where(and(liveJob, eq(jobs.city_id, DEFAULT_CITY_ID), job.where)).orderBy(desc(job.score)).limit(limit),
+      .where(and(eq(practices.status, 'published'), ne(hosts.status, 'rejected'), eq(hosts.city_id, city_id), practice.where)),
+    db.select({ job: jobs, score: job.score }).from(jobs).where(and(liveJob, eq(jobs.city_id, city_id), job.where)).orderBy(desc(job.score)).limit(limit),
     upcomingTopicsByHost(db),
     practicesByHost(db),
   ]);

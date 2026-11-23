@@ -795,6 +795,9 @@ test('поиск: события и Practice одним запросом; фор
   await db.insert(collectedEvents).values({ ...row(6, 'Сёрфинг в Нячанге'), city_id: 'nhatrang' });
   await insertHosts([{ telegram_id: 54, username: 'surf_nt', name: 'Сёрф-школа', city_id: 'nhatrang', status: 'published' as const, practices: [{ title: 'Урок сёрфинга', topic: 'спорт', description: null, price: null, status: 'published' as const }] }]);
   assert.deepEqual(names(await find('серфинг')), []);
+  // …а с city_id — поиск по тому городу: и событие, и услуга его мастера
+  const nhatrang = ((await (await app.request(`/search?query=${encodeURIComponent('сёрфинг')}&city_id=nhatrang`)).json()) as SearchResult).entries;
+  assert.deepEqual(names(nhatrang).sort(), ['Сёрфинг в Нячанге', 'Урок сёрфинга @surf_nt']);
   await db.execute(sql`delete from collected_events where city_id = 'nhatrang'`);
   await db.execute(sql`delete from hosts where city_id = 'nhatrang'`);
   await db.execute(sql`delete from cities where id = 'nhatrang'`);
@@ -2199,7 +2202,7 @@ test('источники: команда добавляет и выключае�
   }
 });
 
-test('города: всё прежнее — Дананг; новый город получает свои источники, события и организаторов, витрина его не показывает', async () => {
+test('города: всё прежнее — Дананг; новый город получает свои источники, события и организаторов, витрина показывает его по city_id', async () => {
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
   const tool = async (name: string, args: object) =>
@@ -2244,9 +2247,15 @@ test('города: всё прежнее — Дананг; новый горо�
   }
   const listed = ((await (await call(admin, 'GET', '/admin/collected-events')).json()) as AdminCollectedEvent[]).find((e) => e.id === 'tbilisi_chat-1-0');
   assert.equal(listed!.city_id, 'tbilisi');
-  // Витрина одна и показывает первый город: событие и организатор другого города в неё не попадают.
+  // Без city_id витрина показывает первый город: событие и организатор другого города в неё не попадают…
   assert.ok(!(await feed()).includes('tbilisi_chat-1-0'));
   assert.ok(!((await (await call(admin, 'GET', '/hosts')).json()) as HostListItem[]).some((h) => h.username === 'gio_host'));
+  // …а с city_id — только этот город, и в REST, и в MCP.
+  assert.deepEqual(((await (await app.request('/collected-events?city_id=tbilisi')).json()) as CollectedEventItem[]).map((e) => e.id), ['tbilisi_chat-1-0']);
+  assert.deepEqual(((await tool('collected_events_list', { city_id: 'tbilisi' })) as { id: string }[]).map((e) => e.id), ['tbilisi_chat-1-0']);
+  assert.deepEqual(((await (await app.request('/hosts?city_id=tbilisi')).json()) as HostListItem[]).map((h) => h.username), ['gio_host']);
+  assert.deepEqual(((await tool('hosts_list', { city_id: 'tbilisi' })) as HostListItem[]).map((h) => h.username), ['gio_host']);
+  assert.deepEqual(await (await app.request('/collected-events?city_id=nowhere')).json(), []);
   assert.equal(((await tool('admin_collected_events_update', { collected_event_id: 'tbilisi_chat-1-0', city_id: 'danang' })) as AdminCollectedEvent).city_id, 'danang');
   assert.ok((await feed()).includes('tbilisi_chat-1-0'));
   assert.deepEqual(await tool('admin_collected_events_update', { collected_event_id: 'tbilisi_chat-1-0', city_id: 'nowhere' }), { error: 'city_not_found' });

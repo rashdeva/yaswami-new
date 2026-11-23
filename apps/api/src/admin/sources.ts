@@ -1,4 +1,4 @@
-// Источники сборщика (Source): каналы и группы, откуда он берёт анонсы. Пишут сюда сборщик (CHANNELS при старте,
+// Источники сборщика (Source): каналы и группы, откуда он берёт анонсы, вопросы, мастеров и вакансии (kind). Пишут сюда сборщик (CHANNELS при старте,
 // каналы организаторов каждый проход) и команда — через журнал.
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { AdminSource, SourceCreateInput, SourceUpdateInput } from '@yaswami/core';
@@ -12,7 +12,7 @@ import { AppError, assertCity } from '../services.ts';
 const sameChannel = (channel: string) => sql`lower(${sources.channel}) = lower(${channel})`;
 const selectSources = (db: Db) => db
   .select({
-    channel: sources.channel, enabled: sources.enabled, city_id: sources.city_id, created_at: sources.created_at, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,
+    channel: sources.channel, kind: sources.kind, enabled: sources.enabled, city_id: sources.city_id, created_at: sources.created_at, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,
     events_count: sql<number>`(select count(*) from collected_events e where lower(e.channel) = lower(${sources.channel}))::int`,
   })
   .from(sources).leftJoin(hosts, eq(hosts.id, sources.host_id));
@@ -33,7 +33,7 @@ export const createSource = (db: Db, ctx: Ctx, input: SourceCreateInput): Promis
   audited(db, ctx, { action: 'admin_sources_create', entity: 'source', id: (r) => r.channel, input }, async (tx) => {
     const channel = input.channel.replace(/^(?:https?:\/\/)?(?:t\.me\/|@)?/, '').replace(/\/$/, '');
     await assertCity(tx, input.city_id);
-    const added = await tx.insert(sources).values({ channel, city_id: input.city_id }).onConflictDoNothing().returning();
+    const added = await tx.insert(sources).values({ channel, city_id: input.city_id, kind: input.kind }).onConflictDoNothing().returning();
     if (!added.length) throw new AppError('source_exists', 409);
     return getSource(tx, channel);
   });
@@ -52,7 +52,7 @@ export async function updateSource(db: Db, ctx: Ctx, channel: string, input: Sou
   return audited(db, ctx, { action: 'admin_sources_update', entity: 'source', id: key, input }, async (tx) => {
     if (input.host_id && !(await tx.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, input.host_id))).length) throw new AppError('host_not_found', 404);
     await assertCity(tx, input.city_id);
-    const values = Object.fromEntries(Object.entries({ enabled: input.enabled, host_id: input.host_id, city_id: input.city_id }).filter(([, v]) => v !== undefined));
+    const values = Object.fromEntries(Object.entries({ enabled: input.enabled, kind: input.kind, host_id: input.host_id, city_id: input.city_id }).filter(([, v]) => v !== undefined));
     const before = await getSource(tx, key);
     if (Object.keys(values).length) await tx.update(sources).set(values).where(eq(sources.channel, key));
     if (input.host_id && input.host_id !== before.host?.id) {

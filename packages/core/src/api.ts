@@ -202,10 +202,15 @@ export interface HostItem extends HostListItem {
  * `query` — как у `places/search`, список — как у остальных (`entries`).
  */
 export const SearchInput = z.object({
+  city_id: cityId.optional(),
   query: z.string().trim().min(2).max(100).describe('What to look for, in the person\'s own words: "йога", "массаж", "ретрит". Word endings and small typos are tolerated'),
   pagination_limit: z.coerce.number().int().min(1).max(50).optional().describe('Default 20'),
 });
 export type SearchInput = z.infer<typeof SearchInput>;
+
+/** Город витрины: события и организаторы только этого города. В Luma города нет — там выдача по календарю. */
+export const CityFilterInput = z.object({ city_id: cityId.optional() });
+export type CityFilterInput = z.infer<typeof CityFilterInput>;
 
 /**
  * Находка поиска; `type` говорит, что это. У Practice своей страницы нет — открывается её мастер (`host`).
@@ -270,6 +275,7 @@ export type CollectedListInput = z.infer<typeof CollectedListInput>;
  */
 export interface AdminSource {
   channel: string; // username без @ или id закрытого чата (-100…)
+  kind: SourceKind;
   enabled: boolean; // выключенный сборщик не читает
   city_id: string; // город источника: его получают события из этого источника, в его часовом поясе ИИ читает время
   // Организатор источника: чей это канал. Сборщик ставит его сам, когда берёт канал из профиля; команда может указать
@@ -279,8 +285,17 @@ export interface AdminSource {
   created_at: Date;
 }
 
+/**
+ * Что сборщик берёт из источника: announcements — анонсы событий; leads — большой чат города: вопросы «куда сходить»,
+ * мастера и вакансии; jobs — чат о работе: только вакансии. Мастера и вакансии получают город источника.
+ */
+export const SOURCE_KINDS = ['announcements', 'leads', 'jobs'] as const;
+export type SourceKind = (typeof SOURCE_KINDS)[number];
+const sourceKind = z.enum(SOURCE_KINDS).describe('announcements — event announcements (default); leads — a big city chat: questions "where to go", masters and job vacancies; jobs — a job chat: vacancies only');
+
 /** Добавить источник: username канала, @username, ссылка t.me/… или id закрытого чата. */
 export const SourceCreateInput = z.object({
+  kind: sourceKind.optional(),
   channel: z.string().trim().regex(/^(?:https?:\/\/)?(?:t\.me\/|@)?\w{4,32}\/?$|^-100\d+$/).describe('Channel username, @username, t.me link or -100… id of a private chat'),
   city_id: cityId.optional(),
 });
@@ -289,6 +304,7 @@ export type SourceCreateInput = z.infer<typeof SourceCreateInput>;
 export const SourceUpdateInput = z
   .object({
     enabled: z.boolean().describe('false — stop reading this source'),
+    kind: sourceKind,
     host_id: z.uuid().nullable().describe('Organizer this source belongs to (id from admin_hosts_list); null — none'),
     city_id: cityId.describe('City of the source (id from admin_cities_list); events collected from now on get it, already collected ones keep theirs'),
   })
