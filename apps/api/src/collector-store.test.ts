@@ -26,7 +26,7 @@ before(async () => {
   await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
   await db.$client.end();
   sql = postgres(url.href, { max: 1, onnotice: () => {} });
-  await sql`truncate users, collected_events, hosts, tg_accounts, conversations, collector_cursors cascade`;
+  await sql`truncate users, collected_events, hosts, tg_accounts, conversations, collector_cursors, jobs cascade`;
   await sql`delete from sources`;
   store = createStore(url.href);
 });
@@ -161,4 +161,21 @@ test('сборщик: Запросы организаторов и Находк�
   await store.saveSearchMatch(match);
   await store.saveSearchMatch(match);
   assert.deepEqual((await sql`select author_id::int, author_name, author_username, text from host_search_matches`).map((r) => ({ ...r })), [{ author_id: 42, author_name: 'Лена', author_username: null, text: 'Нужен массаж' }]);
+});
+
+test('сборщик: вакансии', async () => {
+  const day = (n: number) => new Date(Date.UTC(2026, 10, n));
+  const job = { city_id: 'danang', title: 'Официант', employer: 'Ресторан в Сонтра', description: null, pay: 'от 500$', telegram_username: 'sontra_hr', announcement: { url: 'https://t.me/danang_rabota/1', text: 'Ищем официантов' }, author_id: 42, text_hash: 'h1', posted_at: day(1) };
+  assert.equal(await store.touchJob('danang', 'h1', day(1)), false, 'такой вакансии ещё нет');
+  await store.saveJob(job);
+  const [row] = await sql`select city_id, title, pay, telegram_username, announcement, author_id::int, status, posted_at from jobs`;
+  assert.deepEqual({ ...row }, { city_id: 'danang', title: 'Официант', pay: 'от 500$', telegram_username: 'sontra_hr', announcement: job.announcement, author_id: 42, status: 'pending', posted_at: day(1) });
+
+  // Повтор не создаёт вторую строку, сдвигает posted_at (назад — нет) и не меняет решение команды.
+  await sql`update jobs set status = 'published'`;
+  assert.equal(await store.touchJob('danang', 'h1', day(5)), true);
+  assert.equal(await store.touchJob('danang', 'h1', day(3)), true);
+  await store.saveJob({ ...job, title: 'Другое', posted_at: day(7), author_id: null });
+  await store.saveJob({ ...job, posted_at: day(2) });
+  assert.deepEqual((await sql`select title, status, posted_at from jobs`).map((r) => ({ ...r })), [{ title: 'Официант', status: 'published', posted_at: day(7) }]);
 });

@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createExtractor, createOfferExtractor, createSearchMatcher, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
+import { createExtractor, createJobExtractor, createOfferExtractor, createSearchMatcher, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
 import { connect, downloadCover, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { refreshOld } from './refresh.mjs';
@@ -9,7 +9,9 @@ import { createStore } from './store.mjs';
 import { contactFor, fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
 import { createSender } from './sender.mjs';
-import { fetchLeads } from './lead.mjs';
+import { DEFAULT_CITY_ID } from '@yaswami/core';
+import { chatsToPoll, fetchLeads } from './lead.mjs';
+import { saveJobs } from './jobs.mjs';
 import { resolveAuthor, saveOffers } from './offers.mjs';
 
 const env = process.env;
@@ -34,6 +36,7 @@ const extract = extractFor({ city: env.CITY ?? 'Дананг', timezone: env.TIM
 
 const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const extractOffer = createOfferExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
+const extractJob = createJobExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const matcher = createSearchMatcher({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 // Поиск по username — самый флудоопасный вызов Telegram: за проход собираем немного профилей, остальные — в следующий.
 const PROFILES_PER_PASS = 15;
@@ -125,7 +128,13 @@ const toApi = async (path, body) => {
 };
 
 // Большие чаты, где ищем вопросы «куда сходить» (lead.mjs): username без @ через запятую. Анонсы из них не берём.
-const leadChats = (env.LEAD_CHATS ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
+const chatList = (value) => (value ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
+const leadChats = chatList(env.LEAD_CHATS);
+// Чаты о работе: из них берём только вакансии (jobs.mjs). Вакансии ищем и в LEAD_CHATS.
+const jobChats = chatList(env.JOB_CHATS);
+// ponytail: у чатов нет своего города (как и у мастеров из них — hosts.city_id по умолчанию): все вакансии — в город
+// по умолчанию. Появится второй город — чаты переносить в таблицу с city_id, как sources.
+const jobCity = { id: DEFAULT_CITY_ID, name: env.CITY ?? 'Дананг' };
 
 /** Включённые Запросы организаторов; тем, у кого ещё нет ключевых слов (новый или переписанный), их выводит ИИ. */
 async function activeSearches() {
@@ -139,9 +148,10 @@ async function activeSearches() {
   return searches;
 }
 
-async function pollLeads(chat, searches) {
-  const key = `lead:${chat}`; // отметка в той же таблице, что у каналов с анонсами
-  const { last, read, leads, offers, candidates } = await fetchLeads(userbot, chat, cursors[key] ?? 0, searches);
+/** Один чат: вакансии — всегда; вопросы, Находки и мастера — только при `leads` (чат из LEAD_CHATS и есть API). */
+async function pollLeads(chat, leads_too, searches) {
+  const key = `lead:${chat}`; // отметка в той же таблице, что у каналов с анонсами; у чатов о работе ключ того же вида
+  const { last, read, leads, offers, candidates, jobs } = await fetchLeads(userbot, chat, cursors[key] ?? 0, { leads: leads_too, searches });
   for (const lead of leads) await toApi('lead', lead);
   // Кандидатов в Находки проверяет ИИ: ключевые слова ловят и тех, кто сам предлагает услугу.
   // ponytail: каждый кандидат — запрос к ИИ; если слова Запроса окажутся слишком общими, ограничить число за проход.
@@ -155,7 +165,8 @@ async function pollLeads(chat, searches) {
   if (last !== cursors[key]) await store.saveCursor(key, (cursors[key] = last));
   const masters = await saveOffers({ store, extractOffer, resolve: (u) => resolveAuthor(userbot, u), pause: () => sleep(llmPauseMs) }, offers);
   // Каждый проход — в журнал: иначе не отличить «вопросов нет» от «чат не читается».
-  console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}, мастеров ${masters} из ${offers.length}, находок ${found} из ${candidates.length}`);
+  const vacancies = await saveJobs({ store, extractJob, pause: () => sleep(llmPauseMs), city: jobCity }, jobs);
+  console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}, мастеров ${masters} из ${offers.length}, находок ${found} из ${candidates.length}, вакансий ${vacancies} из ${jobs.length}`);
 }
 
 // Railway проверяет /health при деплое (общий railway.json) и гасит старый контейнер, только когда новый ответил.
@@ -268,8 +279,9 @@ do {
     await sleep(2000); // не частим с запросами к Telegram
   }
   const searches = leadChats.length ? await activeSearches().catch((e) => (console.error(`запросы организаторов: ${e.message}`), [])) : [];
-  for (const chat of env.API_URL && env.COLLECTOR_SECRET ? leadChats : []) {
-    await pollLeads(chat, searches).catch((e) => console.error(`вопросы ${chat}: ${e.message}`));
+  // Вопросы уходят в API: без его адреса из LEAD_CHATS берём только вакансии.
+  for (const { chat, leads } of chatsToPoll(leadChats, jobChats)) {
+    await pollLeads(chat, Boolean(leads && env.API_URL && env.COLLECTOR_SECRET), searches).catch((e) => console.error(`вопросы ${chat}: ${e.message}`));
     await sleep(2000);
   }
   await refreshPosts().catch((e) => console.error(`публикации: ${e.message}`));
