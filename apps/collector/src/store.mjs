@@ -31,6 +31,28 @@ export function createStore(url) {
       for (const h of await sql`select lower(username) u from hosts where username is not null`) if (!known.has(h.u)) known.set(h.u, 'организатор');
       return known;
     },
+    /**
+     * Поиск источников (source_searches): городу без поиска за `days` дней — новому или давно не искавшему — ставим
+     * поиск в очередь. Ищем по названию и другим написаниям города на этот момент.
+     */
+    queueSourceSearches: (days) => sql`
+      insert into source_searches (city_id, names)
+      select c.id, jsonb_build_array(c.name) || c.aliases from cities c
+      where not exists (select 1 from source_searches s where s.city_id = c.id and s.created_at > now() - make_interval(days => ${days}))`,
+    /** Взять следующий поиск из очереди; null — очередь пуста. */
+    takeSourceSearch: async () => (await sql`
+      update source_searches set status = 'running'
+      where id = (select id from source_searches where status = 'queued' order by created_at limit 1)
+      returning id, city_id, names`)[0] ?? null,
+    /** Поиск, оборванный перезапуском сборщика, — снова в очередь. */
+    requeueSourceSearches: () => sql`update source_searches set status = 'queued' where status = 'running'`,
+    finishSourceSearch: (id, { results = [], error = null }) => sql`
+      update source_searches set status = ${error ? 'failed' : 'done'}, error = ${error}, results = ${sql.json(results)}, finished_at = now()
+      where id = ${id}`,
+    /** Найденные поиском каналы — в источники города; уже известный канал не трогаем. Возвращает добавленные. */
+    addFoundSources: async (city_id, channels) => channels.length ? (await sql`
+      insert into sources ${sql(channels.map((channel) => ({ channel, city_id, kind: 'announcements' })))}
+      on conflict do nothing returning channel`).map((r) => r.channel) : [],
     /** Каналы организаторов, которых ещё нет в источниках, — не больше `limit` за раз; возвращает добавленные. */
     adoptHostChannels: async (limit) => (await sql`
       insert into sources (channel, host_id, city_id)
@@ -76,7 +98,7 @@ export function createStore(url) {
       return true;
     }),
     /** Города, первый — старейший: разовые скрипты (find-sources, scout, backfill-jobs) берут из них название города. */
-    cities: () => sql`select id, name from cities order by created_at, id`, // порядок — как у listCities в API
+    cities: () => sql`select id, name, aliases from cities order by created_at, id`, // порядок — как у listCities в API
     sources: () => sql`
       select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
       from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id

@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Job, JobItem, JobList, AdminJobList, Me, Message, PracticeSignup, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
+import type { AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Job, JobItem, JobList, AdminJobList, Me, Message, PracticeSignup, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -14,7 +14,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, telegramIdOf, userIdByTelegram, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, jobs, messages, photos, practices as practicesTable, practiceSignups, sources, ticketTypes, topics as topicsTable, users, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, jobs, messages, photos, practices as practicesTable, practiceSignups, sources, sourceSearches, ticketTypes, topics as topicsTable, users, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { notify } from './notifications.ts';
@@ -2118,6 +2118,8 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_cities_list: 'GET /admin/cities',
   admin_cities_create: 'POST /admin/cities',
   admin_cities_update: 'PATCH /admin/cities/:id',
+  admin_source_searches_list: 'GET /admin/source-searches',
+  admin_source_searches_create: 'POST /admin/source-searches',
   admin_covers_list: 'GET /admin/covers',
   admin_covers_set: 'POST /admin/covers/:id',
   admin_videos_request: 'POST /admin/videos/:id',
@@ -2309,6 +2311,36 @@ test('города: всё прежнее — Дананг; новый горо�
   settings.featuresOn = featuresOn;
 });
 
+test('поиск источников: команда ставит поиск города в очередь, второй не плодит; найденное, что уже в источниках, отмечено', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const tool = async (name: string, args: object) =>
+    JSON.parse(((await (await call(admin, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })).json()) as { result: any }).result.content[0].text);
+  await db.delete(sourceSearches);
+  await db.delete(sources);
+  assert.equal((await call(tma(71, 'Аня'), 'POST', '/admin/source-searches', { city_id: 'danang' })).status, 403);
+
+  // Ищем по названию и другим написаниям города.
+  assert.deepEqual(((await (await call(admin, 'PATCH', '/admin/cities/danang', { aliases: ['Danang', 'Da Nang'] })).json()) as City).aliases, ['Danang', 'Da Nang']);
+  const res = await call(admin, 'POST', '/admin/source-searches', { city_id: 'danang' });
+  assert.equal(res.status, 202);
+  const search = (await res.json()) as SourceSearch;
+  assert.deepEqual([search.status, search.names, search.results], ['queued', ['Дананг', 'Danang', 'Da Nang'], []]);
+  assert.equal(((await tool('admin_source_searches_create', { city_id: 'danang' })) as SourceSearch).id, search.id, 'пока поиск ждёт — тот же');
+  assert.deepEqual(await tool('admin_source_searches_create', { city_id: 'nowhere' }), { error: 'city_not_found' });
+
+  // Сборщик закончил (apps/collector/src/main.mjs, sourceSearch): `added` API считает по источникам на момент выдачи.
+  const found = { channel: 'Danang_Yoga', title: 'Йога', group: false, members: 100, posts_30d: 10, event_like: 5, kind: 'announcements' as const };
+  await db.update(sourceSearches).set({ status: 'done', results: [found, { ...found, channel: 'danang_chat', group: true, kind: 'leads' }], finished_at: new Date() });
+  await call(admin, 'POST', '/admin/sources', { channel: 'danang_yoga' });
+  const [done] = (await tool('admin_source_searches_list', { city_id: 'danang' })) as SourceSearch[];
+  assert.deepEqual(done!.results.map((r) => [r.channel, r.kind, r.added]), [['Danang_Yoga', 'announcements', true], ['danang_chat', 'leads', false]]);
+
+  assert.equal(((await (await call(admin, 'POST', '/admin/source-searches', { city_id: 'danang' })).json()) as SourceSearch).status, 'queued', 'после завершённого — новый');
+  assert.equal(((await (await call(admin, 'GET', '/admin/source-searches?city_id=danang')).json()) as SourceSearch[]).length, 2);
+  assert.equal(((await (await call(admin, 'GET', '/admin/source-searches?city_id=tbilisi')).json()) as SourceSearch[]).length, 0);
+});
+
 test('Запросы организатора: предложения по Practice, правка, Находки только свои', async () => {
   await insertHosts([
     { telegram_id: 9101, username: 'masha_massage', name: 'Маша', practices: [{ title: 'Массаж спины', topic: 'телесные практики', description: null, price: null, status: 'published' }] },
@@ -2496,6 +2528,7 @@ const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
     return { args: input, body: input, entity_id: input.id };
   },
   admin_cities_update: () => ({ args: { city_id: 'danang', name: 'Дананг' }, params: { id: 'danang' }, body: { name: 'Дананг' }, entity_id: 'danang' }),
+  admin_source_searches_create: () => ({ args: { city_id: 'danang' }, body: { city_id: 'danang' }, entity_id: 'danang' }),
   admin_contacts_remove: (w) => ({ args: { contact_id: w.contactId }, params: { id: w.contactId }, entity_id: w.contactId }),
   admin_accounts_create: (w) => {
     const input = { label: 'Второй', phone: `+7911${w.hostId}` };

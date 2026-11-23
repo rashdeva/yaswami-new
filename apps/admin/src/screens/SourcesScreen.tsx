@@ -20,7 +20,7 @@ import { useSources } from '@/hooks/useSources';
 // Закрытый чат задаётся id (-100…): ссылки на него нет.
 const link = (channel: string) => (channel.startsWith('-') ? null : `https://t.me/${channel}`);
 
-const KIND_NAMES: Record<SourceKind, string> = { announcements: 'Анонсы', leads: 'Чат города', jobs: 'Чат о работе' };
+export const KIND_NAMES: Record<SourceKind, string> = { announcements: 'Анонсы', leads: 'Чат города', jobs: 'Чат о работе' };
 
 /** Вид источника: анонсы; чат города — вопросы «куда сходить», мастера и вакансии; чат о работе — только вакансии. */
 function KindSelect({ value, onChange }: { value: SourceKind; onChange: (kind: SourceKind) => void }) {

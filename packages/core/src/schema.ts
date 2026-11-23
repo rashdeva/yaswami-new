@@ -66,6 +66,8 @@ export const City = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]{1,39}$/, 'latin slug').describe('Short latin slug, e.g. danang'),
   name: z.string().trim().min(1).max(80).describe('City name as people read it, e.g. Дананг'),
   timezone: z.string(), // IANA: в нём ИИ записывает время событий из анонсов этого города
+  // Другие написания названия: по ним сборщик ищет каналы города и узнаёт, что канал про него (Nha Trang у Нячанга).
+  aliases: z.array(z.string().trim().min(2).max(40)).max(5).describe('Other spellings of the name channels use, e.g. ["Nha Trang"] for Нячанг; the collector searches sources by them too'),
   created_at: z.date(),
 });
 export type City = z.infer<typeof City>;

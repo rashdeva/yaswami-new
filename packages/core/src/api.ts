@@ -311,6 +311,40 @@ export const SourceUpdateInput = z
   .partial();
 export type SourceUpdateInput = z.infer<typeof SourceUpdateInput>;
 
+/**
+ * Поиск источников для города: команда просит, сборщик в следующий проход ищет в Telegram каналы и группы по названию
+ * города и его написаниям и для каждого считает, сколько публикаций за месяц похожи на анонс. Сам ничего не добавляет:
+ * источник из найденного добавляет команда. В Luma такого нет.
+ */
+export const SOURCE_SEARCH_STATUSES = ['queued', 'running', 'done', 'failed'] as const;
+export type SourceSearchStatus = (typeof SOURCE_SEARCH_STATUSES)[number];
+
+/** Найденный канал или группа. В Luma такого нет. */
+export interface SourceCandidate {
+  channel: string; // username без @
+  title: string;
+  group: boolean; // группа (чат), а не канал
+  members: number | null;
+  posts_30d: number; // публикаций за 30 дней среди последних 50
+  event_like: number; // из них похожи на анонс (looksLikeEvent)
+  kind: SourceKind; // какой вид источника подходит: канал — анонсы, группа — чат города, про работу — чат о работе
+  added: boolean; // уже есть в источниках (включён или выключен)
+}
+
+export interface SourceSearch {
+  id: string;
+  city_id: string;
+  names: string[]; // по чему искали: название города и его другие написания (City.aliases) на момент заявки
+  status: SourceSearchStatus; // queued — ждёт сборщика, running — ищет (несколько минут), done, failed — см. error
+  error: string | null;
+  results: SourceCandidate[]; // лучшие первыми: больше похожих на анонс, потом больше публикаций
+  created_at: Date;
+  finished_at: Date | null;
+}
+
+export const SourceSearchCreateInput = z.object({ city_id: cityId });
+export type SourceSearchCreateInput = z.infer<typeof SourceSearchCreateInput>;
+
 /** Собранное событие в «Моих событиях»: куда человек заходил или нажимал «Записаться». */
 export interface MyCollectedItem {
   event: CollectedEventItem;

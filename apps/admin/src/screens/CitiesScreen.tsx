@@ -1,24 +1,67 @@
-// «Города»: к городу относятся источники, события каталога, организаторы и события Ясвами. Новый город — здесь,
-// затем ему добавляют источники в «Источниках».
+// «Города»: к городу относятся источники, события каталога, организаторы и события Ясвами. Новый город — здесь;
+// источники ему сборщик ищет сам (поиск источников), найденное, что не добавилось само, команда добавляет тут же.
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { City, CityCreateInput as CreateInput, CityUpdateInput as UpdateInput, Wire } from '@yaswami/core';
 import { CityCreateInput, CityUpdateInput } from '@yaswami/core';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
-import { SaveBar, saveDirty, showIssues, TextField } from '@/components/Fields';
-import { Failed, Loading, Page, Section } from '@/components/Page';
+import { ExternalLink } from '@/components/EntityLink';
+import { ListField, SaveBar, saveDirty, showIssues, TextField } from '@/components/Fields';
+import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useCities } from '@/hooks/useCities';
+import { useSourceSearches } from '@/hooks/useSourceSearches';
+import { KIND_NAMES } from './SourcesScreen';
 
-const DESCRIPTION = 'Города, в которых работает сервис. У источника, события каталога, организатора и события Ясвами указан город; всё, что было до городов, — Дананг. Витрина пока показывает только первый город: события остальных видны здесь, в админке. Чтобы начать собирать новый город — добавьте его и заведите ему источники в «Источниках».';
+const DESCRIPTION = 'Города, в которых работает сервис. У источника, события каталога, организатора и события Ясвами указан город; всё, что было до городов, — Дананг. Новому городу сборщик сам ищет источники в Telegram по названию и другим написаниям — в первый же проход, потом раз в месяц. Каналы, где за месяц хотя бы три публикации похожи на анонс, сразу становятся источниками: их события всё равно проходят модерацию. Группы и остальное найденное — ниже у города: добавьте нужное.';
+const ALIASES_HINT = 'Через запятую, как каналы пишут город латиницей или иначе: Nha Trang. По ним ищутся источники';
+const STATUS: Record<string, string> = { queued: 'ждёт сборщика', running: 'ищет, несколько минут', failed: 'не получилось' };
+
+/** Найденное последним поиском источников: что уже в источниках — отмечено, остальное можно добавить. */
+function CitySources({ city }: { city: string }) {
+  const { latest, busy, lastDone, request, add } = useSourceSearches(city);
+  const found = lastDone?.results ?? [];
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => request(undefined)}>Найти источники сейчас</Button>
+        <Hint>
+          {latest && STATUS[latest.status] ? `Поиск ${STATUS[latest.status]}${latest.error ? `: ${latest.error}` : ''}. ` : ''}
+          {lastDone ? `Последний поиск ${new Date(lastDone.finished_at!).toLocaleDateString('ru')}: найдено ${found.length}, в источниках ${found.filter((r) => r.added).length}.` : !latest ? 'Ещё не искали: сборщик начнёт в следующий проход.' : ''}
+        </Hint>
+      </div>
+      {!!found.length && (
+        <Table>
+          <TableHeader>
+            <TableRow><TableHead>Канал</TableHead><TableHead>Вид</TableHead><TableHead>Участников</TableHead><TableHead>Похожи на анонс / публикаций за месяц</TableHead><TableHead /></TableRow>
+          </TableHeader>
+          <TableBody>
+            {found.map((r) => (
+              <TableRow key={r.channel} data-state={r.added ? 'disabled' : undefined}>
+                <TableCell><ExternalLink href={`https://t.me/${r.channel}`}>@{r.channel}</ExternalLink> <span className="text-muted-foreground">{r.title}</span></TableCell>
+                <TableCell>{KIND_NAMES[r.kind]}</TableCell>
+                <TableCell>{r.members ?? '—'}</TableCell>
+                <TableCell>{r.event_like} / {r.posts_30d}</TableCell>
+                <TableCell className="text-right">
+                  {r.added ? <Badge variant="outline">в источниках</Badge> : <Button size="xs" variant="outline" onClick={() => add({ channel: r.channel, city_id: city, kind: r.kind })}>Добавить</Button>}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}
 const ZONE_HINT = 'IANA, например Asia/Tbilisi. В нём сборщик читает время в анонсах города';
-const EMPTY: CreateInput = { id: '', name: '', timezone: '' };
+const EMPTY: CreateInput = { id: '', name: '', timezone: '', aliases: [] };
 
 function CityForm({ city }: { city: Wire<City> }) {
   const { update } = useCities();
-  const values = useMemo((): UpdateInput => ({ name: city.name, timezone: city.timezone }), [city]);
+  const values = useMemo((): UpdateInput => ({ name: city.name, timezone: city.timezone, aliases: city.aliases }), [city]);
   const form = useForm({ resolver: zodResolver(CityUpdateInput), values, resetOptions: { keepDirtyValues: true } });
   return (
     <Section title={city.name} description={`id: ${city.id}`}>
@@ -28,9 +71,11 @@ function CityForm({ city }: { city: Wire<City> }) {
             <TextField form={form} name="name" label="Название" />
             <TextField form={form} name="timezone" label="Часовой пояс" hint={ZONE_HINT} />
           </div>
+          <ListField form={form} name="aliases" label="Другие написания" hint={ALIASES_HINT} by="comma" />
         </FieldGroup>
         <SaveBar form={form} />
       </form>
+      <CitySources city={city.id} />
     </Section>
   );
 }
@@ -52,6 +97,7 @@ export function CitiesScreen() {
               <TextField form={form} name="name" label="Название" placeholder="Тбилиси" />
               <TextField form={form} name="timezone" label="Часовой пояс" hint={ZONE_HINT} />
             </div>
+            <ListField form={form} name="aliases" label="Другие написания" hint={ALIASES_HINT} by="comma" />
           </FieldGroup>
           <div><Button type="submit">Добавить</Button></div>
         </form>

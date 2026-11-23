@@ -13,6 +13,8 @@ import { createSender } from './sender.mjs';
 import { fetchLeads } from './lead.mjs';
 import { saveJobs } from './jobs.mjs';
 import { resolveAuthor, saveOffers } from './offers.mjs';
+import { searchChannels, TOPICS } from './find-sources.mjs';
+import { cityMatcher } from './city.mjs';
 
 const env = process.env;
 // Источники живут в таблице sources (раздел «Источники» в админке); CHANNELS при старте только дополняет её.
@@ -196,6 +198,7 @@ if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
 
 // Отметки читаем заново каждый проход (ниже): команда сбрасывает отметку источника, чтобы перечитать его свежие публикации.
 let cursors = await store.cursors();
+await store.requeueSourceSearches();
 // Канал, который уже есть в источниках с другим видом, не переделываем — вид правит команда; но говорим о нём:
 // иначе чат из LEAD_CHATS молча остался бы источником анонсов и вопросы из него не собирались бы.
 for (const [list, kind] of [[channels, 'announcements'], [chatList(env.LEAD_CHATS), 'leads'], [chatList(env.JOB_CHATS), 'jobs']]) {
@@ -209,6 +212,36 @@ const ADOPT_PER_PASS = Number(env.ADOPT_PER_PASS ?? 5);
 
 // Источник, события которого команда стабильно одобряет, модерацию пропускает (store.trustedChannels). 0 — выключено.
 const AUTO_APPROVE_MIN = Number(env.AUTO_APPROVE_MIN ?? 5);
+
+// Поиск источников для городов (source_searches): новому городу — в первый же проход, остальным — раз в
+// SOURCE_SEARCH_DAYS дней (0 — только по просьбе команды). Канал, где за месяц SOURCE_AUTO_ADD_MIN и больше публикаций
+// похожи на анонс, становится источником сам: его события всё равно идут через модерацию. Группы и остальное ждут
+// команду в «Городах»: из чатов города уходят ответы людям, такое решает человек.
+const SOURCE_SEARCH_DAYS = Number(env.SOURCE_SEARCH_DAYS ?? 30);
+const SOURCE_AUTO_ADD_MIN = Number(env.SOURCE_AUTO_ADD_MIN ?? 3);
+// ponytail: по одному слову на тему — 19 запросов на каждое написание города по 3 с, у Дананга с пятью написаниями
+// поиск идёт минут 8 раз в месяц; шире — упрёмся в флуд-лимиты Telegram.
+const CITY_WORDS = {
+  '': [''], город: ['афиша', 'события', 'events', 'чат', 'chat', 'работа', 'jobs'],
+  ...Object.fromEntries(Object.entries(TOPICS).map(([topic, words]) => [topic, words.slice(0, 1)])),
+};
+
+async function sourceSearch() {
+  if (SOURCE_SEARCH_DAYS > 0) await store.queueSourceSearches(SOURCE_SEARCH_DAYS);
+  const search = await store.takeSourceSearch();
+  if (!search) return;
+  try {
+    const results = (await searchChannels(userbot, { names: search.names, local: cityMatcher(search.names), words: CITY_WORDS }))
+      .map(({ topic, ...r }) => r);
+    const strong = SOURCE_AUTO_ADD_MIN > 0 ? results.filter((r) => r.kind === 'announcements' && r.event_like >= SOURCE_AUTO_ADD_MIN) : [];
+    const added = await store.addFoundSources(search.city_id, strong.map((r) => r.channel));
+    await store.finishSourceSearch(search.id, { results });
+    console.log(`поиск источников ${search.city_id}: найдено ${results.length}, в источники — ${added.map((c) => `@${c}`).join(', ') || 'никого'}`);
+  } catch (e) {
+    await store.finishSourceSearch(search.id, { error: e.message });
+    throw e;
+  }
+}
 
 async function pollChannel({ channel, host_username, city_id, city, timezone }, known, trusted) {
   const extract = extractFor({ city, timezone });
@@ -290,6 +323,7 @@ do {
     await pollChannel(source, known, trusted).catch((e) => console.error(`${source.channel}: ${e.message}`));
     await sleep(2000); // не частим с запросами к Telegram
   }
+  await sourceSearch().catch((e) => console.error(`поиск источников: ${e.message}`));
   const chats = await store.chats();
   const searches = chats.some((c) => c.leads) ? await activeSearches().catch((e) => (console.error(`запросы организаторов: ${e.message}`), [])) : [];
   // Вопросы уходят в API: без его адреса из чатов берём только вакансии.

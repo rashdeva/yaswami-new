@@ -232,3 +232,37 @@ test('сборщик: темы из базы, кандидаты из меток
   assert.equal((await store.topics()).at(-1).name, 'ракеточный спорт');
   await sql`delete from topics where origin <> 'built_in'`;
 });
+
+test('сборщик: поиск источников — очередь городов, итог, найденные каналы в источниках', async () => {
+  await sql`delete from source_searches`;
+  await sql`delete from sources`;
+  assert.ok((await store.cities()).find((c: any) => c.id === 'danang').aliases.includes('Danang'), 'у Дананга другие написания — из миграции');
+  await store.queueSourceSearches(30);
+  await store.queueSourceSearches(30); // свежий поиск уже есть — второй не ставим
+  const cities = (await store.cities()).length; // другие тесты заводят свои города: по поиску на каждый
+  assert.equal((await sql`select count(*)::int n from source_searches`)[0]!.n, cities);
+  await sql`delete from source_searches where city_id <> 'danang'`;
+
+  const search = await store.takeSourceSearch();
+  assert.equal(search.city_id, 'danang');
+  assert.equal(search.names[0], 'Дананг');
+  assert.equal(await store.takeSourceSearch(), null, 'идущий второй раз не берётся');
+  await store.requeueSourceSearches(); // перезапуск сборщика посреди поиска
+  assert.equal((await store.takeSourceSearch()).id, search.id);
+
+  await store.addSources(['Danang_Yoga']);
+  await sql`update sources set enabled = false`;
+  assert.deepEqual(await store.addFoundSources('danang', ['danang_yoga', 'danang_tennis']), ['danang_tennis'], 'выключенный командой не возвращается');
+  assert.deepEqual(await store.addFoundSources('danang', []), []);
+  const results = [{ channel: 'danang_tennis', title: 'Теннис', group: false, members: 10, posts_30d: 8, event_like: 4, kind: 'announcements' }];
+  await store.finishSourceSearch(search.id, { results });
+  const [done] = await sql`select status, results, finished_at from source_searches`;
+  assert.deepEqual([done!.status, done!.results, Boolean(done!.finished_at)], ['done', results, true]);
+
+  await sql`update source_searches set created_at = now() - interval '31 days'`;
+  await store.queueSourceSearches(30); // месяц прошёл — ищем снова
+  await sql`delete from source_searches where city_id <> 'danang'`;
+  const again = await store.takeSourceSearch();
+  await store.finishSourceSearch(again.id, { error: 'FLOOD_WAIT' });
+  assert.deepEqual((await sql`select status, error from source_searches where id = ${again.id}`).map((r) => [r.status, r.error]), [['failed', 'FLOOD_WAIT']]);
+});

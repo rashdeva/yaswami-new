@@ -10,11 +10,11 @@ export function cityMatcher(names) {
   return new RegExp(stems.join('|'), 'i');
 }
 
-/** Город разовых скриптов: CITY_ID (по умолчанию первый) и другие его написания из CITY_ALIASES через запятую. */
+/** Город разовых скриптов: CITY_ID (по умолчанию первый), его другие написания из базы и из CITY_ALIASES через запятую. */
 export async function scoutCity(store, { CITY_ID = DEFAULT_CITY_ID, CITY_ALIASES = '' } = process.env) {
   const city = (await store.cities()).find((c) => c.id === CITY_ID);
   if (!city) throw new Error(`Города ${CITY_ID} нет в таблице cities`);
-  const names = [city.name, ...CITY_ALIASES.split(',').map((a) => a.trim()).filter(Boolean)];
+  const names = [...new Set([city.name, ...city.aliases, ...CITY_ALIASES.split(',').map((a) => a.trim()).filter(Boolean)])];
   return { ...city, names, local: cityMatcher(names) };
 }
 

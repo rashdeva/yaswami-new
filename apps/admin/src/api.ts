@@ -2,7 +2,7 @@
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
   AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource, AdminTopic, TopicCandidate, TopicCreateInput, TopicUpdateInput,
-  AdminUser, AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, AdminJobList, AdminJobListInput, HostUpdateInput, Job, JobUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceUpdateInput,
+  AdminUser, AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, AdminJobList, AdminJobListInput, HostUpdateInput, Job, JobUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceSearch, SourceSearchCreateInput, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
 import { sseEvents } from '@yaswami/core';
@@ -200,4 +200,6 @@ export const api = {
   sources: () => request<Wire<AdminSource>[]>('GET', '/admin/sources'),
   sourceCreate: (input: SourceCreateInput) => request<Wire<AdminSource>>('POST', '/admin/sources', input),
   sourceUpdate: (channel: string, input: SourceUpdateInput) => request<Wire<AdminSource>>('PATCH', `/admin/sources/${id(channel)}`, input),
+  sourceSearches: (city: string) => request<Wire<SourceSearch>[]>('GET', `/admin/source-searches${qs({ city_id: city })}`),
+  sourceSearchCreate: (input: SourceSearchCreateInput) => request<Wire<SourceSearch>>('POST', '/admin/source-searches', input),
 };

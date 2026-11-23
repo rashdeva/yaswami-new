@@ -3,8 +3,8 @@
 import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, SourceCandidate, SourceSearchStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
+import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -66,6 +66,7 @@ export const cities = pgTable('cities', {
   id: text().primaryKey(),
   name: text().notNull(),
   timezone: text().notNull(),
+  aliases: jsonb().$type<string[]>().notNull().default([]),
   created_at: at('created_at').notNull().defaultNow(),
 });
 
@@ -463,6 +464,20 @@ export const sources = pgTable(
   // Username в Telegram не различает регистр: @Tea и @tea — один канал.
   (t) => [uniqueIndex('sources_channel_lower_idx').on(sql`lower(${t.channel})`)],
 );
+
+// Поиск источников для города (SourceSearch в @yaswami/core): команда ставит в очередь, сборщик ищет и пишет results.
+// Пишет сюда API (заявка) и сборщик (ход и итог).
+export const sourceSearches = pgTable('source_searches', {
+  id: uuid().primaryKey().defaultRandom(),
+  city_id: text().notNull().references(() => cities.id),
+  names: jsonb().$type<string[]>().notNull(),
+  status: text({ enum: SOURCE_SEARCH_STATUSES }).$type<SourceSearchStatus>().notNull().default('queued'),
+  error: text(),
+  // Без `added`: его API считает при выдаче, по источникам на тот момент.
+  results: jsonb().$type<Omit<SourceCandidate, 'added'>[]>().notNull().default([]),
+  created_at: at('created_at').notNull().defaultNow(),
+  finished_at: at('finished_at'),
+});
 
 // Номер последней разобранной публикации по каждому источнику сборщика.
 export const collectorCursors = pgTable('collector_cursors', {

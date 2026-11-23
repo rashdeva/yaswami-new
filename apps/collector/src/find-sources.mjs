@@ -5,6 +5,7 @@
 // 2. Инструкторы и организаторы: в живых чатах (SCOUT_CHATS, по умолчанию — чаты города с kind leads) ищет сообщения
 //    по словам темы и собирает из них @username и t.me-ссылки — так находятся те, кого советуют и кто сам себя рекламирует.
 // Источник добавляет человек — в админке («Источники»). Сессия — SCOUT_SESSION, как у scout.mjs.
+// Поиск по названию города (searchChannels) сборщик делает и сам, в фоне: sourceSearch в main.mjs.
 import { setTimeout as sleep } from 'node:timers/promises';
 import telegram from 'telegram';
 import { looksLikeEvent } from '@yaswami/extract';
@@ -15,12 +16,47 @@ import { createStore } from './store.mjs';
 
 export { contactsIn };
 
-const TOPICS = {
+export const TOPICS = {
   футбол: ['футбол', 'football'], мафия: ['мафия', 'mafia'], сёрф: ['серф', 'сёрф', 'surf'],
   теннис: ['теннис', 'tennis', 'падел', 'padel'], баскетбол: ['баскетбол', 'basketball'], волейбол: ['волейбол', 'volleyball'],
   танцы: ['танцы', 'бачата', 'сальса', 'кизомба', 'hip hop', 'dance'], йога: ['йога', 'пилатес', 'yoga', 'pilates'],
   настолки: ['настолки', 'настольные игры', 'board games'], бег: ['бег', 'running'], квиз: ['квиз', 'quiz'],
 };
+/** Каким источником вероятнее всего будет найденный чат: про работу — чат о работе, группа — чат города, канал — анонсы. */
+export const suggestKind = ({ title, username, megagroup }) =>
+  /работ|ваканс|\bjobs?\b|hiring/i.test(`${title} ${username}`) ? 'jobs' : megagroup ? 'leads' : 'announcements';
+
+/**
+ * Каналы и группы города по запросам «<название> <слово>» (`words` — { тема: [слова] }, слово '' — само название):
+ * только те, где в названии или username есть город (`local`). Для каждого — сколько публикаций за 30 дней среди
+ * последних 50 и сколько из них похожи на анонс. Лучшие первыми. Смотрим не больше `limit` чатов.
+ */
+export async function searchChannels(client, { names, local, words, limit = 80 }) {
+  const since = Date.now() / 1000 - 30 * 86400;
+  const found = new Map(); // username → { chat, topic }
+  for (const [topic, list] of Object.entries(words)) {
+    for (const q of list.flatMap((w) => names.map((n) => `${n} ${w}`.trim()))) {
+      const res = await client.invoke(new telegram.Api.contacts.Search({ q, limit: 50 }));
+      for (const c of res.chats) {
+        if (c.username && local.test(`${c.title} ${c.username}`) && !found.has(c.username.toLowerCase())) found.set(c.username.toLowerCase(), { chat: c, topic });
+      }
+      await sleep(3000); // contacts.Search — самый флудоопасный вызов
+    }
+  }
+  const rows = [];
+  for (const { chat, topic } of [...found.values()].slice(0, limit)) {
+    try {
+      const posts = (await client.getMessages(chat, { limit: 50 })).filter((m) => m.date >= since && m.message);
+      rows.push({
+        channel: chat.username, title: chat.title, group: Boolean(chat.megagroup), members: chat.participantsCount ?? null,
+        posts_30d: posts.length, event_like: posts.filter((m) => looksLikeEvent(m.message)).length, kind: suggestKind(chat), topic,
+      });
+    } catch (e) { console.error(`@${chat.username}: ${e.message}`); }
+    await sleep(2000);
+  }
+  return rows.sort((a, b) => b.event_like - a.event_like || b.posts_30d - a.posts_30d);
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { TG_API_ID, TG_API_HASH, SCOUT_SESSION, DATABASE_URL } = process.env;
   if (!SCOUT_SESSION || !DATABASE_URL) throw new Error('Нужны SCOUT_SESSION (npm run login SCOUT_SESSION) и DATABASE_URL');
@@ -34,34 +70,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   const client = connect({ apiId: TG_API_ID, apiHash: TG_API_HASH, session: SCOUT_SESSION });
   await client.connect();
-  const since = Date.now() / 1000 - 30 * 86400;
   const since90 = Date.now() / 1000 - 90 * 86400;
 
   // 1. Каналы и группы по темам.
-  const found = new Map(); // username → { chat, topic }
-  for (const [topic, words] of Object.entries(topics)) {
-    for (const q of words.flatMap((w) => city.names.map((n) => `${n} ${w}`))) {
-      const res = await client.invoke(new telegram.Api.contacts.Search({ q, limit: 50 }));
-      for (const c of res.chats) {
-        if (c.username && city.local.test(`${c.title} ${c.username}`) && !found.has(c.username.toLowerCase())) found.set(c.username.toLowerCase(), { chat: c, topic });
-      }
-      await sleep(3000); // contacts.Search — самый флудоопасный вызов
-    }
-  }
-  console.log(`каналов и групп по темам: ${found.size}`);
-  const rows = [];
-  for (const { chat, topic } of found.values()) {
-    try {
-      const posts = (await client.getMessages(chat, { limit: 50 })).filter((m) => m.date >= since && m.message);
-      rows.push({
-        chat: `@${chat.username}`, topic, kind: chat.megagroup ? 'группа' : 'канал', title: chat.title.slice(0, 35),
-        members: chat.participantsCount ?? null, posts_30d: posts.length, event_like: posts.filter((m) => looksLikeEvent(m.message)).length,
-        source: known.get(chat.username.toLowerCase()) ?? '',
-      });
-    } catch (e) { console.error(`@${chat.username}: ${e.message}`); }
-    await sleep(2000);
-  }
-  console.table(rows.sort((a, b) => b.event_like - a.event_like || b.posts_30d - a.posts_30d));
+  const rows = await searchChannels(client, { names: city.names, local: city.local, words: topics, limit: Infinity });
+  console.log(`каналов и групп по темам: ${rows.length}`);
+  console.table(rows.map((r) => ({
+    chat: `@${r.channel}`, topic: r.topic, kind: r.group ? 'группа' : 'канал', title: r.title.slice(0, 35),
+    members: r.members, posts_30d: r.posts_30d, event_like: r.event_like, source: known.get(r.channel.toLowerCase()) ?? '',
+  })));
 
   // 2. Кого упоминают рядом со словами темы в живых чатах.
   const mentions = new Map(); // username → { count, topics, sample }

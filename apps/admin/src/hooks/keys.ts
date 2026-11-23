@@ -25,6 +25,7 @@ export const keys = {
   actions: (filter: Omit<AdminActionListInput, 'pagination_cursor'>) => ['actions', filter],
   action: (id: string) => ['action', id],
   sources: ['sources'],
+  sourceSearches: (city: string) => ['source-searches', city],
   topics: ['topics'],
   topicCandidates: ['topics', 'candidates'],
   cities: ['cities'],
