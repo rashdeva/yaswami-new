@@ -152,7 +152,8 @@ async function activeSearches() {
 async function pollLeads(chat, leads_too, searches) {
   const key = `lead:${chat}`; // отметка в той же таблице, что у каналов с анонсами; у чатов о работе ключ того же вида
   const { last, read, leads, offers, candidates, jobs } = await fetchLeads(userbot, chat, cursors[key] ?? 0, { leads: leads_too, searches });
-  for (const lead of leads) await toApi('lead', lead);
+  // Из чата о работе сюда приходят только те, кто сам ищет работу; без адреса API отправлять некуда.
+  if (env.API_URL && env.COLLECTOR_SECRET) for (const lead of leads) await toApi('lead', lead);
   // Кандидатов в Находки проверяет ИИ: ключевые слова ловят и тех, кто сам предлагает услугу.
   // ponytail: каждый кандидат — запрос к ИИ; если слова Запроса окажутся слишком общими, ограничить число за проход.
   let found = 0;

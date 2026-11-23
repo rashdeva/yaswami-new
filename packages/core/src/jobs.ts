@@ -34,6 +34,7 @@ export const jobContactUrl = (username: string, title: string) =>
 /** Вакансия для гостя: без исходного сообщения и автора; контакт — готовой ссылкой. */
 export interface JobItem extends Pick<Job, 'id' | 'city_id' | 'title' | 'employer' | 'description' | 'pay' | 'posted_at'> {
   contact_url: string; // jobContactUrl
+  url: string; // страница вакансии в Ясвами: её даём человеку, которому вакансию предложили
 }
 
 const pagination = {

@@ -289,6 +289,12 @@ console.log('cover ok');
   assert.deepEqual(pickLeads('danang_chat', [{ id: 4, date: at(2 * 24 * 60), message: 'Куда сходить вечером?', sender: user }], now, 7 * 86_400_000).map((l) => l.message_id), [4]);
   assert.equal(signalOf('Только приехала, хочу познакомиться'), 'newcomer');
   assert.equal(signalOf('Ищу партнёра по бизнесу'), null, 'не досуг');
+  assert.equal(signalOf('Посоветуйте хорошего массажиста в Дананге'), 'service');
+  assert.equal(signalOf('Ищу тренера по теннису для ребёнка'), 'service');
+  assert.equal(signalOf('Ищу работу поваром, опыт 5 лет. ' + 'Работал в ресторанах и отелях. '.repeat(30)), 'job', 'резюме бывает длинным');
+  assert.equal(signalOf('Ищем тренера в нашу студию, график работы 5/2, зарплата от 15 млн, пишите в личку резюме'), null, 'вакансия — не просьба об услуге');
+  assert.equal(signalOf('Массаж спины, провожу индивидуально, запись в лс'), null, 'мастер предлагает, а не ищет');
+  assert.equal(signalOf('Ищу няню для ребёнка 3 лет'), null, 'наём — не услуга из каталога');
   console.log('leads ok');
 }
 
@@ -419,6 +425,13 @@ console.log('cover ok');
   assert.deepEqual([onlyJobs.leads, onlyJobs.offers, onlyJobs.candidates, onlyJobs.jobs.length], [[], [], [], 2]);
   const all = pickFromChat('danang_chat', messages, { searches });
   assert.deepEqual([all.leads.length, all.offers.length, all.candidates.length, all.jobs.length], [1, 1, 1, 2]);
+  // Тот, кто сам ищет работу, уходит охотнику и из чата о работе; просьба об услуге — только из LEAD_CHATS.
+  const seekers = [
+    { id: 7, date: now, message: 'Ищу работу поваром в Дананге, опыт 5 лет, готов выйти сразу', sender: user(9, 'cook') },
+    { id: 8, date: now, message: 'Посоветуйте хорошего массажиста в Дананге', sender: user(10, 'u10') },
+  ];
+  assert.deepEqual(pickFromChat('danang_rabota', seekers, { leads: false }).leads.map((l) => [l.message_id, l.signal]), [[7, 'job']]);
+  assert.deepEqual(pickFromChat('danang_chat', seekers).leads.map((l) => [l.message_id, l.signal]), [[7, 'job'], [8, 'service']]);
 
   const rows = [];
   const touched = [];

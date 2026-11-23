@@ -1339,6 +1339,25 @@ test('охотник: старое сообщение из чата — черн
     assert.deepEqual(feed.conversations.map((c) => [c.channel, c.peer_id, c.attention]), [['account', 600, 'Черновик в личку']]);
     const draft = feed.messages.find((m) => m.status === 'draft')!;
     assert.deepEqual(draft.meta, { reason: 'Писал в чате DaNang_girls 3 дн. назад', source_url: 'https://t.me/DaNang_girls/9' }); // без reply_to — уйдёт в личку
+
+    // Тот, кто ищет работу, — всегда в личку, даже если написал только что; у черновика видно, что это про вакансию.
+    await db.execute(sql`truncate conversations cascade`);
+    await recordLead(db, {
+      chat: 'danang_rabota', message_id: 10, url: 'https://t.me/danang_rabota/10', author: { id: 601, name: 'Артём', username: 'artem_cook' },
+      text: 'Ищу работу поваром, опыт 6 лет', context: [], sent_at: new Date().toISOString(), signal: 'job',
+    });
+    assert.match(asked, /^Личное сообщение\.[\s\S]*Ищет работу \(Артём\):\nИщу работу поваром/);
+    const jobFeed = (await (await call(tma(70, 'Админ'), 'GET', '/admin/inbox')).json()) as InboxFeed;
+    assert.deepEqual(jobFeed.messages.find((m) => m.status === 'draft')!.meta, { reason: 'Вакансия. Писал в чате danang_rabota сегодня', source_url: 'https://t.me/danang_rabota/10' });
+    // Просьба об услуге, свежая — ответ в чат, с пометкой «Услуга».
+    await db.execute(sql`truncate conversations cascade`);
+    await recordLead(db, {
+      chat: 'danang_chat', message_id: 11, url: 'https://t.me/danang_chat/11', author: { id: 602, name: 'Оля', username: null },
+      text: 'Посоветуйте массажиста', context: [], sent_at: new Date().toISOString(), signal: 'service',
+    });
+    assert.match(asked, /^Чат: danang_chat[\s\S]*Ищет мастера или услугу \(Оля\):/);
+    const serviceFeed = (await (await call(tma(70, 'Админ'), 'GET', '/admin/inbox')).json()) as InboxFeed;
+    assert.equal(serviceFeed.messages.find((m) => m.status === 'draft')!.meta?.reason, 'Услуга. Вопрос в чате danang_chat');
   } finally {
     hunter.ask = ask;
     settings.hunterUrl = '';
@@ -1704,8 +1723,9 @@ test('вакансии: гость видит одобренные и свежи
   // Без входа: только одобренные, свежие, своего города; свежие сверху. Контакт — ссылкой, исходного сообщения нет.
   const all = await list();
   assert.deepEqual([titles(all.entries), all.has_more, all.next_cursor], [['Официант в кафе', 'Бариста'], false, null]);
-  assert.deepEqual(Object.keys(all.entries[0]!).sort(), ['city_id', 'contact_url', 'description', 'employer', 'id', 'pay', 'posted_at', 'title']);
+  assert.deepEqual(Object.keys(all.entries[0]!).sort(), ['city_id', 'contact_url', 'description', 'employer', 'id', 'pay', 'posted_at', 'title', 'url']);
   assert.ok(all.entries[0]!.contact_url.startsWith('https://t.me/lotus_hr?text='));
+  assert.ok(all.entries[0]!.url.endsWith('/jobs/' + all.entries[0]!.id)); // страница вакансии: её даёт человеку охотник
   assert.deepEqual(titles((await list('?city_id=nhatrang')).entries), ['Официант в Нячанге']);
   // Страницы: курсор ведёт дальше; кривой курсор — ошибка входа.
   const first = await list('?pagination_limit=1');
