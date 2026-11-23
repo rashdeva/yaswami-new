@@ -1,4 +1,5 @@
 // «Лента»: сверху диалоги, которые ждут нас, под ними — очередь модерации, ниже — живой поток всех сообщений; переписка выезжает сбоку.
+import { CheckIcon, EyeOffIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Draft } from '@/components/Draft';
 import { ModerationQueue } from '@/components/ModerationQueue';
@@ -7,8 +8,10 @@ import { Thread } from '@/components/Thread';
 import { Hint, Page } from '@/components/Page';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@/components/ui/item';
+import { Kbd } from '@/components/ui/kbd';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { isFresh, useConversationActions, useFeed, useSendFrom, useThread } from '@/hooks/useInbox';
@@ -22,7 +25,7 @@ export function FeedScreen() {
   const [selected, setSelected] = useState(''); // ключ строки: c:<диалог> или m:<сообщение>
   const [drawer, setDrawer] = useState(false);
   const [edited, setEdited] = useState<Record<string, string>>({}); // наши правки черновиков: id сообщения → текст
-  const { send, sendDraft, saveDraft, rejectDraft } = useConversationActions();
+  const { send, sendDraft, saveDraft, rejectDraft, done, toggleHidden } = useConversationActions();
 
   const pinned = feed.conversations.filter((c) => c.attention);
   const events = eventsOf(feed);
@@ -67,6 +70,11 @@ export function FeedScreen() {
                   onSend={() => sendDraft({ id: pending.id, text: edited[pending.id], account_id: from(c).account })} onReject={() => rejectDraft(pending.id)} from={from(c)}
                 />
               ) : <Reply from={from(c)} onSend={(text, sent) => send({ id: c.id, text, account_id: from(c).account }, { onSuccess: sent })} />}
+              {/* Отвечать не нужно: «Готово» снимает ожидание, «Скрыть» убирает диалог до нового сообщения человека. */}
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => done(c)}><CheckIcon />Готово <Kbd className="hidden xl:inline-flex">D</Kbd></Button>
+                <Button size="sm" variant="ghost" onClick={() => toggleHidden(c)}><EyeOffIcon />Скрыть <Kbd className="hidden xl:inline-flex">H</Kbd></Button>
+              </div>
             </CardContent>
           </Card>
         );
