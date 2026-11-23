@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import type { SearchEntry } from '@yaswami/core';
 import { collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { EventRow } from '../components/EventRow.tsx';
@@ -7,13 +6,14 @@ import { GuestRow } from '../components/GuestRow.tsx';
 import { PracticeRow } from '../components/PracticeRow.tsx';
 import { dayLabel } from '../format.ts';
 import { usePracticeSignup } from '../hooks/useHosts.ts';
+import type { ShownEntry } from '../hooks/useSearch.ts';
 import { useSearch } from '../hooks/useSearch.ts';
 import { useViewed } from '../hooks/useViewed.ts';
 
 interface Props {
   query: string;
   onQuery: (query: string) => void;
-  onOpen: (entry: SearchEntry) => void;
+  onOpen: (entry: ShownEntry) => void;
 }
 
 /** Единый поиск: события и услуги мастеров одним списком, самое подходящее первым. Открыт без входа. */
@@ -22,7 +22,7 @@ export function SearchScreen({ query, onQuery, onOpen }: Props) {
   const signUp = usePracticeSignup();
   useViewed('search_viewed');
   useEffect(() => { document.title = 'Поиск — Я с вами'; }, []);
-  const open = (entry: SearchEntry) => {
+  const open = (entry: ShownEntry) => {
     track('search_result_opened', { type: entry.type });
     onOpen(entry);
   };

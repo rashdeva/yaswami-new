@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, RsvpInput, SearchResult, VisitInput, Wire } from '@yaswami/core';
+import type { AppConfig, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, JobItem, JobList, JobListInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, RsvpInput, SearchResult, VisitInput, Wire } from '@yaswami/core';
 import { track } from './analytics.ts';
 import { inTelegram, tg } from './tg.ts';
 
@@ -68,6 +68,9 @@ export const api = {
   listHosts: () => request<HostListItem[]>('GET', '/hosts'),
   getHost: (id: string) => request<HostItem>('GET', `/hosts/${encodeURIComponent(id)}`),
   search: (query: string) => request<SearchResult>('GET', `/search?query=${encodeURIComponent(query)}`),
+  listJobs: ({ city_id, pagination_cursor, pagination_limit }: JobListInput = {}) =>
+    request<Wire<JobList>>('GET', `/jobs?${new URLSearchParams(Object.entries({ city_id, pagination_cursor, pagination_limit }).flatMap(([k, v]) => (v === undefined ? [] : [[k, String(v)]])))}`),
+  getJob: (id: string) => request<Wire<JobItem>>('GET', `/jobs/${encodeURIComponent(id)}`),
   signUpForPractice: (id: string, practice_id: string) => request<PracticeSignup>('POST', `/hosts/${encodeURIComponent(id)}/practices/signup`, { practice_id }, true),
   claim: (id: string) => request<EventData>('POST', `/collected-events/${encodeURIComponent(id)}/claim`),
   signUp: (id: string) => request<CollectedEventItem>('POST', `/collected-events/${encodeURIComponent(id)}/signup`, undefined, true),
