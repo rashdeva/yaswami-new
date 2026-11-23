@@ -15,9 +15,8 @@ export const keys = {
   allHosts: ['hosts'],
   hosts: (city: string) => ['hosts', city],
   host: (id: string) => ['host', id],
-  /** Вакансии: список страницами, «есть ли хоть одна» для входа в раздел и карточка. */
+  /** Вакансии: список страницами и карточка. */
   jobs: (city: string) => ['jobs', city],
-  jobsExist: (city: string) => ['jobs-exist', city],
   job: (id: string) => ['job', id],
   /** Единый поиск по каталогу. */
   search: (query: string, city: string) => ['search', city, query],

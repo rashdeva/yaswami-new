@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "muted_notifications" jsonb DEFAULT '[]'::jsonb NOT NULL;

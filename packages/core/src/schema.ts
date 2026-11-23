@@ -33,6 +33,19 @@ export const Feature = z.enum([
 ]);
 export type Feature = z.infer<typeof Feature>;
 
+/**
+ * Уведомления бота, которые человек может выключить у себя в профиле. В Luma такого нет: там `suppress_notifications` —
+ * флаг одной операции, а не настройка человека. Новое уведомление добавляется сюда и приходит всем, пока его не выключат.
+ */
+export const Notification = z.enum([
+  'topic_digest', // сводка новых событий по его темам
+  'rsvp_confirmed', // гостю: он записан
+  'guest_registered', // организатору: новый гость
+  'feedback_request', // гостю после события: как прошло
+  'feedback_received', // организатору: сводка отзывов
+]);
+export type Notification = z.infer<typeof Notification>;
+
 export const User = z.object({
   id: z.number().int(), // id в Telegram; отрицательный — вошёл не через Telegram (ADR-0007)
   first_name: z.string().min(1),
@@ -41,6 +54,7 @@ export const User = z.object({
   timezone: z.string(),
   features: z.array(Feature), // включённое лично этому человеку; в Luma такого нет
   city_id: z.string(), // город человека: его витрину открывает приложение; в Luma такого нет
+  muted_notifications: z.array(Notification), // уведомления, которые он выключил; в Luma такого нет
 });
 export type User = z.infer<typeof User>;
 

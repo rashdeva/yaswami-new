@@ -7,7 +7,7 @@ import { collectedBadges, collectedDayKey, collectedPath, collectedTime, topicIc
 import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
 import { useTopicSubscription } from '../hooks/useTopicSubscription.ts';
 import { useTopics } from '../hooks/useTopics.ts';
-import { CityPicker } from '../components/CityPicker.tsx';
+import { ProfileButton } from '../components/Avatar.tsx';
 import { EventRow } from '../components/EventRow.tsx';
 import { dayLabel } from '../format.ts';
 
@@ -31,7 +31,6 @@ export function FeedScreen({ city, lead, onOpen }: Props) {
   };
   useViewed('feed_viewed');
   const subscription = useTopicSubscription();
-  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     document.title = `События в городе ${city} — Я с вами`;
@@ -52,12 +51,10 @@ export function FeedScreen({ city, lead, onOpen }: Props) {
   return (
     <>
       <div className="top">
+        <ProfileButton />
         <div className="head">
           <h1>События</h1>
-          <CityPicker />
-          {subscription.topics && !editing && (
-            <button className="chip" onClick={() => setEditing(true)}>🔔 {subscription.topics.length ? `Мои темы: ${subscription.topics.length}` : 'Сообщать о новом'}</button>
-          )}
+          <p>📍 {city}</p>
         </div>
       </div>
       {(topics.length > 1 || items?.some((e) => e.popular)) && (
@@ -73,16 +70,13 @@ export function FeedScreen({ city, lead, onOpen }: Props) {
           ))}
         </div>
       )}
-      {(subscription.topics === null || (editing && subscription.topics)) && (
+      {/* Первый раз спрашиваем сами; дальше темы меняются в профиле. */}
+      {subscription.topics === null && (
         <TopicPicker
-          key={String(editing)}
           all={allTopics}
-          initial={subscription.topics ?? []}
-          asked={subscription.topics !== null}
           saving={subscription.saving}
           error={subscription.failed?.message}
-          onSave={(topics) => subscription.save(topics).then(() => setEditing(false), () => {})}
-          onCancel={() => setEditing(false)}
+          onSave={(topics) => void subscription.save(topics).catch(() => {})}
         />
       )}
       {lead}
@@ -119,23 +113,19 @@ export function FeedScreen({ city, lead, onOpen }: Props) {
 
 interface PickerProps {
   all: string[];
-  initial: string[];
-  /** Человек уже отвечал: это правка, а не первый вопрос. */
-  asked: boolean;
   saving: boolean;
   error?: string;
   onSave: (topics: string[]) => void;
-  onCancel: () => void;
 }
 
-/** «Что вам интересно?» — выбор тем подписки. Первый раз показывается сам; отказ тоже ответ, второй раз не спрашиваем. */
-function TopicPicker({ all, initial, asked, saving, error, onSave, onCancel }: PickerProps) {
-  const [picked, setPicked] = useState(initial);
+/** «Что вам интересно?» — первый вопрос о темах подписки. Отказ тоже ответ: второй раз не спрашиваем, темы — в профиле. */
+function TopicPicker({ all, saving, error, onSave }: PickerProps) {
+  const [picked, setPicked] = useState<string[]>([]);
   const toggle = (t: string) => setPicked((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
   return (
     <section className="topics-ask">
       <h2>Что вам интересно?</h2>
-      <p className="note lead">Отметьте темы — бот напишет в Telegram, когда по ним появятся новые события. Не чаще раза в день.</p>
+      <p className="note lead">Отметьте темы — бот напишет в Telegram, когда по ним появятся новые события. Не чаще раза в день. Поменять — в профиле.</p>
       <div className="chips">
         {all.map((t) => (
           <button key={t} className="chip" aria-pressed={picked.includes(t)} onClick={() => toggle(t)}>
@@ -145,8 +135,8 @@ function TopicPicker({ all, initial, asked, saving, error, onSave, onCancel }: P
       </div>
       {error && <p className="note" role="alert">{error}</p>}
       <div className="cta-row">
-        <button className="cta" disabled={saving || (!asked && !picked.length)} onClick={() => onSave(picked)}>{saving ? 'Сохраняем…' : asked && !picked.length ? 'Не сообщать' : 'Сообщать о новом'}</button>
-        <button className="cta alt" disabled={saving} onClick={() => (asked ? onCancel() : onSave([]))}>{asked ? 'Отмена' : 'Не сейчас'}</button>
+        <button className="cta" disabled={saving || !picked.length} onClick={() => onSave(picked)}>{saving ? 'Сохраняем…' : 'Сообщать о новом'}</button>
+        <button className="cta alt" disabled={saving} onClick={() => onSave([])}>Не сейчас</button>
       </div>
     </section>
   );

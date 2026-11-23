@@ -802,18 +802,18 @@ export async function me(db: Db, actor: User): Promise<Me> {
     claimable: claimable.map(toCollectedItem),
     host_id: (await db.select({ id: hosts.id }).from(hosts).where(eq(hosts.user_id, actor.id)))[0]?.id ?? null,
     subscribed_topics: (await db.select({ topics: subscriptions.topics }).from(subscriptions).where(eq(subscriptions.user_id, actor.id)))[0]?.topics ?? null,
-    city_id: (await cityOf(db, actor.id)).id,
+    ...(await db.select({ city_id: users.city_id, muted_notifications: users.muted_notifications }).from(users).where(eq(users.id, actor.id)))[0]!,
   };
 }
 
 /**
- * Правка своих настроек: Подписка на темы и город; меняется только переданное. Список тем заменяет прежний; [] — отписка,
+ * Правка своих настроек: Подписка на темы, город и выключенные уведомления; меняется только переданное. Список тем заменяет прежний; [] — отписка,
  * строка остаётся как «уже спрашивали». `notified_at` ставится только при первой записи: сводка расскажет о событиях, вышедших после неё.
  */
-export async function updateSelf(db: Db, actor: User, { subscribed_topics: topics, city_id }: UserSelfUpdateInput): Promise<Me> {
+export async function updateSelf(db: Db, actor: User, { subscribed_topics: topics, city_id, muted_notifications }: UserSelfUpdateInput): Promise<Me> {
   await db.transaction(async (tx) => {
     await assertCity(tx, city_id);
-    if (city_id) await tx.update(users).set({ city_id }).where(eq(users.id, actor.id));
+    if (city_id || muted_notifications) await tx.update(users).set({ city_id, muted_notifications }).where(eq(users.id, actor.id));
     if (topics) await tx.insert(subscriptions).values({ user_id: actor.id, topics }).onConflictDoUpdate({ target: subscriptions.user_id, set: { topics } });
   });
   return me(db, actor);

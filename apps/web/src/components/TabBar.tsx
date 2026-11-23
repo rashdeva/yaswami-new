@@ -1,6 +1,6 @@
 import { haptic } from '../tg.ts';
 
-export type Tab = 'feed' | 'hosts' | 'mine';
+export type Tab = 'feed' | 'hosts' | 'jobs';
 
 const ICONS: Record<Tab, React.ReactNode> = {
   feed: (
@@ -18,16 +18,17 @@ const ICONS: Record<Tab, React.ReactNode> = {
       <path d="M16.5 14.6c2.6.1 4.5 1.8 5 4.9" />
     </>
   ),
-  mine: (
+  jobs: (
     <>
-      <path d="M12 20.5s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.9c0 5.6-7.5 10-7.5 10Z" />
+      <rect x="3" y="7.5" width="18" height="12.5" rx="3" />
+      <path d="M8.5 7.5V6a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1.5M3 13h18" />
     </>
   ),
 };
-const LABELS: Record<Tab, string> = { feed: 'События', hosts: 'Услуги', mine: 'Мои' };
+const LABELS: Record<Tab, string> = { feed: 'События', hosts: 'Услуги', jobs: 'Вакансии' };
 
 /**
- * Нижний таббар, как в iOS. `tabs` — вкладка и куда она ведёт; «Мои» передают, только когда человек вошёл или может войти.
+ * Нижний таббар, как в iOS. `tabs` — вкладка и куда она ведёт.
  * Подложка активной вкладки переезжает пружиной; смена вкладки — лёгкий хаптик, нажатие на открытую — наверх страницы.
  * Справа отдельной круглой кнопкой — поиск, как в iOS; `searching` — он открыт, ни одна вкладка не активна.
  */
