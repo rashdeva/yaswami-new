@@ -4,6 +4,7 @@ import { ADMIN_ENTITIES } from '@yaswami/core';
 import { ActionLink, EntityLink } from '@/components/EntityLink';
 import { ActionState, Actor, UndoButton, when } from '@/components/History';
 import { Failed, Loading, LoadMore, Nothing, Page } from '@/components/Page';
+import { ActionsCell, ActionsHead } from '@/components/RowActions';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -56,7 +57,7 @@ export function ActionsScreen({ filter, onFilter }: { filter: ActionsFilter; onF
       {!!entries?.length && (
         <Table>
           <TableHeader>
-            <TableRow><TableHead>Когда</TableHead><TableHead>Кто</TableHead><TableHead>Что сделано</TableHead><TableHead>Над чем</TableHead><TableHead /><TableHead /></TableRow>
+            <TableRow><TableHead>Когда</TableHead><TableHead>Кто</TableHead><TableHead>Что сделано</TableHead><TableHead>Над чем</TableHead><TableHead /><ActionsHead /></TableRow>
           </TableHeader>
           <TableBody>
             {entries.map((a) => (
@@ -68,7 +69,7 @@ export function ActionsScreen({ filter, onFilter }: { filter: ActionsFilter; onF
                   {ENTITIES[a.entity]}: <EntityLink entity={a.entity} id={a.entity_id}>{a.entity_id}</EntityLink>
                 </TableCell>
                 <TableCell><ActionState a={a} /></TableCell>
-                <TableCell className="text-right"><UndoButton a={a} size="xs" /></TableCell>
+                <ActionsCell><UndoButton a={a} size="xs" /></ActionsCell>
               </TableRow>
             ))}
           </TableBody>

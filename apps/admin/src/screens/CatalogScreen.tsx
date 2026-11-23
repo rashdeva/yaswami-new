@@ -7,6 +7,7 @@ import { Cover } from '@/components/Cover';
 import { CityBadge } from '@/components/City';
 import { EntityLink, ExternalLink } from '@/components/EntityLink';
 import { Failed, Loading, Nothing, Page } from '@/components/Page';
+import { ActionsCell, ActionsHead } from '@/components/RowActions';
 import { Search } from '@/components/Search';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -76,7 +77,7 @@ export function CatalogScreen({ status, query, onFilter, onKind }: Props) {
           {!!list?.length && (
             <Table>
               <TableHeader>
-                <TableRow><TableHead className="w-12" /><TableHead>Событие</TableHead><TableHead>Когда</TableHead><TableHead>Источник</TableHead><TableHead>Статус</TableHead><TableHead /></TableRow>
+                <TableRow><TableHead className="w-12" /><TableHead>Событие</TableHead><TableHead>Когда</TableHead><TableHead>Источник</TableHead><TableHead>Статус</TableHead><ActionsHead /></TableRow>
               </TableHeader>
               <TableBody>
                 {list.map((e) => (
@@ -93,14 +94,14 @@ export function CatalogScreen({ status, query, onFilter, onKind }: Props) {
                     <TableCell>{collectedWhen(e.starts_at)}</TableCell>
                     <TableCell><ExternalLink href={e.source_url}>{e.channel}</ExternalLink> <CityBadge id={e.city_id} /></TableCell>
                     <TableCell><Badge variant={e.status === 'pending' ? 'default' : e.status === 'rejected' ? 'outline' : 'secondary'}>{COLLECTED_LABELS[e.status]}</Badge></TableCell>
-                    <TableCell>
-                      <ButtonGroup className="justify-end">
+                    <ActionsCell>
+                      <ButtonGroup>
                       {(e.status === 'pending' || e.status === 'rejected') && <Button size="xs" onClick={() => update({ id: e.id, input: { status: 'approved' } })}>Одобрить</Button>}
                       {e.status !== 'rejected' && (
                         <Button size="xs" variant="outline" onClick={() => update({ id: e.id, input: { status: 'rejected' } })}>{e.status === 'pending' ? 'Отклонить' : 'Снять'}</Button>
                       )}
                       </ButtonGroup>
-                    </TableCell>
+                    </ActionsCell>
                   </TableRow>
                 ))}
               </TableBody>

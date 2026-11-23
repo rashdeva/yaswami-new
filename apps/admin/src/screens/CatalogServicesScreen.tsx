@@ -4,6 +4,7 @@ import type { PracticeStatus } from '@yaswami/core';
 import { OTHER_TOPIC, PRACTICE_STATUSES } from '@yaswami/core';
 import { EntityLink, TelegramLink } from '@/components/EntityLink';
 import { Failed, Loading, Nothing, Page } from '@/components/Page';
+import { ActionsCell, ActionsHead } from '@/components/RowActions';
 import { Search } from '@/components/Search';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -69,7 +70,7 @@ export function CatalogServicesScreen({ status, query, onFilter, onKind }: Props
       {list.length > 0 && (
         <Table>
           <TableHeader>
-            <TableRow><TableHead>Услуга</TableHead><TableHead>Мастер</TableHead><TableHead>Цена</TableHead><TableHead>Заявок</TableHead><TableHead>Статус</TableHead><TableHead /></TableRow>
+            <TableRow><TableHead>Услуга</TableHead><TableHead>Мастер</TableHead><TableHead>Цена</TableHead><TableHead>Заявок</TableHead><TableHead>Статус</TableHead><ActionsHead /></TableRow>
           </TableHeader>
           <TableBody>
             {list.map(({ h, p, signups }) => (
@@ -97,14 +98,14 @@ export function CatalogServicesScreen({ status, query, onFilter, onKind }: Props
                   {/* Одобренная, но в приложении не видна: тема не из наших или мастер отклонён целиком. */}
                   {p.status === 'published' && (p.topic === OTHER_TOPIC || h.status === 'rejected') && <> <Badge variant="outline">{h.status === 'rejected' ? 'мастер отклонён' : 'не наша тема'}</Badge></>}
                 </TableCell>
-                <TableCell>
-                  <ButtonGroup className="justify-end">
+                <ActionsCell>
+                  <ButtonGroup>
                     {p.status !== 'published' && <Button size="xs" onClick={() => decide({ host_id: h.id, practice_id: p.id, status: 'published' })}>Одобрить</Button>}
                     {p.status !== 'rejected' && (
                       <Button size="xs" variant="outline" onClick={() => decide({ host_id: h.id, practice_id: p.id, status: 'rejected' })}>{p.status === 'pending' ? 'Отклонить' : 'Снять'}</Button>
                     )}
                   </ButtonGroup>
-                </TableCell>
+                </ActionsCell>
               </TableRow>
             ))}
           </TableBody>

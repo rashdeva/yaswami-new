@@ -11,6 +11,7 @@ import { eventValues, EventFields } from '@/components/EventFields';
 import { AreaField, NumberField, SaveBar, saveDirty, showIssues, SwitchField, TextField } from '@/components/Fields';
 import { History } from '@/components/History';
 import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
+import { ActionsCell, ActionsHead } from '@/components/RowActions';
 import { UserPicker } from '@/components/UserPicker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -107,7 +108,7 @@ function TicketTypes({ types, act }: { types: TicketType[]; act: Actions }) {
   return (
     <Section title="Типы билетов" actions={<TicketTypeDialog act={act}><Button size="sm" variant="outline"><PlusIcon />Добавить</Button></TicketTypeDialog>}>
       <Table>
-        <TableHeader><TableRow><TableHead>Название</TableHead><TableHead>Цена</TableHead><TableHead>Мест</TableHead><TableHead /><TableHead /></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHead>Название</TableHead><TableHead>Цена</TableHead><TableHead>Мест</TableHead><TableHead /><ActionsHead /></TableRow></TableHeader>
         <TableBody>
           {types.map((t) => (
             <TableRow key={t.id}>
@@ -115,12 +116,12 @@ function TicketTypes({ types, act }: { types: TicketType[]; act: Actions }) {
               <TableCell>{t.price_text ?? '—'}</TableCell>
               <TableCell>{t.max_capacity ?? '∞'}</TableCell>
               <TableCell className="max-w-xs truncate text-muted-foreground">{t.description}</TableCell>
-              <TableCell className="text-right">
+              <ActionsCell>
                 <TicketTypeDialog type={t} act={act}><Button size="icon-sm" variant="ghost" aria-label="Изменить"><PencilIcon /></Button></TicketTypeDialog>
                 <Confirm title={`Удалить тип «${t.name}»?`} description={`Гостей с этим типом быть не должно. ${UNDO_HINT}`} onConfirm={() => act.removeTicketType(t.id)}>
                   <Button size="icon-sm" variant="ghost" aria-label="Удалить"><Trash2Icon /></Button>
                 </Confirm>
-              </TableCell>
+              </ActionsCell>
             </TableRow>
           ))}
         </TableBody>
@@ -175,7 +176,7 @@ function Guests({ id, types, allowPlusOne, act }: { id: string; types: TicketTyp
       {data?.length === 0 && <Hint>Никто ещё не ответил.</Hint>}
       {!!data?.length && (
         <Table>
-          <TableHeader><TableRow><TableHead>Гость</TableHead><TableHead>Ответ</TableHead><TableHead>Билет</TableHead><TableHead>+1</TableHead><TableHead>Когда</TableHead><TableHead /></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Гость</TableHead><TableHead>Ответ</TableHead><TableHead>Билет</TableHead><TableHead>+1</TableHead><TableHead>Когда</TableHead><ActionsHead /></TableRow></TableHeader>
           <TableBody>
             {data.map((g) => {
               // Ответ «лист ожидания» ставит система; билет и «+1» меняются вместе с ответом, поэтому у него сначала выберите ответ.
@@ -195,11 +196,11 @@ function Guests({ id, types, allowPlusOne, act }: { id: string; types: TicketTyp
                     />
                   </TableCell>
                   <TableCell className="text-muted-foreground">{new Date(g.registered_at).toLocaleDateString('ru')}</TableCell>
-                  <TableCell className="text-right">
+                  <ActionsCell>
                     <Confirm title={`Убрать ${g.user_first_name} из гостей?`} description={`Ответ и билет гостя пропадут, место освободится. ${UNDO_HINT}`} action="Убрать" onConfirm={() => act.removeGuest(g.user_id)}>
                       <Button size="icon-sm" variant="ghost" aria-label="Убрать"><Trash2Icon /></Button>
                     </Confirm>
-                  </TableCell>
+                  </ActionsCell>
                 </TableRow>
               );
             })}

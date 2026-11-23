@@ -6,6 +6,7 @@ import { CitySelect } from '@/components/City';
 import { EntityLink, ExternalLink } from '@/components/EntityLink';
 import { HostPicker } from '@/components/HostPicker';
 import { Failed, Loading, Nothing, Page } from '@/components/Page';
+import { ActionsCell, ActionsHead } from '@/components/RowActions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,7 +37,7 @@ export function SourcesScreen() {
       {!!sources?.length && (
         <Table>
           <TableHeader>
-            <TableRow><TableHead>Канал</TableHead><TableHead>Город</TableHead><TableHead>Организатор</TableHead><TableHead>Событий</TableHead><TableHead /></TableRow>
+            <TableRow><TableHead>Канал</TableHead><TableHead>Город</TableHead><TableHead>Организатор</TableHead><TableHead>Событий</TableHead><ActionsHead /></TableRow>
           </TableHeader>
           <TableBody>
             {sources.map((s) => (
@@ -50,9 +51,9 @@ export function SourcesScreen() {
                   </div>
                 </TableCell>
                 <TableCell>{s.events_count}</TableCell>
-                <TableCell className="text-right">
-                  <Button size="sm" variant="outline" onClick={() => update({ channel: s.channel, enabled: !s.enabled })}>{s.enabled ? 'Выключить' : 'Включить'}</Button>
-                </TableCell>
+                <ActionsCell>
+                  <Button size="xs" variant="outline" onClick={() => update({ channel: s.channel, enabled: !s.enabled })}>{s.enabled ? 'Выключить' : 'Включить'}</Button>
+                </ActionsCell>
               </TableRow>
             ))}
           </TableBody>

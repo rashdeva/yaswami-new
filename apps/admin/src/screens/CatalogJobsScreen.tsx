@@ -11,6 +11,7 @@ import { ExternalLink, TelegramLink } from '@/components/EntityLink';
 import { AreaField, SelectField, showIssues, TextField } from '@/components/Fields';
 import { when } from '@/components/History';
 import { Failed, Hint, Loading, LoadMore, Nothing, Page } from '@/components/Page';
+import { ActionsCell, ActionsHead } from '@/components/RowActions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -100,7 +101,7 @@ export function CatalogJobsScreen({ status, onStatus, onKind }: Props) {
       {!!entries?.length && (
         <Table>
           <TableHeader>
-            <TableRow><TableHead>Вакансия</TableHead><TableHead>Контакт</TableHead><TableHead>Объявление</TableHead><TableHead>Статус</TableHead><TableHead /></TableRow>
+            <TableRow><TableHead>Вакансия</TableHead><TableHead>Контакт</TableHead><TableHead>Объявление</TableHead><TableHead>Статус</TableHead><ActionsHead /></TableRow>
           </TableHeader>
           <TableBody>
             {entries.map((j) => (
@@ -127,15 +128,15 @@ export function CatalogJobsScreen({ status, onStatus, onKind }: Props) {
                   </div>
                 </TableCell>
                 <TableCell className="align-top"><Badge variant={j.status === 'pending' ? 'default' : j.status === 'rejected' ? 'outline' : 'secondary'}>{JOB_LABELS[j.status]}</Badge></TableCell>
-                <TableCell className="align-top">
-                  <ButtonGroup className="justify-end">
+                <ActionsCell className="align-top">
+                  <ButtonGroup>
                     <JobDialog job={j} update={update} />
                     {j.status !== 'published' && <Button size="xs" onClick={() => update({ id: j.id, input: { status: 'published' } })}>Одобрить</Button>}
                     {j.status !== 'rejected' && (
                       <Button size="xs" variant="outline" onClick={() => update({ id: j.id, input: { status: 'rejected' } })}>{j.status === 'pending' ? 'Отклонить' : 'Снять'}</Button>
                     )}
                   </ButtonGroup>
-                </TableCell>
+                </ActionsCell>
               </TableRow>
             ))}
           </TableBody>
