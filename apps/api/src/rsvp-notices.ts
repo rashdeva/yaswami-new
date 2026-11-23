@@ -45,7 +45,7 @@ export function guestRegistered(db: Db, event: { id: string; user_id: number }, 
       if (!now.event || !now.ids.has(guest.id)) return; // передумал, пока мы ждали
       if (guestSent.size > 10_000) guestSent.clear();
       guestSent.set(key, Date.now());
-      await notify(guest.id, 'rsvp_confirmed', { event: now.event });
+      await notify(db, guest.id, 'rsvp_confirmed', { event: now.event });
     });
   }
 
@@ -62,6 +62,6 @@ export function guestRegistered(db: Db, event: { id: string; user_id: number }, 
     if (!now.event || !stayed.length) return;
     if (hostSent.size > 10_000) hostSent.clear();
     hostSent.set(event.id, sentBefore + 1);
-    await notify(now.event.user_id, 'guest_registered', { event: now.event, guests: stayed, going: now.going });
+    await notify(db, now.event.user_id, 'guest_registered', { event: now.event, guests: stayed, going: now.going });
   });
 }

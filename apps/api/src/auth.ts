@@ -1,11 +1,11 @@
 // Способы войти: initData мини-приложения Telegram и токен доступа — в заголовке (REST и MCP вне Telegram)
 // или в cookie сайта (её ставит вход через Telegram в web-login.ts).
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
-import type { User } from '@yaswami/core';
+import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import type { IdentityProvider as Provider, User } from '@yaswami/core';
 import { dropHostPitch } from './inbox.ts';
 import type { Db } from './db/client.ts';
-import type { IDENTITY_PROVIDERS, TokenScope } from './db/schema.ts';
+import type { TokenScope } from './db/schema.ts';
 import { apiTokens, hosts, userIdentities, users } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
 
@@ -41,38 +41,84 @@ export function verifyInitData(initData: string, botToken: string, now = Date.no
   }
 }
 
-/** Создаёт пользователя при первом входе и обновляет имя при следующих. */
+/**
+ * Вход через Telegram (initData мини-приложения, сайт, приложение, сообщение боту): находит пользователя по способу
+ * входа telegram или заводит нового и обновляет имя и username. id пользователя — не Telegram id (ADR-0008).
+ */
 export async function upsertUser(db: Db, tg: TelegramUser): Promise<User> {
   const profile = { first_name: tg.first_name, username: tg.username ?? null };
-  const [user] = await db
-    .insert(users)
-    .values({ id: tg.id, ...profile, lang: tg.language_code ?? 'ru', timezone: 'UTC' })
-    .onConflictDoUpdate({ target: users.id, set: profile })
-    .returning();
+  const found = await signInWith(db, 'telegram', String(tg.id), { ...profile, lang: tg.language_code ?? 'ru' });
+  const [user] = found.first_name === profile.first_name && found.username === profile.username
+    ? [found]
+    : await db.update(users).set(profile).where(eq(users.id, found.id)).returning();
   // Вошёл организатор, чей профиль уже собран по анонсам: привязываем профиль к нему.
   // ponytail: запрос на каждый вход; если станет заметно — привязывать только при создании пользователя.
   const linked = await db.update(hosts).set({ user_id: user!.id }).where(and(eq(hosts.telegram_id, tg.id), isNull(hosts.user_id))).returning({ id: hosts.id });
   // Организатор вошёл — агент для организаторов своего добился: уговаривать его больше нечего.
   if (linked.length) await dropHostPitch(db, tg.id);
   // Аватар сохраняем в фоне: вход не ждёт загрузки картинки.
-  void saveUserPhoto(db, user!.id);
+  void saveUserPhoto(db, user!.id, tg.id);
   return user!;
 }
 
 /**
- * Вход не через Telegram (способ входа, CONTEXT.md): находит пользователя по способу входа или заводит нового
- * с отрицательным id (ADR-0007). Имя — только при создании: поставщик (Apple) сообщает его один раз.
+ * Любой вход (способ входа, CONTEXT.md): находит пользователя по паре «поставщик, id у поставщика» или заводит нового
+ * с id из последовательности (ADR-0008). Профиль — только при создании: Apple сообщает имя один раз, а Telegram
+ * обновляет его сам (upsertUser).
  */
-export async function signInWith(db: Db, provider: (typeof IDENTITY_PROVIDERS)[number], subject: string, firstName = 'Гость'): Promise<User> {
-  const [known] = await db.select({ user: users }).from(userIdentities).innerJoin(users, eq(users.id, userIdentities.user_id))
-    .where(and(eq(userIdentities.provider, provider), eq(userIdentities.subject, subject)));
-  if (known) return known.user;
-  return db.transaction(async (tx) => {
-    const [user] = await tx.insert(users)
-      .values({ id: sql`nextval('users_local_id_seq')`, first_name: firstName, username: null, lang: 'ru', timezone: 'UTC' }).returning();
-    await tx.insert(userIdentities).values({ provider, subject, user_id: user!.id });
-    return user!;
-  });
+export async function signInWith(
+  db: Db, provider: Provider, subject: string, profile: { first_name?: string; username?: string | null; lang?: string } = {},
+): Promise<User> {
+  const find = async () => (await db.select({ user: users }).from(userIdentities).innerJoin(users, eq(users.id, userIdentities.user_id))
+    .where(and(eq(userIdentities.provider, provider), eq(userIdentities.subject, subject))))[0]?.user;
+  const known = await find();
+  if (known) return known;
+  try {
+    return await db.transaction(async (tx) => {
+      const [user] = await tx.insert(users).values({
+        id: sql`nextval('users_local_id_seq')`, first_name: profile.first_name || 'Гость', username: profile.username ?? null, lang: profile.lang ?? 'ru', timezone: 'UTC',
+      }).returning();
+      await tx.insert(userIdentities).values({ provider, subject, user_id: user!.id });
+      return user!;
+    });
+  } catch (e) {
+    // Два первых входа одновременно (initData на каждый запрос): второй упирается в уникальность способа входа
+    // и берёт пользователя, которого завёл первый.
+    const raced = (e as { cause?: { code?: string }; code?: string }).cause?.code ?? (e as { code?: string }).code;
+    if (raced === '23505') return (await find())!;
+    throw e;
+  }
+}
+
+/** Пользователь, который входил через этот Telegram; null — такой человек у нас не появлялся. */
+export async function userIdByTelegram(db: Db, telegramId: number): Promise<number | null> {
+  const [row] = await db.select({ id: userIdentities.user_id }).from(userIdentities)
+    .where(and(eq(userIdentities.provider, 'telegram'), eq(userIdentities.subject, String(telegramId))));
+  return row?.id ?? null;
+}
+
+/**
+ * Куда писать человеку в Telegram: его Telegram id. null — вошёл без Telegram, бот ему не напишет.
+ * Единственный способ перейти от пользователя к Telegram: users.id — не Telegram id (ADR-0008).
+ */
+export async function telegramIdOf(db: Db, userId: number): Promise<number | null> {
+  return (await telegramIdsOf(db, [userId])).get(userId) ?? null;
+}
+
+/** То же для многих: пользователь → Telegram id; кого нет в ответе — тот без Telegram. */
+export async function telegramIdsOf(db: Db, userIds: number[]): Promise<Map<number, number>> {
+  if (!userIds.length) return new Map();
+  const rows = await db.select({ user_id: userIdentities.user_id, subject: userIdentities.subject }).from(userIdentities)
+    .where(and(eq(userIdentities.provider, 'telegram'), inArray(userIdentities.user_id, userIds)));
+  return new Map(rows.map((r) => [r.user_id, Number(r.subject)]));
+}
+
+/** Обратное: Telegram id → пользователь, у кого он есть. */
+export async function usersByTelegram(db: Db, telegramIds: number[]): Promise<Map<number, number>> {
+  if (!telegramIds.length) return new Map();
+  const rows = await db.select({ user_id: userIdentities.user_id, subject: userIdentities.subject }).from(userIdentities)
+    .where(and(eq(userIdentities.provider, 'telegram'), inArray(userIdentities.subject, telegramIds.map(String))));
+  return new Map(rows.map((r) => [Number(r.subject), r.user_id]));
 }
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');

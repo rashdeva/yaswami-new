@@ -5,7 +5,7 @@ import { deflateSync } from 'node:zlib';
 import type { CollectedEventItem, Event } from '@yaswami/core';
 import { ADDRESS_MAX, NAME_MAX } from '@yaswami/core';
 import type { Card } from './notifications.ts';
-import { notify, templates, toWidget, widgetHtml } from './notifications.ts';
+import { sendCard, templates, toWidget, widgetHtml } from './notifications.ts';
 import { bot, parseIncoming } from './telegram.ts';
 
 const realCall = bot.call;
@@ -122,10 +122,10 @@ test('размер: код виджета ≤ 4096 байт после сжат�
   }
 });
 
-test('отправка: виджет, при отказе — обычное сообщение; сбой Telegram не бросает', async () => {
+test('карточка: виджет, при отказе — обычное сообщение; сбой Telegram не бросает', async () => {
   const calls: [string, any][] = [];
   bot.call = async (method, body) => (calls.push([method, body]), { ok: true });
-  await notify(5, 'rsvp_confirmed', { event });
+  await sendCard(5, 'rsvp_confirmed', { event });
   assert.deepEqual(calls.map(([m]) => m), ['sendWidget']);
   const sent = calls[0]![1];
   assert.equal(sent.chat_id, 5);
@@ -134,7 +134,7 @@ test('отправка: виджет, при отказе — обычное с�
 
   calls.length = 0;
   bot.call = async (method, body) => (calls.push([method, body]), { ok: method !== 'sendWidget', description: 'no widgets' });
-  await notify(5, 'event_created', { event });
+  await sendCard(5, 'event_created', { event });
   assert.deepEqual(calls.map(([m]) => m), ['sendWidget', 'sendMessage']);
   assert.equal(calls[1]![1].text, calls[0]![1].caption);
   assert.deepEqual(calls[1]![1].reply_markup, calls[0]![1].reply_markup);
@@ -145,12 +145,12 @@ test('отправка: виджет, при отказе — обычное с�
     // Бота заблокировали или сработал лимит — второе сообщение не шлём.
     calls.length = 0;
     bot.call = async (method, body) => (calls.push([method, body]), { ok: false, error_code: 403, description: 'Forbidden: bot was blocked by the user' });
-    await notify(5, 'event_created', { event });
+    await sendCard(5, 'event_created', { event });
     assert.deepEqual(calls.map(([m]) => m), ['sendWidget']);
     bot.call = async () => { throw new Error('network down'); };
-    await notify(5, 'event_created', { event });
+    await sendCard(5, 'event_created', { event });
     bot.call = realCall; // без токена: ничего не уходит в сеть, отказ без исключения
-    await notify(5, 'event_created', { event });
+    await sendCard(5, 'event_created', { event });
   } finally {
     console.error = error;
   }

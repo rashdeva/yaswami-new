@@ -1,6 +1,8 @@
 ---
-status: accepted
+status: accepted, частично заменено ADR-0008
 ---
+
+> Знак id и «Telegram не пишется в `user_identities`» заменены ADR-0008: Telegram — такой же способ входа, `hasTelegram` больше нет. Ниже — исходное решение.
 
 # Пользователь больше не равен id в Telegram
 

@@ -3,6 +3,14 @@
 // переименовал колонку — упадёт тест, а не сборщик в проде. Новый запрос добавляй и туда.
 import postgres from 'postgres';
 
+/**
+ * Организатор уже входил в сервис — привязать профиль к его пользователю. Пользователя ищем по способу входа telegram:
+ * users.id — не Telegram id (ADR-0008).
+ */
+const linkUser = (tx, telegramId) => tx`
+  update hosts set user_id = i.user_id from user_identities i
+  where i.provider = 'telegram' and i.subject = ${String(telegramId)} and hosts.telegram_id = ${telegramId}`;
+
 export function createStore(url) {
   const sql = postgres(url, { onnotice: () => {} });
   return {
@@ -80,8 +88,7 @@ export function createStore(url) {
       await tx`insert into hosts ${tx(host)} on conflict (telegram_id) do update set username = excluded.username`;
       await tx`update sources set host_id = (select id from hosts where telegram_id = ${host.telegram_id}) where host_id in (select id from hosts where ${stub()})`;
       await tx`delete from hosts where ${stub()}`;
-      // Пока все пользователи — из Telegram, users.id и есть Telegram id.
-      await tx`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`;
+      await linkUser(tx, host.telegram_id);
       await tx`update hosts set profiled_at = now() where telegram_id = ${host.telegram_id}`;
     }),
     /**
@@ -118,7 +125,7 @@ export function createStore(url) {
       if (practices.length && !(await tx`select 1 from practices where host_id = ${id} limit 1`).length) {
         await tx`insert into practices ${tx(practices.map(({ title, topic, description, price }, position) => ({ host_id: id, title, topic, description, price, position })))}`;
       }
-      await tx`update hosts set user_id = u.id from users u where u.id = hosts.telegram_id and hosts.telegram_id = ${host.telegram_id}`;
+      await linkUser(tx, host.telegram_id);
     }),
     /**
      * Организаторы с каналом, у которых фото сообщества не смотрели дольше `days` дней, кроме отклонённых. Не только

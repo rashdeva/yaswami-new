@@ -1,10 +1,11 @@
 // Вход на сайте и в приложении через Telegram (OpenID Connect, https://core.telegram.org/bots/telegram-login):
 // /auth/telegram/login → oauth.telegram.org → /auth/telegram/callback → cookie с токеном доступа, а для приложения
 // (`?app=1`) — переход на app.yaswami://auth?token=… . Вход через Apple (/auth/apple) — только в приложении.
-// Пользователь из Telegram — это его id в Telegram (users.id); вошедший иначе получает отрицательный id и строку
-// в user_identities (ADR-0007). Другие способы входа (телефон, почта) добавляются так же: свой /auth/<способ>/….
-// ponytail: один человек, вошедший и через Telegram, и через Apple, — два разных пользователя. Склейка — когда
-// появится экран «привязать Telegram» в приложении: строка user_identities переезжает к Telegram-пользователю.
+// Любой вход — строка в user_identities: telegram, apple или google (ADR-0008); users.id — свой, не Telegram id.
+// Другие способы входа (телефон, почта) добавляются так же: свой /auth/<способ>/…, в конце — signInWith.
+// ponytail: один человек, вошедший через Telegram и через Apple или Google, — пока два пользователя. Связать —
+// экран «Привязать Telegram» у вошедшего: новая строка ('telegram', id) в user_identities к его пользователю, данные
+// никуда не переезжают. Слияние двух уже наполненных аккаунтов — только руками, через команду.
 import { createHash, createHmac, createPublicKey, randomBytes, timingSafeEqual, verify } from 'node:crypto';
 import type { JsonWebKey, KeyObject } from 'node:crypto';
 import type { Context } from 'hono';
@@ -170,7 +171,7 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
         return c.json({ error: 'invalid_token' }, 401);
       }
       if (typeof sub !== 'string' || !sub) return c.json({ error: 'invalid_token' }, 401);
-      const user = await signInWith(db, 'apple', sub, first_name);
+      const user = await signInWith(db, 'apple', sub, { first_name });
       return c.json({ token: await issueToken(db, user.id, { ttlS: APP_SESSION_MAX_AGE_S }) });
     })
     // Вход через Google в приложении на Android — так же, как через Apple: приложение меняет id_token Google на наш токен.
@@ -187,7 +188,7 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
       }
       if (typeof claims.sub !== 'string' || !claims.sub) return c.json({ error: 'invalid_token' }, 401);
       const name = String(claims.given_name || claims.name || '').trim().slice(0, 60) || undefined;
-      const user = await signInWith(db, 'google', claims.sub, name);
+      const user = await signInWith(db, 'google', claims.sub, { first_name: name });
       return c.json({ token: await issueToken(db, user.id, { ttlS: APP_SESSION_MAX_AGE_S }) });
     })
     .post('/logout', async (c) => {

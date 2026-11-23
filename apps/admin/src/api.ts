@@ -2,7 +2,7 @@
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
   AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource,
-  AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, AdminJobList, AdminJobListInput, HostUpdateInput, Job, JobUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceUpdateInput,
+  AdminUser, AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, AdminJobList, AdminJobListInput, HostUpdateInput, Job, JobUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
 import { sseEvents } from '@yaswami/core';
@@ -174,7 +174,7 @@ export const api = {
   jobUpdate: (job: string, input: JobUpdateInput) => request<Wire<Job>>('PATCH', `/admin/jobs/${id(job)}`, input),
 
   // Пользователи и контакты
-  users: (query?: string) => request<User[]>('GET', `/admin/users${qs({ query })}`),
+  users: (query?: string) => request<AdminUser[]>('GET', `/admin/users${qs({ query })}`),
   user: (user: number) => request<Wire<AdminUserView>>('GET', `/admin/users/${user}`),
   userUpdate: (user: number, input: UserUpdateInput) => request<User>('PATCH', `/admin/users/${user}`, input),
   userDelete: (user: number) => request<void>('DELETE', `/admin/users/${user}`),

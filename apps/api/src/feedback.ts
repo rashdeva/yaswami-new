@@ -5,6 +5,7 @@
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { Db } from './db/client.ts';
 import { eventFeedback, events, guests, users } from './db/schema.ts';
+import { userIdByTelegram } from './auth.ts';
 import { notify } from './notifications.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
@@ -34,7 +35,7 @@ export async function requestFeedback(db: Db, now = new Date()): Promise<void> {
   for (const { event, user_id } of rows) {
     if (user_id === event.user_id) continue; // организатор сам себе отзыв не пишет
     const [created] = await db.insert(eventFeedback).values({ event_id: event.id, user_id }).onConflictDoNothing().returning();
-    if (created) await notify(user_id, 'feedback_request', { event });
+    if (created) await notify(db, user_id, 'feedback_request', { event });
   }
 }
 
@@ -53,7 +54,9 @@ export async function handleFeedbackCallback(db: Db, update: unknown): Promise<b
   const q = (update as { callback_query?: { id: string; from: { id: number }; data?: string } } | null)?.callback_query;
   const m = /^fb:([\w-]+):([1-5])$/.exec(q?.data ?? '');
   if (!q || !m) return false;
-  const row = await rate(db, q.from.id, m[1]!, Number(m[2]));
+  // Кнопку нажал человек в Telegram: его пользователя ищем по способу входа (ADR-0008).
+  const userId = await userIdByTelegram(db, q.from.id);
+  const row = userId === null ? undefined : await rate(db, userId, m[1]!, Number(m[2]));
   void bot.call('answerCallbackQuery', { callback_query_id: q.id, text: row ? `Спасибо! Ваша оценка: ${stars(row.rating!)}` : 'Этот запрос уже не действует' });
   // Просим текст один раз: повторные нажатия меняют оценку, но не засыпают сообщениями.
   if (row && !row.prompt_message_id) {
@@ -100,7 +103,7 @@ export async function digestFeedback(db: Db, now = new Date()): Promise<void> {
     // Сначала отметка, потом отправка: сбой Telegram не должен приводить к повторным сводкам каждые пять минут.
     await db.update(eventFeedback).set({ host_notified_at: now })
       .where(and(eq(eventFeedback.event_id, eventId), isNull(eventFeedback.host_notified_at), isNotNull(eventFeedback.rating)));
-    await notify(event!.user_id, 'feedback_received', {
+    await notify(db, event!.user_id, 'feedback_received', {
       event: event!, count: total!.count, average: total!.average,
       fresh: rows.map((r) => ({ first_name: r.first_name, rating: r.feedback.rating!, comment: r.feedback.comment })),
     });

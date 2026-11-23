@@ -3,15 +3,20 @@
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
+import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
-const telegramId = (name: string) => bigint(name, { mode: 'number' }); // id Telegram не влезают в int4
+const telegramId = (name: string) => bigint(name, { mode: 'number' }); // id в Telegram (чата, автора, организатора): не влезают в int4
+/**
+ * Id нашего пользователя (users.id и ссылки на него). Это НЕ Telegram id: у пользователей до ADR-0008 числа совпадают,
+ * у новых — нет. Telegram человека — строка provider = 'telegram' в user_identities (telegramIdOf в auth.ts).
+ */
+const userId = (name: string) => bigint(name, { mode: 'number' });
 const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 
 export const users = pgTable('users', {
-  id: telegramId('id').primaryKey(),
+  id: userId('id').primaryKey(),
   first_name: text().notNull(),
   username: text(),
   lang: text().notNull(),
@@ -20,22 +25,25 @@ export const users = pgTable('users', {
 });
 
 /**
- * Id пользователей, вошедших не через Telegram (ADR-0007): отрицательные, в Telegram id пользователей положительные.
- * По знаку id и видно, можно ли человеку написать в Telegram (`hasTelegram` в telegram.ts).
+ * Id новых пользователей, каким бы способом они ни вошли (ADR-0008): -1, -2, … Отрицательные — чтобы не совпасть
+ * с id пользователей, заведённых до ADR-0008 (у них id равен Telegram id). Знак ничего не значит: id непрозрачный.
  */
 export const localUserIds = pgSequence('users_local_id_seq', { startWith: -1, increment: -1, maxValue: -1, minValue: -Number.MAX_SAFE_INTEGER });
 
-/** Способ входа (CONTEXT.md): кем человека знает внешний поставщик. В Luma такого нет. Вход через Telegram здесь не пишется: его subject — сам users.id. */
-export const IDENTITY_PROVIDERS = ['apple', 'google'] as const;
+/**
+ * Способ входа (CONTEXT.md): кем человека знает внешний поставщик. Telegram — такой же поставщик: его subject —
+ * Telegram id человека строкой; по этой строке бот знает, куда писать. У пользователя не больше одного способа
+ * каждого поставщика. В Luma такого нет.
+ */
 export const userIdentities = pgTable(
   'user_identities',
   {
     provider: text({ enum: IDENTITY_PROVIDERS }).notNull(),
-    subject: text().notNull(), // sub из id_token поставщика
-    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    subject: text().notNull(), // id человека у поставщика: Telegram id, sub из id_token Apple или Google
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.provider, t.subject] }), index('user_identities_user_idx').on(t.user_id)],
+  (t) => [primaryKey({ columns: [t.provider, t.subject] }), uniqueIndex('user_identities_user_provider_uq').on(t.user_id, t.provider)],
 );
 
 // Город (City в @yaswami/core). `city_id` у источников, собранных событий, организаторов и событий Ясвами по умолчанию —
@@ -51,7 +59,7 @@ export const events = pgTable(
   'events',
   {
     id: text().primaryKey(),
-    user_id: telegramId('user_id').notNull().references(() => users.id), // организатор
+    user_id: userId('user_id').notNull().references(() => users.id), // организатор
     kind: text({ enum: EVENT_KINDS }).notNull(),
     name: text().notNull(),
     description: text(),
@@ -104,7 +112,7 @@ export const guests = pgTable(
   'guests',
   {
     event_id: text().notNull().references(() => events.id, { onDelete: 'cascade' }),
-    user_id: telegramId('user_id').notNull().references(() => users.id),
+    user_id: userId('user_id').notNull().references(() => users.id),
     approval_status: text({ enum: APPROVAL_STATUSES }).notNull(),
     // Тип с записавшимися гостями удалить нельзя.
     event_ticket_type_id: uuid().references(() => ticketTypes.id, { onDelete: 'restrict' }),
@@ -145,7 +153,7 @@ export const apiTokens = pgTable(
   'api_tokens',
   {
     token_hash: text().primaryKey(),
-    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
     // null — токен без ограничений: всё, что может его владелец.
     scope: text().$type<TokenScope>(),
@@ -207,7 +215,7 @@ export const hosts = pgTable(
   {
     id: uuid().primaryKey().defaultRandom(),
     // Пользователь Ясвами, если этот человек вошёл: профиль подтверждён. null — собран без его участия.
-    user_id: telegramId('user_id').references(() => users.id, { onDelete: 'set null' }),
+    user_id: userId('user_id').references(() => users.id, { onDelete: 'set null' }),
     // Кто это в Telegram: по этому id профиль привязывается к пользователю при входе. Отдельно от user_id:
     // пользователи со временем будут не только из Telegram.
     // null — организатора добавила команда по username (admin_hosts_create), сборщик ещё не нашёл его в Telegram.
@@ -239,7 +247,7 @@ export const photos = pgTable(
   'photos',
   {
     id: uuid().primaryKey().defaultRandom(),
-    user_id: telegramId('user_id').unique().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').unique().references(() => users.id, { onDelete: 'cascade' }),
     host_id: uuid().references(() => hosts.id, { onDelete: 'cascade' }),
     // Обложка собранного события, одна на событие: фото анонса или картинка, нарисованная иллюстратором.
     collected_external_id: text().unique().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
@@ -260,7 +268,7 @@ export const collectedEventSignups = pgTable(
   'collected_event_signups',
   {
     external_id: text().notNull().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
-    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.external_id, t.user_id] }), index('collected_event_signups_user_idx').on(t.user_id)],
@@ -293,7 +301,7 @@ export const practiceSignups = pgTable(
   {
     practice_id: uuid().notNull().references(() => practices.id, { onDelete: 'cascade' }),
     host_id: uuid().notNull().references(() => hosts.id, { onDelete: 'cascade' }),
-    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.practice_id, t.user_id] }), index('practice_signups_user_idx').on(t.user_id), index('practice_signups_host_idx').on(t.host_id)],
@@ -365,8 +373,8 @@ export const contacts = pgTable(
   'contacts',
   {
     id: uuid().primaryKey().defaultRandom(),
-    host_user_id: telegramId('host_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    host_user_id: userId('host_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('contacts_host_user_idx').on(t.host_user_id, t.user_id)],
@@ -379,11 +387,11 @@ export const visits = pgTable(
   'visits',
   {
     id: uuid().primaryKey().defaultRandom(),
-    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     event_id: text().references(() => events.id, { onDelete: 'cascade' }),
     collected_external_id: text().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
     // Кто позвал: пользователь, чьей ссылкой «Позвать друзей» открыли событие.
-    referrer_id: telegramId('referrer_id').references(() => users.id, { onDelete: 'set null' }),
+    referrer_id: userId('referrer_id').references(() => users.id, { onDelete: 'set null' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [
@@ -474,7 +482,7 @@ export const eventFeedback = pgTable(
   'event_feedback',
   {
     event_id: text().notNull().references(() => events.id, { onDelete: 'cascade' }),
-    user_id: telegramId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     rating: integer(), // 1–5
     comment: text(),
     // Сообщение бота «что понравилось…»: ответ на него становится текстом отзыва.
@@ -494,7 +502,7 @@ export const adminActions = pgTable(
   {
     id: uuid().primaryKey().defaultRandom(),
     created_at: at('created_at').notNull().defaultNow(),
-    actor_id: telegramId('actor_id').notNull(),
+    actor_id: userId('actor_id').notNull(),
     via: text().$type<AdminAction['via']>().notNull(),
     action: text().notNull(),
     entity: text().$type<AdminEntity>().notNull(),

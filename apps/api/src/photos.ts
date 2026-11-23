@@ -50,15 +50,15 @@ const MAX_BYTES = 200_000; // превью 320px весит 10–30 КБ; бол
 const checked = new Map<number, Promise<void>>();
 
 /**
- * Сохраняет аватар пользователя из Telegram. Один путь для всех входов: его зовёт `upsertUser`, а через него —
- * и мини-приложение, и бот, и вход с сайта. Фото берём через бота по id пользователя, поэтому не важно, откуда
- * человек пришёл. Не бросает: без фото остаётся кружок с буквой.
+ * Сохраняет аватар пользователя из Telegram. Один путь для всех входов через Telegram: его зовёт `upsertUser`, а через
+ * него — и мини-приложение, и бот, и вход с сайта. Фото бот берёт по Telegram id человека — не по users.id (ADR-0008).
+ * Не бросает: без фото остаётся кружок с буквой.
  */
-export function saveUserPhoto(db: Db, userId: number): Promise<void> {
+export function saveUserPhoto(db: Db, userId: number, telegramId: number): Promise<void> {
   let done = checked.get(userId);
   if (!done) {
     if (checked.size > 10_000) checked.clear();
-    done = load(db, userId).catch((e) => {
+    done = load(db, userId, telegramId).catch((e) => {
       checked.delete(userId); // сеть или база подвели — попробуем при следующем входе
       console.error('user photo:', (e as Error).message);
     });
@@ -67,9 +67,9 @@ export function saveUserPhoto(db: Db, userId: number): Promise<void> {
   return done;
 }
 
-async function load(db: Db, userId: number): Promise<void> {
+async function load(db: Db, userId: number, telegramId: number): Promise<void> {
   if (!bot.token) return;
-  const got = await bot.call('getUserProfilePhotos', { user_id: userId, limit: 1 });
+  const got = await bot.call('getUserProfilePhotos', { user_id: telegramId, limit: 1 });
   const all = (got.result as { photos?: PhotoSize[][] } | undefined)?.photos;
   if (!got.ok || !all) return;
   const sizes = all[0]; // размеры одного фото, от меньшего к большему

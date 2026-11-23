@@ -3,6 +3,8 @@
 import { readFileSync } from 'node:fs';
 import type { CollectedEventItem, Event, User } from '@yaswami/core';
 import { ADDRESS_MAX, collectedPath, collectedWhen, NAME_MAX } from '@yaswami/core';
+import { telegramIdOf } from './auth.ts';
+import type { Db } from './db/client.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 
@@ -122,8 +124,21 @@ export function toWidget(card: Card) {
   };
 }
 
-/** Отправляет уведомление. Никогда не бросает: недоставленное уведомление не должно ломать действие, которое его вызвало. */
-export async function notify<K extends Moment>(chatId: number, moment: K, payload: MomentPayload<K>): Promise<void> {
+/**
+ * Отправляет уведомление пользователю в Telegram. Без Telegram (вошёл через Apple или Google) — молча ничего.
+ * Никогда не бросает: недоставленное уведомление не должно ломать действие, которое его вызвало.
+ */
+export async function notify<K extends Moment>(db: Db, userId: number, moment: K, payload: MomentPayload<K>): Promise<void> {
+  try {
+    const chatId = await telegramIdOf(db, userId); // users.id — не Telegram id (ADR-0008)
+    if (chatId !== null) await sendCard(chatId, moment, payload);
+  } catch (e) {
+    console.error(`notify ${moment} → user ${userId}:`, e);
+  }
+}
+
+/** Карточка в чат Telegram: виджет, при отказе — обычное сообщение. Не бросает. */
+export async function sendCard<K extends Moment>(chatId: number, moment: K, payload: MomentPayload<K>): Promise<void> {
   try {
     const { caption, reply_markup, ...widget } = toWidget((templates[moment] as (p: MomentPayload<K>) => Card)(payload));
     let sent = await bot.send('sendWidget', { chat_id: chatId, caption, reply_markup, ...widget });
