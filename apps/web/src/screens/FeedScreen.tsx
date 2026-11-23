@@ -3,8 +3,10 @@ import { track } from '../analytics.ts';
 import { useViewed } from '../hooks/useViewed.ts';
 import { useEffect, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
-import { collectedBadges, collectedDayKey, collectedPath, collectedTime, TOPIC_GUIDES, topicIcon, topicSlug } from '@yaswami/core';
+import { collectedBadges, collectedDayKey, collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
 import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
+import { useTopicSubscription } from '../hooks/useTopicSubscription.ts';
+import { useTopics } from '../hooks/useTopics.ts';
 import { EventRow } from '../components/EventRow.tsx';
 import { dayLabel } from '../format.ts';
 
@@ -27,6 +29,8 @@ export function FeedScreen({ city, lead, onOpen }: Props) {
     pickTopic(next);
   };
   useViewed('feed_viewed');
+  const subscription = useTopicSubscription();
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     document.title = `События в городе ${city} — Я с вами`;
@@ -34,7 +38,8 @@ export function FeedScreen({ city, lead, onOpen }: Props) {
 
   // Дни идут по порядку: список уже отсортирован по времени начала.
   // Фильтр предлагает только темы, по которым есть события; порядок — как в гиде.
-  const topics = Object.keys(TOPIC_GUIDES).filter((t) => items?.some((e) => e.topic === t));
+  const allTopics = useTopics();
+  const topics = allTopics.filter((t) => items?.some((e) => e.topic === t));
   const days: CollectedEventItem[][] = [];
   for (const item of items ?? []) {
     if (topic && (topic === POPULAR ? !item.popular : item.topic !== topic)) continue;
@@ -49,6 +54,9 @@ export function FeedScreen({ city, lead, onOpen }: Props) {
         <div className="head">
           <h1>События</h1>
           <p>📍 {city}</p>
+          {subscription.topics && !editing && (
+            <button className="chip" onClick={() => setEditing(true)}>🔔 {subscription.topics.length ? `Мои темы: ${subscription.topics.length}` : 'Сообщать о новом'}</button>
+          )}
         </div>
       </div>
       {(topics.length > 1 || items?.some((e) => e.popular)) && (
@@ -63,6 +71,18 @@ export function FeedScreen({ city, lead, onOpen }: Props) {
             </button>
           ))}
         </div>
+      )}
+      {(subscription.topics === null || (editing && subscription.topics)) && (
+        <TopicPicker
+          key={String(editing)}
+          all={allTopics}
+          initial={subscription.topics ?? []}
+          asked={subscription.topics !== null}
+          saving={subscription.saving}
+          error={subscription.failed?.message}
+          onSave={(topics) => subscription.save(topics).then(() => setEditing(false), () => {})}
+          onCancel={() => setEditing(false)}
+        />
       )}
       {lead}
       {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}
@@ -93,5 +113,40 @@ export function FeedScreen({ city, lead, onOpen }: Props) {
         );
       })}
     </>
+  );
+}
+
+interface PickerProps {
+  all: string[];
+  initial: string[];
+  /** Человек уже отвечал: это правка, а не первый вопрос. */
+  asked: boolean;
+  saving: boolean;
+  error?: string;
+  onSave: (topics: string[]) => void;
+  onCancel: () => void;
+}
+
+/** «Что вам интересно?» — выбор тем подписки. Первый раз показывается сам; отказ тоже ответ, второй раз не спрашиваем. */
+function TopicPicker({ all, initial, asked, saving, error, onSave, onCancel }: PickerProps) {
+  const [picked, setPicked] = useState(initial);
+  const toggle = (t: string) => setPicked((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
+  return (
+    <section className="topics-ask">
+      <h2>Что вам интересно?</h2>
+      <p className="note lead">Отметьте темы — бот напишет в Telegram, когда по ним появятся новые события. Не чаще раза в день.</p>
+      <div className="chips">
+        {all.map((t) => (
+          <button key={t} className="chip" aria-pressed={picked.includes(t)} onClick={() => toggle(t)}>
+            <img src={topicIcon(t)} alt="" />{t[0]!.toUpperCase() + t.slice(1)}
+          </button>
+        ))}
+      </div>
+      {error && <p className="note" role="alert">{error}</p>}
+      <div className="cta-row">
+        <button className="cta" disabled={saving || (!asked && !picked.length)} onClick={() => onSave(picked)}>{saving ? 'Сохраняем…' : asked && !picked.length ? 'Не сообщать' : 'Сообщать о новом'}</button>
+        <button className="cta alt" disabled={saving} onClick={() => (asked ? onCancel() : onSave([]))}>{asked ? 'Отмена' : 'Не сейчас'}</button>
+      </div>
+    </section>
   );
 }

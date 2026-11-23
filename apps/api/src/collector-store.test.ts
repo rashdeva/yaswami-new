@@ -181,3 +181,29 @@ test('сборщик: вакансии', async () => {
   await store.saveJob({ ...job, posted_at: day(2) });
   assert.deepEqual((await sql`select title, status, posted_at from jobs`).map((r) => ({ ...r })), [{ title: 'Официант', status: 'published', posted_at: day(7) }]);
 });
+
+test('сборщик: темы из базы, кандидаты из меток, новая тема переводит события без темы', async () => {
+  await sql`delete from collected_events`;
+  await sql`delete from topics where origin <> 'built_in'`;
+  assert.deepEqual([(await store.topics()).length, (await store.topics())[0].name], [12, 'баня']);
+
+  const add = (n: number, tag: string, host: string, topic = 'другое') => sql`
+    insert into collected_events (external_id, channel, announcement, event, starts_at, signup_url, telegram_username)
+    values (${`telegram:t/${n}#0`}, 't', ${sql.json({ url: 'https://t.me/t/1' })}, ${sql.json({ ...event, title: `Событие ${n}`, tags: [tag], topic })}, ${starts}, '', ${host})`;
+  await add(1, 'Падел', 'a');
+  await add(2, 'падел', 'b');
+  await add(3, 'падел', 'b');
+  await add(4, 'свечи', 'a');
+  await add(5, 'падел', 'c', 'спорт'); // с темой — не в счёт
+  assert.deepEqual((await store.topicCandidates(1, 1)).map((c: any) => [c.tag, c.events_count, c.hosts_count]), [['падел', 3, 2], ['свечи', 1, 1]]);
+  assert.deepEqual((await store.topicCandidates(3, 3)).length, 0, 'три события у двух организаторов — ещё не тема');
+
+  const topic = { name: 'ракеточный спорт', slug: 'racket', emoji: '🏓', color: '#0EA5E9', what: 'w', why: 'y', first: 'f', not_for: 'n', tags: ['падел', 'пиклбол'] };
+  assert.equal(await store.addTopic(topic), true);
+  assert.equal(await store.addTopic({ ...topic, slug: 'racket2' }), false, 'имя занято');
+  assert.deepEqual((await sql`select origin, color, position from topics where name = ${topic.name}`).map((r) => ({ ...r })), [{ origin: 'collector', color: '#0ea5e9', position: 13 }]);
+  assert.deepEqual((await sql`select event->>'topic' as topic from collected_events order by external_id`).map((r) => r.topic), ['ракеточный спорт', 'ракеточный спорт', 'ракеточный спорт', 'другое', 'спорт']);
+  assert.deepEqual((await store.topicCandidates(1, 1)).map((c: any) => c.tag), ['свечи']);
+  assert.equal((await store.topics()).at(-1).name, 'ракеточный спорт');
+  await sql`delete from topics where origin <> 'built_in'`;
+});

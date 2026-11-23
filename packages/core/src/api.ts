@@ -3,6 +3,7 @@ import * as z from 'zod';
 import type { Event, Feature, Guest, TicketType, User } from './schema.ts';
 import type { JobItem } from './jobs.ts';
 import { Event as EventSchema, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
+import { OTHER_TOPIC, isTopic } from './topics.ts';
 
 const isTimeZone = (tz: string) => {
   try {
@@ -324,7 +325,16 @@ export interface Me {
   claimable: CollectedEventItem[];
   /** Профиль организатора, который человек подтвердил входом; null — он не организатор каталога. В Luma такого нет. */
   host_id: string | null;
+  /** Подписка на темы: Topic, о новых событиях которых человеку пишет бот. null — ещё не спрашивали, [] — отказался. В Luma такого нет. */
+  subscribed_topics: string[] | null;
 }
+
+/** Правка своих настроек. Пока одна — Подписка на темы; позже сюда же встанут города. В Luma такого нет. */
+export const UserSelfUpdateInput = z.object({
+  subscribed_topics: z.array(z.string().refine((t) => t !== OTHER_TOPIC && isTopic(t), 'unknown topic')).max(100)
+    .transform((t) => [...new Set(t)]).describe('Topics the user wants to hear about (names from topics_list); the full list replaces the previous one, [] unsubscribes'),
+});
+export type UserSelfUpdateInput = z.infer<typeof UserSelfUpdateInput>;
 
 /** Открытые настройки для фронта: из чего собрать ссылку на событие t.me/<бот>/<приложение>?startapp=<id>. */
 export interface AppConfig {

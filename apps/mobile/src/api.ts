@@ -1,7 +1,7 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк. Как apps/web/src/api.ts, только
 // вход — Bearer-токен из защищённого хранилища устройства, а не initData или cookie.
 import * as SecureStore from 'expo-secure-store';
-import type { CollectedEventItem, EventListItem, EventView, HostItem, HostListItem, JobItem, JobList, Me, MyCollectedItem, RsvpInput, SearchResult, Wire } from '@yaswami/core';
+import type { TopicItem, CollectedEventItem, EventListItem, EventView, HostItem, HostListItem, JobItem, JobList, Me, MyCollectedItem, RsvpInput, SearchResult, Wire } from '@yaswami/core';
 
 export const SITE = process.env.EXPO_PUBLIC_SITE_URL ?? 'https://yaswami.com';
 export const BASE = `${SITE}/api`;
@@ -57,6 +57,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 const id = encodeURIComponent;
 
 export const api = {
+  topics: () => request<TopicItem[]>('GET', '/topics'),
   me: () => request<Me>('GET', '/me'),
   loginApple: (id_token: string, first_name?: string) => request<{ token: string }>('POST', '/auth/apple', { id_token, first_name }),
   loginGoogle: (id_token: string) => request<{ token: string }>('POST', '/auth/google', { id_token }),

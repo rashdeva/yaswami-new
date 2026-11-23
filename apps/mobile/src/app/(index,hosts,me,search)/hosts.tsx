@@ -4,10 +4,11 @@ import { Link, Stack } from 'expo-router';
 import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { TOPIC_GUIDES } from '@yaswami/core';
 import { State } from '@/components/state';
-import { useHosts } from '@/queries';
+import { useHosts, useTopics } from '@/queries';
 import { colors } from '@/theme';
 
 export default function Hosts() {
+  useTopics(); // темы из базы: перерисоваться, когда пришли
   const { data, error, isPending, refetch, isRefetching } = useHosts();
   return (
     <>

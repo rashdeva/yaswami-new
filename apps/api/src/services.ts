@@ -5,13 +5,13 @@ import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedListInput, CollectedStatus, CollectedUpdateInput,
   CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, Job, JobItem, JobList, JobListInput, MyCollectedItem, Practice, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
-  TicketTypeCreateInput, TicketTypeUpdateInput, User, VisitInput,
+  TicketTypeCreateInput, TicketTypeUpdateInput, User, UserSelfUpdateInput, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
 import { ADDRESS_MAX, DEFAULT_CITY_ID, Feature, JOB_TTL_DAYS, jobContactUrl, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
-import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, jobs, photos, practices, practiceSignups, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
+import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, jobs, photos, practices, practiceSignups, subscriptions, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
@@ -173,7 +173,11 @@ const COVER_MAX_BYTES = 4_000_000; // Grok рисует 100–400 КБ, ChatGPT 
  * Картинка обложки от иллюстратора: ссылка хранилища xAI или data URL (её Hermes вставляет вместо файла, нарисованного
  * ChatGPT). Только PNG и JPEG и не больше COVER_MAX_BYTES; всё остальное — bad_image_url / bad_image. Хранится сжатый JPEG (optimizeImage).
  */
-async function coverBytes(imageUrl: string): Promise<Buffer> {
+const coverBytes = (imageUrl: string): Promise<Buffer> =>
+  imageBytes(imageUrl).then(optimizeImage).catch((e) => { throw e instanceof AppError ? e : new AppError('bad_image', 400); });
+
+/** Картинка по ссылке иллюстратора или из data URL как есть, без перекодирования: те же проверки, что у обложки. */
+export async function imageBytes(imageUrl: string): Promise<Buffer> {
   let data: Buffer | null = null;
   const inline = /^data:image\/(?:png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(imageUrl);
   if (inline) data = Buffer.from(inline[1]!, 'base64');
@@ -185,7 +189,7 @@ async function coverBytes(imageUrl: string): Promise<Buffer> {
   }
   const isImage = data && (data.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])) || (data[0] === 0xff && data[1] === 0xd8));
   if (!data || !isImage || data.length > COVER_MAX_BYTES) throw new AppError('bad_image', 400);
-  return optimizeImage(data).catch(() => { throw new AppError('bad_image', 400); });
+  return data;
 }
 
 /**
@@ -786,7 +790,17 @@ export async function me(db: Db, actor: User): Promise<Me> {
     collected_signups: signups.map((r) => collectedSlug(r.external_id)),
     claimable: claimable.map(toCollectedItem),
     host_id: (await db.select({ id: hosts.id }).from(hosts).where(eq(hosts.user_id, actor.id)))[0]?.id ?? null,
+    subscribed_topics: (await db.select({ topics: subscriptions.topics }).from(subscriptions).where(eq(subscriptions.user_id, actor.id)))[0]?.topics ?? null,
   };
+}
+
+/**
+ * Правка своих настроек: Подписка на темы. Список заменяет прежний; [] — отписка, строка остаётся как «уже спрашивали».
+ * `notified_at` ставится только при первой записи: сводка расскажет о событиях, вышедших после неё.
+ */
+export async function updateSelf(db: Db, actor: User, { subscribed_topics: topics }: UserSelfUpdateInput): Promise<Me> {
+  await db.insert(subscriptions).values({ user_id: actor.id, topics }).onConflictDoUpdate({ target: subscriptions.user_id, set: { topics } });
+  return me(db, actor);
 }
 
 /** Имя, под которым остаётся удалённый организатор: его события живут дальше. */

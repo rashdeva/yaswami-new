@@ -17,6 +17,8 @@ interface WebApp {
   platform?: string;
   isVersionAtLeast(version: string): boolean;
   onEvent(event: 'themeChanged' | 'safeAreaChanged' | 'contentSafeAreaChanged' | 'fullscreenChanged', cb: () => void): void;
+  /** Разрешение боту писать человеку: без него сводка по подписке не дойдёт тому, кто не нажимал «Старт». */
+  requestWriteAccess?(): void;
   openTelegramLink(url: string): void;
   openLink(url: string): void;
   BackButton: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };

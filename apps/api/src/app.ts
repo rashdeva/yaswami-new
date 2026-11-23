@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput, VisitInput,
+  EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -28,6 +28,7 @@ import { handleMcp } from './mcp.ts';
 import { getPhoto } from './photos.ts';
 import * as hs from './host-searches.ts';
 import * as s from './services.ts';
+import { getTopicIcon, listTopics } from './topics.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 import { SESSION_COOKIE, webLogin } from './web-login.ts';
@@ -61,13 +62,31 @@ function tooMany(userId: number, now = Date.now()): boolean {
   return false;
 }
 
+interface Env { Variables: { actor: User; method: AuthMethod; scope: TokenScope | null } }
+
 /** Кто действует в админке — для журнала (audit.ts). */
 const ctx = (c: { var: { actor: User } }): Ctx => ({ actor: c.var.actor, via: 'admin' });
 
 export function createApp({ db, botToken, config, webLogin: login, telegram }: Options) {
   const web_login = !!(botToken && login?.clientSecret);
   bot.log = logSent(db);
-  return new Hono<{ Variables: { actor: User; method: AuthMethod; scope: TokenScope | null } }>()
+  // Темы — отдельными приложениями, и подключаются отдельной строкой, а не звеном цепочки: цепочка маршрутов упёрлась
+  // в предел глубины типов TypeScript. Место подключения важно: вход и проверка админа действуют на то, что ниже них.
+  const topics: Hono<Env> = new Hono<Env>()
+    .get('/', async (c) => c.json(await listTopics(db)))
+    // Иконка темы из базы. Время правки стоит в адресе (?v=), поэтому кэшируется навсегда.
+    .get('/:slug/icon', async (c) => {
+      const data = await getTopicIcon(db, c.req.param('slug'));
+      if (!data) return c.json({ error: 'not_found' }, 404);
+      return c.body(new Uint8Array(data), 200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=31536000, immutable' });
+    });
+  const adminTopics: Hono<Env> = new Hono<Env>()
+    .get('/', async (c) => c.json(await admin.listAllTopics(db)))
+    .get('/candidates', async (c) => c.json(await admin.listTopicCandidates(db, TopicCandidateListInput.parse(c.req.query()))))
+    .post('/', json(TopicCreateInput), async (c) => c.json(await admin.createTopic(db, ctx(c), c.req.valid('json')), 201))
+    .patch('/:name', json(TopicUpdateInput), async (c) => c.json(await admin.updateTopic(db, ctx(c), c.req.param('name'), c.req.valid('json'))));
+
+  const open = new Hono<Env>()
     .use(bodyLimit({ maxSize: BODY_MAX, onError: (c) => c.json({ error: 'too_large' }, 413) }))
     .onError((e, c) => {
       if (e instanceof s.AppError) return c.json({ error: e.code }, e.status);
@@ -92,7 +111,9 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       if (!data) return c.json({ error: 'not_found' }, 404);
       // Всё хранится JPEG; PNG — только старые необработанные обложки.
       return c.body(new Uint8Array(data), 200, { 'content-type': data[0] === 0x89 ? 'image/png' : 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' });
-    })
+    });
+  open.route('/topics', topics);
+  const app = open
     .post('/telegram/webhook', async (c) => {
       const secret = Buffer.from(telegram?.webhookSecret ?? '');
       const given = Buffer.from(c.req.header('x-telegram-bot-api-secret-token') ?? '');
@@ -141,6 +162,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     })
 
     .get('/me', async (c) => c.json(await s.me(db, c.var.actor)))
+    .patch('/me', json(UserSelfUpdateInput), async (c) => c.json(await s.updateSelf(db, c.var.actor, c.req.valid('json'))))
     // Удалить свой аккаунт (App Store 5.1.1(v)). Только REST: стирать аккаунт по просьбе в переписке модель не должна.
     .delete('/me', async (c) => {
       await s.deleteSelf(db, c.var.actor);
@@ -328,6 +350,8 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await revokeTokens(db, c.var.actor.id);
       return c.body(null, 204);
     });
+  app.route('/admin/topics', adminTopics); // после `.use('/admin/*')`: только команде
+  return app;
 }
 
 /** Тип для типизированного клиента на фронте: `hc<App>(url)`. */

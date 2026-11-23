@@ -141,3 +141,18 @@ test('collectedBadges: скоро, популярное, бесплатно — 
   assert.deepEqual(labels(e('2026-11-14T19:00:00+07:00', { price: 'Бесплатно' })), ['Бесплатно']);
   assert.deepEqual(labels(e('2026-11-14T00:00:00+07:00')), [], 'без времени в анонсе «скоро» не ставим');
 });
+
+test('темы: реестр заменяется списком из базы; иконка — из базы, из сборки или «другого»', async () => {
+  const { TOPIC_GUIDES, isTopic, setTopics, topicIcon, topicSlug } = await import('./topics.ts');
+  const builtIn = Object.entries(TOPIC_GUIDES).map(([name, g]) => ({ name, color: '#000000', icon_url: null, ...g }));
+  const guide = { emoji: '🏓', color: '#0ea5e9', what: 'w', why: 'y', first: 'f', not_for: 'n' };
+  try {
+    setTopics([builtIn[1]!, { name: 'падел', slug: 'padel', icon_url: null, ...guide }, { name: 'цигун', slug: 'qigong', icon_url: '/api/topics/qigong/icon?v=1', ...guide }]);
+    assert.deepEqual(Object.keys(TOPIC_GUIDES), ['йога', 'падел', 'цигун']);
+    assert.deepEqual(['йога', 'падел', 'цигун', 'баня', null].map(topicIcon), ['/topics/yoga.png', '/topics/other.png', '/api/topics/qigong/icon?v=1', '/topics/other.png', '/topics/other.png']);
+    assert.deepEqual(['падел', 'баня'].map(topicSlug), ['padel', 'other'], 'цвет новой темы — по её slug');
+    assert.deepEqual(['падел', 'другое', 'баня', 'toString'].map(isTopic), [true, true, false, false]);
+  } finally {
+    setTopics(builtIn);
+  }
+});

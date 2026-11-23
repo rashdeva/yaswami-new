@@ -2,6 +2,8 @@
 export const keys = {
   me: ['me'],
   config: ['config'],
+  /** Темы (Topic): список живёт в базе. */
+  topics: ['topics'],
   /** Витрина: собранные события города. */
   collected: ['collected'],
   collectedEvent: (id: string) => ['collected-event', id],

@@ -66,6 +66,29 @@ assert.deepEqual([m.title, m.starts_at, m.place, m.price, m.telegram_username], 
 console.log('dedupe ok');
 assert.deepEqual(mergeEvents({ ...ev('Баня', D), what_happens: [] }, { ...ev('Баня', D), what_happens: ['Парение'] }).what_happens, ['Парение'], 'пустой список дополняется из повторного анонса');
 
+// Темы: реестр ядра — из базы; новая тема — из метки-кандидата, одна за проход; отказ ИИ запоминается.
+{
+  const { TOPIC_GUIDES, setTopics } = await import('@yaswami/core');
+  const { curateTopics, syncTopics } = await import('./topics.mjs');
+  const builtIn = Object.entries(TOPIC_GUIDES).map(([name, g]) => ({ name, ...g }));
+  const rows = [{ name: 'йога', slug: 'yoga', emoji: '🧘', color: '#e8891a', what: 'w', why: 'y', first: 'f', not_for: 'n' }];
+  const candidates = [{ tag: 'новый год', events_count: 9, hosts_count: 5, examples: [] }, { tag: 'падел', events_count: 6, hosts_count: 3, examples: [] }];
+  const asked = [];
+  const store = {
+    topics: async () => rows,
+    topicCandidates: async (minEvents, minHosts) => (assert.deepEqual([minEvents, minHosts], [5, 3]), candidates),
+    addTopic: async (t) => (rows.push(t), true),
+  };
+  const proposeTopic = async (c) => (asked.push(c.tag), c.tag === 'падел' ? { name: 'ракеточный спорт', slug: 'racket', emoji: '🏓', color: '#0ea5e9', what: 'w', why: 'y', first: 'f', not_for: 'n', tags: ['падел'] } : null);
+  assert.equal(await syncTopics({ store }), 1);
+  assert.deepEqual(Object.keys(TOPIC_GUIDES), ['йога'], 'реестр заменён списком из базы');
+  assert.equal(await curateTopics({ store, proposeTopic }), null, '«новый год» — не тема');
+  assert.equal(await curateTopics({ store, proposeTopic }), 'ракеточный спорт');
+  assert.deepEqual(asked, ['новый год', 'падел'], 'об отклонённой метке второй раз не спрашиваем');
+  assert.deepEqual(Object.keys(TOPIC_GUIDES), ['йога', 'ракеточный спорт'], 'новая тема сразу в реестре: следующий анонс её получит');
+  setTopics(builtIn);
+}
+
 const { backfillTopics } = await import('./backfill.mjs');
 const saved = {};
 await backfillTopics({

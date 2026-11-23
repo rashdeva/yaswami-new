@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useTopics } from '../hooks/useTopics.ts';
 import { useForm } from 'react-hook-form';
 import type { Event, EventUpdateInput, Guide } from '@yaswami/core';
 import { ABOUT_MAX, ABOUT_STEP_MAX, GUIDE_MAX, TOPIC_GUIDES } from '@yaswami/core';
@@ -102,6 +103,7 @@ function AboutForm({ event, save }: { event: EventData['event']; save: Save }) {
   const { topic, steps, beginner_friendly: beginner, guide } = watch();
 
   // Сменили тему: гид подставляем из шаблона, только если свои правки в нём не сделаны.
+  const topics = useTopics();
   const pickTopic = (next: string) => {
     if (sameGuide(guide, EMPTY_GUIDE) || sameGuide(guide, templateOf(topic))) setValue('guide', templateOf(next));
     setValue('topic', next); // тема — управляемое поле: у события может быть тема, которой нет в списке
@@ -145,7 +147,7 @@ function AboutForm({ event, save }: { event: EventData['event']; save: Save }) {
         <label htmlFor="e-topic">Тема</label>
         <select id="e-topic" value={topic} onChange={(e) => pickTopic(e.target.value)}>
           <option value="">Без темы</option>
-          {Object.keys(TOPIC_GUIDES).map((t) => <option key={t} value={t}>{t}</option>)}
+          {topics.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </div></div>
       {(topic || !sameGuide(guide, EMPTY_GUIDE)) && GUIDE_FIELDS.map(([key, label]) => (

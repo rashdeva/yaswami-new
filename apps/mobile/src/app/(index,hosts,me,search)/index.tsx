@@ -5,7 +5,7 @@ import { TOPIC_GUIDES } from '@yaswami/core';
 import { EventRow } from '@/components/event-row';
 import { State } from '@/components/state';
 import { dayLabel } from '@/format';
-import { useFeed } from '@/queries';
+import { useFeed, useTopics } from '@/queries';
 import { colors } from '@/theme';
 
 const POPULAR = 'popular';
@@ -14,7 +14,7 @@ export default function Feed() {
   const { days, data, error, isPending, refetch, isRefetching } = useFeed();
   const [topic, setTopic] = useState<string | null>(null);
   // Предлагаем только темы, по которым есть события; порядок — как в гиде.
-  const topics = Object.keys(TOPIC_GUIDES).filter((t) => data?.some((e) => e.topic === t));
+  const topics = useTopics().filter((t) => data?.some((e) => e.topic === t));
   const sections = days
     .map((d) => ({ ...d, data: d.data.filter((e) => !topic || (topic === POPULAR ? e.popular : e.topic === topic)) }))
     .filter((d) => d.data.length);

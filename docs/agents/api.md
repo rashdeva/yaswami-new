@@ -20,7 +20,7 @@
 | `/auth/*`, `/tokens` | секреты входа не проходят через модель |
 | `POST /admin/accounts/:id/login` | шаг входа в наш аккаунт Telegram — код и пароль — вводит человек в админке: секреты не проходят через модель |
 | `/telegram/webhook`, `/internal/*` | вход для Telegram и сборщика, не операция сервиса |
-| `/config`, `/photos/:id`, `/health`, `…/visit` | обслуживание интерфейса: настройки, картинки, счётчик заходов |
+| `/config`, `/photos/:id`, `/topics/:slug/icon`, `/health`, `…/visit` | обслуживание интерфейса: настройки, картинки, счётчик заходов |
 | `DELETE /me` | удалить аккаунт может только сам человек из приложения или сайта: модель не должна стирать его по просьбе в переписке |
 | `GET /admin/live` | поток для экрана админки (кто пишет, «в переписке новое»): мгновенное состояние, а не операция — модели в нём нечего делать |
 
@@ -63,6 +63,8 @@
 | Собранное событие (в Luma такого нет) | `collected_events_*`, `/collected-events` | `collected_events_signup` |
 | Правка одной услуги — Practice (в Luma такого нет) | `admin_practices_update`, `/admin/practices/:id`; запись на неё — по `practice_id` | `PATCH /admin/practices/<id>` `{ "status": "published" }` |
 | Вакансия — Job (в Luma такого нет) | `jobs_*`, `/jobs`; для команды `admin_jobs_*`, `/admin/jobs`; ссылка «Написать» — `contact_url` | `PATCH /admin/jobs/<id>` `{ "status": "published" }` |
+| Правка своих настроек; сейчас одна — Подписка на темы (в Luma такого нет) | `users_update_self`, `PATCH /me`, поле `subscribed_topics` — в пару к `users_get_self` | `PATCH /me` `{ "subscribed_topics": ["йога"] }` |
+| Тема — Topic (в Luma такого нет) | `topics_list`, `/topics`; для команды `admin_topics_*`, `/admin/topics`; ключ — `name`, выключение — `enabled: false` вместо удаления; кандидаты из меток — `admin_topics_candidates` | `PATCH /admin/topics/<name>` `{ "enabled": false }` |
 | Единый поиск по каталогу: события, услуги и вакансии (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
 
 Новый публичный ресурс каталога добавляется в поиск в том же PR (так добавлены вакансии — `type: 'job'`): ещё один `type` в `SearchEntry` и ещё один запрос в `search` (`services.ts`).
@@ -89,6 +91,15 @@
 - Кому открыто, считает `featuresOf(actor)`: включённое всем (`FEATURES_ON` в окружении) плюс включённое лично. Фронт получает готовый список в `/me` (`features`).
 - Открыть всем — дописать имя в `FEATURES_ON` на Railway; открыть одному — переключатель в карточке пользователя (`admin_users_update`, поле `features`).
 - Действие команды за человека (`admin_events_create`) возможности не требует и не выдаёт её.
+
+## Темы
+
+Список тем живёт в таблице `topics`, а не в коде. `TOPIC_GUIDES` в `packages/core/src/topics.ts` — реестр в памяти процесса: при загрузке в нём первые темы, дальше его заменяет `setTopics` списком из базы (API — при старте, после правки и раз в минуту, `apps/api/src/topics.ts`; сборщик — каждый проход; сайт, админка и приложение — ответом `GET /topics`).
+
+- Список тем нельзя читать при загрузке модуля (`z.enum(Object.keys(TOPIC_GUIDES))`, константа с вариантами): к этому моменту в реестре только первые темы. Проверка — `isTopic(name)` в `refine`, варианты и схема для ИИ — функцией на каждый вызов.
+- Новые маршруты тем подключены отдельными приложениями Hono (`open.route('/topics', …)` в `app.ts`), а не звеньями общей цепочки: та упёрлась в предел глубины типов TypeScript. Следующий ресурс добавляй так же.
+- Иконка темы — 192×192 PNG в колонке `topics.icon`: рисует роль `illustrator` (скилл `topic-icon`, очередь `requestNextTopicIcon`, до трёх попыток) или загружает команда (`icon_url` в `admin_topics_update`). Белый фон убирает API (`toTopicIcon`). У первых тем иконки лежат файлами в сборке сайта.
+- Сборщик добавляет темы своими запросами (`store.addTopic`, `origin = 'collector'`) — мимо журнала; в админке такие темы помечены.
 
 ## Ошибки
 

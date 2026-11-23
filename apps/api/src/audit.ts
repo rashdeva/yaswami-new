@@ -8,7 +8,7 @@ import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { AdminAction, AdminActionList, AdminActionListInput, AdminEntity, User } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import {
-  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hostSearches, hosts, jobs, messages, photos, practices, practiceSignups, shares, sources,
+  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hostSearches, hosts, jobs, messages, photos, practices, practiceSignups, shares, sources, topics,
   ticketTypes, tgAccounts, users,
 } from './db/schema.ts';
 import { AppError, collectedExternalId } from './services.ts';
@@ -55,7 +55,7 @@ const KINDS: Record<AdminEntity, Kind> = {
   collected_event: {
     root: collectedEvents, key: collectedEvents.external_id, toKey: (id) => collectedExternalId(id),
     // Отклик на публикацию сборщик обновляет каждый проход: в снимке он делал бы любую отмену «изменено с тех пор».
-    omit: ['views', 'reactions'],
+    omit: ['views', 'reactions', 'published_at'], // published_at ставит сводка подписчикам
     children: { cover: photos.collected_external_id, signups: collectedEventSignups.external_id },
   },
   host: { root: hosts, key: hosts.id, children: { photos: photos.host_id, practices: practices.host_id, practice_signups: practiceSignups.host_id, host_searches: hostSearches.host_id } },
@@ -69,6 +69,8 @@ const KINDS: Record<AdminEntity, Kind> = {
   message: { root: messages, key: messages.id },
   contact: { root: contacts, key: contacts.id },
   source: { root: sources, key: sources.channel },
+  // Иконку рисует иллюстратор сам по себе, и она тяжёлая: в снимок не входит, отмена её не трогает.
+  topic: { root: topics, key: topics.name, omit: ['icon', 'icon_at', 'icon_tries'] },
   city: { root: cities, key: cities.id },
   // posted_at сдвигает сборщик при каждом повторе объявления: в снимке он ломал бы отмену.
   job: { root: jobs, key: jobs.id, omit: ['posted_at'] },

@@ -12,6 +12,7 @@ export * from './admin/catalog.ts';
 export * from './admin/users.ts';
 export * from './admin/sources.ts';
 export * from './admin/cities.ts';
+export * from './admin/topics.ts';
 export { getAdminAction, listAdminActions, undoAdminAction } from './audit.ts';
 
 /**

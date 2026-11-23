@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useTopics } from '../hooks/useTopics.ts';
 import type { CollectedEventItem } from '@yaswami/core';
 import { collectedBadges, collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
 import { track } from '../analytics.ts';
@@ -18,6 +19,7 @@ interface Props {
 
 /** Страница организатора или мастера: кто это, что ведёт, ближайшие события и как ему написать. */
 export function HostScreen({ id, city, onOpenEvent, onBack }: Props) {
+  useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const { host, loaded, failed } = useHost(id);
   const signUp = usePracticeSignup();
   useViewed('host_viewed', id);

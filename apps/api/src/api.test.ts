@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Job, JobItem, JobList, AdminJobList, Me, Message, PracticeSignup, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
+import type { AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Job, JobItem, JobList, AdminJobList, Me, Message, PracticeSignup, SearchEntry, SearchResult, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -14,7 +14,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, telegramIdOf, userIdByTelegram, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, jobs, messages, photos, practices as practicesTable, practiceSignups, sources, ticketTypes, users, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, jobs, messages, photos, practices as practicesTable, practiceSignups, sources, ticketTypes, topics as topicsTable, users, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { notify } from './notifications.ts';
@@ -22,8 +22,11 @@ import { saveUserPhoto } from './photos.ts';
 import { listCollectedForAdmin, requestNextCover, requestNextVideo } from './services.ts';
 import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
+import { digestTopics } from './subscriptions.ts';
+import { refreshTopics, requestNextTopicIcon } from './topics.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
 
+import sharp from 'sharp';
 import { host, hunter, illustrator, parseIllustration, parseSupportReply, support, verifyTicket } from './support.ts';
 import { recordHostLead, recordLead } from './inbox.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
@@ -52,6 +55,8 @@ before(async () => {
   // Города из прошлого запуска: Дананг создан миграцией, остальное добавляют тесты.
   await db.execute(sql`delete from sources where city_id <> 'danang'`);
   await db.execute(sql`delete from cities where id <> 'danang'`);
+  // Темы из прошлого запуска: первые создала миграция, остальное добавляют тесты.
+  await db.execute(sql`delete from topics where origin <> 'built_in'`);
   app = createApp({ db, botToken: BOT_TOKEN });
 });
 after(() => db.$client.end());
@@ -241,7 +246,7 @@ test('MCP: список инструментов, создание событи�
     'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
     'events_ticket_types_update', 'events_update', 'host_searches_create', 'host_searches_delete', 'host_searches_list', 'host_searches_matches_list', 'host_searches_update',
-    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'jobs_get', 'jobs_list', 'me_collected_list', 'search', 'users_get_self',
+    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'jobs_get', 'jobs_list', 'me_collected_list', 'search', 'topics_list', 'users_get_self', 'users_update_self',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
@@ -303,7 +308,7 @@ test('собранные события: витрина без входа, за�
   const guest = tma(20, 'Оля');
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
-  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: await uid(20), first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [], host_id: null });
+  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: await uid(20), first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [], host_id: null, subscribed_topics: null });
 
   // «Мои события»: куда записывался и куда только заходил
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-2-0/visit', {})).status, 204);
@@ -1401,6 +1406,121 @@ test('лимит аккаунта: первых сообщений за сутк
   assert.equal((await send(await dialog(605), 'Здравствуйте!')).status, 204);
 });
 
+test('темы: список из базы; команда добавляет, правит и выключает; метки переводят события; иконка', async () => {
+  settings.adminIds = [ADMIN];
+  const admin = tma(ADMIN, 'Админ');
+  const guest = tma(1300, 'Гость');
+  const listed = async () => (await (await app.request('/topics')).json()) as TopicItem[];
+  const first = await listed();
+  assert.deepEqual([first.length, first[0]!.name, first[0]!.slug, first[0]!.color, first[0]!.icon_url], [12, 'баня', 'banya', '#e0442e', null], 'первые темы завела миграция');
+  assert.deepEqual((await mcpCall(guest, 'topics_list', {})).body, first);
+
+  const starts_at = new Date(Date.now() + 86_400_000);
+  const add = (n: number, tag: string, topic = 'другое') => db.insert(collectedEvents).values({
+    external_id: `telegram:topicchan/${n}#0`, channel: 'topicchan', status: 'published', starts_at, signup_url: '', announcement: { url: `https://t.me/topicchan/${n}` }, telegram_username: `host${n}`,
+    event: { title: `Событие ${n}`, description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [tag], telegram_username: `host${n}`, whatsapp_phone: null, url: null, topic },
+  });
+  await add(1, 'Цигун');
+  for (const n of [2, 3, 4]) await add(n, 'падел');
+  await add(5, 'йога', 'йога'); // с темой — не кандидат
+
+  // Кандидаты: метки событий без темы.
+  const candidates = async () => ((await mcpCall(admin, 'admin_topics_candidates', { min_events: 1 })).body as TopicCandidate[]).map((c) => [c.tag, c.events_count, c.hosts_count]);
+  assert.deepEqual(await candidates(), [['падел', 3, 3], ['цигун', 1, 1]]);
+  assert.deepEqual(((await (await call(admin, 'GET', '/admin/topics/candidates')).json()) as TopicCandidate[]).map((c) => c.tag), ['падел'], 'по умолчанию — от трёх событий');
+
+  // Новая тема: видна всем, событие с её меткой переходит в неё, на неё можно подписаться.
+  const input = { name: 'Цигун', slug: 'qigong', emoji: '☯️', color: '#0D9488', what: 'Медленные движения.', why: 'Приходят замедлиться.', first: 'Удобная одежда.', not_for: 'Спросите ведущего.', tags: ['цигун', 'тайцзи'] };
+  assert.equal((await call(guest, 'POST', '/admin/topics', input)).status, 403);
+  const created = (await (await call(admin, 'POST', '/admin/topics', input)).json()) as AdminTopic;
+  assert.deepEqual([created.name, created.color, created.origin, created.enabled, created.has_icon, created.icon_url, created.events_count], ['цигун', '#0d9488', 'team', true, false, null, 1]);
+  assert.equal((await call(admin, 'POST', '/admin/topics', input)).status, 409, 'имя занято');
+  assert.equal((await call(admin, 'POST', '/admin/topics', { ...input, name: 'другое', slug: 'other2' })).status, 400, '«другое» — не тема');
+  assert.equal((await listed()).at(-1)!.name, 'цигун');
+  assert.equal(((await (await app.request('/collected-events/topicchan-1-0')).json()) as CollectedEventItem).topic, 'цигун');
+  assert.equal((await call(guest, 'PATCH', '/me', { subscribed_topics: ['цигун'] })).status, 200);
+  assert.deepEqual(await candidates(), [['падел', 3, 3]], 'метка темы больше не кандидат');
+  assert.equal(((await mcpCall(admin, 'admin_topics_list', {})).body as AdminTopic[]).length, 13);
+
+  // Иконка: предмет на белом фоне → PNG 192×192 с прозрачным фоном, адрес меняется вместе с ней.
+  const red = await sharp({ create: { width: 32, height: 32, channels: 3, background: '#ff0000' } }).png().toBuffer();
+  const png = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#ffffff' } }).composite([{ input: red }]).png().toBuffer();
+  const icon_url = `data:image/png;base64,${png.toString('base64')}`;
+  const drawn = (await mcpCall(admin, 'admin_topics_update', { name: 'цигун', icon_url, what: 'Медленные движения в ритме дыхания.' })).body as AdminTopic;
+  assert.match(drawn.icon_url!, /^\/api\/topics\/qigong\/icon\?v=\d+$/);
+  assert.deepEqual([drawn.has_icon, drawn.what], [true, 'Медленные движения в ритме дыхания.']);
+  const served = await app.request(drawn.icon_url!.replace('/api', ''));
+  assert.equal(served.headers.get('content-type'), 'image/png');
+  const { data, info } = await sharp(Buffer.from(await served.arrayBuffer())).raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([info.width, info.height, info.channels, data[3], data[(96 * 192 + 96) * 4 + 3]], [192, 192, 4, 0, 255], 'угол прозрачный, предмет — нет');
+  assert.equal((await (await call(admin, 'PATCH', '/admin/topics/цигун', { icon_url: 'https://example.com/x.png' })).json() as { error: string }).error, 'bad_image_url');
+
+  // Теме без иконки её рисует иллюстратор; первым темам (иконки в сборке) — не нужно.
+  await db.update(topicsTable).set({ icon: null, icon_at: null }).where(eq(topicsTable.name, 'цигун'));
+  const draw = illustrator.ask;
+  let task = '';
+  settings.illustratorUrl = 'http://illustrator.test';
+  illustrator.ask = async (t) => (task = t, { cover_url: icon_url, video_url: null, keep: false });
+  try {
+    assert.equal(await requestNextTopicIcon(db), 'цигун');
+    assert.match(task, /topic-icon[\s\S]*"name":"цигун"/);
+    assert.equal(await requestNextTopicIcon(db), null, 'все с иконками');
+    assert.ok((await listed()).at(-1)!.icon_url);
+  } finally {
+    illustrator.ask = draw;
+    settings.illustratorUrl = '';
+  }
+
+  // Выключенная тема уходит из списка и подписок; событие хранит её имя.
+  const off = (await mcpCall(admin, 'admin_topics_update', { name: 'цигун', enabled: false })).body as AdminTopic;
+  assert.equal(off.enabled, false);
+  assert.equal((await listed()).length, 12);
+  assert.equal((await call(guest, 'PATCH', '/me', { subscribed_topics: ['цигун'] })).status, 400);
+  assert.equal((await call(admin, 'PATCH', '/admin/topics/нет такой', { enabled: false })).status, 404);
+
+  await db.execute(sql`delete from collected_events where channel = 'topicchan'`);
+  await db.delete(topicsTable).where(eq(topicsTable.name, 'цигун'));
+  await refreshTopics(db);
+});
+
+test('подписка на темы: PATCH /me и MCP, сводка новых событий — не чаще раза в сутки и не ночью', async () => {
+  const user = tma(1200, 'Зоя');
+  const me = async (res: Response | Promise<Response>) => ((await (await res).json()) as Me).subscribed_topics;
+  assert.equal(await me(call(user, 'GET', '/me')), null, 'ещё не спрашивали');
+  assert.equal((await call(user, 'PATCH', '/me', { subscribed_topics: ['рыбалка'] })).status, 400, 'темы — только из списка Topic');
+  assert.deepEqual(await me(call(user, 'PATCH', '/me', { subscribed_topics: ['йога', 'йога', 'баня'] })), ['йога', 'баня']);
+  assert.deepEqual((await mcpCall(user, 'users_update_self', { subscribed_topics: ['йога'] })).body.subscribed_topics, ['йога']);
+  await db.update(users).set({ timezone: 'UTC' }).where(eq(users.id, await uid(1200)));
+
+  // Полдень UTC через два дня: подписка (сейчас) заведомо старше суток.
+  const t0 = new Date(Date.now() + 2 * 86_400_000);
+  t0.setUTCHours(12, 0, 0, 0);
+  const at = (hours: number) => new Date(t0.getTime() + hours * 3600_000);
+  const starts_at = at(24 * 30);
+  const add = (n: number, topic: string, status: 'published' | 'pending' = 'published') => db.insert(collectedEvents).values({
+    external_id: `telegram:subchan/${n}#0`, channel: 'subchan', status, starts_at, signup_url: '', announcement: { url: `https://t.me/subchan/${n}` },
+    event: { title: `Событие ${n}`, description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null, topic },
+  });
+  const digests = () => sent.filter(([m, b]) => m === 'sendWidget' && b.chat_id === 1200).map(([, b]) => JSON.parse(b.public_data).t);
+  const step = async (now: Date) => (sent.length = 0, await digestTopics(db, now), digests());
+
+  await add(1, 'йога');
+  await add(2, 'баня'); // не его тема
+  await add(3, 'йога', 'pending'); // не в ленте
+  assert.deepEqual(await step(at(0)), ['Событие 1']);
+  await add(4, 'йога');
+  assert.deepEqual(await step(at(1)), [], 'сутки ещё не прошли');
+  assert.deepEqual(await step(at(24)), ['Событие 4'], 'накопленное приходит следующей сводкой, уже показанное не повторяется');
+  await add(5, 'йога');
+  assert.deepEqual(await step(at(62)), [], 'ночью не пишем');
+  assert.deepEqual(await step(at(72)), ['Событие 5']);
+  // Отписка: строка остаётся — спрашивать заново не будем.
+  assert.deepEqual(await me(call(user, 'PATCH', '/me', { subscribed_topics: [] })), []);
+  await add(6, 'йога');
+  assert.deepEqual(await step(at(120)), []);
+  await db.execute(sql`delete from collected_events where channel = 'subchan'`);
+});
+
 test('отзывы: запрос после события, оценка кнопкой, текст ответом, сводка организатору', async () => {
   const { event } = await newEvent(tma(80, 'Миша'));
   for (const id of [80, 81, 82]) await call(tma(id, `G${id}`), 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved' });
@@ -1965,6 +2085,10 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_collected_events_update: 'PATCH /admin/collected-events/:id',
   admin_collected_events_delete: 'DELETE /admin/collected-events/:id',
   admin_collected_events_redo: 'POST /admin/collected-events/:id/redo',
+  admin_topics_list: 'GET /admin/topics',
+  admin_topics_candidates: 'GET /admin/topics/candidates',
+  admin_topics_create: 'POST /admin/topics',
+  admin_topics_update: 'PATCH /admin/topics/:name',
   admin_sources_list: 'GET /admin/sources',
   admin_sources_create: 'POST /admin/sources',
   admin_sources_update: 'PATCH /admin/sources/:channel',
@@ -2214,7 +2338,9 @@ test('парность: у каждого инструмента MCP есть м
     hosts_practices_signup: 'POST /hosts/:id/practices/signup',
     collected_events_claim: 'POST /collected-events/:id/claim',
     collected_events_signup: 'POST /collected-events/:id/signup',
+    topics_list: 'GET /topics',
     users_get_self: 'GET /me',
+    users_update_self: 'PATCH /me',
     me_collected_list: 'GET /me/collected',
     contacts_list: 'GET /contacts',
     host_searches_list: 'GET /host-searches',
@@ -2234,7 +2360,7 @@ test('парность: у каждого инструмента MCP есть м
   };
   const MCP_ONLY = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update'];
   const REST_ONLY = [
-    'GET /health', 'GET /config', 'GET /photos/:id', 'POST /telegram/webhook', 'POST /internal/account-message', 'POST /internal/account-typing', 'POST /internal/lead', 'GET /admin/live',
+    'GET /health', 'GET /config', 'GET /photos/:id', 'GET /topics/:slug/icon', 'POST /telegram/webhook', 'POST /internal/account-message', 'POST /internal/account-typing', 'POST /internal/lead', 'GET /admin/live',
     'GET /auth/telegram/login', 'GET /auth/telegram/callback', 'POST /auth/logout', 'POST /auth/apple', 'POST /auth/google', 'POST /tokens', 'DELETE /tokens', 'DELETE /me',
     'POST /collected-events/:id/visit', 'POST /events/:id/visit',
     'POST /admin/accounts/:id/login',
@@ -2325,6 +2451,11 @@ const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
   admin_users_update: (w) => ({ args: { user_id: w.otherId, first_name: 'Иван' }, params: { id: w.otherId }, body: { first_name: 'Иван' }, entity_id: String(w.otherId) }),
   admin_users_delete: (w) => ({ args: { user_id: w.guestId }, params: { id: w.guestId }, entity_id: String(w.guestId) }),
   admin_users_tokens_revoke: (w) => ({ args: { user_id: w.otherId }, params: { id: w.otherId }, entity_id: String(w.otherId) }),
+  admin_topics_create: (w) => {
+    const topic = { name: `тема ${w.n}`, slug: `t${w.n}`, emoji: '🎯', color: '#123456', what: 'Что', why: 'Зачем', first: 'Впервые', not_for: 'Кому нет' };
+    return { args: topic, body: topic, entity_id: topic.name };
+  },
+  admin_topics_update: () => ({ args: { name: 'кино', emoji: '🎞' }, params: { name: 'кино' }, body: { emoji: '🎞' }, entity_id: 'кино' }),
   admin_sources_create: (w) => ({ args: { channel: `@newsrc${w.n}` }, body: { channel: `t.me/newsrc${w.n}` }, entity_id: (r) => r.channel }),
   admin_sources_update: (w) => ({ args: { channel: w.source.toUpperCase(), enabled: false }, params: { channel: w.source }, body: { enabled: false }, entity_id: w.source }),
   admin_cities_create: (w) => {
