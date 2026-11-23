@@ -1,5 +1,6 @@
 // Разведка для охотника: npm run scout [запрос1 запрос2 …]. Разовый запуск руками, в проде не работает, ничего не пишет.
-// 1. Ищет публичные группы по названию; с DATABASE_URL добавляет обсуждения при каналах-источниках (там отвечают на анонсы).
+// 1. Ищет публичные группы по названию города (CITY_ID и CITY_ALIASES, как у find-sources.mjs), берёт чаты города с kind leads
+//    и обсуждения при каналах-источниках города (там отвечают на анонсы).
 // 2. Читает их историю за SCOUT_DAYS дней (по умолчанию 30).
 // 3. Показывает, где живое общение, и людей, проявивших интерес к досугу, с баллом: кому писать первым.
 // Сессия — SCOUT_SESSION, отдельный аккаунт: сессию сборщика (TG_SESSION) нельзя открывать рядом с Railway.
@@ -7,6 +8,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import telegram from 'telegram';
 import { connect } from './mtproto.mjs';
 import { signalOf, TOPIC } from './lead.mjs';
+import { scoutCity } from './find-sources.mjs';
+import { createStore } from './store.mjs';
 
 const MAX_PER_CHAT = 5000; // ponytail: болтливый чат обрезается; если важен — искать в нём по словам (messages.Search)
 
@@ -50,12 +53,14 @@ export function chatStats(messages, days, now = Date.now()) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { TG_API_ID, TG_API_HASH, SCOUT_SESSION, LEAD_CHATS = '', DATABASE_URL } = process.env;
-  if (!SCOUT_SESSION) throw new Error('SCOUT_SESSION пуст: войди запасным аккаунтом — npm run login SCOUT_SESSION');
+  const { TG_API_ID, TG_API_HASH, SCOUT_SESSION, DATABASE_URL } = process.env;
+  if (!SCOUT_SESSION || !DATABASE_URL) throw new Error('Нужны SCOUT_SESSION (войди запасным аккаунтом — npm run login SCOUT_SESSION) и DATABASE_URL');
   const days = Number(process.env.SCOUT_DAYS ?? 30);
   const args = process.argv.slice(2).filter((a) => a !== '--'); // pnpm пробрасывает «--» как аргумент
+  const store = createStore(DATABASE_URL);
+  const city = await scoutCity(store);
   const queries = args.length ? args
-    : ['Дананг', 'Danang', 'Da Nang', 'Дананг чат', 'Дананг барахолка', 'Дананг девушки', 'Дананг работа', 'Дананг дети', 'Дананг спорт', 'Дананг танцы', 'Вьетнам Дананг', 'Хойан', 'Hoi An'];
+    : city.names.flatMap((n) => [n, ...['чат', 'барахолка', 'девушки', 'работа', 'дети', 'спорт', 'танцы'].map((w) => `${n} ${w}`)]);
 
   const client = connect({ apiId: TG_API_ID, apiHash: TG_API_HASH, session: SCOUT_SESSION });
   await client.connect();
@@ -67,24 +72,20 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     for (const c of found.chats) if (c.megagroup) add(c, 'поиск');
     await sleep(1500);
   }
-  for (const u of LEAD_CHATS.split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean)) {
-    add(await client.getEntity(u).catch(() => null), 'LEAD_CHATS');
+  for (const { chat } of (await store.chats()).filter((c) => c.leads && c.city_id === city.id)) {
+    add(await client.getEntity(chat).catch(() => null), 'чат города');
   }
-  // Обсуждения при каналах-источниках: там отвечают на анонсы — самые тёплые люди.
-  if (DATABASE_URL) {
-    const { createStore } = await import('./store.mjs');
-    const store = createStore(DATABASE_URL);
-    for (const { channel } of await store.sources()) {
-      if (/^-?\d+$/.test(channel)) continue; // закрытый — только по приглашению
-      try {
-        const full = await client.invoke(new telegram.Api.channels.GetFullChannel({ channel }));
-        const linked = full.chats.find((c) => String(c.id) === String(full.fullChat.linkedChatId));
-        add(linked, `обсуждение @${channel}`);
-      } catch (e) { console.error(`@${channel}: ${e.message}`); }
-      await sleep(1500);
-    }
-    await store.end();
+  // Обсуждения при каналах-источниках города: там отвечают на анонсы — самые тёплые люди.
+  for (const { channel } of (await store.sources()).filter((s) => s.city_id === city.id)) {
+    if (/^-?\d+$/.test(channel)) continue; // закрытый — только по приглашению
+    try {
+      const full = await client.invoke(new telegram.Api.channels.GetFullChannel({ channel }));
+      const linked = full.chats.find((c) => String(c.id) === String(full.fullChat.linkedChatId));
+      add(linked, `обсуждение @${channel}`);
+    } catch (e) { console.error(`@${channel}: ${e.message}`); }
+    await sleep(1500);
   }
+  await store.end();
   console.log(`групп: ${groups.size}, читаем историю за ${days} дн.`);
 
   const rows = [];

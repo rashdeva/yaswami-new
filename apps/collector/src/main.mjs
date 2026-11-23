@@ -10,8 +10,7 @@ import { createStore } from './store.mjs';
 import { contactFor, fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
 import { createSender } from './sender.mjs';
-import { DEFAULT_CITY_ID } from '@yaswami/core';
-import { chatsToPoll, fetchLeads } from './lead.mjs';
+import { fetchLeads } from './lead.mjs';
 import { saveJobs } from './jobs.mjs';
 import { resolveAuthor, saveOffers } from './offers.mjs';
 
@@ -32,8 +31,8 @@ const signupMessage = env.SIGNUP_MESSAGE ?? 'Привет! Я нашёл соб�
 const extractors = new Map();
 const extractFor = ({ city, timezone }) => extractors.get(`${city}|${timezone}`)
   ?? extractors.set(`${city}|${timezone}`, createExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite', city, timezone })).get(`${city}|${timezone}`);
-// Дозаполнение старых событий (backfill.mjs): они собраны до городов, все из первого.
-const extract = extractFor({ city: env.CITY ?? 'Дананг', timezone: env.TIMEZONE ?? 'Asia/Ho_Chi_Minh' });
+// Повторный разбор уже собранных событий (backfill.mjs, refresh.mjs): в городе и поясе самого события ({ city, timezone }).
+const extract = (announcement, place) => extractFor(place)(announcement);
 
 const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const extractOffer = createOfferExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
@@ -130,14 +129,10 @@ const toApi = async (path, body) => {
   if (!res.ok) throw new Error(`API ответил ${res.status}`);
 };
 
-// Большие чаты, где ищем вопросы «куда сходить» (lead.mjs): username без @ через запятую. Анонсы из них не берём.
+// Чаты, где ищем не анонсы, — источники с kind leads и jobs (store.chats()): у каждого свой город, его получают
+// мастера и вакансии. LEAD_CHATS и JOB_CHATS (username без @ через запятую) лишь добавляются туда при старте, дальше
+// чатами управляет команда в админке («Источники»).
 const chatList = (value) => (value ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
-const leadChats = chatList(env.LEAD_CHATS);
-// Чаты о работе: из них берём только вакансии (jobs.mjs). Вакансии ищем и в LEAD_CHATS.
-const jobChats = chatList(env.JOB_CHATS);
-// ponytail: у чатов нет своего города (как и у мастеров из них — hosts.city_id по умолчанию): все вакансии — в город
-// по умолчанию. Появится второй город — чаты переносить в таблицу с city_id, как sources.
-const jobCity = { id: DEFAULT_CITY_ID, name: env.CITY ?? 'Дананг' };
 
 /** Включённые Запросы организаторов; тем, у кого ещё нет ключевых слов (новый или переписанный), их выводит ИИ. */
 async function activeSearches() {
@@ -151,8 +146,8 @@ async function activeSearches() {
   return searches;
 }
 
-/** Один чат: вакансии — всегда; вопросы, Находки и мастера — только при `leads` (чат из LEAD_CHATS и есть API). */
-async function pollLeads(chat, leads_too, searches) {
+/** Один чат: вакансии — всегда; вопросы, Находки и мастера — только при `leads` (чат с kind leads и есть API). */
+async function pollLeads({ chat, city_id, city }, leads_too, searches) {
   const key = `lead:${chat}`; // отметка в той же таблице, что у каналов с анонсами; у чатов о работе ключ того же вида
   const { last, read, leads, offers, candidates, jobs } = await fetchLeads(userbot, chat, cursors[key] ?? 0, { leads: leads_too, searches });
   // Из чата о работе сюда приходят только те, кто сам ищет работу; без адреса API отправлять некуда.
@@ -167,9 +162,9 @@ async function pollLeads(chat, leads_too, searches) {
     await sleep(llmPauseMs);
   }
   if (last !== cursors[key]) await store.saveCursor(key, (cursors[key] = last));
-  const masters = await saveOffers({ store, extractOffer, resolve: (u) => resolveAuthor(userbot, u), pause: () => sleep(llmPauseMs) }, offers);
+  const masters = await saveOffers({ store, extractOffer, resolve: (u) => resolveAuthor(userbot, u), pause: () => sleep(llmPauseMs), city_id }, offers);
   // Каждый проход — в журнал: иначе не отличить «вопросов нет» от «чат не читается».
-  const vacancies = await saveJobs({ store, extractJob, pause: () => sleep(llmPauseMs), city: jobCity }, jobs);
+  const vacancies = await saveJobs({ store, extractJob, pause: () => sleep(llmPauseMs), city: { id: city_id, name: city } }, jobs);
   console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}, мастеров ${masters} из ${offers.length}, находок ${found} из ${candidates.length}, вакансий ${vacancies} из ${jobs.length}`);
 }
 
@@ -202,6 +197,8 @@ if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
 // Отметки читаем заново каждый проход (ниже): команда сбрасывает отметку источника, чтобы перечитать его свежие публикации.
 let cursors = await store.cursors();
 await store.addSources(channels);
+await store.addSources(chatList(env.LEAD_CHATS), 'leads');
+await store.addSources(chatList(env.JOB_CHATS), 'jobs');
 
 // Канал организатора — тоже источник: у него свои события. Каждый новый канал при первом чтении ищется по username
 // (флудоопасно) и отдаёт до 100 публикаций в ИИ, поэтому добавляем по несколько за проход.
@@ -291,10 +288,11 @@ do {
     await pollChannel(source, known, trusted).catch((e) => console.error(`${source.channel}: ${e.message}`));
     await sleep(2000); // не частим с запросами к Telegram
   }
-  const searches = leadChats.length ? await activeSearches().catch((e) => (console.error(`запросы организаторов: ${e.message}`), [])) : [];
-  // Вопросы уходят в API: без его адреса из LEAD_CHATS берём только вакансии.
-  for (const { chat, leads } of chatsToPoll(leadChats, jobChats)) {
-    await pollLeads(chat, Boolean(leads && env.API_URL && env.COLLECTOR_SECRET), searches).catch((e) => console.error(`вопросы ${chat}: ${e.message}`));
+  const chats = await store.chats();
+  const searches = chats.some((c) => c.leads) ? await activeSearches().catch((e) => (console.error(`запросы организаторов: ${e.message}`), [])) : [];
+  // Вопросы уходят в API: без его адреса из чатов берём только вакансии.
+  for (const chat of chats) {
+    await pollLeads(chat, Boolean(chat.leads && env.API_URL && env.COLLECTOR_SECRET), searches).catch((e) => console.error(`вопросы ${chat.chat}: ${e.message}`));
     await sleep(2000);
   }
   await refreshPosts().catch((e) => console.error(`публикации: ${e.message}`));

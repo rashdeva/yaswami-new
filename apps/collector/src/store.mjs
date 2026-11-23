@@ -14,8 +14,11 @@ const linkUser = (tx, telegramId) => tx`
 export function createStore(url) {
   const sql = postgres(url, { onnotice: () => {} });
   return {
-    /** Источники из CHANNELS: добавляем те, которых ещё нет; выключенный в админке так и остаётся выключенным. */
-    addSources: (channels) => channels.length ? sql`insert into sources ${sql(channels.map((channel) => ({ channel })))} on conflict do nothing` : [],
+    /**
+     * Источники из CHANNELS (LEAD_CHATS, JOB_CHATS — с `kind` leads, jobs): добавляем те, которых ещё нет, в первый город.
+     * Выключенный, перенесённый в другой город или сменивший вид в админке так и остаётся.
+     */
+    addSources: (channels, kind = 'announcements') => channels.length ? sql`insert into sources ${sql(channels.map((channel) => ({ channel, kind })))} on conflict do nothing` : [],
     /** Каналы организаторов, которых ещё нет в источниках, — не больше `limit` за раз; возвращает добавленные. */
     adoptHostChannels: async (limit) => (await sql`
       insert into sources (channel, host_id, city_id)
@@ -60,10 +63,20 @@ export function createStore(url) {
       }
       return true;
     }),
+    /** Города, первый — старейший: разовые скрипты (find-sources, scout, backfill-jobs) берут из них название города. */
+    cities: () => sql`select id, name from cities order by created_at, id`,
     sources: () => sql`
       select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
       from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id
-      where s.enabled order by s.created_at`,
+      where s.enabled and s.kind = 'announcements' order by s.created_at`,
+    /**
+     * Включённые чаты, где ищем не анонсы: `leads` — вопросы, мастера и вакансии (бывший LEAD_CHATS), иначе только
+     * вакансии (JOB_CHATS). Мастера и вакансии получают город чата (`city_id`, `city` — его название для ИИ).
+     */
+    chats: () => sql`
+      select s.channel as chat, s.kind = 'leads' as leads, s.city_id, c.name as city
+      from sources s join cities c on c.id = s.city_id
+      where s.enabled and s.kind in ('leads', 'jobs') order by s.created_at`,
     /** Номер последней разобранной публикации по каждому источнику. */
     async cursors() {
       const rows = await sql`select channel, last_number from collector_cursors`;
@@ -190,13 +203,13 @@ export function createStore(url) {
     photosChecked: (hostId) => sql`update hosts set photos_checked_at = now() where id = ${hostId}`,
     /** Предстоящие события без полей «что это мне даст»: собраны до их появления. */
     withoutTopic: () => sql`
-      select external_id, announcement, event from collected_events
+      select external_id, announcement, event, c.name as city, c.timezone from collected_events e join cities c on c.id = e.city_id
       where coalesce(ends_at, starts_at) >= now() and not (event ? 'topic')`,
     setEvent: (external_id, event) => sql`
       update collected_events set event = ${sql.json(event)}, updated_at = now() where external_id = ${external_id}`,
     /** Предстоящие события, чью публикацию ещё не разбирали с фото и видео (refresh.mjs). */
     withoutMedia: () => sql`
-      select external_id, announcement, event from collected_events
+      select external_id, announcement, event, c.name as city, c.timezone from collected_events e join cities c on c.id = e.city_id
       where coalesce(ends_at, starts_at) >= now() and status <> 'rejected' and not (announcement ? 'media')
       order by starts_at`,
     refreshed: (external_id, event, media) => sql`

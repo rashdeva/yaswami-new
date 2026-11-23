@@ -41,7 +41,13 @@ const event = { title: 'Йога на пляже', description: 'd', starts_at: 
 test('сборщик: события, источники и отметки', async () => {
   await store.addSources(['danang', 'yoga']);
   await store.addSources([]);
+  // Чаты города и чаты о работе — тоже источники, но анонсы из них не берутся: они в chats(), со своим городом.
+  await store.addSources(['big_chat'], 'leads');
+  await store.addSources(['jobs_chat', 'big_chat'], 'jobs');
   assert.deepEqual((await store.sources()).map((s: any) => [s.channel, s.city_id, s.host_username]), [['danang', 'danang', null], ['yoga', 'danang', null]]);
+  assert.deepEqual((await store.chats()).map((c: any) => [c.chat, c.leads, c.city_id, c.city]), [['big_chat', true, 'danang', 'Дананг'], ['jobs_chat', false, 'danang', 'Дананг']]);
+  assert.deepEqual((await store.cities()).map((c: any) => [c.id, c.name]), [['danang', 'Дананг']]);
+  await sql`delete from sources where kind <> 'announcements'`;
   await store.saveCursor('danang', 41);
   await store.saveCursor('danang', 42);
   assert.deepEqual(await store.cursors(), { danang: 42 });
@@ -113,8 +119,9 @@ test('сборщик: организаторы, их услуги и фото', 
   assert.deepEqual((await sql`select title, status, position from practices order by position`).map((p) => [p.title, p.status, p.position]), [['Йога', 'published', 0], ['Массаж', 'pending', 1]]);
   assert.equal((await sql`select summary from hosts where telegram_id = 500`)[0]!.summary, 'Ведёт йогу', 'сводку из профиля объявление не меняет');
   // Новый мастер — сразу с услугами.
-  await store.saveOffer({ telegram_id: 501, username: 'boris', name: 'Борис', summary: null, offer_url: 'https://t.me/chat/2', practices: [{ title: 'Бокс', topic: 'спорт', description: null, price: null }] });
+  await store.saveOffer({ telegram_id: 501, username: 'boris', name: 'Борис', summary: null, offer_url: 'https://t.me/chat/2', practices: [{ title: 'Бокс', topic: 'спорт', description: null, price: null }], city_id: 'danang' });
   assert.equal(await store.hasPractices('boris'), true);
+  assert.equal((await sql`select city_id from hosts where telegram_id = 501`)[0]!.city_id, 'danang', 'мастер получает город чата');
 
   assert.deepEqual((await store.stalePhotos(7, 5)).map((h: any) => h.channel), ['anna_channel']);
   await store.savePhotos(host!.id, ['telegram:anna_channel/1', 'telegram:anna_channel/2'], [{ source: 'telegram:anna_channel/1', data: Buffer.from([1]) }, { source: 'telegram:anna_channel/2', data: Buffer.from([2]) }]);

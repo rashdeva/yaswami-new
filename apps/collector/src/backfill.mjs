@@ -10,7 +10,7 @@ export async function backfillTopics({ store, extract, pause }) {
   for (const rows of byAnnouncement.values()) {
     // ИИ бывает перегружен на одном запросе и отвечает на следующем: сбой одного анонса не останавливает остальные,
     // а пропущенный остаётся без topic и попадёт в следующий проход.
-    const events = await extract(rows[0].announcement).catch((e) => console.error(`дозаполнение ${rows[0].announcement.id}: ${e.message}`));
+    const events = await extract(rows[0].announcement, rows[0]).catch((e) => console.error(`дозаполнение ${rows[0].announcement.id}: ${e.message}`));
     await pause();
     if (!events) continue;
     for (const row of rows) {

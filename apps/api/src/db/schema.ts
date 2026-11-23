@@ -3,7 +3,7 @@
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS } from '@yaswami/core';
+import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -451,6 +451,8 @@ export const sources = pgTable(
     // Выключенный источник сборщик не читает. Строку не удаляем: иначе канал организатора добавился бы снова.
     enabled: boolean().notNull().default(true),
     city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
+    // Что сборщик берёт из чата: анонсы событий, вопросы и мастеров с вакансиями (бывший LEAD_CHATS) или только вакансии (JOB_CHATS).
+    kind: text({ enum: SOURCE_KINDS }).notNull().default('announcements'),
     created_at: at('created_at').notNull().defaultNow(),
   },
   // Username в Telegram не различает регистр: @Tea и @tea — один канал.

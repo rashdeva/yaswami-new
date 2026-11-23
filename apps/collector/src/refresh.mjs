@@ -15,7 +15,7 @@ export async function refreshOld({ store, extract, fetchAlbum, downloadPhotos, s
       // Публикацию удалили — разбирать нечего, отмечаем, чтобы не спрашивать снова.
       if (!album) { for (const row of rows) await store.refreshed(row.external_id, row.event, []); continue; }
       const photos = await downloadPhotos(album);
-      const events = await extract({ ...announcement, images: photos.slice(0, 1).map((p) => p.data) });
+      const events = await extract({ ...announcement, images: photos.slice(0, 1).map((p) => p.data) }, rows[0]); // rows[0] — город и пояс события
       await pause();
       const media = await saveMedia(announcement, photos, album);
       if (!media) continue;

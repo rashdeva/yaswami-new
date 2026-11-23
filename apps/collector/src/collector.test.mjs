@@ -416,7 +416,7 @@ console.log('cover ok');
 // Вакансии: отбор без ИИ, повтор, контакт; чат о работе не даёт мастеров и вопросов.
 {
   const { looksLikeJob, jobTextHash, pickJobs, saveJobs } = await import('./jobs.mjs');
-  const { pickFromChat, chatsToPoll } = await import('./lead.mjs');
+  const { pickFromChat } = await import('./lead.mjs');
   const waiter = 'В Сонтра открывается новый ресторан, ищем официантов и бармена. График 5/2, оплата от 12 млн донгов. Писать @Sontra_HR';
   const nanny = 'Ищем няню для двух малышей в Дананге, на полный день с понедельника по пятницу, оплата по договорённости.';
   assert.ok(looksLikeJob(waiter));
@@ -439,10 +439,7 @@ console.log('cover ok');
     { url: 'https://t.me/danang_rabota/1', author: { id: 5, username: 'oleg' }, text: waiter, posted_at: new Date(now * 1000) },
     { url: 'https://t.me/danang_rabota/2', author: { id: 6, username: null }, text: nanny, posted_at: new Date(now * 1000) },
   ]);
-  // Чат только из JOB_CHATS: ни мастеров, ни вопросов, ни Находок — одни вакансии. Из LEAD_CHATS берём всё.
-  assert.deepEqual(chatsToPoll(['danang_chat', 'Both'], ['danang_rabota', 'both']), [
-    { chat: 'danang_chat', leads: true }, { chat: 'Both', leads: true }, { chat: 'danang_rabota', leads: false },
-  ]);
+  // Чат о работе (kind jobs): ни мастеров, ни вопросов, ни Находок — одни вакансии. Из чата города (leads) берём всё.
   const searches = [{ id: 's1', query: 'ищут, куда сходить', keywords: ['сходить'], host_telegram_id: 1 }];
   const onlyJobs = pickFromChat('danang_rabota', messages, { leads: false, searches });
   assert.deepEqual([onlyJobs.leads, onlyJobs.offers, onlyJobs.candidates, onlyJobs.jobs.length], [[], [], [], 2]);
@@ -492,4 +489,13 @@ console.log('cover ok');
   const { contactsIn } = await import('./find-sources.mjs');
   assert.deepEqual(contactsIn('Пишите @Surf_Bob или t.me/surfdanang, чат t.me/joinchat/AbC, почта a@b.co'), ['surf_bob', 'surfdanang']);
   console.log('find-sources ok');
+}
+
+// Город разовых скриптов: канал «про город», если в названии есть основа любого написания города.
+{
+  const { cityMatcher } = await import('./find-sources.mjs');
+  const local = cityMatcher(['Дананг', 'Da Nang', 'Хойан']);
+  assert.ok(['Футбол в Дананге', 'DaNang surf', 'da nang yoga', 'Хойан танцы'].every((t) => local.test(t)));
+  assert.ok(!local.test('Нячанг футбол'));
+  assert.ok(cityMatcher(['Ханой']).test('Йога в Ханое'));
 }
