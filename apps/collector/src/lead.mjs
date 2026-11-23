@@ -23,6 +23,7 @@ export const looksLikeLead = (text) =>
   text.length >= 8 && text.length <= 300 && (ASKS.test(text) || (text.includes('?') && ACTIVITY.test(text)));
 
 import { pickOffers } from './offers.mjs';
+import { pickJobs } from './jobs.mjs';
 
 // Чем занимается человек: первое совпавшее слово — тема (по корню).
 export const TOPIC = /(?<![а-яёa-z])(бачат|сальс|кизомб|танц|йог|медитац|квиз|настолк|покер|мафи[яюи]|волейбол|футбол|баскетбол|падел|теннис|бег|пробежк|сёрф|серф|фридайв|дайв|нетворкинг|митап|лекци|мастер[- ]класс|экскурси|вечеринк|тусовк|концерт|караоке|стендап|кино|bachata|salsa|yoga|quiz|poker|volleyball|basketball|tennis|surf|party|meetup)[а-яёa-z]*/i;
@@ -89,11 +90,30 @@ export function pickSearchCandidates(chat, messages, searches, now = Date.now(),
 }
 
 /**
- * Новые сообщения чата после `afterNumber`: номер последнего, сколько их прочитано, найденные вопросы,
- * самопредставления мастеров и кандидаты в Находки по Запросам организаторов (`searches`).
+ * Что берём из сообщений чата. Вакансии — из любого; вопросы «куда сходить», мастеров и кандидатов в Находки — только
+ * при `leads`: чат о работе (только в JOB_CHATS) их не даёт — людям оттуда мы не пишем и мастеров там не ищем.
  */
-export async function fetchLeads(client, chat, afterNumber, searches = []) {
+export function pickFromChat(chat, messages, { leads = true, searches = [] } = {}) {
+  return {
+    leads: leads ? pickLeads(chat, messages) : [],
+    offers: leads ? pickOffers(chat, messages) : [],
+    candidates: leads ? pickSearchCandidates(chat, messages, searches) : [],
+    jobs: pickJobs(chat, messages),
+  };
+}
+
+/** Чаты прохода без повторов (регистр не важен) и берём ли из каждого вопросы и мастеров: да — только у чатов из LEAD_CHATS. */
+export function chatsToPoll(leadChats, jobChats) {
+  const lead = new Set(leadChats.map((c) => c.toLowerCase()));
+  const seen = new Set();
+  return [...leadChats, ...jobChats].filter((c) => !seen.has(c.toLowerCase()) && seen.add(c.toLowerCase())).map((chat) => ({ chat, leads: lead.has(chat.toLowerCase()) }));
+}
+
+/**
+ * Новые сообщения чата после `afterNumber`: номер последнего, сколько их прочитано и найденное в них (pickFromChat).
+ */
+export async function fetchLeads(client, chat, afterNumber, options) {
   if (!client.connected) await client.connect();
   const messages = (await client.getMessages(/^-?\d+$/.test(chat) ? Number(chat) : chat, { limit: 100, minId: afterNumber })).reverse();
-  return { last: messages.at(-1)?.id ?? afterNumber, read: messages.length, leads: pickLeads(chat, messages), offers: pickOffers(chat, messages), candidates: pickSearchCandidates(chat, messages, searches) };
+  return { last: messages.at(-1)?.id ?? afterNumber, read: messages.length, ...pickFromChat(chat, messages, options) };
 }

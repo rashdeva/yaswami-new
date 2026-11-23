@@ -5,4 +5,5 @@ export * from './prefilter.ts';
 export * from './dedupe.ts';
 export * from './host.ts';
 export * from './offer.ts';
+export * from './job.ts';
 export * from './search.ts';

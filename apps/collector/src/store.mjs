@@ -185,6 +185,14 @@ export function createStore(url) {
     saveSearchMatch: ({ search_id, chat, message_id, url, author, text, sent_at }) => sql`
       insert into host_search_matches ${sql({ search_id, chat, message_id, url, author_id: author.id, author_name: author.name, author_username: author.username, text, sent_at })}
       on conflict do nothing`,
+    /** Повтор объявления (jobs.mjs): сдвигает posted_at, решение команды (status) не трогает; false — такой вакансии нет. */
+    touchJob: async (city_id, text_hash, posted_at) => (await sql`
+      update jobs set posted_at = greatest(posted_at, ${posted_at}) where city_id = ${city_id} and text_hash = ${text_hash}
+      returning id`).length > 0,
+    /** Новая вакансия ждёт решения команды (status по умолчанию — pending). Тот же текст в том же городе — только сдвиг posted_at. */
+    saveJob: (job) => sql`
+      insert into jobs ${sql({ ...job, announcement: sql.json(job.announcement) })}
+      on conflict (city_id, text_hash) do update set posted_at = greatest(jobs.posted_at, excluded.posted_at)`,
     end: () => sql.end(),
   };
 }

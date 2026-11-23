@@ -61,9 +61,10 @@
 | Действия админа | префикс `admin_` у инструмента, `/admin/` в пути | `admin_events_list` ↔ `GET /admin/events` |
 | Собранное событие (в Luma такого нет) | `collected_events_*`, `/collected-events` | `collected_events_signup` |
 | Правка одной услуги — Practice (в Luma такого нет) | `admin_practices_update`, `/admin/practices/:id`; запись на неё — по `practice_id` | `PATCH /admin/practices/<id>` `{ "status": "published" }` |
-| Единый поиск по каталогу: события и услуги (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
+| Вакансия — Job (в Luma такого нет) | `jobs_*`, `/jobs`; для команды `admin_jobs_*`, `/admin/jobs`; ссылка «Написать» — `contact_url` | `PATCH /admin/jobs/<id>` `{ "status": "published" }` |
+| Единый поиск по каталогу: события, услуги и вакансии (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
 
-Новый публичный ресурс каталога добавляется в поиск в том же PR: ещё один `type` в `SearchEntry` и ещё один запрос в `search` (`services.ts`).
+Новый публичный ресурс каталога добавляется в поиск в том же PR (так добавлены вакансии — `type: 'job'`): ещё один `type` в `SearchEntry` и ещё один запрос в `search` (`services.ts`).
 
 Чего в Luma нет (Telegram, витрина собранных событий, переписка, `kind`, ответ «maybe») — называем сами словами из `CONTEXT.md` и пишем у типа: «в Luma такого нет». Сейчас так помечены поля в `packages/core/src/schema.ts`.
 

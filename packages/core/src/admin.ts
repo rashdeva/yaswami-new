@@ -238,7 +238,7 @@ export type AdminContactListInput = z.infer<typeof AdminContactListInput>;
 // --- Журнал действий команды (в Luma такого нет; ADR-0004)
 
 /** Чего касается действие. `entity_id` — id в API: у собранного события — его адрес, у пользователя — Telegram id. */
-export const ADMIN_ENTITIES = ['event', 'collected_event', 'host', 'user', 'account', 'conversation', 'message', 'contact', 'source', 'city'] as const;
+export const ADMIN_ENTITIES = ['event', 'collected_event', 'host', 'user', 'account', 'conversation', 'message', 'contact', 'source', 'city', 'job'] as const;
 export type AdminEntity = (typeof ADMIN_ENTITIES)[number];
 
 /**

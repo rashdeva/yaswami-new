@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -280,6 +280,33 @@ export const practiceSignups = pgTable(
   (t) => [primaryKey({ columns: [t.practice_id, t.user_id] }), index('practice_signups_user_idx').on(t.user_id), index('practice_signups_host_idx').on(t.host_id)],
 );
 
+// Вакансия (Job в @yaswami/core): работодатель ищет человека в городе. Пишет сборщик из чатов о работе (jobs.mjs),
+// команда одобряет в «Каталоге». Гость видит published не старше JOB_TTL_DAYS от posted_at.
+export const jobs = pgTable(
+  'jobs',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
+    title: text().notNull(),
+    employer: text(),
+    description: text(),
+    pay: text(),
+    telegram_username: text().notNull(), // без @, в нижнем регистре
+    announcement: jsonb().$type<Job['announcement']>().notNull(),
+    author_id: telegramId('author_id'),
+    text_hash: text().notNull(),
+    status: text().$type<JobStatus>().notNull().default('pending'),
+    posted_at: at('posted_at').notNull().defaultNow(),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    // Повтор объявления — тот же текст в том же городе: сборщик сдвигает posted_at, а не пишет вторую строку.
+    uniqueIndex('jobs_text_idx').on(t.city_id, t.text_hash),
+    index('jobs_list_idx').on(t.status, t.posted_at),
+    check('jobs_status_check', sql`${t.status} in ('pending', 'published', 'rejected')`),
+  ],
+);
+
 // Запрос организатора: каких людей он ищет в больших чатах (core/host-searches.ts). Ключевые слова выводит сборщик.
 export const hostSearches = pgTable(
   'host_searches',
@@ -483,4 +510,5 @@ export const tablesMatchCore: [
   Same<Omit<typeof practices.$inferSelect, 'host_id' | 'position' | 'created_at'>, Practice>,
   Same<typeof hostSearches.$inferSelect, HostSearch>,
   Same<typeof hostSearchMatches.$inferSelect, HostSearchMatch>,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true];
+  Same<typeof jobs.$inferSelect, Job>,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true];

@@ -61,6 +61,9 @@ export function fromWall(date: string, time: string, timeZone: string): string {
   return new Date(guess - (Date.parse(`${d}T${t}:00Z`) - guess)).toISOString();
 }
 
+/** Дата объявления вакансии: «23 ноября». */
+export const postedLabel = (iso: string) => new Date(iso).toLocaleDateString('ru', { day: 'numeric', month: 'long' });
+
 /** Заголовок дня в ленте: «Сегодня», «Завтра» или «пятница, 14 ноября». Сегодня — по дате устройства. */
 export function dayLabel(wall: string): string {
   const key = collectedDayKey(wall);

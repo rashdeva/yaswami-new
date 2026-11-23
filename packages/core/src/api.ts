@@ -1,6 +1,7 @@
 // Формы запросов и ответов. Одни и те же схемы проверяют REST-запросы, описывают инструменты MCP и формы на фронте.
 import * as z from 'zod';
 import type { Event, Feature, Guest, TicketType, User } from './schema.ts';
+import type { JobItem } from './jobs.ts';
 import { Event as EventSchema, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
 
 const isTimeZone = (tz: string) => {
@@ -196,11 +197,13 @@ export type SearchInput = z.infer<typeof SearchInput>;
 
 /**
  * Находка поиска; `type` говорит, что это. У Practice своей страницы нет — открывается её мастер (`host`).
+ * Вакансия (`job`) — из раздела «Вакансии».
  * Самих организаторов поиск не выдаёт: человек ищет, куда пойти или что заказать, а не кого.
  */
 export type SearchEntry =
   | { type: 'event'; event: CollectedEventItem }
-  | { type: 'practice'; practice: Practice; host: HostListItem };
+  | { type: 'practice'; practice: Practice; host: HostListItem }
+  | { type: 'job'; job: JobItem };
 export interface SearchResult { entries: SearchEntry[] } // самые подходящие первыми
 
 /** Фото или видео из публикации-источника; лежит в нашем бакете (ADR-0006). В Luma такого нет. */
