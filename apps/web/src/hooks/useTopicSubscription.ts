@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Me } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { api } from '../api.ts';
 import { tg } from '../tg.ts';
+import { meQuery } from './useSession.ts';
 import { keys } from './keys.ts';
 
 /**
@@ -12,7 +12,7 @@ import { keys } from './keys.ts';
 export function useTopicSubscription() {
   const client = useQueryClient();
   // Тот же запрос, что в useSession: здесь только читаем его кэш.
-  const me = useQuery({ queryKey: keys.me, queryFn: (): Promise<Me | null> => api.me(), staleTime: Infinity }).data;
+  const me = useQuery(meQuery).data;
   const save = useMutation({
     mutationFn: (topics: string[]) => api.updateSelf({ subscribed_topics: topics }),
     onSuccess: (next, topics) => {
