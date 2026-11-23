@@ -25,5 +25,7 @@ export const keys = {
   actions: (filter: Omit<AdminActionListInput, 'pagination_cursor'>) => ['actions', filter],
   action: (id: string) => ['action', id],
   sources: ['sources'],
+  topics: ['topics'],
+  topicCandidates: ['topics', 'candidates'],
   cities: ['cities'],
 } as const;

@@ -1,7 +1,11 @@
 // Topic и гид по нему: что это за практика, за чем на неё приходят, как пройти первый раз, кому быть осторожнее.
-// Пишется редакцией один раз и показывается на каждом событии Topic — анонс организатора на эти вопросы
-// обычно не отвечает. Тон: «за этим приходят», а не «это даёт»: каталог не обещает эффектов.
-// Новый Topic = новая запись здесь: сборщик берёт список ключей как допустимые значения поля topic.
+// Гид показывается на каждом событии Topic — анонс организатора на эти вопросы обычно не отвечает.
+// Тон: «за этим приходят», а не «это даёт»: каталог не обещает эффектов.
+//
+// Список Topic живёт в базе (таблица `topics`): его правят команда и агенты (`admin_topics_*`), сборщик добавляет
+// темы сам по накопившимся Tag. `TOPIC_GUIDES` ниже — реестр в памяти процесса: при загрузке в нём первые темы
+// (с ними работает старая сборка приложения и первый кадр сайта), а `setTopics` заменяет его списком из базы —
+// API при старте и после правки, сборщик каждый проход, сайт и админка — ответом `GET /topics`.
 // Файл без зависимостей: его импортирует и сборщик.
 
 export interface TopicGuide {
@@ -12,6 +16,17 @@ export interface TopicGuide {
   why: string;
   first: string;
   not_for: string;
+  /** Цвет темы (#rrggbb). У первых тем он ещё и в tokens.css — для кадра до ответа `GET /topics`. */
+  color?: string;
+  /** Иконка из базы: её нарисовал иллюстратор или загрузила команда. Нет — файл `/topics/<slug>.png` сборки. */
+  icon_url?: string | null;
+}
+
+/** Topic, как его отдаёт `GET /topics`: ключ (`name`) и гид. В Luma такого нет. */
+export interface TopicItem extends TopicGuide {
+  name: string;
+  color: string;
+  icon_url: string | null;
 }
 
 export const TOPIC_GUIDES: Record<string, TopicGuide> = {
@@ -119,5 +134,18 @@ export const OTHER_TOPIC = 'другое';
 /** Короткое имя Topic латиницей: файл иконки и ключ цвета темы (`data-topic` в apps/web/src/tokens.css). У «другого» и у событий, собранных до появления поля, — `other`. */
 export const topicSlug = (topic?: string | null) => (topic && TOPIC_GUIDES[topic]?.slug) || 'other';
 
-/** Иконка Topic. */
-export const topicIcon = (topic?: string | null) => `/topics/${topicSlug(topic)}.png`;
+/** Иконка Topic: из базы, а у первых тем и у «другого» — файл сборки. */
+export const topicIcon = (topic?: string | null) => (topic && TOPIC_GUIDES[topic]?.icon_url) || `/topics/${topicSlug(topic)}.png`;
+
+// Темы, чьи иконки лежат файлами в сборке сайта: им иконку из базы ждать не нужно.
+const BUILT_IN_SLUGS = new Set(Object.values(TOPIC_GUIDES).map((g) => g.slug));
+export const hasBuiltInIcon = (slug: string) => BUILT_IN_SLUGS.has(slug);
+
+/** Тема есть в списке (включена) или это «другое». */
+export const isTopic = (topic: string) => topic === OTHER_TOPIC || Object.hasOwn(TOPIC_GUIDES, topic);
+
+/** Заменяет реестр списком из базы; порядок — как пришёл. Объект тот же: кто его импортировал, видит новое. */
+export function setTopics(list: TopicItem[]): void {
+  for (const key of Object.keys(TOPIC_GUIDES)) delete TOPIC_GUIDES[key];
+  for (const { name, ...guide } of list) TOPIC_GUIDES[name] = guide;
+}

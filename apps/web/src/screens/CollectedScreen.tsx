@@ -1,4 +1,5 @@
 import { Drawer } from 'vaul';
+import { useTopics } from '../hooks/useTopics.ts';
 import { useEffect, useState } from 'react';
 import type { CollectedHost } from '@yaswami/core';
 import { collectedIsPast, collectedPath, collectedWhen, topicIcon, topicSlug } from '@yaswami/core';
@@ -34,6 +35,7 @@ interface Props {
 
 /** Событие, собранное из открытого канала. Записывает на него организатор: мы фиксируем намерение и ведём к нему. */
 export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim, onOpenEvent, onBack, toast }: Props) {
+  useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const [claiming, setClaiming] = useState(false);
   const [hostOpen, setHostOpen] = useState<CollectedHost | null>(null);
   const { event, failed, signUp: recordSignUp } = useCollectedEvent(id, authed, toast);

@@ -1,7 +1,7 @@
 // Корневой layout: вход, боковое меню разделов, шапка с «ждут вас» и состоянием связи.
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router';
 import {
-  ActivityIcon, BotIcon, CalendarCheckIcon, ChevronsUpDownIcon, HistoryIcon, LayoutListIcon, LogOutIcon, MapPinIcon, MegaphoneIcon, MessagesSquareIcon, RadioTowerIcon,
+  ActivityIcon, BotIcon, CalendarCheckIcon, ChevronsUpDownIcon, HistoryIcon, LayoutListIcon, LogOutIcon, MapPinIcon, MegaphoneIcon, MessagesSquareIcon, RadioTowerIcon, TagsIcon,
   SmartphoneIcon, UserIcon,
 } from 'lucide-react';
 import { loginUrl } from '@/api';
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useCollectedEvents } from '@/hooks/useCollectedEvents';
 import { useInbox } from '@/hooks/useInbox';
+import { useTopicList } from '@/hooks/useTopics';
 import { useLive } from '@/hooks/useLive';
 import { useLogout } from '@/hooks/useLogout';
 import { useUser } from '@/hooks/useUsers';
@@ -33,6 +34,7 @@ const NAV = [
     { to: '/catalog', label: 'Каталог', icon: LayoutListIcon },
     { to: '/hosts', label: 'Мастера', icon: MegaphoneIcon },
     { to: '/sources', label: 'Источники', icon: RadioTowerIcon },
+    { to: '/topics', label: 'Темы', icon: TagsIcon },
     { to: '/cities', label: 'Города', icon: MapPinIcon },
   ] },
   { group: 'Сервис', items: [
@@ -100,6 +102,7 @@ function Gate({ problem }: { problem: string | null }) {
 export function App() {
   const { feed, problem } = useInbox();
   useLive(!!feed);
+  useTopicList(); // темы из базы — в реестр ядра: формы предлагают их на выбор
   const { data: collected } = useCollectedEvents(); // загружается сразу: нужен счётчик в меню
   const match = useMatchRoute();
   if (!feed) return <Gate problem={problem} />;

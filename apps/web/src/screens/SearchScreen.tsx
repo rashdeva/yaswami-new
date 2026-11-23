@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useTopics } from '../hooks/useTopics.ts';
 import type { SearchEntry, Wire } from '@yaswami/core';
 import { collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
 import { track } from '../analytics.ts';
@@ -19,6 +20,7 @@ interface Props {
 
 /** Единый поиск: события, услуги мастеров и вакансии одним списком, самое подходящее первым. Открыт без входа. */
 export function SearchScreen({ query, onQuery, onOpen }: Props) {
+  useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const { ready, entries, failed } = useSearch(query);
   const signUp = usePracticeSignup();
   useViewed('search_viewed');

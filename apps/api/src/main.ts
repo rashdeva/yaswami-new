@@ -12,6 +12,7 @@ import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 import { startFeedbackLoop } from './feedback.ts';
 import { startSubscriptionsLoop } from './subscriptions.ts';
+import { refreshTopics, startTopicsLoop } from './topics.ts';
 
 const { DATABASE_URL, BOT_TOKEN, APP_NAME = 'app', PORT = '3000', TG_CLIENT_SECRET = '', TELEGRAM_WEBHOOK_SECRET = '' } = process.env;
 const { publicUrl: PUBLIC_URL, city: CITY } = settings;
@@ -46,6 +47,9 @@ const api = createApp({
 if (BOT_TOKEN) startFeedbackLoop(db);
 // Подписчикам тем — сводка новых событий ленты, не чаще раза в сутки.
 if (BOT_TOKEN) startSubscriptionsLoop(db);
+// Темы живут в базе: реестр процесса обновляется раз в минуту, новым темам иллюстратор рисует иконку.
+await refreshTopics(db);
+startTopicsLoop(db);
 startVideoLoop(db); // без роли illustrator (ILLUSTRATOR_URL пуст) ничего не делает
 
 // Один сервер на всё: REST под /api, MCP на /mcp, админка под /admin, остальное — собранное мини-приложение.

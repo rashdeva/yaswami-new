@@ -28,6 +28,8 @@ export const ACTIONS: Record<string, string> = {
   admin_contacts_remove: 'Убран контакт',
   admin_sources_create: 'Добавлен источник',
   admin_sources_update: 'Изменён источник',
+  admin_topics_create: 'Добавлена тема',
+  admin_topics_update: 'Изменена тема',
   admin_cities_create: 'Добавлен город',
   admin_cities_update: 'Изменён город',
   admin_accounts_create: 'Добавлен аккаунт Telegram',
@@ -57,13 +59,14 @@ export const ENTITIES: Record<AdminEntity, string> = {
   source: 'Источник',
   city: 'Город',
   job: 'Вакансия',
+  topic: 'Тема',
 };
 
 /** Куда ведёт сущность в админке; null — своей карточки нет (сообщение, контакт). Вакансия — на свою вкладку «Каталога», все статусы. */
 export type EntityLink =
   | { to: '/events/$id' | '/catalog/$id' | '/hosts/$id' | '/users/$id'; params: { id: string } }
   | { to: '/'; search: { c: string } }
-  | { to: '/accounts' | '/sources' | '/cities' }
+  | { to: '/accounts' | '/sources' | '/cities' | '/topics' }
   | { to: '/catalog'; search: { kind: 'jobs'; status: 'all' } }
   | null;
 
@@ -77,6 +80,7 @@ export function entityLink(entity: AdminEntity, id: string): EntityLink {
     case 'account': return { to: '/accounts' };
     case 'source': return { to: '/sources' };
     case 'city': return { to: '/cities' };
+    case 'topic': return { to: '/topics' };
     case 'job': return { to: '/catalog', search: { kind: 'jobs', status: 'all' } };
     default: return null;
   }

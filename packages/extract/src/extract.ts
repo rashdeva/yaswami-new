@@ -11,10 +11,13 @@ export interface Announcement {
   images?: Buffer[]; // фото публикации (JPEG): на афише бывают дата, место и программа, которых нет в тексте
 }
 
-const TOPICS = [...Object.keys(TOPIC_GUIDES), OTHER_TOPIC];
+// Темы живут в базе и меняются на ходу (setTopics в ядре): список и схема считаются на каждый запрос, а не при загрузке.
+export const topicNames = () => [...Object.keys(TOPIC_GUIDES), OTHER_TOPIC];
+/** Что относится к каждой теме — её же гид: по нему модель относит анонс и к теме, добавленной вчера. */
+export const topicHints = () => Object.entries(TOPIC_GUIDES).map(([name, g]) => `«${name}» — ${g.what}`).join('\n');
 
 const str = { type: ['string', 'null'] };
-const SCHEMA = {
+const schema = () => ({
   type: 'object',
   additionalProperties: false,
   required: ['events'],
@@ -38,7 +41,7 @@ const SCHEMA = {
           telegram_username: str,
           whatsapp_phone: str,
           url: str,
-          topic: { type: 'string', enum: TOPICS },
+          topic: { type: 'string', enum: topicNames() },
           what_happens: { type: 'array', items: { type: 'string' } },
           for_whom: str,
           beginner_friendly: { type: ['boolean', 'null'] },
@@ -47,7 +50,7 @@ const SCHEMA = {
       },
     },
   },
-};
+});
 
 const system = ({ city, timezone }: { city: string; timezone: string }) => `Ты разбираешь публикации из Telegram-каналов города ${city} для каталога событий.
 
@@ -63,7 +66,9 @@ const system = ({ city, timezone }: { city: string; timezone: string }) => `Ты
 - telegram_username — username человека, которому пишут для записи, без @. Канал или бот — не подходит, только личный контакт. Если в тексте контакта нет, а автор публикации указан — бери автора. Иначе null: канал, в котором вышла публикация, контактом не считается.
 - whatsapp_phone — номер для записи в WhatsApp в международном формате.
 - url — ссылка на регистрацию или сайт события.
-- topic — одно значение из списка: ${TOPICS.map((t) => `«${t}»`).join(', ')}. Йога — всегда «йога», а не «телесные практики»; шахматы, настольные игры, квизы и мафия — «игры»; событие для детей — «детям», даже если это мастер-класс или наука; лекции, тренинги, разговорные и языковые клубы, мастермайнды — «обучение»; вечеринки, свопы и музыкальные вечера — «встречи и общение».
+- topic — одно значение из списка: ${topicNames().map((t) => `«${t}»`).join(', ')}; не подходит ни одно — «${OTHER_TOPIC}». Что относится к теме:
+${topicHints()}
+  Йога — всегда «йога», а не «телесные практики»; шахматы, настольные игры, квизы и мафия — «игры»; событие для детей — «детям», даже если это мастер-класс или наука; лекции, тренинги, разговорные и языковые клубы, мастермайнды — «обучение»; вечеринки, свопы и музыкальные вечера — «встречи и общение».
 - what_happens — до 5 коротких пунктов: что человек будет делать на событии, в том порядке, как в публикации. Только то, что прямо сказано. Не придумывай «знакомство», «чай», «обсуждение», если их нет в тексте. Перечислить нечего — пустой массив.
 - for_whom — одно предложение: кому подойдёт, со слов публикации.
 - beginner_friendly — true, если сказано, что опыт не нужен; false, если нужен опыт; иначе null.
@@ -107,7 +112,7 @@ export function createExtractor({ model, city, timezone }: { model: string; city
       config: {
         systemInstruction: system({ city, timezone }),
         responseMimeType: 'application/json',
-        responseJsonSchema: SCHEMA,
+        responseJsonSchema: schema(),
       },
     });
     // 503 «модель перегружена» случается часто и проходит за секунды: две повторные попытки.

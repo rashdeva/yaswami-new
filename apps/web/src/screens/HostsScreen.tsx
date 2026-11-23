@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { HostListItem } from '@yaswami/core';
-import { TOPIC_GUIDES, topicIcon } from '@yaswami/core';
+import { topicIcon } from '@yaswami/core';
+import { useTopics } from '../hooks/useTopics.ts';
 import { track } from '../analytics.ts';
 import { GuestRow } from '../components/GuestRow.tsx';
 import { PracticeRow } from '../components/PracticeRow.tsx';
@@ -24,7 +25,7 @@ export function HostsScreen({ city, onOpen, onJobs }: Props) {
 
   // Организатор, у которого есть только события, сюда не попадает: к нему ведёт страница события.
   const masters = hosts?.filter((h) => h.practices.length);
-  const topics = Object.keys(TOPIC_GUIDES).filter((t) => masters?.some((h) => h.practices.some((p) => p.topic === t)));
+  const topics = useTopics().filter((t) => masters?.some((h) => h.practices.some((p) => p.topic === t)));
   const shown = masters?.flatMap((h) => {
     const practices = topic ? h.practices.filter((p) => p.topic === topic) : h.practices;
     return practices.length ? [{ host: h, practices }] : [];

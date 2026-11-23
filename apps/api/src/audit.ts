@@ -8,7 +8,7 @@ import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { AdminAction, AdminActionList, AdminActionListInput, AdminEntity, User } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import {
-  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hostSearches, hosts, jobs, messages, photos, practices, practiceSignups, shares, sources,
+  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hostSearches, hosts, jobs, messages, photos, practices, practiceSignups, shares, sources, topics,
   ticketTypes, tgAccounts, users,
 } from './db/schema.ts';
 import { AppError, collectedExternalId } from './services.ts';
@@ -69,6 +69,8 @@ const KINDS: Record<AdminEntity, Kind> = {
   message: { root: messages, key: messages.id },
   contact: { root: contacts, key: contacts.id },
   source: { root: sources, key: sources.channel },
+  // Иконку рисует иллюстратор сам по себе, и она тяжёлая: в снимок не входит, отмена её не трогает.
+  topic: { root: topics, key: topics.name, omit: ['icon', 'icon_at', 'icon_tries'] },
   city: { root: cities, key: cities.id },
   // posted_at сдвигает сборщик при каждом повторе объявления: в снимке он ломал бы отмену.
   job: { root: jobs, key: jobs.id, omit: ['posted_at'] },

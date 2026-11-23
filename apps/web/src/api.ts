@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, JobItem, JobList, JobListInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, RsvpInput, SearchResult, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
+import type { AppConfig, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, JobItem, JobList, JobListInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, RsvpInput, SearchResult, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
 import { track } from './analytics.ts';
 import { inTelegram, tg } from './tg.ts';
 
@@ -62,6 +62,7 @@ export type EventListData = Wire<EventListItem>;
 
 export const api = {
   config: () => request<AppConfig>('GET', '/config'),
+  listTopics: () => request<TopicItem[]>('GET', '/topics'),
   me: () => request<Me>('GET', '/me'),
   updateSelf: (input: UserSelfUpdateInput) => request<Me>('PATCH', '/me', input),
   logout: () => request<void>('POST', '/auth/logout'),

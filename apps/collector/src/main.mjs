@@ -1,10 +1,11 @@
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createExtractor, createJobExtractor, createOfferExtractor, createSearchMatcher, createSummarizer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
+import { createExtractor, createJobExtractor, createOfferExtractor, createSearchMatcher, createSummarizer, createTopicProposer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
 import { connect, downloadCover, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { refreshOld } from './refresh.mjs';
 import { createBucket } from './bucket.mjs';
+import { curateTopics, syncTopics } from './topics.mjs';
 import { createStore } from './store.mjs';
 import { contactFor, fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
@@ -36,6 +37,8 @@ const extract = extractFor({ city: env.CITY ?? 'Дананг', timezone: env.TIM
 
 const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const extractOffer = createOfferExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
+// Новая тема из меток: TOPIC_MODEL — модель для неё (гид читают все, можно взять посильнее), TOPICS_AUTO=0 — не добавлять темы самому.
+const proposeTopic = createTopicProposer({ model: env.TOPIC_MODEL ?? env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const extractJob = createJobExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const matcher = createSearchMatcher({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 // Поиск по username — самый флудоопасный вызов Telegram: за проход собираем немного профилей, остальные — в следующий.
@@ -269,6 +272,9 @@ async function saveMedia(announcement, photos, album) {
 }
 
 do {
+  // Темы — из базы; новая тема из накопившихся меток — не больше одной за проход.
+  await syncTopics({ store }).catch((e) => console.error('темы:', e.message));
+  if (env.TOPICS_AUTO !== '0') await curateTopics({ store, proposeTopic }).catch((e) => console.error('новая тема:', e.message));
   // Сбой дозаполнения (ИИ перегружен, лимит) не должен останавливать сбор: остаток доберём следующим проходом.
   await backfillTopics({ store, extract, pause: () => sleep(llmPauseMs) }).catch((e) => console.error('дозаполнение:', e.message));
   const adopted = await store.adoptHostChannels(ADOPT_PER_PASS).catch((e) => console.error('источники:', e.message));

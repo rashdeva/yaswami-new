@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, User, CollectedStatus } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, City, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -415,6 +415,30 @@ export const visits = pgTable(
     check('visits_target_check', sql`num_nonnulls(${t.event_id}, ${t.collected_external_id}) = 1`),
   ],
 );
+
+// Topic (CONTEXT.md): тема и гид по ней. Первые темы завела миграция (те же, что в TOPIC_GUIDES ядра), дальше список
+// правят команда и агенты (admin/topics.ts), сборщик добавляет темы по накопившимся Tag (store.mjs). В Luma такого нет.
+export const topics = pgTable('topics', {
+  name: text().primaryKey(), // ключ: он же стоит в событиях и услугах (`topic`), поэтому не переименовывается
+  slug: text().notNull().unique(), // латиницей: адрес иконки и ключ цвета на сайте
+  emoji: text().notNull(),
+  color: text().notNull(), // #rrggbb
+  what: text().notNull(),
+  why: text().notNull(),
+  first: text().notNull(),
+  not_for: text().notNull(),
+  // Tag, которые означают эту тему: события и услуги без темы («другое») с такой меткой переходят в неё.
+  tags: jsonb().$type<string[]>().notNull().default([]),
+  // Выключенная тема не предлагается ни людям, ни сборщику. Строку не удаляем: события хранят её имя.
+  enabled: boolean().notNull().default(true),
+  origin: text().$type<TopicOrigin>().notNull().default('team'),
+  position: integer().notNull().default(0), // порядок в фильтрах
+  // Иконка 192×192 PNG: рисует роль illustrator или загружает команда. У первых тем её нет — файл в сборке сайта.
+  icon: bytea(),
+  icon_at: at('icon_at'), // когда иконку меняли: стоит в её адресе, чтобы кэш не держал старую
+  icon_tries: integer().notNull().default(0), // сколько раз просили иллюстратора: после ICON_TRIES не просим
+  created_at: at('created_at').notNull().defaultNow(),
+});
 
 // Source: канал или группа, откуда сборщик берёт анонсы. Пишут сюда сборщик (CHANNELS при старте, каналы организаторов
 // каждый проход) и команда из админки. В Luma такого нет.

@@ -24,7 +24,8 @@ import { COLLECTED_LABELS, HOST_LABELS, hostEvents, PRACTICE_LABELS } from '@/li
 
 const values = (h: Wire<Host>): Input => ({ name: h.name, city_id: h.city_id, username: h.username, bio: h.bio, channel: h.channel, instagram_handle: h.instagram_handle, summary: h.summary });
 
-const TOPIC_OPTIONS = [...Object.keys(TOPIC_GUIDES), OTHER_TOPIC].map((t) => [t, t] as const);
+// Темы живут в базе: варианты считаются при вызове, после того как useTopicList обновил реестр.
+const topicOptions = () => [...Object.keys(TOPIC_GUIDES), OTHER_TOPIC].map((t) => [t, t] as const);
 const STATUS_OPTIONS = PRACTICE_STATUSES.map((s) => [s, PRACTICE_LABELS[s]] as const);
 const PracticesInput = HostUpdateInput.required({ practices: true }).pick({ practices: true });
 
@@ -91,7 +92,7 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
               {i > 0 && <Separator />}
               <div className="grid items-end gap-4 md:grid-cols-[2fr_1fr_1fr_1fr_auto]">
                 <TextField form={practicesForm} name={`practices.${i}.title`} label="Название" />
-                <SelectField form={practicesForm} name={`practices.${i}.topic`} label="Тема" options={TOPIC_OPTIONS} />
+                <SelectField form={practicesForm} name={`practices.${i}.topic`} label="Тема" options={topicOptions()} />
                 <TextField form={practicesForm} name={`practices.${i}.price`} label="Цена" nullable placeholder="по запросу" />
                 <SelectField form={practicesForm} name={`practices.${i}.status`} label="Статус" options={STATUS_OPTIONS} />
                 <Button type="button" variant="outline" size="icon" aria-label="Убрать услугу" onClick={() => practices.remove(i)}><Trash2Icon /></Button>
@@ -100,7 +101,7 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
             </FieldGroup>
           ))}
           <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => practices.append({ title: '', topic: TOPIC_OPTIONS[0]![0], description: null, price: null, status: 'published' })}><PlusIcon />Добавить услугу</Button>
+            <Button type="button" variant="outline" onClick={() => practices.append({ title: '', topic: topicOptions()[0]![0], description: null, price: null, status: 'published' })}><PlusIcon />Добавить услугу</Button>
             <SaveBar form={practicesForm} />
           </div>
         </form>

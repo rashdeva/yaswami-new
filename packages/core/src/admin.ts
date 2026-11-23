@@ -4,7 +4,8 @@ import type { AdminCollectedEvent, EventView, Practice } from './api.ts';
 import { cityId, dateTime, EventCreateInput, EventUpdateInput, PRACTICE_STATUSES, timeZone } from './api.ts';
 import type { Event, Guest, User } from './schema.ts';
 import { City, Feature, RsvpStatus, User as UserSchema } from './schema.ts';
-import { OTHER_TOPIC, TOPIC_GUIDES } from './topics.ts';
+import type { TopicItem } from './topics.ts';
+import { OTHER_TOPIC, isTopic } from './topics.ts';
 
 const text = (max: number) => z.string().trim().max(max);
 // Сервис сам убирает @ и приводит к нижнему регистру (normalUsername): преобразование в схеме не описать в JSON Schema для MCP.
@@ -158,7 +159,7 @@ export interface AdminHostListItem extends AdminHost {
 export const PracticeInput = z.object({
   id: z.uuid().optional().describe('Id of an existing practice to keep or change; omit to add a new one'),
   title: text(200).min(1),
-  topic: z.enum([...Object.keys(TOPIC_GUIDES), OTHER_TOPIC]).describe('Topic key; a practice with «другое» is hidden from the public catalogue'),
+  topic: z.string().refine(isTopic, 'unknown topic').describe('Topic name from topics_list or «другое»; a practice with «другое» is hidden from the public catalogue'),
   description: text(500).nullable(),
   price: text(100).nullable().describe('Price as the organizer states it, e.g. «500k»; null — on request'),
   status: z.enum(PRACTICE_STATUSES).describe('Moderation: pending — waits for the team, published — shown in the public catalogue, rejected — never shown'),
@@ -250,7 +251,7 @@ export type AdminContactListInput = z.infer<typeof AdminContactListInput>;
 // --- Журнал действий команды (в Luma такого нет; ADR-0004)
 
 /** Чего касается действие. `entity_id` — id в API: у собранного события — его адрес, у пользователя — его id (не Telegram id). */
-export const ADMIN_ENTITIES = ['event', 'collected_event', 'host', 'user', 'account', 'conversation', 'message', 'contact', 'source', 'city', 'job'] as const;
+export const ADMIN_ENTITIES = ['event', 'collected_event', 'host', 'user', 'account', 'conversation', 'message', 'contact', 'source', 'city', 'job', 'topic'] as const;
 export type AdminEntity = (typeof ADMIN_ENTITIES)[number];
 
 /**
@@ -292,4 +293,56 @@ export interface AdminActionList {
   entries: AdminActionEntry[];
   has_more: boolean;
   next_cursor: string | null;
+}
+
+// --- Темы (Topic). Список в базе; правят команда и агенты, сборщик добавляет сам. В Luma такого нет.
+
+/** Кто завёл тему: built_in — первые темы, team — команда или агент через MCP, collector — сборщик по накопившимся Tag. */
+export const TOPIC_ORIGINS = ['built_in', 'team', 'collector'] as const;
+export type TopicOrigin = (typeof TOPIC_ORIGINS)[number];
+
+const guideText = (what: string) => text(400).min(1).describe(what);
+export const TopicCreateInput = z.object({
+  name: z.string().trim().toLowerCase().min(2).max(40).refine((n) => n !== OTHER_TOPIC, 'reserved')
+    .describe('Topic name in Russian, lower case, as people say it: «баня», «настольные игры». It is the key stored on events and cannot be changed later'),
+  slug: z.string().regex(/^[a-z][a-z0-9-]{1,23}$/).describe('Short latin name, e.g. «banya»: part of the icon address'),
+  emoji: z.string().trim().min(1).max(8).describe('One emoji for places where the icon does not fit (bot messages)'),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).describe('Topic colour #rrggbb, saturated, readable as text on white; differs from the colours of other topics'),
+  what: guideText('Guide, 1–2 sentences: what happens at such an event'),
+  why: guideText('Guide: what people come for. Tone «people come to…», never a promise of an effect'),
+  first: guideText('Guide: how to get through the first visit — what to bring, what is normal'),
+  not_for: guideText('Guide: who should be careful or check something beforehand'),
+  tags: z.array(z.string().trim().toLowerCase().min(1).max(40)).max(30).default([])
+    .describe('Tags that mean this topic (e.g. «цигун», «тайцзи»): events and practices with topic «другое» and one of these tags move to the topic'),
+});
+export type TopicCreateInput = z.infer<typeof TopicCreateInput>;
+
+export const TopicUpdateInput = TopicCreateInput.omit({ name: true, slug: true, tags: true }).partial().extend({
+  tags: TopicCreateInput.shape.tags.unwrap().optional(),
+  enabled: z.boolean().optional().describe('false hides the topic: it leaves filters, subscriptions and the list the collector chooses from; events keep it and can be shown again'),
+  icon_url: z.string().max(4_000_000).optional().describe('New icon: https link from the image generator or a data URL (png/jpeg). Square, one object on a plain white background'),
+});
+export type TopicUpdateInput = z.infer<typeof TopicUpdateInput>;
+
+/** Тема в админке: с выключенными, метками и счётчиком. `has_icon` — иконка есть (в базе или файлом сборки). */
+export interface AdminTopic extends TopicItem {
+  tags: string[];
+  enabled: boolean;
+  origin: TopicOrigin;
+  has_icon: boolean;
+  events_count: number; // собранных событий с этой темой, любых статусов
+  created_at: Date;
+}
+
+export const TopicCandidateListInput = z.object({
+  min_events: z.coerce.number().int().min(1).max(100).default(3).describe('Only tags met in at least this many events'),
+});
+export type TopicCandidateListInput = z.infer<typeof TopicCandidateListInput>;
+
+/** Кандидат в темы: Tag, который копится у событий без темы («другое») за последние 90 дней. */
+export interface TopicCandidate {
+  tag: string;
+  events_count: number;
+  hosts_count: number; // сколько разных контактов для записи: один организатор с расписанием — ещё не тема
+  examples: string[]; // названия событий — текст посторонних людей
 }

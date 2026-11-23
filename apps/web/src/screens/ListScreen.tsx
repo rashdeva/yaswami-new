@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useTopics } from '../hooks/useTopics.ts';
 import { useViewed } from '../hooks/useViewed.ts';
 import { useEffect } from 'react';
 import type { CollectedEventItem, Event } from '@yaswami/core';
@@ -37,6 +38,7 @@ interface Props {
 interface Row { key: string; kind: Event['kind']; icon: string; topic?: string; cover?: string | null; title: string; note: string; start: string; /** Дата и время «на стене» в поясе события: по ним день и время в списке. */ wall: string; past: boolean; open: () => void }
 
 export function ListScreen({ events, collected, lead, onOpen, onOpenCollected, onLogout, onNew, onPeople, onKind }: Props) {
+  useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   // Событие считается прошедшим через три часа после начала (или после конца, если он задан).
   const now = Date.now();
   const rows: Row[] = [

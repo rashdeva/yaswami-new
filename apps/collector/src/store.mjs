@@ -28,6 +28,38 @@ export function createStore(url) {
      * Включённые источники; у канала организатора — его username: контакт для анонсов без контакта.
      * Город источника (id, название, часовой пояс) получают события из него; в этом поясе ИИ читает время анонса.
      */
+    /** Включённые темы в порядке фильтров — как `GET /topics`: ими сборщик заменяет реестр ядра каждый проход. */
+    topics: () => sql`
+      select name, slug, emoji, color, what, why, first, not_for from topics where enabled order by position, created_at`,
+    /**
+     * Кандидаты в темы: метки событий без темы («другое») за 90 дней, которые встретились не меньше чем в `minEvents`
+     * событиях у `minHosts` разных организаторов и ещё не тема и не метка темы (в том числе выключенной).
+     */
+    topicCandidates: (minEvents, minHosts) => sql`
+      select lower(t) as tag, count(*)::int as events_count, count(distinct coalesce(e.telegram_username, e.channel))::int as hosts_count,
+        (array_agg(e.event->>'title' order by e.created_at desc))[1:5] as examples
+      from collected_events e, jsonb_array_elements_text(e.event->'tags') t
+      where e.event->>'topic' = 'другое' and e.created_at > now() - interval '90 days'
+        and lower(t) not in (select name from topics union all select jsonb_array_elements_text(tags) from topics)
+      group by 1 having count(*) >= ${minEvents} and count(distinct coalesce(e.telegram_username, e.channel)) >= ${minHosts}
+      order by 2 desc, 1 limit 10`,
+    /**
+     * Новая тема от сборщика (origin = collector): события без темы с её метками переходят в неё. false — имя или slug
+     * заняты. Иконку нарисует иллюстратор: очередь иконок в API (apps/api/src/topics.ts).
+     */
+    addTopic: ({ name, slug, emoji, color, what, why, first, not_for, tags }) => sql.begin(async (tx) => {
+      const added = await tx`
+        insert into topics (name, slug, emoji, color, what, why, first, not_for, tags, origin, position)
+        values (${name}, ${slug}, ${emoji}, ${color.toLowerCase()}, ${what}, ${why}, ${first}, ${not_for}, ${tx.json(tags)}, 'collector', (select coalesce(max(position), 0) + 1 from topics))
+        on conflict do nothing returning name`;
+      if (!added.length) return false;
+      if (tags.length) {
+        await tx`
+          update collected_events set event = jsonb_set(event, '{topic}', to_jsonb(${name}::text)), updated_at = now()
+          where event->>'topic' = 'другое' and exists (select 1 from jsonb_array_elements_text(event->'tags') t where lower(t) in ${tx(tags)})`;
+      }
+      return true;
+    }),
     sources: () => sql`
       select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
       from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id
