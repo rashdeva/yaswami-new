@@ -18,9 +18,10 @@ const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' 
 
 export const users = pgTable('users', {
   // Случайный, а не подряд и не Telegram id: по id нельзя перебрать пользователей или узнать, сколько их (ADR-0008).
-  // 52 случайных бита из gen_random_uuid() (криптостойкий) плюс 10^15 — всегда 16 цифр и в пределах Number.MAX_SAFE_INTEGER.
-  // ponytail: совпадение двух id почти невероятно (n²/2^53); при нём вход упадёт на users_pkey, повторный вход пройдёт.
-  id: userId('id').primaryKey().default(sql`1000000000000000 + ('x' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 13))::bit(52)::bigint`),
+  // 6 цифр (100000…999999) из криптостойкого gen_random_uuid(). Совпадение с занятым id возможно — signInWith тогда
+  // берёт другой. ponytail: 9·10^5 вариантов; к ~100 тысячам пользователей повторы станут частыми — тогда длиннее
+  // (поменять 100000 и 900000 здесь; старые id трогать не нужно).
+  id: userId('id').primaryKey().default(sql`100000 + ('x' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 13))::bit(52)::bigint % 900000`),
   first_name: text().notNull(),
   username: text(),
   lang: text().notNull(),
