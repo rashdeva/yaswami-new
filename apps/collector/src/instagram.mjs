@@ -1,6 +1,7 @@
 // Instagram — через акторы Apify, без логина и без своего аккаунта (ADR-0001): публикации профилей-источников и поиск
 // профилей города по хэштегам. Официальный Graph API читает только бизнес-аккаунты и требует проверки бизнеса в Meta.
 import { looksLikeEvent } from '@yaswami/extract';
+import sharp from 'sharp';
 
 const API = 'https://api.apify.com/v2';
 const DONE = ['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'];
@@ -58,11 +59,33 @@ export const toStats = (post) => ({
   reactions: post.likesCount >= 0 ? post.likesCount : null,
 });
 
-/** Фото публикации по порядку карусели и ролик, если он есть: [{ type, url, number }]. Ссылки CDN живут недолго — качать сразу. */
-export const mediaOf = (post) => [
-  ...(post.images?.length ? post.images : [post.displayUrl]).filter(Boolean).map((url, number) => ({ type: 'photo', url, number })),
-  ...(post.videoUrl ? [{ type: 'video', url: post.videoUrl, number: 0 }] : []),
-];
+/**
+ * Фото публикации по порядку карусели и ролик, если он есть: [{ type, url, number, width, height }]. Ссылки CDN живут
+ * недолго — качать сразу. Размеры ролика — из ответа Apify (у карусели — его элемента): по ним сайт решает, ставить ли
+ * вертикальный ролик обложкой. У ролика без размеров их нет.
+ */
+export function mediaOf(post) {
+  const child = post.childPosts?.find((c) => c.videoUrl === post.videoUrl);
+  const size = (p) => ({ width: p?.dimensionsWidth ?? null, height: p?.dimensionsHeight ?? null });
+  return [
+    ...(post.images?.length ? post.images : [post.displayUrl]).filter(Boolean).map((url, number) => ({ type: 'photo', url, number })),
+    ...(post.videoUrl ? [{ type: 'video', url: post.videoUrl, number: 0, ...size(child ?? post) }] : []),
+  ];
+}
+
+/**
+ * Фото в JPEG, длинная сторона не больше `side`: Instagram отдаёт и WebP, и снимки по 2–3 МБ, а ИИ и сайт ждут
+ * лёгкий JPEG. null — не картинка. Ролики не пережимаем: Instagram уже сжал их в H.264 (обычно 2–10 МБ).
+ */
+export async function toJpeg(data, side = 1280, quality = 80) {
+  try {
+    const { data: out, info } = await sharp(data).rotate().resize({ width: side, height: side, fit: 'inside', withoutEnlargement: true })
+      .flatten({ background: '#ffffff' }).jpeg({ quality, mozjpeg: true }).toBuffer({ resolveWithObject: true });
+    return { data: out, width: info.width, height: info.height };
+  } catch {
+    return null;
+  }
+}
 
 /** Файл по ссылке CDN или null, если он тяжелее `max` или не скачался. */
 export async function download(url, max, fetch = globalThis.fetch) {

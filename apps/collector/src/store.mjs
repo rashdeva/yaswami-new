@@ -295,6 +295,12 @@ export function createStore(url) {
     /** Отклик на публикацию-источник — всем событиям из неё (`prefix` — telegram:<канал>/<публикация># или instagram:<код>#). */
     setStats: (prefix, { views, reactions }) => sql`
       update collected_events set views = ${views}, reactions = ${reactions} where starts_with(external_id, ${prefix})`,
+    /** Предстоящие события из Instagram без обложки, но с фото в бакете (собраны до обложек из Instagram): [{ external_id, url }]. */
+    instagramWithoutCover: () => sql`
+      select external_id, m->>'url' as url from collected_events e, jsonb_array_elements(e.announcement->'media') with ordinality as a(m, n)
+      where external_id like 'instagram:%' and coalesce(ends_at, starts_at) >= now() and m->>'type' = 'photo'
+        and not exists (select 1 from photos p where p.collected_external_id = e.external_id)
+        and n = (select min(n2) from jsonb_array_elements(e.announcement->'media') with ordinality as b(m2, n2) where m2->>'type' = 'photo')`,
     /** Фото анонса как обложка события. Обложка уже есть (нарисовал иллюстратор) — не трогаем. */
     saveCover: (external_id, source, data) => sql`
       insert into photos (collected_external_id, source, data) values (${external_id}, ${source}, ${data})
