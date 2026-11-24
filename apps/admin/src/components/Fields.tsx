@@ -72,7 +72,7 @@ export function AreaField({ nullable, rows = 3, ...p }: Base & { nullable?: bool
 export function NumberField(p: Base) {
   return (
     <Shell {...p}>
-      {(f) => <Input id={p.name} type="number" inputMode="numeric" value={(f.value as number | null) ?? ''} onBlur={f.onBlur} onChange={(e) => f.onChange(e.target.value === '' ? null : Number(e.target.value))} />}
+      {(f) => <Input id={p.name} type="number" inputMode="decimal" step="any" value={(f.value as number | null) ?? ''} onBlur={f.onBlur} onChange={(e) => f.onChange(e.target.value === '' ? null : Number(e.target.value))} />}
     </Shell>
   );
 }

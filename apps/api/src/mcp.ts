@@ -83,12 +83,12 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
 
   tool('cities_list', {
     title: 'Cities', readOnly: true, shape: {},
-    description: 'Cities the service works in, the first one first: it is the default city. Pass `id` as `city_id` to collected_events_list, hosts_list, search and jobs_list to see another city; the user\'s own city is `city_id` in users_get_self.',
+    description: 'Cities the service works in, the first one first: it is the default city. Pass `id` as `city_id` to collected_events_list, hosts_list, search and jobs_list to see another city; they also include neighbour cities within 25 km of it (by `latitude`/`longitude`), each item carries its own `city_id`. The user\'s own city is `city_id` in users_get_self (null — not chosen yet, use the first city).',
   }, () => s.listCities(db));
 
   tool('collected_events_list', {
     title: 'Upcoming events in the city', readOnly: true, shape: CityFilterInput.shape,
-    description: 'Public catalogue: upcoming events of one city (`city_id`, default the first city) collected from organizers\' announcements, ordered by start time. `url` opens the event in the Telegram mini app, where a person reads details and signs up; `id` names the event for an event card. Use it to answer "where to go" and "what is on".',
+    description: 'Public catalogue: upcoming events of one city and its neighbours within 25 km (`city_id`, default the first city) collected from organizers\' announcements, ordered by start time. `url` opens the event in the Telegram mini app, where a person reads details and signs up; `id` names the event for an event card. Use it to answer "where to go" and "what is on".',
   }, async (a) => (await s.listCollectedEvents(db, a)).map(eventBrief));
 
   tool('search', {
@@ -467,17 +467,17 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
     // --- Города (admin/cities.ts)
     tool('admin_cities_list', {
       title: 'Cities', readOnly: true, shape: {},
-      description: 'Cities the service works in, oldest first. Sources, catalogue events, organizers and events carry `city_id`; the public catalogue, hosts_list, search and jobs_list take `city_id` and show the first city without it.',
+      description: 'Cities the service works in, oldest first. Sources, catalogue events, organizers and events carry `city_id`; the public catalogue, hosts_list, search and jobs_list take `city_id` (the first city without it) and show neighbour cities within 25 km too — set `latitude`/`longitude` for that.',
     }, () => admin.listCities(db));
 
     tool('admin_cities_create', {
       title: 'Add city', shape: CityCreateInput.shape,
-      description: `Add a city so that sources, organizers and events can be assigned to it. \`timezone\` is the zone announcements of this city are read in. ${ONLY_TEAM} Errors: city_exists.`,
+      description: `Add a city so that sources, organizers and events can be assigned to it. \`timezone\` is the zone announcements of this city are read in; \`latitude\`/\`longitude\` of the centre make cities within 25 km neighbours and let the app pick the city by geolocation. ${ONLY_TEAM} Errors: city_exists.`,
     }, (a) => admin.createCity(db, ctx, a));
 
     tool('admin_cities_update', {
       title: 'Edit city', shape: { city_id: z.string().describe('City id from admin_cities_list'), ...CityUpdateInput.shape },
-      description: `Rename a city or change its time zone; the zone applies to events collected afterwards. Only passed fields change. ${ONLY_TEAM} Errors: not_found.`,
+      description: `Rename a city, change its time zone or coordinates; the zone applies to events collected afterwards. Only passed fields change. ${ONLY_TEAM} Errors: not_found.`,
     }, ({ city_id, ...input }) => admin.updateCity(db, ctx, city_id, input));
 
     // --- Источники сборщика (admin/sources.ts)

@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, SourceCandidate, SourceSearchStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
@@ -26,8 +26,9 @@ export const users = pgTable('users', {
   lang: text().notNull(),
   timezone: text().notNull(),
   features: jsonb().$type<Feature[]>().notNull().default([]),
-  // Город человека: его витрину открывает мини-приложение, о его событиях пишет сводка по темам. Выбирает сам; новый — первый город.
-  city_id: text().notNull().default(DEFAULT_CITY_ID).references((): AnyPgColumn => cities.id),
+  // Город человека: его витрину открывает мини-приложение, о его событиях пишет сводка по темам. Выбирает сам; у нового
+  // пусто — приложение спросит, а до ответа всё идёт по первому городу.
+  city_id: text().references((): AnyPgColumn => cities.id),
   // Уведомления, которые человек выключил в профиле; новое уведомление приходит, пока его не выключат.
   muted_notifications: jsonb().$type<Notification[]>().notNull().default([]),
 });
@@ -65,6 +66,8 @@ export const cities = pgTable('cities', {
   name: text().notNull(),
   timezone: text().notNull(),
   aliases: jsonb().$type<string[]>().notNull().default([]),
+  latitude: doublePrecision(),
+  longitude: doublePrecision(),
   created_at: at('created_at').notNull().defaultNow(),
 });
 

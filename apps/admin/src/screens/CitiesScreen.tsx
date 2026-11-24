@@ -6,7 +6,8 @@ import { CityCreateInput, CityUpdateInput } from '@yaswami/core';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { SourceLink } from '@/components/EntityLink';
-import { ListField, SaveBar, saveDirty, showIssues, TextField } from '@/components/Fields';
+import type { Form } from '@/components/Fields';
+import { ListField, NumberField, SaveBar, saveDirty, showIssues, TextField } from '@/components/Fields';
 import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,7 @@ import { useCities } from '@/hooks/useCities';
 import { useSourceSearches } from '@/hooks/useSourceSearches';
 import { KIND_NAMES } from './SourcesScreen';
 
-const DESCRIPTION = 'Города, в которых работает сервис. У источника, события каталога, организатора и события Ясвами указан город; всё, что было до городов, — Дананг. Новому городу сборщик сам ищет источники в Telegram по названию и другим написаниям, а в Instagram — по хэштегам города — в первый же проход, потом раз в месяц. Каналы и профили, где за месяц хотя бы три публикации похожи на анонс, сразу становятся источниками: их события всё равно проходят модерацию. Группы и остальное найденное — ниже у города: добавьте нужное.';
+const DESCRIPTION = 'Города, в которых работает сервис. Витрина, услуги, вакансии и поиск города показывают и соседние города в 25 км — для этого у города нужны координаты. У источника, события каталога, организатора и события Ясвами указан город; всё, что было до городов, — Дананг. Новому городу сборщик сам ищет источники в Telegram по названию и другим написаниям, а в Instagram — по хэштегам города — в первый же проход, потом раз в месяц. Каналы и профили, где за месяц хотя бы три публикации похожи на анонс, сразу становятся источниками: их события всё равно проходят модерацию. Группы и остальное найденное — ниже у города: добавьте нужное.';
 const ALIASES_HINT = 'Через запятую, как каналы пишут город латиницей или иначе: Nha Trang. По ним ищутся источники';
 const STATUS: Record<string, string> = { queued: 'ждёт сборщика', running: 'ищет, несколько минут', failed: 'не получилось' };
 
@@ -57,11 +58,22 @@ function CitySources({ city }: { city: string }) {
   );
 }
 const ZONE_HINT = 'IANA, например Asia/Tbilisi. В нём сборщик читает время в анонсах города';
-const EMPTY: CreateInput = { id: '', name: '', timezone: '', aliases: [] };
+const EMPTY: CreateInput = { id: '', name: '', timezone: '', aliases: [], latitude: null, longitude: null };
+const COORDS_HINT = 'Центр города, например 5.9746 и 80.4297 (Google Maps: правый клик по карте). Города в 25 км друг от друга — соседи: витрина одного показывает события другого, а приложение находит город по геолокации';
+
+/** Координаты города: по ним считаются соседние города. */
+function Coordinates({ form }: { form: Form }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <NumberField form={form} name="latitude" label="Широта" hint={COORDS_HINT} />
+      <NumberField form={form} name="longitude" label="Долгота" />
+    </div>
+  );
+}
 
 function CityForm({ city }: { city: Wire<City> }) {
   const { update } = useCities();
-  const values = useMemo((): UpdateInput => ({ name: city.name, timezone: city.timezone, aliases: city.aliases }), [city]);
+  const values = useMemo((): UpdateInput => ({ name: city.name, timezone: city.timezone, aliases: city.aliases, latitude: city.latitude, longitude: city.longitude }), [city]);
   const form = useForm({ resolver: zodResolver(CityUpdateInput), values, resetOptions: { keepDirtyValues: true } });
   return (
     <Section title={city.name} description={`id: ${city.id}`}>
@@ -72,6 +84,7 @@ function CityForm({ city }: { city: Wire<City> }) {
             <TextField form={form} name="timezone" label="Часовой пояс" hint={ZONE_HINT} />
           </div>
           <ListField form={form} name="aliases" label="Другие написания" hint={ALIASES_HINT} by="comma" />
+          <Coordinates form={form} />
         </FieldGroup>
         <SaveBar form={form} />
       </form>
@@ -98,6 +111,7 @@ export function CitiesScreen() {
               <TextField form={form} name="timezone" label="Часовой пояс" hint={ZONE_HINT} />
             </div>
             <ListField form={form} name="aliases" label="Другие написания" hint={ALIASES_HINT} by="comma" />
+            <Coordinates form={form} />
           </FieldGroup>
           <div><Button type="submit">Добавить</Button></div>
         </form>

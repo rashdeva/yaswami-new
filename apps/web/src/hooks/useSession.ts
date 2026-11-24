@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import type { Me } from '@yaswami/core';
-import { DEFAULT_CITY_ID } from '@yaswami/core';
+import { DEFAULT_CITY_ID, nearestCityId } from '@yaswami/core';
 import { identify, track } from '../analytics.ts';
 import { api, hasCredentials } from '../api.ts';
 import { setLinkConfig } from '../format.ts';
@@ -96,17 +96,20 @@ const storeCity = (id: string) => {
 
 /**
  * Город человека: его витрину, «Услуги», вакансии и поиск показывает приложение. `cities` — из чего выбрать; `set` —
- * сменить: вошедшему пишем на сервер (по нему же идёт сводка по темам), гостю — в браузер.
+ * сменить: вошедшему пишем на сервер (по нему же идёт сводка по темам), гостю — в браузер. `chosen`: false — ещё не
+ * выбирал (витрина спросит), undefined — выясняем, кто это; до выбора всё идёт по первому городу.
  */
 export function useCity() {
   const client = useQueryClient();
   // Города приходят вместе со страницей (served.cities): название города есть сразу.
   const cities = useQuery({ queryKey: keys.cities, queryFn: api.cities, initialData: served.cities, ...shared }).data ?? [];
-  const me = useQuery(meQuery).data;
+  const { data: me, isPending } = useQuery(meQuery);
   const guest = useQuery({ queryKey: keys.guestCity, queryFn: storedCity, staleTime: Infinity }).data;
-  // Сохранённого города больше нет (команда его убрала) — первый город, а не пустая витрина.
+  // Сохранённого города больше нет (команда его убрала) — спрашиваем заново, а не показываем пустую витрину.
   const known = (id: string | null | undefined) => id && (!cities.length || cities.some((c) => c.id === id)) ? id : null;
-  const city_id = known(me?.city_id) ?? known(guest) ?? DEFAULT_CITY_ID;
+  const picked = known(me?.city_id) ?? known(guest);
+  const city_id = picked ?? DEFAULT_CITY_ID;
+  const chosen = picked ? true : isPending ? undefined : false;
   useEffect(() => { if (me?.city_id) storeCity(me.city_id); }, [me?.city_id]);
   const set = useMutation({
     mutationFn: async (id: string) => {
@@ -119,10 +122,24 @@ export function useCity() {
     onSuccess: (_, id) => track('city_changed', { city_id: id }),
     // Сервер не принял — возвращаем то, что на нём на самом деле.
     onError: () => {
-      if (me) storeCity(me.city_id);
+      if (me?.city_id) storeCity(me.city_id);
       client.setQueryData(keys.guestCity, me?.city_id ?? storedCity());
       void client.invalidateQueries({ queryKey: keys.me });
     },
   });
-  return { city_id, name: cities.find((c) => c.id === city_id)?.name ?? '', cities, set: set.mutate };
+  // Выбрал город гостем, потом вошёл, а на сервере города ещё нет — переносим выбор, чтобы не спрашивать второй раз.
+  const carry = me && !me.city_id ? known(guest) : null;
+  const { mutate } = set;
+  useEffect(() => { if (carry) mutate(carry); }, [carry, mutate]);
+  /** Город по геолокации: ближайший из наших; null — рядом наших нет или человек не разрешил. */
+  const locate = () => new Promise<string | null>((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => resolve(nearestCityId(cities, coords)),
+      () => resolve(null),
+      { timeout: 10_000, maximumAge: 3_600_000 },
+    );
+  });
+  const name = (id: string) => cities.find((c) => c.id === id)?.name ?? '';
+  return { city_id, name: name(city_id), nameOf: name, chosen, cities, set: set.mutate, locate };
 }

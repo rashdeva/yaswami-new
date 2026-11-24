@@ -6,6 +6,7 @@ import { collectedIsPast, collectedPath, collectedWhen, topicIcon, topicSlug } f
 import { track } from '../analytics.ts';
 import { startLogin } from '../api.ts';
 import { useCollectedEvent } from '../hooks/useCollectedEvent.ts';
+import { useCity } from '../hooks/useSession.ts';
 import { useScrolledPast } from '../hooks/useScrolledPast.ts';
 import { openExternal } from '../tg.ts';
 import { collectedLink } from '../format.ts';
@@ -19,7 +20,6 @@ import { ShareButton } from '../components/ShareButton.tsx';
 
 interface Props {
   id: string;
-  city: string;
   /** Человек вошёл: его «Записаться» можно зафиксировать. */
   authed: boolean;
   /** Не вошёл, но на сайте можно войти через Telegram. */
@@ -34,11 +34,13 @@ interface Props {
 }
 
 /** Событие, собранное из открытого канала. Записывает на него организатор: мы фиксируем намерение и ведём к нему. */
-export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim, onOpenEvent, onBack, toast }: Props) {
+export function CollectedScreen({ id, authed, canLogin, signedUp, onClaim, onOpenEvent, onBack, toast }: Props) {
   useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const [claiming, setClaiming] = useState(false);
   const [hostOpen, setHostOpen] = useState<CollectedHost | null>(null);
   const { event, failed, signUp: recordSignUp } = useCollectedEvent(id, authed, toast);
+  // Город самого события, а не человека: в витрине есть и события соседних городов.
+  const city = useCity().nameOf(event?.city_id ?? '');
   const [watch, barShown] = useScrolledPast();
   const heroVideo = useHeroVideo();
   const [viewing, setViewing] = useState<number | null>(null);

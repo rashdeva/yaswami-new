@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Event, Guest, GuestWithName, TicketType } from './index.ts';
-import { collectedBadges, Event as EventSchema, popularIds, PUBLIC_STATE_MAX_BYTES, rsvp, ticketTypeRemovalError, toPublicState } from './index.ts';
+import { collectedBadges, Event as EventSchema, nearbyCityIds, nearestCityId, popularIds, PUBLIC_STATE_MAX_BYTES, rsvp, ticketTypeRemovalError, toPublicState } from './index.ts';
 
 const now = new Date('2026-11-11T12:00:00Z');
 const event: Event = {
@@ -155,4 +155,21 @@ test('темы: реестр заменяется списком из базы; 
   } finally {
     setTopics(builtIn);
   }
+});
+
+test('соседние города: в радиусе NEARBY_KM, ближние первыми; без координат — только сам город', () => {
+  const cities = [
+    { id: 'weligama', latitude: 5.9746, longitude: 80.4297 },
+    { id: 'mirissa', latitude: 5.9483, longitude: 80.4716 },
+    { id: 'ahangama', latitude: 5.9733, longitude: 80.3622 },
+    { id: 'hiriketiya', latitude: 5.9636, longitude: 80.7087 },
+    { id: 'danang', latitude: 16.0544, longitude: 108.2022 },
+    { id: 'nowhere', latitude: null, longitude: null },
+  ];
+  assert.deepEqual(nearbyCityIds(cities, 'weligama'), ['weligama', 'mirissa', 'ahangama']);
+  assert.deepEqual(nearbyCityIds(cities, 'hiriketiya'), ['hiriketiya']);
+  assert.deepEqual(nearbyCityIds(cities, 'nowhere'), ['nowhere']);
+  assert.deepEqual(nearbyCityIds(cities, 'atlantis'), ['atlantis']);
+  assert.equal(nearestCityId(cities, { latitude: 5.95, longitude: 80.46 }), 'mirissa');
+  assert.equal(nearestCityId(cities, { latitude: 55.75, longitude: 37.62 }), null, 'Москва — не рядом ни с кем');
 });
