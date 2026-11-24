@@ -12,7 +12,7 @@ export interface Start {
 
 export function parseStart(raw: string | undefined): Start {
   // id событий дефисом с буквой не заканчиваются (`e_<hex>`, `c_<канал>-<номер>-<индекс>`), поэтому хвосты отделяются однозначно.
-  // id пользователя бывает отрицательным (новые пользователи, ADR-0008): `-r-5`.
+  // До перехода на случайные id (ADR-0008) id бывал отрицательным: `-r-5` — такие ссылки уже разосланы.
   const m = /^(.*?)(?:-r(-?\d+))?(?:-s([A-Za-z0-9_]+))?$/.exec(raw ?? '');
   return { param: m?.[1] || undefined, ref: m?.[2] ? Number(m[2]) : undefined, tag: m?.[3] };
 }

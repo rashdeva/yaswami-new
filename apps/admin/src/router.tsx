@@ -188,7 +188,7 @@ const actions = createRoute({
   validateSearch: (s: Record<string, unknown>): ActionsSearch => ({
     entity: oneOf(s.entity, ADMIN_ENTITIES),
     action: str(s.action),
-    actor: Number.isInteger(Number(s.actor)) && Number(s.actor) !== 0 ? Number(s.actor) : undefined,
+    actor: Number.isInteger(Number(s.actor)) && Number(s.actor) > 0 ? Number(s.actor) : undefined,
   }),
 });
 

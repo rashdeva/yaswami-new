@@ -2,7 +2,7 @@
 // если строка таблицы разошлась с типом из ядра.
 import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-import { bigint, boolean, check, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, customType, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, SourceCandidate, SourceSearchStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
@@ -10,14 +10,17 @@ const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
 const telegramId = (name: string) => bigint(name, { mode: 'number' }); // id в Telegram (чата, автора, организатора): не влезают в int4
 /**
- * Id нашего пользователя (users.id и ссылки на него). Это НЕ Telegram id: у пользователей до ADR-0008 числа совпадают,
- * у новых — нет. Telegram человека — строка provider = 'telegram' в user_identities (telegramIdOf в auth.ts).
+ * Id нашего пользователя (users.id и ссылки на него): случайное непрозрачное число, НЕ Telegram id (ADR-0008).
+ * Telegram человека — строка provider = 'telegram' в user_identities (telegramIdOf в auth.ts).
  */
 const userId = (name: string) => bigint(name, { mode: 'number' });
 const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 
 export const users = pgTable('users', {
-  id: userId('id').primaryKey(),
+  // Случайный, а не подряд и не Telegram id: по id нельзя перебрать пользователей или узнать, сколько их (ADR-0008).
+  // 52 случайных бита из gen_random_uuid() (криптостойкий) плюс 10^15 — всегда 16 цифр и в пределах Number.MAX_SAFE_INTEGER.
+  // ponytail: совпадение двух id почти невероятно (n²/2^53); при нём вход упадёт на users_pkey, повторный вход пройдёт.
+  id: userId('id').primaryKey().default(sql`1000000000000000 + ('x' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 13))::bit(52)::bigint`),
   first_name: text().notNull(),
   username: text(),
   lang: text().notNull(),
@@ -29,11 +32,6 @@ export const users = pgTable('users', {
   muted_notifications: jsonb().$type<Notification[]>().notNull().default([]),
 });
 
-/**
- * Id новых пользователей, каким бы способом они ни вошли (ADR-0008): -1, -2, … Отрицательные — чтобы не совпасть
- * с id пользователей, заведённых до ADR-0008 (у них id равен Telegram id). Знак ничего не значит: id непрозрачный.
- */
-export const localUserIds = pgSequence('users_local_id_seq', { startWith: -1, increment: -1, maxValue: -1, minValue: -Number.MAX_SAFE_INTEGER });
 
 /**
  * Способ входа (CONTEXT.md): кем человека знает внешний поставщик. Telegram — такой же поставщик: его subject —
@@ -45,7 +43,7 @@ export const userIdentities = pgTable(
   {
     provider: text({ enum: IDENTITY_PROVIDERS }).notNull(),
     subject: text().notNull(), // id человека у поставщика: Telegram id, sub из id_token Apple или Google
-    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.provider, t.subject] }), uniqueIndex('user_identities_user_provider_uq').on(t.user_id, t.provider)],
@@ -55,7 +53,7 @@ export const userIdentities = pgTable(
 // отказом (`topics` = []). `notified_at` — до какого момента события ему уже показаны: при подписке — её время, после
 // сводки — время сводки. В Luma такого нет. Города позже встанут сюда же колонкой.
 export const subscriptions = pgTable('subscriptions', {
-  user_id: userId('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  user_id: userId('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
   topics: jsonb().$type<string[]>().notNull(),
   notified_at: at('notified_at').notNull().defaultNow(),
 });
@@ -74,7 +72,7 @@ export const events = pgTable(
   'events',
   {
     id: text().primaryKey(),
-    user_id: userId('user_id').notNull().references(() => users.id), // организатор
+    user_id: userId('user_id').notNull().references(() => users.id, { onUpdate: 'cascade' }), // организатор
     kind: text({ enum: EVENT_KINDS }).notNull(),
     name: text().notNull(),
     description: text(),
@@ -127,7 +125,7 @@ export const guests = pgTable(
   'guests',
   {
     event_id: text().notNull().references(() => events.id, { onDelete: 'cascade' }),
-    user_id: userId('user_id').notNull().references(() => users.id),
+    user_id: userId('user_id').notNull().references(() => users.id, { onUpdate: 'cascade' }),
     approval_status: text({ enum: APPROVAL_STATUSES }).notNull(),
     // Тип с записавшимися гостями удалить нельзя.
     event_ticket_type_id: uuid().references(() => ticketTypes.id, { onDelete: 'restrict' }),
@@ -168,7 +166,7 @@ export const apiTokens = pgTable(
   'api_tokens',
   {
     token_hash: text().primaryKey(),
-    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
     // null — токен без ограничений: всё, что может его владелец.
     scope: text().$type<TokenScope>(),
@@ -233,7 +231,7 @@ export const hosts = pgTable(
   {
     id: uuid().primaryKey().defaultRandom(),
     // Пользователь Ясвами, если этот человек вошёл: профиль подтверждён. null — собран без его участия.
-    user_id: userId('user_id').references(() => users.id, { onDelete: 'set null' }),
+    user_id: userId('user_id').references(() => users.id, { onDelete: 'set null', onUpdate: 'cascade' }),
     // Кто это в Telegram: по этому id профиль привязывается к пользователю при входе. Отдельно от user_id:
     // пользователи со временем будут не только из Telegram.
     // null — организатора добавила команда по username (admin_hosts_create), сборщик ещё не нашёл его в Telegram.
@@ -266,7 +264,7 @@ export const photos = pgTable(
   'photos',
   {
     id: uuid().primaryKey().defaultRandom(),
-    user_id: userId('user_id').unique().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').unique().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     host_id: uuid().references(() => hosts.id, { onDelete: 'cascade' }),
     // Обложка собранного события, одна на событие: фото анонса или картинка, нарисованная иллюстратором.
     collected_external_id: text().unique().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
@@ -287,7 +285,7 @@ export const collectedEventSignups = pgTable(
   'collected_event_signups',
   {
     external_id: text().notNull().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
-    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.external_id, t.user_id] }), index('collected_event_signups_user_idx').on(t.user_id)],
@@ -320,7 +318,7 @@ export const practiceSignups = pgTable(
   {
     practice_id: uuid().notNull().references(() => practices.id, { onDelete: 'cascade' }),
     host_id: uuid().notNull().references(() => hosts.id, { onDelete: 'cascade' }),
-    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.practice_id, t.user_id] }), index('practice_signups_user_idx').on(t.user_id), index('practice_signups_host_idx').on(t.host_id)],
@@ -392,8 +390,8 @@ export const contacts = pgTable(
   'contacts',
   {
     id: uuid().primaryKey().defaultRandom(),
-    host_user_id: userId('host_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    host_user_id: userId('host_user_id').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('contacts_host_user_idx').on(t.host_user_id, t.user_id)],
@@ -406,11 +404,11 @@ export const visits = pgTable(
   'visits',
   {
     id: uuid().primaryKey().defaultRandom(),
-    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     event_id: text().references(() => events.id, { onDelete: 'cascade' }),
     collected_external_id: text().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
     // Кто позвал: пользователь, чьей ссылкой «Позвать друзей» открыли событие.
-    referrer_id: userId('referrer_id').references(() => users.id, { onDelete: 'set null' }),
+    referrer_id: userId('referrer_id').references(() => users.id, { onDelete: 'set null', onUpdate: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [
@@ -555,7 +553,7 @@ export const eventFeedback = pgTable(
   'event_feedback',
   {
     event_id: text().notNull().references(() => events.id, { onDelete: 'cascade' }),
-    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     rating: integer(), // 1–5
     comment: text(),
     // Сообщение бота «что понравилось…»: ответ на него становится текстом отзыва.

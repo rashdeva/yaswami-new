@@ -9,6 +9,6 @@ test('startapp: событие, кто позвал и метка источни
   assert.deepEqual(parseStart('c_danangevent-5-0-r42'), { param: 'c_danangevent-5-0', ref: 42, tag: undefined });
   assert.deepEqual(parseStart('c_danangevent-5-0-sbanya_post'), { param: 'c_danangevent-5-0', ref: undefined, tag: 'banya_post' });
   assert.deepEqual(parseStart('e_0a1b2c3d4e-r42-sinsta'), { param: 'e_0a1b2c3d4e', ref: 42, tag: 'insta' });
-  assert.deepEqual(parseStart('c_danangevent-5-0-r-7-sinsta'), { param: 'c_danangevent-5-0', ref: -7, tag: 'insta' }); // id нового пользователя — отрицательный
+  assert.deepEqual(parseStart('c_danangevent-5-0-r-7-sinsta'), { param: 'c_danangevent-5-0', ref: -7, tag: 'insta' }); // старые ссылки с отрицательным id до ADR-0008
   assert.deepEqual(parseStart('-sinsta_bio'), { param: undefined, ref: undefined, tag: 'insta_bio' }); // просто приложение, без события
 });
