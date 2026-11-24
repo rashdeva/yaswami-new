@@ -400,6 +400,20 @@
       "when": 1795521897341,
       "tag": "20261124120457_short_user_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1795527156260,
+      "tag": "20261124133236_city_coordinates",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1795527156782,
+      "tag": "20261124133236_sri_lanka_cities",
+      "breakpoints": true
     }
   ]
 }
