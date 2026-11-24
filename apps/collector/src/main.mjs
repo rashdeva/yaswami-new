@@ -15,6 +15,8 @@ import { saveJobs } from './jobs.mjs';
 import { resolveAuthor, saveOffers } from './offers.mjs';
 import { searchChannels, TOPICS } from './find-sources.mjs';
 import { cityMatcher } from './city.mjs';
+import { candidatesFrom, cityHashtags, createInstagram, download, mediaOf, toAnnouncement as fromInstagram, toStats as instagramStats } from './instagram.mjs';
+import { instagramOf } from '@yaswami/core';
 
 const env = process.env;
 // Источники живут в таблице sources (раздел «Источники» в админке); CHANNELS при старте только дополняет её.
@@ -24,6 +26,9 @@ if (!env.DATABASE_URL) throw new Error('DATABASE_URL пуст');
 const userbot = connect({ apiId: env.TG_API_ID, apiHash: env.TG_API_HASH, session: env.TG_SESSION });
 const store = createStore(env.DATABASE_URL);
 const bucket = createBucket();
+// Instagram — через Apify (instagram.mjs); без APIFY_TOKEN не читаем и не ищем.
+const instagram = createInstagram({ token: env.APIFY_TOKEN, maxUsd: Number(env.APIFY_MAX_USD ?? 0.5) });
+if (!instagram) console.log('Instagram выключен: нужен APIFY_TOKEN');
 if (!bucket) console.log('Фото и видео анонсов не сохраняются: нужны S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY и MEDIA_PUBLIC_URL');
 const llmPauseMs = Number(env.LLM_PAUSE_MS ?? 4500); // ≈13 запросов в минуту при лимите 15
 const maxAgeMs = Number(env.MAX_AGE_DAYS ?? 14) * 86_400_000; // старые публикации в ИИ не отправляем
@@ -251,58 +256,123 @@ async function sourceSearch() {
   try {
     const results = (await searchChannels(userbot, { names: search.names, local: cityMatcher(search.names), words: CITY_WORDS }))
       .map(({ topic, ...r }) => r);
+    // Instagram — по хэштегам города; его сбой не отменяет найденное в Telegram.
+    if (instagram) results.push(...await instagram.hashtags(cityHashtags(search.names)).then(candidatesFrom)
+      .catch((e) => (console.error(`поиск в Instagram ${search.city_id}: ${e.message}`), [])));
     const strong = SOURCE_AUTO_ADD_MIN > 0 ? results.filter((r) => r.kind === 'announcements' && r.event_like >= SOURCE_AUTO_ADD_MIN) : [];
     const added = await store.addFoundSources(search.city_id, strong.map((r) => r.channel));
     await store.finishSourceSearch(search.id, { results });
-    console.log(`поиск источников ${search.city_id}: найдено ${results.length}, в источники — ${added.map((c) => `@${c}`).join(', ') || 'никого'}`);
+    console.log(`поиск источников ${search.city_id}: найдено ${results.length}, в источники — ${added.join(', ') || 'никого'}`);
   } catch (e) {
     await store.finishSourceSearch(search.id, { error: e.message });
     throw e;
   }
 }
 
-async function pollChannel({ channel, host_username, city_id, city, timezone }, known, trusted) {
-  const extract = extractFor({ city, timezone });
+async function pollChannel(source, known, trusted) {
+  const { channel } = source;
   const fresh = (await fetchChatAnnouncements(userbot, channel, cursors[channel] ?? 0))
     .sort((a, b) => a.announcement.number - b.announcement.number);
   for (const { announcement, album } of fresh) {
     const candidate = Date.now() - new Date(announcement.published_at) < maxAgeMs && looksLikeEvent(announcement.text);
     // Фото качаем только для кандидатов: их видит ИИ (афиша) и, если событие новое, они уходят в бакет.
     const photos = candidate ? await downloadPhotos(userbot, album) : [];
-    const events = candidate ? await extract({ ...announcement, images: photos.slice(0, 1).map((p) => p.data) }) : []; // ИИ — только первое фото: афиша обычно первая, остальные стоят токенов зря
-    let media; // фото и видео публикации в бакете: заливаем один раз, когда из неё появилось новое событие
-    if (candidate) await sleep(llmPauseMs); // бесплатный уровень Gemini считает запросы в минуту
-    for (const [i, event] of events.entries()) {
-      if (new Date(event.ends_at ?? event.starts_at) < Date.now()) continue; // уже прошло
-      event.telegram_username = contactFor(event, channel, host_username);
-      const same = known.find((k) => k.city_id === city_id && isSameEvent(k.event, event));
-      // Канал организатора в источники попал сам, без решения команды: событие, которое она уже проверила, он не меняет.
-      const decided = same && same.status !== 'pending';
-      if (decided && host_username) continue;
-      // Событие без контакта не берём: записаться некуда. Появится контакт в другом посте — склеится или создастся там.
-      if (!same && !event.telegram_username && !event.whatsapp_phone) continue;
-      // Проверенному событию анонс из общего источника дописывает сведения, но не контакт для записи: иначе чужой пост
-      // с похожим названием увёл бы «Записаться» к своему автору.
-      const merged = !same ? event : decided
-        ? { ...mergeEvents(same.event, event), telegram_username: same.event.telegram_username, whatsapp_phone: same.event.whatsapp_phone, url: same.event.url }
-        : mergeEvents(same.event, event);
-      if (same && JSON.stringify(merged) === JSON.stringify(same.event)) continue; // повтор без новых сведений
-      // Дубль дополняет запись первого анонса, а не создаёт вторую.
-      const external_id = same?.external_id ?? `telegram:${announcement.id}#${i}`;
-      if (!same && bucket) media ??= await saveMedia(announcement, photos, album);
-      const status = trusted.has(channel) ? 'approved' : 'pending'; // у известного события upsert статус не меняет
-      await store.upsert({
-        external_id, channel, city_id, announcement: media ? { ...announcement, media } : announcement, event: merged,
-        signup_url: signupUrl(merged, announcement, signupMessage), status,
-      });
-      if (same) same.event = merged; else known.push({ external_id, city_id, event, status });
-      if (!same && status === 'approved') console.log(`${external_id}: одобрено само — доверенный источник`);
-    }
+    const events = candidate ? await saveEvents(source, announcement, photos, () => saveMedia(announcement, photos, album), known, trusted) : 0;
     // Сдвигаем отметку только после записи событий: упали посередине — повторим с этой же публикации.
     cursors[channel] = announcement.number;
     await store.saveCursor(channel, announcement.number);
-    console.log(`${announcement.id}: ${candidate ? `событий ${events.length}` : 'отсеяно до ИИ'}`);
+    console.log(`${announcement.id}: ${candidate ? `событий ${events}` : 'отсеяно до ИИ'}`);
   }
+}
+
+/**
+ * События одной публикации-кандидата: разбор ИИ, склейка с известными, запись. `upload` заливает медиа публикации
+ * в бакет — один раз, когда из неё появилось новое событие. Возвращает, сколько событий нашёл ИИ.
+ */
+async function saveEvents({ channel, host_username, city_id, city, timezone }, announcement, photos, upload, known, trusted) {
+  const events = await extractFor({ city, timezone })({ ...announcement, images: photos.slice(0, 1).map((p) => p.data) }); // ИИ — только первое фото: афиша обычно первая, остальные стоят токенов зря
+  await sleep(llmPauseMs); // бесплатный уровень Gemini считает запросы в минуту
+  const ig = instagramOf(channel);
+  let media; // фото и видео публикации в бакете: заливаем один раз, когда из неё появилось новое событие
+  for (const [i, event] of events.entries()) {
+    if (new Date(event.ends_at ?? event.starts_at) < Date.now()) continue; // уже прошло
+    // В Instagram ник профиля — не контакт в Telegram (contactFor отбросит его как «сам канал»); записаться можно в директ.
+    event.telegram_username = contactFor(event, ig ?? channel, host_username);
+    if (ig) event.instagram_username = ig;
+    const same = known.find((k) => k.city_id === city_id && isSameEvent(k.event, event));
+    // Канал организатора в источники попал сам, без решения команды: событие, которое она уже проверила, он не меняет.
+    const decided = same && same.status !== 'pending';
+    if (decided && host_username) continue;
+    // Событие без контакта не берём: записаться некуда. Появится контакт в другом посте — склеится или создастся там.
+    if (!same && !event.telegram_username && !event.whatsapp_phone && !event.instagram_username) continue;
+    // Проверенному событию анонс из общего источника дописывает сведения, но не контакт для записи: иначе чужой пост
+    // с похожим названием увёл бы «Записаться» к своему автору.
+    const merged = !same ? event : decided
+      ? { ...mergeEvents(same.event, event), telegram_username: same.event.telegram_username, whatsapp_phone: same.event.whatsapp_phone, instagram_username: same.event.instagram_username ?? null, url: same.event.url }
+      : mergeEvents(same.event, event);
+    if (same && JSON.stringify(merged) === JSON.stringify(same.event)) continue; // повтор без новых сведений
+    // Дубль дополняет запись первого анонса, а не создаёт вторую.
+    const external_id = same?.external_id ?? `${ig ? 'instagram' : 'telegram'}:${announcement.id}#${i}`;
+    if (!same && bucket) media ??= await upload();
+    const status = trusted.has(channel) ? 'approved' : 'pending'; // у известного события upsert статус не меняет
+    await store.upsert({
+      external_id, channel, city_id, announcement: media ? { ...announcement, media } : announcement, event: merged,
+      signup_url: signupUrl(merged, announcement, signupMessage), status,
+    });
+    if (same) same.event = merged; else known.push({ external_id, city_id, event, status });
+    if (!same && status === 'approved') console.log(`${external_id}: одобрено само — доверенный источник`);
+  }
+  return events.length;
+}
+
+// Профили Instagram читаем раз в INSTAGRAM_POLL_HOURS часов: Apify берёт деньги за каждую публикацию, а организаторы
+// анонсируют за дни. ponytail: время прошлого чтения — в памяти, после перезапуска читаем сразу.
+const INSTAGRAM_POLL_HOURS = Number(env.INSTAGRAM_POLL_HOURS ?? 6);
+const INSTAGRAM_PHOTO_MAX = 3_000_000;
+const INSTAGRAM_VIDEO_MAX = 50_000_000; // как у Telegram: длинные эфиры не тащим
+let instagramReadAt = 0;
+
+async function pollInstagram(known, trusted) {
+  if (!instagram || Date.now() - instagramReadAt < INSTAGRAM_POLL_HOURS * 3_600_000) return;
+  const sources = await store.instagramSources();
+  if (!sources.length) return;
+  instagramReadAt = Date.now();
+  // Один запуск на все профили, с самой ранней отметки: запуск на каждый профиль дороже. Лишнее отсекаем по отметке ниже.
+  const oldest = Math.min(...sources.map((s) => cursors[s.channel] ?? 0)) * 1000;
+  const posts = await instagram.posts(sources.map((s) => instagramOf(s.channel)), new Date(Math.max(oldest, Date.now() - maxAgeMs)));
+  const byHandle = Map.groupBy(posts, (p) => p.ownerUsername?.toLowerCase());
+  for (const source of sources) {
+    const fresh = (byHandle.get(instagramOf(source.channel)) ?? [])
+      .map((post) => ({ post, announcement: fromInstagram(post) }))
+      .filter(({ announcement }) => announcement.number > (cursors[source.channel] ?? 0))
+      .sort((a, b) => a.announcement.number - b.announcement.number);
+    try {
+      for (const { post, announcement } of fresh) {
+        const candidate = Date.now() - new Date(announcement.published_at) < maxAgeMs && looksLikeEvent(announcement.text);
+        // Фото — только кандидатам, ролик — только когда из публикации появилось новое событие.
+        const photos = candidate ? await downloadInstagram(post, 'photo') : [];
+        const upload = async () => uploadMedia(`instagram/${announcement.id}`, [...photos, ...await downloadInstagram(post, 'video')]);
+        const events = candidate ? await saveEvents(source, announcement, photos, upload, known, trusted) : 0;
+        if (events) await store.setStats(`instagram:${announcement.id}#`, instagramStats(post));
+        cursors[source.channel] = announcement.number;
+        await store.saveCursor(source.channel, announcement.number);
+        console.log(`instagram ${announcement.id}: ${candidate ? `событий ${events}` : 'отсеяно до ИИ'}`);
+      }
+    } catch (e) {
+      console.error(`${source.channel}: ${e.message}`);
+    }
+  }
+}
+
+/** Фото (`type` photo) или ролик публикации Instagram: [{ type, data, mime, ext, number }]. Фото не в JPEG ИИ не покажем — пропускаем. */
+async function downloadInstagram(post, type) {
+  const files = [];
+  for (const m of mediaOf(post).filter((m) => m.type === type)) {
+    const file = await download(m.url, type === 'photo' ? INSTAGRAM_PHOTO_MAX : INSTAGRAM_VIDEO_MAX);
+    if (!file || (type === 'photo' && !file.mime.includes('jpeg'))) continue;
+    files.push({ ...file, type, number: m.number, ext: type === 'photo' ? 'jpg' : 'mp4', mime: type === 'photo' ? 'image/jpeg' : 'video/mp4' });
+  }
+  return files;
 }
 
 /**
@@ -314,14 +384,19 @@ async function saveMedia(announcement, photos, album) {
     ...photos.map((p) => ({ ...p, type: 'photo', mime: 'image/jpeg', ext: 'jpg' })),
     ...(await downloadVideos(userbot, album)).map((v) => ({ ...v, type: 'video', mime: v.type, ext: v.type.split('/')[1] ?? 'mp4' })),
   ].sort((a, b) => a.number - b.number);
+  return uploadMedia(`telegram/${announcement.id.replace(/\/\d+$/, '')}`, files);
+}
+
+/** Файлы публикации в бакет под `prefix`: [{ type, url, width, height }]; сбой бакета — null, событие сохранится без медиа. */
+async function uploadMedia(prefix, files) {
   // Размер в ключе: файл другого размера — другой адрес, CDN не отдаст старую копию.
-  const key = (f) => `telegram/${announcement.id.replace(/\/\d+$/, '')}/${f.number}_${f.width}x${f.height}.${f.ext}`;
+  const key = (f) => `${prefix}/${f.number}_${f.width ?? 0}x${f.height ?? 0}.${f.ext}`;
   try {
     const media = [];
-    for (const f of files) media.push({ type: f.type, url: await bucket.put(key(f), f.data, f.mime), width: f.width, height: f.height });
+    for (const f of files) media.push({ type: f.type, url: await bucket.put(key(f), f.data, f.mime), width: f.width ?? null, height: f.height ?? null });
     return media;
   } catch (e) {
-    console.error(`медиа ${announcement.id}: ${e.message}`);
+    console.error(`медиа ${prefix}: ${e.message}`);
     return null;
   }
 }
@@ -334,6 +409,8 @@ do {
   await backfillTopics({ store, extract, pause: () => sleep(llmPauseMs) }).catch((e) => console.error('дозаполнение:', e.message));
   const adopted = await store.adoptHostChannels(ADOPT_PER_PASS).catch((e) => console.error('источники:', e.message));
   if (adopted?.length) console.log(`новые источники от организаторов: ${adopted.map((c) => `@${c}`).join(', ')}`);
+  const adoptedIg = instagram ? await store.adoptHostInstagram(ADOPT_PER_PASS).catch((e) => console.error('Instagram организаторов:', e.message)) : null;
+  if (adoptedIg?.length) console.log(`новые источники из Instagram организаторов: ${adoptedIg.join(', ')}`);
   const known = await store.upcoming();
   cursors = await store.cursors();
   const trusted = new Set(AUTO_APPROVE_MIN > 0 ? await store.trustedChannels(AUTO_APPROVE_MIN) : []);
@@ -341,6 +418,7 @@ do {
     await pollChannel(source, known, trusted).catch((e) => failed(source.channel, source.channel, e));
     await sleep(2000); // не частим с запросами к Telegram
   }
+  await pollInstagram(known, trusted).catch((e) => console.error(`Instagram: ${e.message}`));
   await savePeers().catch((e) => console.error(`каналы: ${e.message}`));
   await sourceSearch().catch((e) => console.error(`поиск источников: ${e.message}`));
   const chats = await store.chats();

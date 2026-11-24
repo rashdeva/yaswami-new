@@ -25,7 +25,7 @@ import { offsetOf } from '@/lib/form';
 /** Значения формы из события. */
 const values = (e: Wire<AdminCollectedEventView>): Input => ({
   title: e.title, description: e.description, starts_at: e.starts_at, ends_at: e.ends_at, place: e.place, address: e.address, price: e.price, tags: e.tags,
-  telegram_username: e.telegram_username, whatsapp_phone: e.whatsapp_phone, url: e.url, topic: e.topic, what_happens: e.what_happens ?? [], for_whom: e.for_whom ?? null, beginner_friendly: e.beginner_friendly ?? null,
+  telegram_username: e.telegram_username, whatsapp_phone: e.whatsapp_phone, instagram_username: e.instagram_username ?? null, url: e.url, topic: e.topic, what_happens: e.what_happens ?? [], for_whom: e.for_whom ?? null, beginner_friendly: e.beginner_friendly ?? null,
   takeaway: e.takeaway ?? null, city_id: e.city_id,
 });
 
@@ -84,9 +84,10 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
             <ListField form={form} name="tags" label="Теги" by="comma" hint="Через запятую" />
             <FieldSet>
               <FieldLegend variant="label">Запись</FieldLegend>
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2">
                 <TextField form={form} name="telegram_username" label="Telegram организатора" nullable placeholder="username без @" />
                 <TextField form={form} name="whatsapp_phone" label="WhatsApp" nullable />
+                <TextField form={form} name="instagram_username" label="Instagram (директ)" nullable placeholder="ник без @" />
                 <TextField form={form} name="url" label="Ссылка на регистрацию" nullable type="url" />
               </div>
             </FieldSet>

@@ -80,11 +80,11 @@ export const collectedPath = (id: string) => `/e/${encodeURIComponent(id)}`;
 
 /**
  * Куда ведёт «Записаться»: чат организатора в Telegram с готовым сообщением, иначе WhatsApp, иначе ссылка
- * на регистрацию, иначе сам анонс. В сообщении — страница события на Ясвами: по ней организатор поймёт,
+ * на регистрацию, иначе директ в Instagram (готовый текст ig.me не принимает), иначе сам анонс. В сообщении — страница события на Ясвами: по ней организатор поймёт,
  * откуда пришёл человек, и сможет подтвердить событие как своё.
  */
 export function collectedSignupUrl(
-  event: Pick<CollectedEvent, 'title' | 'telegram_username' | 'whatsapp_phone' | 'url'>, sourceUrl: string, pageUrl: string,
+  event: Pick<CollectedEvent, 'title' | 'telegram_username' | 'whatsapp_phone' | 'instagram_username' | 'url'>, sourceUrl: string, pageUrl: string,
 ): string {
   const text = encodeURIComponent(`Здравствуйте! Хочу записаться на «${event.title}». Нашёл событие на Ясвами: ${pageUrl}`);
   const username = event.telegram_username?.replace(/^@/, '');
@@ -92,5 +92,7 @@ export function collectedSignupUrl(
   const phone = event.whatsapp_phone?.replace(/\D/g, '');
   if (phone) return `https://wa.me/${phone}?text=${text}`;
   if (/^https?:\/\//.test(event.url ?? '')) return event.url!;
+  const instagram = event.instagram_username?.replace(/^@/, '');
+  if (instagram && /^[\w.]{1,30}$/.test(instagram)) return `https://ig.me/m/${instagram}`;
   return sourceUrl;
 }

@@ -14,9 +14,10 @@ import { FieldGroup } from '@/components/ui/field';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useCities } from '@/hooks/useCities';
 import { useSourceSearches } from '@/hooks/useSourceSearches';
+import { sourceLink, sourceName } from '@/lib/catalog';
 import { KIND_NAMES } from './SourcesScreen';
 
-const DESCRIPTION = 'Города, в которых работает сервис. У источника, события каталога, организатора и события Ясвами указан город; всё, что было до городов, — Дананг. Новому городу сборщик сам ищет источники в Telegram по названию и другим написаниям — в первый же проход, потом раз в месяц. Каналы, где за месяц хотя бы три публикации похожи на анонс, сразу становятся источниками: их события всё равно проходят модерацию. Группы и остальное найденное — ниже у города: добавьте нужное.';
+const DESCRIPTION = 'Города, в которых работает сервис. У источника, события каталога, организатора и события Ясвами указан город; всё, что было до городов, — Дананг. Новому городу сборщик сам ищет источники в Telegram по названию и другим написаниям, а в Instagram — по хэштегам города — в первый же проход, потом раз в месяц. Каналы и профили, где за месяц хотя бы три публикации похожи на анонс, сразу становятся источниками: их события всё равно проходят модерацию. Группы и остальное найденное — ниже у города: добавьте нужное.';
 const ALIASES_HINT = 'Через запятую, как каналы пишут город латиницей или иначе: Nha Trang. По ним ищутся источники';
 const STATUS: Record<string, string> = { queued: 'ждёт сборщика', running: 'ищет, несколько минут', failed: 'не получилось' };
 
@@ -41,7 +42,7 @@ function CitySources({ city }: { city: string }) {
           <TableBody>
             {found.map((r) => (
               <TableRow key={r.channel} data-state={r.added ? 'disabled' : undefined}>
-                <TableCell><ExternalLink href={`https://t.me/${r.channel}`}>@{r.channel}</ExternalLink> <span className="text-muted-foreground">{r.title}</span></TableCell>
+                <TableCell><ExternalLink href={sourceLink(r.channel)!}>{sourceName(r.channel)}</ExternalLink> <span className="text-muted-foreground">{r.title}</span></TableCell>
                 <TableCell>{KIND_NAMES[r.kind]}</TableCell>
                 <TableCell>{r.members ?? '—'}</TableCell>
                 <TableCell>{r.event_like} / {r.posts_30d}</TableCell>

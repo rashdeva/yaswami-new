@@ -296,3 +296,25 @@ test('сборщик: найденные каналы аккаунта и вык
   await store.disableSource('dancehall', 'другая причина'); // уже выключен — причину не переписываем
   assert.equal((await sql`select disabled_reason from sources`)[0]!.disabled_reason, 'В Telegram нет канала с таким username');
 });
+
+test('сборщик: профили Instagram — свой список, Instagram организаторов, медиа не перечитываются юзерботом', async () => {
+  await sql`delete from sources`;
+  await sql`insert into hosts (username, name, instagram_handle, city_id) values ('ig_anna', 'Анна', 'anna.yoga', 'danang')`;
+  await sql`insert into hosts (username, name, instagram_handle, status) values ('ig_spam', 'Спам', 'spam', 'rejected')`;
+  assert.deepEqual([...await store.adoptHostInstagram(5)], ['instagram:anna.yoga'], 'отклонённый организатор — не источник');
+  assert.deepEqual([...await store.adoptHostInstagram(5)], [], 'уже в источниках');
+  await store.addSources(['danang']);
+  await sql`insert into sources (channel, kind) values ('instagram:leads_by_mistake', 'leads')`;
+  assert.deepEqual((await store.sources()).map((s: any) => s.channel), ['danang'], 'юзербот Instagram не читает');
+  assert.deepEqual((await store.chats()).map((c: any) => c.chat), []);
+  assert.deepEqual((await store.instagramSources()).map((s: any) => [s.channel, s.host_username, s.city]), [['instagram:anna.yoga', 'ig_anna', 'Дананг'], ['instagram:leads_by_mistake', null, 'Дананг']]);
+
+  const event = { title: 'Йога', description: '', starts_at: new Date(Date.now() + 86_400_000).toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, instagram_username: 'anna.yoga', url: null };
+  await store.upsert({ external_id: 'instagram:C1#0', channel: 'instagram:anna.yoga', city_id: 'danang', announcement: { id: 'C1', url: 'https://www.instagram.com/p/C1/', text: '' }, event, signup_url: 'https://ig.me/m/anna.yoga' });
+  await store.setStats('instagram:C1#', { views: 5, reactions: 7 });
+  assert.deepEqual((await sql`select views, reactions from collected_events where external_id = 'instagram:C1#0'`).map((r) => [r.views, r.reactions]), [[5, 7]]);
+  assert.ok(!(await store.withoutMedia()).some((e: any) => e.external_id === 'instagram:C1#0'));
+  await sql`delete from collected_events where external_id = 'instagram:C1#0'`;
+  await sql`delete from sources`;
+  await sql`delete from hosts where username in ('ig_anna', 'ig_spam')`;
+});

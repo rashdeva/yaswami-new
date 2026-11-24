@@ -69,6 +69,15 @@ export function createStore(url) {
       order by created_at limit ${limit}
       on conflict do nothing
       returning channel`).map((r) => r.channel),
+    /** Instagram организаторов (hosts.instagram_handle), которого ещё нет в источниках, — не больше `limit` за раз; возвращает добавленные. */
+    adoptHostInstagram: async (limit) => (await sql`
+      insert into sources (channel, host_id, city_id)
+      select 'instagram:' || instagram_handle, id, city_id from hosts h
+      where instagram_handle is not null and status <> 'rejected'
+        and not exists (select 1 from sources s where lower(s.channel) = 'instagram:' || lower(h.instagram_handle))
+      order by created_at limit ${limit}
+      on conflict do nothing
+      returning channel`).map((r) => r.channel),
     /**
      * Включённые источники; у канала организатора — его username: контакт для анонсов без контакта.
      * Город источника (id, название, часовой пояс) получают события из него; в этом поясе ИИ читает время анонса.
@@ -123,7 +132,12 @@ export function createStore(url) {
     sources: () => sql`
       select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
       from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id
-      where s.enabled and s.kind = 'announcements' order by s.created_at, s.channel`,
+      where s.enabled and s.kind = 'announcements' and s.channel not like 'instagram:%' order by s.created_at, s.channel`,
+    /** Включённые профили Instagram (instagram:<ник>) — в той же форме, что sources(); читаются через Apify, а не юзерботом. */
+    instagramSources: () => sql`
+      select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
+      from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id
+      where s.enabled and s.channel like 'instagram:%' order by s.created_at, s.channel`,
     /**
      * Включённые чаты, где ищем не анонсы: `leads` — вопросы, мастера и вакансии (бывший LEAD_CHATS), иначе только
      * вакансии (JOB_CHATS). Мастера и вакансии получают город чата (`city_id`, `city` — его название для ИИ).
@@ -131,7 +145,7 @@ export function createStore(url) {
     chats: () => sql`
       select s.channel as chat, s.kind = 'leads' as leads, s.city_id, c.name as city
       from sources s join cities c on c.id = s.city_id
-      where s.enabled and s.kind in ('leads', 'jobs') order by s.created_at`,
+      where s.enabled and s.kind in ('leads', 'jobs') and s.channel not like 'instagram:%' order by s.created_at`,
     /** Номер последней разобранной публикации по каждому источнику. */
     async cursors() {
       const rows = await sql`select channel, last_number from collector_cursors`;
@@ -262,15 +276,15 @@ export function createStore(url) {
       where coalesce(ends_at, starts_at) >= now() and not (event ? 'topic')`,
     setEvent: (external_id, event) => sql`
       update collected_events set event = ${sql.json(event)}, updated_at = now() where external_id = ${external_id}`,
-    /** Предстоящие события, чью публикацию ещё не разбирали с фото и видео (refresh.mjs). */
+    /** Предстоящие события из Telegram, чью публикацию ещё не разбирали с фото и видео (refresh.mjs); Instagram заливает медиа сразу. */
     withoutMedia: () => sql`
       select external_id, announcement, event, c.name as city, c.timezone from collected_events e join cities c on c.id = e.city_id
-      where coalesce(ends_at, starts_at) >= now() and status <> 'rejected' and not (announcement ? 'media')
+      where coalesce(ends_at, starts_at) >= now() and status <> 'rejected' and not (announcement ? 'media') and external_id like 'telegram:%'
       order by starts_at`,
     refreshed: (external_id, event, media) => sql`
       update collected_events set event = ${sql.json(event)}, announcement = announcement || ${sql.json({ media })}, updated_at = now()
       where external_id = ${external_id}`,
-    /** Отклик на публикацию-источник — всем событиям из неё (`prefix` — telegram:<канал>/<публикация>#). */
+    /** Отклик на публикацию-источник — всем событиям из неё (`prefix` — telegram:<канал>/<публикация># или instagram:<код>#). */
     setStats: (prefix, { views, reactions }) => sql`
       update collected_events set views = ${views}, reactions = ${reactions} where starts_with(external_id, ${prefix})`,
     /** Фото анонса как обложка события. Обложка уже есть (нарисовал иллюстратор) — не трогаем. */

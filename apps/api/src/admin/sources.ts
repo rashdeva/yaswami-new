@@ -2,6 +2,7 @@
 // каналы организаторов каждый проход) и команда — через журнал.
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { AdminSource, SourceCreateInput, SourceSearch, SourceSearchCreateInput, SourceUpdateInput } from '@yaswami/core';
+import { instagramOf, sourceChannel } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
 import type { Db } from '../db/client.ts';
@@ -29,7 +30,7 @@ export const listSources = async (db: Db): Promise<AdminSource[]> => (await sele
 /** Добавить источник командой: сборщик начнёт читать его со следующего прохода. */
 export const createSource = (db: Db, ctx: Ctx, input: SourceCreateInput): Promise<AdminSource> =>
   audited(db, ctx, { action: 'admin_sources_create', entity: 'source', id: (r) => r.channel, input }, async (tx) => {
-    const channel = input.channel.replace(/^(?:https?:\/\/)?(?:t\.me\/|@)?/, '').replace(/\/$/, '');
+    const channel = sourceChannel(input.channel);
     await assertCity(tx, input.city_id);
     const added = await tx.insert(sources).values({ channel, city_id: input.city_id, kind: input.kind }).onConflictDoNothing().returning();
     if (!added.length) throw new AppError('source_exists', 409);
@@ -42,7 +43,8 @@ export const createSource = (db: Db, ctx: Ctx, input: SourceCreateInput): Promis
  *
  * Указали нового организатора — сборщик перечитает свежие публикации канала (не старше MAX_AGE_DAYS): анонсы без
  * контакта, которые он раньше пропустил, теперь получат контактом организатора. А если у организатора нет канала,
- * этот канал становится его каналом: из него берутся фото сообщества.
+ * этот канал становится его каналом: из него берутся фото сообщества. Профиль Instagram так же становится его
+ * Instagram, если тот не указан.
  */
 export async function updateSource(db: Db, ctx: Ctx, channel: string, input: SourceUpdateInput): Promise<AdminSource> {
   // Журнал и снимок — по каналу так, как он записан: команда может передать его в другом регистре.
@@ -57,7 +59,9 @@ export async function updateSource(db: Db, ctx: Ctx, channel: string, input: Sou
     if (input.host_id && input.host_id !== before.host?.id) {
       await tx.delete(collectorCursors).where(eq(collectorCursors.channel, key));
       // ponytail: канал организатора — не часть снимка источника, отмена действия его не вернёт; поправить — в карточке организатора.
-      if (!key.startsWith('-')) await tx.update(hosts).set({ channel: key.toLowerCase() }).where(and(eq(hosts.id, input.host_id), isNull(hosts.channel)));
+      const instagram = instagramOf(key);
+      if (instagram) await tx.update(hosts).set({ instagram_handle: instagram }).where(and(eq(hosts.id, input.host_id), isNull(hosts.instagram_handle)));
+      else if (!key.startsWith('-')) await tx.update(hosts).set({ channel: key.toLowerCase() }).where(and(eq(hosts.id, input.host_id), isNull(hosts.channel)));
     }
     return getSource(tx, key);
   });

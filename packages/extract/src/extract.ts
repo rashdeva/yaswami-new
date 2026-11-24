@@ -7,7 +7,8 @@ export interface Announcement {
   id: string;
   text: string;
   published_at: string; // ISO 8601: от неё считаются «завтра» и «в субботу»
-  author_username: string | null;
+  author_username: string | null; // у публикации из Instagram — ник в Instagram, а не в Telegram
+  platform?: 'instagram'; // нет — Telegram
   images?: Buffer[]; // фото публикации (JPEG): на афише бывают дата, место и программа, которых нет в тексте
 }
 
@@ -100,6 +101,10 @@ export function parseExtracted(id: string, finish: string | undefined, text: str
   });
 }
 
+// Публикация из Instagram: автор — ник в Instagram, записаться можно в его директ. Без этого ИИ ставил бы ник в
+// telegram_username (чужой человек в Telegram) или выбрасывал событие без контакта.
+const INSTAGRAM_NOTE = 'Публикация из Instagram, автор указан ником в Instagram. В telegram_username его не ставь — только Telegram-контакт, прямо названный в тексте (t.me/…, «в телеграм @…»). Записаться можно в директ автора, поэтому событие без другого контакта всё равно верни.\n';
+
 export function createExtractor({ model, city, timezone }: { model: string; city: string; timezone: string }) {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   return async function extract(announcement: Announcement): Promise<CollectedEvent[]> {
@@ -107,7 +112,7 @@ export function createExtractor({ model, city, timezone }: { model: string; city
     const request = () => ai.models.generateContent({
       model,
       contents: [
-        { text: `Дата публикации: ${announcement.published_at}\nАвтор публикации: ${announcement.author_username ? `@${announcement.author_username}` : 'не указан'}\n\n<publication>\n${announcement.text}\n</publication>` },
+        { text: `Дата публикации: ${announcement.published_at}\nАвтор публикации: ${announcement.author_username ? `@${announcement.author_username}` : 'не указан'}\n${announcement.platform === 'instagram' ? INSTAGRAM_NOTE : ''}\n<publication>\n${announcement.text}\n</publication>` },
         ...(announcement.images ?? []).map((data) => ({ inlineData: { mimeType: 'image/jpeg', data: data.toString('base64') } })),
       ],
       config: {

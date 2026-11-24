@@ -91,6 +91,7 @@ export const CollectedUpdateInput = z
     tags: z.array(text(40).min(1)).max(20),
     telegram_username: username.nullable().describe('Contact for sign-up, without @'),
     whatsapp_phone: text(30).nullable(),
+    instagram_username: z.string().trim().regex(/^@?[\w.]{1,30}$/, 'instagram handle').nullable().describe('Instagram handle for sign-up via direct messages, without @'),
     url: z.url({ protocol: /^https?$/ }).nullable(),
     topic: text(60),
     what_happens: z.array(text(200).min(1)).max(10),
