@@ -597,7 +597,7 @@ test('вход через Apple: свой id, тот же пользовател
     assert.deepEqual(asked, ['https://appleid.apple.com/auth/keys']);
     const { token } = (await res.json()) as { token: string };
     const me = (await (await call(`Bearer ${token}`, 'GET', '/me')).json()) as Me;
-    assert.ok(me.user.id < 0);
+    assert.ok(me.user.id > 1e15); // случайный id, не подряд (ADR-0008)
     assert.equal(me.user.first_name, 'Ева');
 
     // Повторный вход — тот же человек; имя Apple больше не присылает, прежнее остаётся.
@@ -643,7 +643,7 @@ test('вход через Google: только наш клиент и издат
     assert.equal(res.status, 200);
     assert.deepEqual(asked, ['https://www.googleapis.com/oauth2/v3/certs']);
     const me = (await (await call(`Bearer ${((await res.json()) as { token: string }).token}`, 'GET', '/me')).json()) as Me;
-    assert.ok(me.user.id < 0);
+    assert.ok(me.user.id > 1e15); // случайный id, не подряд (ADR-0008)
     assert.equal(me.user.first_name, 'Линь');
     // Издатель без https — тоже Google; тот же sub — тот же человек.
     const again = (await (await login({ id_token: google({ iss: 'accounts.google.com' }) })).json()) as { token: string };

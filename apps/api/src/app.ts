@@ -34,7 +34,7 @@ import { bot } from './telegram.ts';
 import { SESSION_COOKIE, webLogin } from './web-login.ts';
 
 const json = <T extends z.ZodType>(schema: T) => validator('json', (value) => schema.parse(value) as z.infer<T>);
-const userId = z.coerce.number().int(); // бывает отрицательным: так выдаёт users_local_id_seq (ADR-0008)
+const userId = z.coerce.number().int();
 const LIVE_PING_MS = 25_000;
 
 interface Options {

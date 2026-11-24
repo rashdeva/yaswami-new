@@ -63,7 +63,7 @@ export async function upsertUser(db: Db, tg: TelegramUser): Promise<User> {
 
 /**
  * Любой вход (способ входа, CONTEXT.md): находит пользователя по паре «поставщик, id у поставщика» или заводит нового
- * с id из последовательности (ADR-0008). Профиль — только при создании: Apple сообщает имя один раз, а Telegram
+ * со случайным id (ADR-0008). Профиль — только при создании: Apple сообщает имя один раз, а Telegram
  * обновляет его сам (upsertUser).
  */
 export async function signInWith(
@@ -76,7 +76,7 @@ export async function signInWith(
   try {
     return await db.transaction(async (tx) => {
       const [user] = await tx.insert(users).values({
-        id: sql`nextval('users_local_id_seq')`, first_name: profile.first_name || 'Гость', username: profile.username ?? null, lang: profile.lang ?? 'ru', timezone: 'UTC',
+        first_name: profile.first_name || 'Гость', username: profile.username ?? null, lang: profile.lang ?? 'ru', timezone: 'UTC',
       }).returning();
       await tx.insert(userIdentities).values({ provider, subject, user_id: user!.id });
       return user!;

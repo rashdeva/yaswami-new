@@ -47,7 +47,7 @@ export const Notification = z.enum([
 export type Notification = z.infer<typeof Notification>;
 
 export const User = z.object({
-  id: z.number().int(), // id в Telegram; отрицательный — вошёл не через Telegram (ADR-0007)
+  id: z.number().int(), // наш случайный id, не Telegram id (ADR-0008)
   first_name: z.string().min(1),
   username: z.string().nullable(),
   lang: z.string(),
