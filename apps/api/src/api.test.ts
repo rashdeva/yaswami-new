@@ -321,7 +321,7 @@ test('собранные события: витрина без входа, за�
   const guest = tma(20, 'Оля');
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-1-0/signup')).status, 200);
-  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: await uid(20), first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [], host_id: null, subscribed_topics: null, city_id: 'danang', muted_notifications: [] });
+  assert.deepEqual(await (await call(guest, 'GET', '/me')).json(), { user: { id: await uid(20), first_name: 'Оля', username: 'u20' }, features: ['event_create'], collected_signups: ['danangevent-1-0'], claimable: [], host_id: null, subscribed_topics: null, city_id: null, muted_notifications: [] });
 
   // «Мои события»: куда записывался и куда только заходил
   assert.equal((await call(guest, 'POST', '/collected-events/danangevent-2-0/visit', {})).status, 204);
@@ -760,6 +760,46 @@ test('сообщение боту: /start — приветствие с карт
   assert.deepEqual(await reply(ANNOUNCEMENT), [REPLIES.unavailable]);
   assert.deepEqual(await (await call(tma(61, 'Аня'), 'GET', '/events')).json(), []);
 
+});
+
+test('соседние города: витрина, услуги, вакансии и поиск города показывают и соседей в 25 км; координаты задаёт команда', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  await db.delete(collectedEvents);
+  await db.delete(hosts);
+  // Велигама и Мирисса — 5 км, Хирикетия — 30 км от Велигамы. Координаты — и в REST, и в MCP.
+  assert.equal((await call(admin, 'POST', '/admin/cities', { id: 'weligama', name: 'Велигама', timezone: 'Asia/Colombo', latitude: 5.9746, longitude: 80.4297 })).status, 201);
+  assert.equal((await call(admin, 'POST', '/admin/cities', { id: 'mirissa', name: 'Мирисса', timezone: 'Asia/Colombo' })).status, 201);
+  assert.equal((await mcpCall(admin, 'admin_cities_update', { city_id: 'mirissa', latitude: 5.9483, longitude: 80.4716 })).body.latitude, 5.9483);
+  assert.equal((await call(admin, 'POST', '/admin/cities', { id: 'hiriketiya', name: 'Хирикетия', timezone: 'Asia/Colombo', latitude: 5.9636, longitude: 80.7087 })).status, 201);
+  assert.equal((await call(admin, 'PATCH', '/admin/cities/mirissa', { latitude: 91 })).status, 400);
+
+  const day = new Date(Date.now() + 86_400_000);
+  const row = (city_id: string) => ({
+    external_id: `telegram:${city_id}/1#0`, channel: city_id, city_id, status: 'published' as const, starts_at: day, signup_url: '',
+    announcement: { url: `https://t.me/${city_id}/1` },
+    event: { title: `Сёрфинг: ${city_id}`, description: '', starts_at: day.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null },
+  });
+  await db.insert(collectedEvents).values([row('weligama'), row('mirissa'), row('hiriketiya')]);
+  await insertHosts([{ telegram_id: 9601, username: 'mirissa_surf', name: 'Сёрф-школа', city_id: 'mirissa', status: 'published' as const, practices: [{ title: 'Урок сёрфинга', topic: 'спорт', description: null, price: null, status: 'published' as const }] }]);
+  const feed = async (city: string) => ((await (await app.request(`/collected-events?city_id=${city}`)).json()) as CollectedEventItem[]).map((e) => e.city_id).sort();
+  assert.deepEqual(await feed('weligama'), ['mirissa', 'weligama']);
+  assert.deepEqual(await feed('mirissa'), ['mirissa', 'weligama']);
+  assert.deepEqual(await feed('hiriketiya'), ['hiriketiya'], 'дальше 25 км — не сосед');
+  assert.deepEqual(await feed('danang'), [], 'Дананг без координат — только сам');
+  assert.deepEqual(((await (await app.request('/hosts?city_id=weligama')).json()) as HostListItem[]).map((h) => h.username), ['mirissa_surf']);
+  assert.deepEqual(((await (await app.request(`/search?query=${encodeURIComponent('сёрфинг')}&city_id=weligama`)).json()) as SearchResult).entries.map((e) => e.type).sort(), ['event', 'event', 'practice']);
+  assert.deepEqual(((await mcpCall(admin, 'collected_events_list', { city_id: 'weligama' })).body as { id: string }[]).length, 2);
+
+  // Новый человек города не выбирал: приложение спросит; выбрал — сохраняется.
+  const newcomer = tma(9602, 'Новичок');
+  assert.equal(((await (await call(newcomer, 'GET', '/me')).json()) as Me).city_id, null);
+  assert.equal(((await (await call(newcomer, 'PATCH', '/me', { city_id: 'weligama' })).json()) as Me).city_id, 'weligama');
+
+  await db.delete(collectedEvents);
+  await db.delete(hosts);
+  await db.execute(sql`delete from users where city_id in ('weligama', 'mirissa', 'hiriketiya')`);
+  await db.execute(sql`delete from cities where id in ('weligama', 'mirissa', 'hiriketiya')`);
 });
 
 test('поиск: события и Practice одним запросом; формы слова, начало слова, опечатки; только публичное', async () => {

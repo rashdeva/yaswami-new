@@ -53,7 +53,7 @@ export const User = z.object({
   lang: z.string(),
   timezone: z.string(),
   features: z.array(Feature), // включённое лично этому человеку; в Luma такого нет
-  city_id: z.string(), // город человека: его витрину открывает приложение; в Luma такого нет
+  city_id: z.string().nullable(), // город человека: его витрину открывает приложение; null — ещё не выбрал. В Luma такого нет
   muted_notifications: z.array(Notification), // уведомления, которые он выключил; в Luma такого нет
 });
 export type User = z.infer<typeof User>;
@@ -68,6 +68,9 @@ export const City = z.object({
   timezone: z.string(), // IANA: в нём ИИ записывает время событий из анонсов этого города
   // Другие написания названия: по ним сборщик ищет каналы города и узнаёт, что канал про него (Nha Trang у Нячанга).
   aliases: z.array(z.string().trim().min(2).max(40)).max(5).describe('Other spellings of the name channels use, e.g. ["Nha Trang"] for Нячанг; the collector searches sources by them too'),
+  // Центр города, имена — как у coordinate в Luma. По ним считаются соседние города (nearbyCityIds) и город по геолокации.
+  latitude: z.number().min(-90).max(90).nullable().describe('Latitude of the city centre, e.g. 5.9746; with longitude it makes cities within 25 km neighbours whose events the catalogue shows too'),
+  longitude: z.number().min(-180).max(180).nullable().describe('Longitude of the city centre, e.g. 80.4297'),
   created_at: z.date(),
 });
 export type City = z.infer<typeof City>;

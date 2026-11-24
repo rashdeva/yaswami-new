@@ -1,7 +1,7 @@
 // Все маршруты приложения. Страница здесь — тонкая связка: берёт адрес, вход и общие вещи layout и раздаёт экрану.
 import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect, useNavigate } from '@tanstack/react-router';
 import { App, Claims, useClaim, useLogout, useShell } from './App.tsx';
-import { hasCredentials, startLogin } from './api.ts';
+import { startLogin } from './api.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
 import { useFeature } from './hooks/useFeature.ts';
 import { contactMatch, useHostSearches } from './hooks/useHostSearches.ts';
@@ -45,25 +45,17 @@ const root = createRootRoute({
 
 const app = createRoute({ getParentRoute: () => root, id: 'app', component: App });
 
-/** Витрина. В Telegram при открытии приложения сначала показываем своё: есть события — уходим в «Мои». */
+/** Витрина — главная и в Telegram, и на сайте; свои события — за аватаркой. */
 function FeedPage() {
   const navigate = useNavigate();
-  const { me, city } = useSession();
-  const mine = useMyEvents();
-  if (hasCredentials && navigations === 1) {
-    if (me === undefined) return <Spinner />;
-    if (me && mine.failed) return <Failed error={mine.failed} />;
-    if (me && mine.total === null) return <Spinner />;
-    if (mine.total) return <Navigate to="/my" replace />;
-  }
-  return <FeedScreen city={city} lead={<Claims />} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
+  return <FeedScreen lead={<Claims />} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
 }
 const feed = createRoute({ getParentRoute: () => app, path: '/', component: FeedPage });
 
 function CollectedPage() {
   const { id } = collected.useParams();
   const navigate = useNavigate();
-  const { me, authed, city, canLogin } = useSession();
+  const { me, authed, canLogin } = useSession();
   const { toast, onBack } = useShell();
   const claim = useClaim();
   const mine = me?.claimable.find((c) => c.id === id);
@@ -71,7 +63,6 @@ function CollectedPage() {
     <CollectedScreen
       key={id}
       id={id}
-      city={city}
       authed={authed}
       canLogin={canLogin}
       signedUp={!!me?.collected_signups.includes(id)}
