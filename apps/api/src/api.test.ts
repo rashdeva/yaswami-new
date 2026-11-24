@@ -11,7 +11,7 @@ import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
 import { bot } from './telegram.ts';
 import type { CollectedEvent } from '@yaswami/core';
-import { issueToken, telegramIdOf, userIdByTelegram, verifyInitData } from './auth.ts';
+import { issueToken, signInWith, telegramIdOf, userIdByTelegram, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
 import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, jobs, messages, photos, practices as practicesTable, practiceSignups, sources, sourceSearches, ticketTypes, topics as topicsTable, users, visits, tgAccounts } from './db/schema.ts';
@@ -118,6 +118,19 @@ test('initData: чужая подпись и устаревшие данные �
   const secret = createHmac('sha256', 'WebAppData').update('').digest();
   params.set('hash', createHmac('sha256', secret).update([...params].map(([k, v]) => `${k}=${v}`).sort().join('\n')).digest('hex'));
   assert.equal((await noBot.request('/events', { headers: { authorization: `tma ${params}` } })).status, 401);
+});
+
+test('случайный id совпал с занятым — вход берёт другой', async () => {
+  const taken = (await signInWith(db, 'apple', 'taken')).id;
+  // Первый id из default — занятый, следующие — обычные случайные.
+  await db.execute(sql.raw(`create temporary sequence pick; alter table users alter column id set default case when nextval('pick') = 1 then ${taken} else 100000 + ('x' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 13))::bit(52)::bigint % 900000 end`));
+  try {
+    const user = await signInWith(db, 'apple', 'fresh');
+    assert.notEqual(user.id, taken);
+    assert.equal((await signInWith(db, 'apple', 'fresh')).id, user.id);
+  } finally {
+    await db.execute(sql.raw(`alter table users alter column id set default 100000 + ('x' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 13))::bit(52)::bigint % 900000; drop sequence pick`));
+  }
 });
 
 test('событие создаётся с типом билета по умолчанию; гость записывается, виден только по имени', async () => {
@@ -597,7 +610,7 @@ test('вход через Apple: свой id, тот же пользовател
     assert.deepEqual(asked, ['https://appleid.apple.com/auth/keys']);
     const { token } = (await res.json()) as { token: string };
     const me = (await (await call(`Bearer ${token}`, 'GET', '/me')).json()) as Me;
-    assert.ok(me.user.id > 1e15); // случайный id, не подряд (ADR-0008)
+    assert.ok(me.user.id >= 1e5 && me.user.id < 1e6); // случайный id из 6 цифр, не подряд (ADR-0008)
     assert.equal(me.user.first_name, 'Ева');
 
     // Повторный вход — тот же человек; имя Apple больше не присылает, прежнее остаётся.
@@ -643,7 +656,7 @@ test('вход через Google: только наш клиент и издат
     assert.equal(res.status, 200);
     assert.deepEqual(asked, ['https://www.googleapis.com/oauth2/v3/certs']);
     const me = (await (await call(`Bearer ${((await res.json()) as { token: string }).token}`, 'GET', '/me')).json()) as Me;
-    assert.ok(me.user.id > 1e15); // случайный id, не подряд (ADR-0008)
+    assert.ok(me.user.id >= 1e5 && me.user.id < 1e6); // случайный id из 6 цифр, не подряд (ADR-0008)
     assert.equal(me.user.first_name, 'Линь');
     // Издатель без https — тоже Google; тот же sub — тот же человек.
     const again = (await (await login({ id_token: google({ iss: 'accounts.google.com' }) })).json()) as { token: string };

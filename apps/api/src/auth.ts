@@ -83,9 +83,9 @@ export async function signInWith(
     });
   } catch (e) {
     // Два первых входа одновременно (initData на каждый запрос): второй упирается в уникальность способа входа
-    // и берёт пользователя, которого завёл первый.
+    // и берёт пользователя, которого завёл первый. Способа входа нет — значит, случайный id совпал с занятым: ещё раз.
     const raced = (e as { cause?: { code?: string }; code?: string }).cause?.code ?? (e as { code?: string }).code;
-    if (raced === '23505') return (await find())!;
+    if (raced === '23505') return (await find()) ?? signInWith(db, provider, subject, profile);
     throw e;
   }
 }
