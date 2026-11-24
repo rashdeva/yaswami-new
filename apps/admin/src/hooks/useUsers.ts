@@ -9,7 +9,7 @@ import { useAct } from './useAct.ts';
 export const useUsers = (query?: string) =>
   useQuery({ queryKey: keys.users(query || undefined), queryFn: () => api.users(query || undefined), placeholderData: keepPreviousData });
 
-export const useUser = (id: number) => useQuery({ queryKey: keys.user(id), queryFn: () => api.user(id), enabled: Number.isInteger(id) && id > 0 });
+export const useUser = (id: number) => useQuery({ queryKey: keys.user(id), queryFn: () => api.user(id), enabled: Number.isInteger(id) && id !== 0 }); // id бывает отрицательным (ADR-0008)
 
 /** Имя пользователя по id (кто из команды сделал действие); пока не загрузилось — id. */
 export function useUserName(id: number) {
