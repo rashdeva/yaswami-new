@@ -316,8 +316,14 @@ test('сборщик: профили Instagram — свой список, Instag
   const event = { title: 'Йога', description: '', starts_at: new Date(Date.now() + 86_400_000).toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, instagram_username: 'anna.yoga', url: null };
   await store.upsert({ external_id: 'instagram:C1#0', channel: 'instagram:anna.yoga', city_id: 'danang', announcement: { id: 'C1', url: 'https://www.instagram.com/p/C1/', text: '' }, event, signup_url: 'https://ig.me/m/anna.yoga' });
   await store.setStats('instagram:C1#', { views: 5, reactions: 7 });
+  assert.deepEqual([...await store.instagramWithoutCover()], [], 'без фото в бакете — нечем');
+  await sql`update collected_events set announcement = announcement || ${sql.json({ media: [{ type: 'video', url: 'https://m/v.mp4' }, { type: 'photo', url: 'https://m/1.jpg' }, { type: 'photo', url: 'https://m/2.jpg' }] })} where external_id = 'instagram:C1#0'`;
+  assert.deepEqual((await store.instagramWithoutCover()).map((r: any) => [r.external_id, r.url]), [['instagram:C1#0', 'https://m/1.jpg']], 'первое фото, а не ролик');
+  await store.saveCover('instagram:C1#0', 'instagram:C1', Buffer.from([0xff, 0xd8]));
+  assert.deepEqual([...await store.instagramWithoutCover()], [], 'обложка уже есть');
   assert.deepEqual((await sql`select views, reactions from collected_events where external_id = 'instagram:C1#0'`).map((r) => [r.views, r.reactions]), [[5, 7]]);
   assert.ok(!(await store.withoutMedia()).some((e: any) => e.external_id === 'instagram:C1#0'));
+  await sql`delete from photos where collected_external_id = 'instagram:C1#0'`;
   await sql`delete from collected_events where external_id = 'instagram:C1#0'`;
   await sql`delete from sources`;
   await sql`delete from hosts where username in ('ig_anna', 'ig_spam', 'ig_found')`;

@@ -15,7 +15,7 @@ import { saveJobs } from './jobs.mjs';
 import { resolveAuthor, saveOffers } from './offers.mjs';
 import { searchChannels, TOPICS } from './find-sources.mjs';
 import { cityMatcher } from './city.mjs';
-import { candidatesFrom, cityHashtags, createInstagram, download, mediaOf, toAnnouncement as fromInstagram, toStats as instagramStats } from './instagram.mjs';
+import { candidatesFrom, cityHashtags, createInstagram, download, mediaOf, toAnnouncement as fromInstagram, toJpeg, toStats as instagramStats } from './instagram.mjs';
 import { instagramOf } from '@yaswami/core';
 
 const env = process.env;
@@ -287,9 +287,10 @@ async function pollChannel(source, known, trusted) {
 
 /**
  * События одной публикации-кандидата: разбор ИИ, склейка с известными, запись. `upload` заливает медиа публикации
- * в бакет — один раз, когда из неё появилось новое событие. Возвращает, сколько событий нашёл ИИ.
+ * в бакет — один раз, когда из неё появилось новое событие. `cover` — обложка нового события (JPEG) или null: у Telegram
+ * её кладёт refreshPosts, у Instagram — сразу, потом публикацию не перечитываем. Возвращает, сколько событий нашёл ИИ.
  */
-async function saveEvents({ channel, host_username, city_id, city, timezone }, announcement, photos, upload, known, trusted) {
+async function saveEvents({ channel, host_username, city_id, city, timezone }, announcement, photos, upload, known, trusted, cover = null) {
   const events = await extractFor({ city, timezone })({ ...announcement, images: photos.slice(0, 1).map((p) => p.data) }); // ИИ — только первое фото: афиша обычно первая, остальные стоят токенов зря
   await sleep(llmPauseMs); // бесплатный уровень Gemini считает запросы в минуту
   const ig = instagramOf(channel);
@@ -319,6 +320,7 @@ async function saveEvents({ channel, host_username, city_id, city, timezone }, a
       external_id, channel, city_id, announcement: media ? { ...announcement, media } : announcement, event: merged,
       signup_url: signupUrl(merged, announcement, signupMessage), status,
     });
+    if (!same && cover) await store.saveCover(external_id, `instagram:${announcement.id}`, cover);
     if (same) same.event = merged; else known.push({ external_id, city_id, event, status });
     if (!same && status === 'approved') console.log(`${external_id}: одобрено само — доверенный источник`);
   }
@@ -328,12 +330,19 @@ async function saveEvents({ channel, host_username, city_id, city, timezone }, a
 // Профили Instagram читаем раз в INSTAGRAM_POLL_HOURS часов: Apify берёт деньги за каждую публикацию, а организаторы
 // анонсируют за дни. ponytail: время прошлого чтения — в памяти, после перезапуска читаем сразу.
 const INSTAGRAM_POLL_HOURS = Number(env.INSTAGRAM_POLL_HOURS ?? 6);
-const INSTAGRAM_PHOTO_MAX = 3_000_000;
+const INSTAGRAM_PHOTO_MAX = 10_000_000; // до пережатия: после toJpeg — сотни КБ
+const INSTAGRAM_COVER_SIDE = 800; // как обложка из Telegram (COVER_SIDE в mtproto.mjs)
 const INSTAGRAM_VIDEO_MAX = 50_000_000; // как у Telegram: длинные эфиры не тащим
 let instagramReadAt = 0;
 
 async function pollInstagram(known, trusted) {
   if (!instagram || Date.now() - instagramReadAt < INSTAGRAM_POLL_HOURS * 3_600_000) return;
+  // События, собранные до обложек из Instagram: обложка — первое фото публикации из нашего бакета.
+  for (const { external_id, url } of await store.instagramWithoutCover()) {
+    const file = await download(url, INSTAGRAM_PHOTO_MAX);
+    const cover = file && await toJpeg(file.data, INSTAGRAM_COVER_SIDE, 78);
+    if (cover && cover.data.length <= 400_000) await store.saveCover(external_id, `instagram:${external_id.replace(/^instagram:|#\d+$/g, '')}`, cover.data);
+  }
   const sources = await store.instagramSources();
   if (!sources.length) return;
   instagramReadAt = Date.now();
@@ -352,7 +361,8 @@ async function pollInstagram(known, trusted) {
         // Фото — только кандидатам, ролик — только когда из публикации появилось новое событие.
         const photos = candidate ? await downloadInstagram(post, 'photo') : [];
         const upload = async () => uploadMedia(`instagram/${announcement.id}`, [...photos, ...await downloadInstagram(post, 'video')]);
-        const events = candidate ? await saveEvents(source, announcement, photos, upload, known, trusted) : 0;
+        const cover = photos.length ? await toJpeg(photos[0].data, INSTAGRAM_COVER_SIDE, 78) : null;
+        const events = candidate ? await saveEvents(source, announcement, photos, upload, known, trusted, cover && cover.data.length <= 400_000 ? cover.data : null) : 0;
         if (events) await store.setStats(`instagram:${announcement.id}#`, instagramStats(post));
         cursors[source.channel] = announcement.number;
         await store.saveCursor(source.channel, announcement.number);
@@ -364,13 +374,18 @@ async function pollInstagram(known, trusted) {
   }
 }
 
-/** Фото (`type` photo) или ролик публикации Instagram: [{ type, data, mime, ext, number }]. Фото не в JPEG ИИ не покажем — пропускаем. */
+/**
+ * Фото (`type` photo) или ролик публикации Instagram: [{ type, data, mime, ext, number, width, height }]. Фото пережимаем
+ * в JPEG до 1280 px (toJpeg): его видит ИИ и сайт. Не скачалось или не картинка — пропускаем.
+ */
 async function downloadInstagram(post, type) {
   const files = [];
   for (const m of mediaOf(post).filter((m) => m.type === type)) {
     const file = await download(m.url, type === 'photo' ? INSTAGRAM_PHOTO_MAX : INSTAGRAM_VIDEO_MAX);
-    if (!file || (type === 'photo' && !file.mime.includes('jpeg'))) continue;
-    files.push({ ...file, type, number: m.number, ext: type === 'photo' ? 'jpg' : 'mp4', mime: type === 'photo' ? 'image/jpeg' : 'video/mp4' });
+    if (!file) continue;
+    if (type === 'video') { files.push({ data: file.data, type, number: m.number, ext: 'mp4', mime: 'video/mp4', width: m.width, height: m.height }); continue; }
+    const jpeg = await toJpeg(file.data);
+    if (jpeg) files.push({ ...jpeg, type, number: m.number, ext: 'jpg', mime: 'image/jpeg' });
   }
   return files;
 }

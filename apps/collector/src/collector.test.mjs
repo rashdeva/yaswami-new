@@ -530,7 +530,7 @@ console.log('cover ok');
 
 // Instagram: публикация в анонс, запись в директ, хэштеги города, кандидаты в источники, запуск актора Apify.
 {
-  const { toAnnouncement, toStats, mediaOf, cityHashtags, candidatesFrom, createInstagram } = await import('./instagram.mjs');
+  const { toAnnouncement, toStats, mediaOf, toJpeg, cityHashtags, candidatesFrom, createInstagram } = await import('./instagram.mjs');
   const post = {
     shortCode: 'C1x-Ab', url: 'https://www.instagram.com/p/C1x-Ab/', caption: 'Йога на пляже в субботу в 7 утра' + pad, timestamp: '2026-11-20T01:00:00.000Z',
     ownerUsername: 'Anna.Yoga', ownerFullName: 'Anna', likesCount: -1, videoViewCount: 120, displayUrl: 'https://cdn/x.jpg', images: [], videoUrl: 'https://cdn/x.mp4',
@@ -540,6 +540,12 @@ console.log('cover ok');
   });
   assert.deepEqual(toStats(post), { views: 120, reactions: null }, 'скрытые лайки — не ноль');
   assert.deepEqual(mediaOf(post).map((m) => [m.type, m.url]), [['photo', 'https://cdn/x.jpg'], ['video', 'https://cdn/x.mp4']]);
+  assert.deepEqual(mediaOf({ ...post, dimensionsWidth: 1080, dimensionsHeight: 1920 }).at(-1), { type: 'video', url: 'https://cdn/x.mp4', number: 0, width: 1080, height: 1920 }, 'размеры ролика — для обложки-ролика на сайте');
+  const sharp = (await import('sharp')).default;
+  const webp = await sharp({ create: { width: 3000, height: 2000, channels: 3, background: '#c33' } }).webp().toBuffer();
+  const jpeg = await toJpeg(webp);
+  assert.deepEqual([jpeg.width, jpeg.height, jpeg.data[0], jpeg.data[1]], [1280, 853, 0xff, 0xd8], 'WebP 3000 px → JPEG 1280 px');
+  assert.equal(await toJpeg(Buffer.from('not an image')), null);
   assert.equal(signupUrl({ ...e, instagram_username: 'anna.yoga' }, a, t), 'https://ig.me/m/anna.yoga');
   assert.equal(signupUrl({ ...e, instagram_username: 'anna.yoga', url: 'https://x.co/f' }, a, t), 'https://x.co/f', 'ссылка на регистрацию важнее директа');
 
