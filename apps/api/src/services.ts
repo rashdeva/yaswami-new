@@ -109,9 +109,14 @@ export async function listEvents(db: Db, actor: User): Promise<EventListItem[]> 
   return rows.map((r) => ({ event: r.event, cover_url: r.cover_id && photoUrl(r.cover_id), is_host: r.event.user_id === actor.id, my_approval_status: r.my_approval_status }));
 }
 
-// Идентификатор собранного события в адресах: telegram:<канал>/<публикация>#<номер> ↔ <канал>-<публикация>-<номер>.
-export const collectedSlug = (externalId: string) => externalId.replace(/^telegram:/, '').replace(/\/(\d+)#(\d+)$/, '-$1-$2');
+// Идентификатор собранного события в адресах: telegram:<канал>/<публикация>#<номер> ↔ <канал>-<публикация>-<номер>,
+// instagram:<код публикации>#<номер> ↔ ig.<код>-<номер>. В username Telegram точки нет — ig. с каналом не спутать.
+export const collectedSlug = (externalId: string) => externalId.startsWith('instagram:')
+  ? externalId.replace(/^instagram:(.+)#(\d+)$/, 'ig.$1-$2')
+  : externalId.replace(/^telegram:/, '').replace(/\/(\d+)#(\d+)$/, '-$1-$2');
 export function collectedExternalId(slug: string): string {
+  const ig = /^ig\.(.+)-(\d+)$/.exec(slug);
+  if (ig) return `instagram:${ig[1]}#${ig[2]}`;
   const m = /^(.+)-(\d+)-(\d+)$/.exec(slug);
   if (!m) throw new AppError('not_found', 404);
   return `telegram:${m[1]}/${m[2]}#${m[3]}`;
@@ -119,7 +124,7 @@ export function collectedExternalId(slug: string): string {
 
 type CollectedRow = typeof collectedEvents.$inferSelect & { cover_id?: string | null };
 const toCollectedItem = ({ external_id, city_id, event, announcement, claimed_event_id, cover_id, video_url }: CollectedRow): CollectedEventItem => {
-  const { telegram_username, whatsapp_phone, url, ...shown } = event;
+  const { telegram_username, whatsapp_phone, instagram_username, url, ...shown } = event;
   const id = collectedSlug(external_id);
   return {
     id, ...shown, city_id, claimed_event_id, cover_url: cover_id ? photoUrl(cover_id) : null, video_url, media: announcement.media ?? [], source_url: announcement.url,
@@ -385,7 +390,7 @@ export function startVideoLoop(db: Db, everyMs = 15 * 60_000): void {
 /** Собранное событие для команды: с источником, его текстом и контактами, которые витрина прячет. */
 export const toAdminItem = (r: CollectedRow): AdminCollectedEvent => ({
   ...toCollectedItem(r), status: r.status, city_id: r.city_id, channel: r.channel, source_text: r.announcement.text ?? null, views: r.views, reactions: r.reactions,
-  telegram_username: r.event.telegram_username, whatsapp_phone: r.event.whatsapp_phone, url: r.event.url,
+  telegram_username: r.event.telegram_username, whatsapp_phone: r.event.whatsapp_phone, instagram_username: r.event.instagram_username ?? null, url: r.event.url,
 });
 
 /** Все собранные события для админки модерации: ждущие решения сверху, дальше по дате; прошедшие не показываем. */
@@ -412,7 +417,10 @@ export async function updateCollectedEvent(db: Db, slug: string, { status, city_
     const [row] = await tx.select().from(collectedEvents).where(eq(collectedEvents.external_id, external_id)).for('update');
     if (!row) throw new AppError('not_found', 404);
     await assertCity(tx, city_id);
-    const event: CollectedEvent = { ...row.event, ...fields, telegram_username: normalUsername(fields.telegram_username !== undefined ? fields.telegram_username : row.event.telegram_username) };
+    const event: CollectedEvent = {
+      ...row.event, ...fields, telegram_username: normalUsername(fields.telegram_username !== undefined ? fields.telegram_username : row.event.telegram_username),
+      ...(fields.instagram_username !== undefined ? { instagram_username: normalUsername(fields.instagram_username) } : {}),
+    };
     await tx.update(collectedEvents).set({
       event, starts_at: new Date(event.starts_at), ends_at: event.ends_at ? new Date(event.ends_at) : null,
       telegram_username: event.telegram_username, updated_at: new Date(), ...(status ? { status } : {}), ...(city_id ? { city_id } : {}),

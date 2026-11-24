@@ -2244,6 +2244,37 @@ test('источники: команда добавляет и выключае�
   }
 });
 
+test('источники: профиль Instagram — по ссылке, у организатора становится его Instagram; событие из него записывает в директ', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  await db.delete(sources);
+  // Ссылка на профиль — instagram:<ник>: ник в Instagram может совпасть с чужим каналом в Telegram.
+  const res = await call(admin, 'POST', '/admin/sources', { channel: 'https://www.instagram.com/Anna.Yoga/?hl=ru' });
+  assert.equal(res.status, 201);
+  assert.equal(((await res.json()) as AdminSource).channel, 'instagram:anna.yoga');
+  assert.equal((await call(admin, 'POST', '/admin/sources', { channel: 'instagram:anna.yoga' })).status, 409);
+  assert.equal((await call(admin, 'POST', '/admin/sources', { channel: 'anna.yoga' })).status, 400, 'ник с точкой без ссылки — не Telegram и не Instagram');
+  const [h] = await db.insert(hosts).values({ telegram_id: 9450, username: 'anna_tg', name: 'Анна' }).returning();
+  const bound = (await (await call(admin, 'PATCH', `/admin/sources/${encodeURIComponent('instagram:anna.yoga')}`, { host_id: h!.id })).json()) as AdminSource;
+  assert.equal(bound.host?.username, 'anna_tg');
+  const [after] = await db.select().from(hosts).where(eq(hosts.id, h!.id));
+  assert.deepEqual([after!.instagram_handle, after!.channel], ['anna.yoga', null], 'профиль — Instagram организатора, а не его Telegram-канал');
+
+  // Событие из профиля (так его пишет сборщик): контакта в Telegram нет — «Записаться» ведёт в директ.
+  const at = new Date(Date.now() + 86_400_000);
+  await db.insert(collectedEvents).values({
+    external_id: 'instagram:C1x-Ab#0', channel: 'instagram:anna.yoga', starts_at: at, signup_url: '', status: 'published', announcement: { url: 'https://www.instagram.com/p/C1x-Ab/' },
+    event: { title: 'Йога', description: '', starts_at: at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, instagram_username: 'anna.yoga', url: null },
+  });
+  const item = (await (await call('', 'GET', '/collected-events/ig.C1x-Ab-0')).json()) as CollectedEventItem;
+  assert.deepEqual([item.id, item.signup_url, item.source_url, 'instagram_username' in item], ['ig.C1x-Ab-0', 'https://ig.me/m/anna.yoga', 'https://www.instagram.com/p/C1x-Ab/', false]);
+  // Команда указала Telegram — он важнее директа.
+  const edited = (await (await call(admin, 'PATCH', '/admin/collected-events/ig.C1x-Ab-0', { telegram_username: '@Anna_TG', instagram_username: '@Anna.Yoga' })).json()) as AdminCollectedEvent;
+  assert.deepEqual([edited.instagram_username, edited.signup_url.split('?')[0]], ['anna.yoga', 'https://t.me/anna_tg']);
+  await db.delete(collectedEvents).where(eq(collectedEvents.channel, 'instagram:anna.yoga'));
+  await db.delete(sources);
+});
+
 test('города: всё прежнее — Дананг; новый город получает свои источники, события и организаторов, витрина показывает его по city_id', async () => {
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');

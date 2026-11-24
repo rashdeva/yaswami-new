@@ -1,6 +1,17 @@
 // Чистые функции каталога: подписи статусов, контакт для записи из ссылки «Записаться», события организатора.
 import type { AdminCollectedEvent, CollectedStatus, Feature, Guest, HostStatus, IdentityProvider, JobStatus, PracticeStatus } from '@yaswami/core';
-import { JOB_TTL_DAYS, OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
+import { instagramOf, JOB_TTL_DAYS, OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
+
+/** Ссылка на источник: профиль Instagram или канал в Telegram; у закрытого чата (-100…) ссылки нет. */
+export function sourceLink(channel: string): string | null {
+  const ig = instagramOf(channel);
+  return ig ? `https://instagram.com/${ig}` : channel.startsWith('-') ? null : `https://t.me/${channel}`;
+}
+/** Как источник подписан: «@канал», «Instagram @ник» или id закрытого чата. */
+export function sourceName(channel: string): string {
+  const ig = instagramOf(channel);
+  return ig ? `Instagram @${ig}` : channel.startsWith('-') ? channel : `@${channel}`;
+}
 
 /** Модерация организатора (HOST_STATUSES в core). */
 /** Способы входа человека (user_identities, ADR-0008). */
@@ -39,13 +50,14 @@ export const APPROVAL_LABELS: Record<Guest['approval_status'], string> = { appro
 
 /**
  * Контакт для записи, который виден по `signup_url`: сервер отдаёт только эту ссылку, а сами поля
- * (`telegram_username`, `whatsapp_phone`, `url`) — нет. Видно лишь то, что в ссылке главное; остальное — пусто.
+ * (`telegram_username`, `whatsapp_phone`, `instagram_username`, `url`) — нет. Видно лишь то, что в ссылке главное; остальное — пусто.
  */
 export function contactOf(e: Pick<AdminCollectedEvent, 'signup_url' | 'source_url'>) {
   const tg = /^https:\/\/t\.me\/(\w{4,32})\?text=/.exec(e.signup_url)?.[1] ?? null;
   const wa = /^https:\/\/wa\.me\/(\d+)\?text=/.exec(e.signup_url)?.[1] ?? null;
-  const url = !tg && !wa && e.signup_url !== e.source_url ? e.signup_url : null;
-  return { telegram_username: tg, whatsapp_phone: wa && `+${wa}`, url };
+  const ig = /^https:\/\/ig\.me\/m\/([\w.]+)$/.exec(e.signup_url)?.[1] ?? null;
+  const url = !tg && !wa && !ig && e.signup_url !== e.source_url ? e.signup_url : null;
+  return { telegram_username: tg, whatsapp_phone: wa && `+${wa}`, instagram_username: ig, url };
 }
 
 /** События каталога организатора: контакт для записи — его username, или анонс из его канала. */

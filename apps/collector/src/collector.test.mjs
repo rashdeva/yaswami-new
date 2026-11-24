@@ -527,3 +527,45 @@ console.log('cover ok');
   assert.deepEqual((await chatsToRead(store, [], ['leads', 'jobs'])).map((c) => c.chat), ['Big', 'work']);
   assert.deepEqual((await chatsToRead(store, ['@big', 'other'], ['leads'])).map((c) => [c.chat, c.city_id, c.city]), [['Big', 'hanoi', 'Ханой'], ['other', 'danang', 'Дананг']]);
 }
+
+// Instagram: публикация в анонс, запись в директ, хэштеги города, кандидаты в источники, запуск актора Apify.
+{
+  const { toAnnouncement, toStats, mediaOf, cityHashtags, candidatesFrom, createInstagram } = await import('./instagram.mjs');
+  const post = {
+    shortCode: 'C1x-Ab', url: 'https://www.instagram.com/p/C1x-Ab/', caption: 'Йога на пляже в субботу в 7 утра' + pad, timestamp: '2026-11-20T01:00:00.000Z',
+    ownerUsername: 'Anna.Yoga', ownerFullName: 'Anna', likesCount: -1, videoViewCount: 120, displayUrl: 'https://cdn/x.jpg', images: [], videoUrl: 'https://cdn/x.mp4',
+  };
+  assert.deepEqual(toAnnouncement(post), {
+    id: 'C1x-Ab', number: 1795136400, url: post.url, text: post.caption, published_at: '2026-11-20T01:00:00.000Z', author_username: 'anna.yoga', platform: 'instagram',
+  });
+  assert.deepEqual(toStats(post), { views: 120, reactions: null }, 'скрытые лайки — не ноль');
+  assert.deepEqual(mediaOf(post).map((m) => [m.type, m.url]), [['photo', 'https://cdn/x.jpg'], ['video', 'https://cdn/x.mp4']]);
+  assert.equal(signupUrl({ ...e, instagram_username: 'anna.yoga' }, a, t), 'https://ig.me/m/anna.yoga');
+  assert.equal(signupUrl({ ...e, instagram_username: 'anna.yoga', url: 'https://x.co/f' }, a, t), 'https://x.co/f', 'ссылка на регистрацию важнее директа');
+
+  assert.deepEqual(cityHashtags(['Дананг', 'Da Nang']), ['дананг', 'danang', 'danangevents', 'danangparty', 'danangyoga']);
+  const now = Date.parse('2026-11-24T00:00:00Z');
+  const found = candidatesFrom([
+    post, { ...post, shortCode: 'C2' }, { ...post, shortCode: 'C2' }, // одна публикация под двумя хэштегами
+    { ...post, shortCode: 'C3', ownerUsername: 'beach_bar', ownerFullName: '', caption: 'закат' },
+    { ...post, shortCode: 'C4', ownerUsername: 'old', timestamp: '2026-09-01T00:00:00Z' },
+  ], now);
+  assert.deepEqual(found.map((c) => [c.channel, c.title, c.posts_30d, c.event_like]), [['instagram:anna.yoga', 'Anna', 2, 2], ['instagram:beach_bar', 'beach_bar', 1, 0]]);
+
+  assert.equal(createInstagram({ token: '' }), null);
+  const calls = [];
+  const fake = async (url, init) => {
+    calls.push(url.replace('https://api.apify.com/v2', ''));
+    const body = url.includes('/runs?') ? { data: { id: 'r1', status: 'RUNNING' } }
+      : url.includes('/actor-runs/') ? { data: { id: 'r1', status: 'SUCCEEDED', defaultDatasetId: 'd1' } }
+      : [post, { url: 'https://www.instagram.com/gone/', error: 'not_found' }];
+    return new Response(JSON.stringify(body), { status: init?.method === 'POST' ? 201 : 200 });
+  };
+  const ig = createInstagram({ token: 't', maxUsd: 0.2, fetch: fake });
+  const error = console.error;
+  console.error = () => {};
+  assert.deepEqual(await ig.posts(['anna.yoga', 'gone'], new Date(now), 5), [post], 'ошибки профилей отсеяны');
+  console.error = error;
+  assert.deepEqual(calls, ['/acts/apify~instagram-scraper/runs?maxItems=10&maxTotalChargeUsd=0.2', '/actor-runs/r1?waitForFinish=60', '/datasets/d1/items?clean=true']);
+  console.log('instagram ok');
+}

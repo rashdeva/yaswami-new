@@ -20,7 +20,7 @@ import { offsetOf, pickDirty } from '@/lib/form';
 /** Поля, которые модератор сверяет с анонсом перед решением. */
 const values = (e: AdminCollectedEvent): Input => ({
   title: e.title, starts_at: e.starts_at, ends_at: e.ends_at, place: e.place, address: e.address, price: e.price, topic: e.topic,
-  telegram_username: e.telegram_username, whatsapp_phone: e.whatsapp_phone, url: e.url, description: e.description,
+  telegram_username: e.telegram_username, whatsapp_phone: e.whatsapp_phone, instagram_username: e.instagram_username ?? null, url: e.url, description: e.description,
 });
 
 function QueueCard({ event, onDecide, onSkip }: { event: AdminCollectedEvent; onDecide: (input: Input) => void; onSkip: () => void }) {
@@ -53,6 +53,7 @@ function QueueCard({ event, onDecide, onSkip }: { event: AdminCollectedEvent; on
             <SelectField form={form} name="topic" label="Тема" options={topicOptions(event.topic)} />
             <TextField form={form} name="telegram_username" label="Контакт в Telegram" nullable placeholder="username" />
             <TextField form={form} name="whatsapp_phone" label="WhatsApp" nullable />
+            <TextField form={form} name="instagram_username" label="Instagram (директ)" nullable placeholder="ник" />
             <div className="sm:col-span-2"><TextField form={form} name="url" label="Ссылка для записи" nullable type="url" /></div>
             <div className="sm:col-span-2"><AreaField form={form} name="description" label="Описание" rows={8} /></div>
           </FieldGroup>

@@ -5,10 +5,11 @@ import { contactOf, hostEvents, hostKind, jobExpired, matchCollected, topicOptio
 const source = 'https://t.me/chan/5';
 
 test('контакт для записи из ссылки «Записаться»', () => {
-  assert.deepEqual(contactOf({ signup_url: 'https://t.me/Anya_K?text=hi', source_url: source }), { telegram_username: 'Anya_K', whatsapp_phone: null, url: null });
-  assert.deepEqual(contactOf({ signup_url: 'https://wa.me/995555?text=hi', source_url: source }), { telegram_username: null, whatsapp_phone: '+995555', url: null });
-  assert.deepEqual(contactOf({ signup_url: 'https://reg.example/x', source_url: source }), { telegram_username: null, whatsapp_phone: null, url: 'https://reg.example/x' });
-  assert.deepEqual(contactOf({ signup_url: source, source_url: source }), { telegram_username: null, whatsapp_phone: null, url: null });
+  assert.deepEqual(contactOf({ signup_url: 'https://t.me/Anya_K?text=hi', source_url: source }), { telegram_username: 'Anya_K', whatsapp_phone: null, instagram_username: null, url: null });
+  assert.deepEqual(contactOf({ signup_url: 'https://wa.me/995555?text=hi', source_url: source }), { telegram_username: null, whatsapp_phone: '+995555', instagram_username: null, url: null });
+  assert.deepEqual(contactOf({ signup_url: 'https://reg.example/x', source_url: source }), { telegram_username: null, whatsapp_phone: null, instagram_username: null, url: 'https://reg.example/x' });
+  assert.deepEqual(contactOf({ signup_url: 'https://ig.me/m/anna.yoga', source_url: source }), { telegram_username: null, whatsapp_phone: null, instagram_username: 'anna.yoga', url: null });
+  assert.deepEqual(contactOf({ signup_url: source, source_url: source }), { telegram_username: null, whatsapp_phone: null, instagram_username: null, url: null });
 });
 
 test('события организатора: по контакту или по каналу', () => {

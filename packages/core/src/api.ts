@@ -108,7 +108,7 @@ export interface EventListItem {
 
 const parsableDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'not a date');
 /**
- * Событие, собранное из Telegram-канала (apps/collector): хозяина в Ясвами у него ещё нет, данные извлечены ИИ.
+ * Событие, собранное из Telegram-канала или Instagram-профиля (apps/collector): хозяина в Ясвами у него ещё нет, данные извлечены ИИ.
  * Схемой проверяется ответ ИИ (packages/extract): событие, которое база не примет, отбрасывается до записи.
  */
 export const CollectedEvent = z.object({
@@ -122,6 +122,9 @@ export const CollectedEvent = z.object({
   tags: z.array(z.string()),
   telegram_username: z.string().nullable(),
   whatsapp_phone: z.string().nullable(),
+  // Ник в Instagram без @: «Записаться» ведёт в директ, если нет Telegram, WhatsApp и ссылки. Ставит сборщик событиям
+  // из Instagram-источника — ИИ его не выдаёт. В Luma такого нет.
+  instagram_username: z.string().nullable().optional(),
   url: z.string().nullable(),
   // Ниже — «что это мне даст»: поля появились позже остальных, у ранее собранных событий их нет.
   topic: z.string().optional(), // ключ TOPIC_GUIDES или OTHER_TOPIC
@@ -232,8 +235,8 @@ export interface CollectedMedia {
 }
 
 /** Карточка собранного события для витрины. */
-export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {
-  id: string; // годится для адреса страницы: <канал>-<публикация>-<номер события в ней>
+export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'instagram_username' | 'url'> {
+  id: string; // годится для адреса страницы: <канал>-<публикация>-<номер события в ней>, из Instagram — ig.<публикация>-<номер>
   signup_url: string; // куда ведёт «Записаться»: к организатору, а не в Ясвами
   source_url: string; // публикация, из которой взято событие
   claimed_event_id: Event['id'] | null; // организатор подтвердил событие: запись идёт через событие Ясвами
@@ -251,9 +254,9 @@ export const COLLECTED_STATUSES = ['pending', 'approved', 'published', 'rejected
 export type CollectedStatus = (typeof COLLECTED_STATUSES)[number];
 
 /** Собранное событие в админке модерации: любого статуса, с источником и контактами, которые витрина прячет. */
-export interface AdminCollectedEvent extends CollectedEventItem, Pick<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'url'> {
+export interface AdminCollectedEvent extends CollectedEventItem, Pick<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'instagram_username' | 'url'> {
   status: CollectedStatus;
-  channel: string; // источник: канал или группа, откуда анонс
+  channel: string; // источник: канал или группа, откуда анонс; instagram:<ник> — Instagram-профиль
   source_text: string | null; // текст публикации-источника: с ним модератор сверяет, что извлёк ИИ
   // Отклик на публикацию-источник — только для команды: в витрине из него получается лишь пометка «Популярное».
   views: number | null; // просмотры; у публикаций в группах их нет
@@ -270,11 +273,11 @@ export type CollectedListInput = z.infer<typeof CollectedListInput>;
 // Правка и решение модератора — CollectedUpdateInput в admin.ts.
 
 /**
- * Source: канал или группа Telegram, откуда сборщик берёт анонсы. Источники добавляет команда, а каналы организаторов —
- * сборщик сам, по их профилю. В Luma такого нет.
+ * Source: канал или группа Telegram или профиль Instagram, откуда сборщик берёт анонсы. Источники добавляет команда,
+ * а каналы и Instagram организаторов — сборщик сам, по их профилю. В Luma такого нет.
  */
 export interface AdminSource {
-  channel: string; // username без @ или id закрытого чата (-100…)
+  channel: string; // username без @, id закрытого чата (-100…) или instagram:<ник> — профиль Instagram
   kind: SourceKind;
   enabled: boolean; // выключенный сборщик не читает
   // Почему выключил сборщик: канала нет в Telegram или он закрыт. null — выключила команда или источник включён.
@@ -295,10 +298,24 @@ export const SOURCE_KINDS = ['announcements', 'leads', 'jobs'] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 const sourceKind = z.enum(SOURCE_KINDS).describe('announcements — event announcements (default); leads — a big city chat: questions "where to go", masters and job vacancies; jobs — a job chat: vacancies only');
 
-/** Добавить источник: username канала, @username, ссылка t.me/… или id закрытого чата. */
+/**
+ * Источник Instagram хранится как `instagram:<ник>`: ник в Instagram может совпасть с чужим username в Telegram.
+ * Ник — без @, в нижнем регистре; null — источник из Telegram.
+ */
+export const INSTAGRAM_SOURCE = 'instagram:';
+export const instagramOf = (channel: string): string | null => (channel.startsWith(INSTAGRAM_SOURCE) ? channel.slice(INSTAGRAM_SOURCE.length) : null);
+const INSTAGRAM_INPUT = /^(?:(?:https?:\/\/)?(?:www\.)?instagram\.com\/|instagram:)([\w.]{1,30})\/?(?:\?.*)?$/i;
+/** Источник из того, что ввела команда: ссылка на Instagram — `instagram:<ник>`, иначе username канала или id чата. */
+export const sourceChannel = (input: string): string => {
+  const ig = INSTAGRAM_INPUT.exec(input.trim())?.[1];
+  return ig ? INSTAGRAM_SOURCE + ig.toLowerCase() : input.trim().replace(/^(?:https?:\/\/)?(?:t\.me\/|@)?/, '').replace(/\/$/, '');
+};
+
+/** Добавить источник: username канала, @username, ссылка t.me/… или id закрытого чата, либо ссылка на профиль Instagram. */
 export const SourceCreateInput = z.object({
   kind: sourceKind.optional(),
-  channel: z.string().trim().regex(/^(?:https?:\/\/)?(?:t\.me\/|@)?\w{4,32}\/?$|^-100\d+$/).describe('Channel username, @username, t.me link or -100… id of a private chat'),
+  channel: z.string().trim().regex(new RegExp(`^(?:https?:\\/\\/)?(?:t\\.me\\/|@)?\\w{4,32}\\/?$|^-100\\d+$|${INSTAGRAM_INPUT.source}`))
+    .describe('Channel username, @username, t.me link, -100… id of a private chat, or an Instagram profile link (instagram.com/<handle>) or instagram:<handle>'),
   city_id: cityId.optional(),
 });
 export type SourceCreateInput = z.infer<typeof SourceCreateInput>;
@@ -321,9 +338,9 @@ export type SourceUpdateInput = z.infer<typeof SourceUpdateInput>;
 export const SOURCE_SEARCH_STATUSES = ['queued', 'running', 'done', 'failed'] as const;
 export type SourceSearchStatus = (typeof SOURCE_SEARCH_STATUSES)[number];
 
-/** Найденный канал или группа. В Luma такого нет. */
+/** Найденный канал или группа Telegram или профиль Instagram. В Luma такого нет. */
 export interface SourceCandidate {
-  channel: string; // username без @
+  channel: string; // username без @ или instagram:<ник>
   title: string;
   group: boolean; // группа (чат), а не канал
   members: number | null;
