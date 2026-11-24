@@ -308,6 +308,10 @@ test('сборщик: профили Instagram — свой список, Instag
   assert.deepEqual((await store.sources()).map((s: any) => s.channel), ['danang'], 'юзербот Instagram не читает');
   assert.deepEqual((await store.chats()).map((c: any) => c.chat), []);
   assert.deepEqual((await store.instagramSources()).map((s: any) => [s.channel, s.host_username, s.city]), [['instagram:anna.yoga', 'ig_anna', 'Дананг'], ['instagram:leads_by_mistake', null, 'Дананг']]);
+  // Профиль нашёл поиск, организатор у источника не указан, но этот Instagram записан у организатора — контакт его.
+  await sql`insert into sources (channel) values ('instagram:Found.By.Tag')`;
+  await sql`insert into hosts (username, name, instagram_handle) values ('ig_found', 'Найденный', 'found.by.tag')`;
+  assert.equal((await store.instagramSources()).find((s: any) => s.channel === 'instagram:Found.By.Tag').host_username, 'ig_found');
 
   const event = { title: 'Йога', description: '', starts_at: new Date(Date.now() + 86_400_000).toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, instagram_username: 'anna.yoga', url: null };
   await store.upsert({ external_id: 'instagram:C1#0', channel: 'instagram:anna.yoga', city_id: 'danang', announcement: { id: 'C1', url: 'https://www.instagram.com/p/C1/', text: '' }, event, signup_url: 'https://ig.me/m/anna.yoga' });
@@ -316,5 +320,5 @@ test('сборщик: профили Instagram — свой список, Instag
   assert.ok(!(await store.withoutMedia()).some((e: any) => e.external_id === 'instagram:C1#0'));
   await sql`delete from collected_events where external_id = 'instagram:C1#0'`;
   await sql`delete from sources`;
-  await sql`delete from hosts where username in ('ig_anna', 'ig_spam')`;
+  await sql`delete from hosts where username in ('ig_anna', 'ig_spam', 'ig_found')`;
 });

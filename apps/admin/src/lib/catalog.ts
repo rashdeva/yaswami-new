@@ -7,11 +7,13 @@ export function sourceLink(channel: string): string | null {
   const ig = instagramOf(channel);
   return ig ? `https://instagram.com/${ig}` : channel.startsWith('-') ? null : `https://t.me/${channel}`;
 }
-/** Как источник подписан: «@канал», «Instagram @ник» или id закрытого чата. */
+/** Как источник подписан: «@канал» или «@ник» (площадку показывает значок, в тексте — sourcePlatform), id закрытого чата — как есть. */
 export function sourceName(channel: string): string {
   const ig = instagramOf(channel);
-  return ig ? `Instagram @${ig}` : channel.startsWith('-') ? channel : `@${channel}`;
+  return ig ? `@${ig}` : channel.startsWith('-') ? channel : `@${channel}`;
 }
+/** Источник одной строкой, где значка нет (подзаголовки, подсказки): «Instagram @ник» или «Telegram @канал». */
+export const sourcePlatform = (channel: string): string => `${instagramOf(channel) ? 'Instagram' : 'Telegram'} ${sourceName(channel)}`;
 
 /** Модерация организатора (HOST_STATUSES в core). */
 /** Способы входа человека (user_identities, ADR-0008). */
@@ -60,11 +62,13 @@ export function contactOf(e: Pick<AdminCollectedEvent, 'signup_url' | 'source_ur
   return { telegram_username: tg, whatsapp_phone: wa && `+${wa}`, instagram_username: ig, url };
 }
 
-/** События каталога организатора: контакт для записи — его username, или анонс из его канала. */
-export function hostEvents<T extends Pick<AdminCollectedEvent, 'signup_url' | 'source_url' | 'channel'>>(host: { username: string; channel: string | null }, items: T[]) {
+/** События каталога организатора: контакт для записи — его username, или анонс из его канала или его Instagram. */
+export function hostEvents<T extends Pick<AdminCollectedEvent, 'signup_url' | 'source_url' | 'channel'>>(host: { username: string; channel: string | null; instagram_handle?: string | null }, items: T[]) {
   const username = host.username.toLowerCase();
   const channel = host.channel?.toLowerCase();
-  return items.filter((e) => contactOf(e).telegram_username?.toLowerCase() === username || (!!channel && e.channel.toLowerCase() === channel));
+  const instagram = host.instagram_handle?.toLowerCase();
+  return items.filter((e) => contactOf(e).telegram_username?.toLowerCase() === username || (!!channel && e.channel.toLowerCase() === channel)
+    || (!!instagram && instagramOf(e.channel.toLowerCase()) === instagram));
 }
 
 /** Поиск по названию, месту и источнику. */

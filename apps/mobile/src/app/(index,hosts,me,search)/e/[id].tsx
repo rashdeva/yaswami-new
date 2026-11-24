@@ -84,7 +84,9 @@ export default function CollectedEvent() {
         <Text style={{ color: colors.secondaryLabel, fontSize: 13, paddingHorizontal: 16 }} onPress={() => void Linking.openURL(event.source_url)}>
           {event.claimed_event_id
             ? 'Организатор принимает записи в Ясвами: ответьте «Пойду» — и вы в списке гостей.'
-            : 'Событие нашли в открытом канале. Записывает организатор: откроем чат с ним и готовым сообщением. '}
+            : event.signup_url.startsWith('https://ig.me/')
+              ? 'Событие нашли в Instagram организатора. Записывает он сам: откроем его директ. '
+              : 'Событие нашли в открытом канале. Записывает организатор: откроем чат с ним и готовым сообщением. '}
           <Text style={{ color: colors.tint }}>Исходный анонс</Text>
         </Text>
       </ScrollView>

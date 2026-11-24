@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form';
 import { CityBadge, CityField } from '@/components/City';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
 import { Cover } from '@/components/Cover';
-import { EntityLink, ExternalLink, TelegramLink } from '@/components/EntityLink';
+import { EntityLink, ExternalLink, SourceLink, TelegramLink } from '@/components/EntityLink';
 import { AreaField, DateTimeField, ListField, SaveBar, saveDirty, SelectField, TextField, TriField } from '@/components/Fields';
 import { History } from '@/components/History';
 import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
@@ -59,7 +59,7 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
       }
     >
       <div className="flex flex-wrap items-center gap-3">
-        <ExternalLink href={e.source_url} icon>анонс в @{e.channel}</ExternalLink>
+        <span className="inline-flex items-center gap-1"><ExternalLink href={e.source_url} icon>анонс</ExternalLink> в <SourceLink channel={e.channel} /></span>
         <CityBadge id={e.city_id} />
         {/* Страница события — на сайте, вне админки: обычная ссылка, не маршрут. */}
         {e.status === 'published' && <ExternalLink href={collectedPath(e.id)} icon>страница события</ExternalLink>}

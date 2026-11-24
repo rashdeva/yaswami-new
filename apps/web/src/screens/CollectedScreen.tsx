@@ -159,7 +159,9 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
           ? 'Организатор принимает записи в Ясвами: ответьте «Пойду» — и вы в списке гостей.'
           : signedUp
             ? 'Вы отметили, что пойдёте. Место подтверждает организатор — напишите ему.'
-            : 'Событие нашли в открытом канале. Записывает организатор: мы откроем чат с ним и готовым сообщением.'}
+            : event.signup_url.startsWith('https://ig.me/')
+              ? 'Событие нашли в Instagram организатора. Записывает он сам: мы откроем его директ.'
+              : 'Событие нашли в открытом канале. Записывает организатор: мы откроем чат с ним и готовым сообщением.'}
         {' '}<a href={event.source_url} target="_blank" rel="noreferrer">Исходный анонс</a>
       </p>
       {!event.claimed_event_id && !authed && canLogin && (
@@ -192,7 +194,12 @@ export function CollectedScreen({ id, city, authed, canLogin, signedUp, onClaim,
                   </div>
                 )}
                 {!past && !onClaim && <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>}
-                {hostOpen.channel_url && <button className="cta alt" onClick={() => { track('host_channel_opened', { collected_event_id: id }); openExternal(hostOpen.channel_url!); }}>Перейти в канал</button>}
+                {(hostOpen.channel_url || hostOpen.instagram_handle) && (
+                  <div className="cta-row">
+                    {hostOpen.channel_url && <button className="cta alt" onClick={() => { track('host_channel_opened', { collected_event_id: id }); openExternal(hostOpen.channel_url!); }}>Канал</button>}
+                    {hostOpen.instagram_handle && <button className="cta alt" onClick={() => { track('host_instagram_opened', { collected_event_id: id }); openExternal(`https://instagram.com/${hostOpen.instagram_handle}`); }}>Instagram</button>}
+                  </div>
+                )}
               </>
             )}
           </Drawer.Content>

@@ -2,6 +2,7 @@
 // одним списком строк, и решения по ним теми же вызовами, что на родных экранах.
 import type { AdminCollectedEvent, AdminEntity, AdminHostListItem, Job, Wire } from '@yaswami/core';
 import { collectedWhen } from '@yaswami/core';
+import { sourcePlatform } from './catalog.ts';
 
 export type ModerationKind = 'event' | 'service' | 'host' | 'job';
 export type Decision = 'approve' | 'reject';
@@ -43,7 +44,7 @@ export function moderationQueue({ events = [], hosts = [], jobs = [], hostEvents
   const row = (kind: ModerationKind, id: string, rest: Omit<ModerationRow, 'kind' | 'id' | 'key'>): ModerationRow => ({ kind, id, key: `${kind}:${id}`, ...rest });
   const groups: Record<ModerationKind, ModerationRow[]> = {
     event: events.filter((e) => e.status === 'pending').map((e) =>
-      row('event', e.id, { title: e.title, subtitle: line([collectedWhen(e.starts_at), e.channel]), link: { entity: 'collected_event', id: e.id }, url: e.source_url })),
+      row('event', e.id, { title: e.title, subtitle: line([collectedWhen(e.starts_at), sourcePlatform(e.channel)]), link: { entity: 'collected_event', id: e.id }, url: e.source_url })),
     service: hosts.flatMap((h) => h.practices.filter((p) => p.status === 'pending').map((p) =>
       row('service', p.id, { title: p.title, subtitle: line([h.name, p.topic, p.price ?? 'цена по запросу']), link: { entity: 'host', id: h.id }, host_id: h.id }))),
     host: hosts.filter((h) => h.status === 'pending').sort((a, b) => b.created_at.localeCompare(a.created_at)).map((h) =>

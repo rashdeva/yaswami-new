@@ -2,10 +2,10 @@
 // Каналы организаторов он добавляет сам; ненужный — выключить. Канал, которого больше нет в Telegram, сборщик выключает сам и пишет причину. У источника можно указать организатора — чей это канал —
 // и город: его получают события, мастера и вакансии из этого источника.
 import type { SourceKind } from '@yaswami/core';
-import { DEFAULT_CITY_ID, SOURCE_KINDS } from '@yaswami/core';
+import { DEFAULT_CITY_ID, instagramOf, SOURCE_KINDS } from '@yaswami/core';
 import { useState } from 'react';
 import { CitySelect } from '@/components/City';
-import { EntityLink, ExternalLink } from '@/components/EntityLink';
+import { EntityLink, PlatformIcon, SourceLink } from '@/components/EntityLink';
 import { HostPicker } from '@/components/HostPicker';
 import { Failed, Loading, Nothing, Page } from '@/components/Page';
 import { ActionsCell, ActionsHead } from '@/components/RowActions';
@@ -16,7 +16,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useHosts } from '@/hooks/useHosts';
 import { useSources } from '@/hooks/useSources';
-import { sourceLink as link, sourceName } from '@/lib/catalog';
 
 
 
@@ -54,13 +53,14 @@ export function SourcesScreen() {
       {!!sources?.length && (
         <Table>
           <TableHeader>
-            <TableRow><TableHead>Канал</TableHead><TableHead>Вид</TableHead><TableHead>Город</TableHead><TableHead>Организатор</TableHead><TableHead>Событий</TableHead><ActionsHead /></TableRow>
+            <TableRow><TableHead>Источник</TableHead><TableHead>Площадка</TableHead><TableHead>Вид</TableHead><TableHead>Город</TableHead><TableHead>Организатор</TableHead><TableHead>Событий</TableHead><ActionsHead /></TableRow>
           </TableHeader>
           <TableBody>
             {sources.map((s) => (
               <TableRow key={s.channel} data-state={s.enabled ? undefined : 'disabled'}>
-                <TableCell>{link(s.channel) ? <ExternalLink href={link(s.channel)!}>{sourceName(s.channel)}</ExternalLink> : s.channel} {!s.enabled && <Badge variant="outline" title={s.disabled_reason ?? undefined}>{s.disabled_reason ? 'выключен сборщиком' : 'выключен'}</Badge>}
+                <TableCell><SourceLink channel={s.channel} /> {!s.enabled && <Badge variant="outline" title={s.disabled_reason ?? undefined}>{s.disabled_reason ? 'выключен сборщиком' : 'выключен'}</Badge>}
                   {s.disabled_reason && <div className="text-xs text-muted-foreground">{s.disabled_reason}</div>}</TableCell>
+                <TableCell><span className="inline-flex items-center gap-1"><PlatformIcon instagram={!!instagramOf(s.channel)} />{instagramOf(s.channel) ? 'Instagram' : 'Telegram'}</span></TableCell>
                 <TableCell><KindSelect value={s.kind} onChange={(kind) => update({ channel: s.channel, kind })} /></TableCell>
                 <TableCell><CitySelect value={s.city_id} onChange={(city_id) => update({ channel: s.channel, city_id })} /></TableCell>
                 <TableCell>

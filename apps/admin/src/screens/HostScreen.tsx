@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { CityField } from '@/components/City';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
-import { EntityLink, ExternalLink, TelegramLink } from '@/components/EntityLink';
+import { EntityLink, ExternalLink, InstagramLink, TelegramLink } from '@/components/EntityLink';
 import { AreaField, SaveBar, saveDirty, SelectField, showIssues, TextField } from '@/components/Fields';
 import { History } from '@/components/History';
 import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
@@ -51,7 +51,7 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
     <Page
       title={<>{h.name} <Badge variant={h.status === 'published' ? 'default' : 'secondary'}>{HOST_LABELS[h.status]}</Badge></>}
       description={<>
-        <TelegramLink username={h.username} /> · {h.telegram_id ? `Telegram id ${h.telegram_id}` : h.status === 'pending' ? 'добавлен по username: сборщик проверит его в Telegram и заполнит профиль на следующем проходе' : 'сборщик не нашёл его в Telegram; исправьте username и верните статус «Новый» — проверит снова'}
+        <TelegramLink username={h.username} />{h.instagram_handle && <> · <InstagramLink handle={h.instagram_handle} /></>} · {h.telegram_id ? `Telegram id ${h.telegram_id}` : h.status === 'pending' ? 'добавлен по username: сборщик проверит его в Telegram и заполнит профиль на следующем проходе' : 'сборщик не нашёл его в Telegram; исправьте username и верните статус «Новый» — проверит снова'}
         {h.user_id ? <> · в сервисе: <EntityLink entity="user" id={h.user_id}>карточка пользователя</EntityLink></> : ' · в сервис не входил'}
         {row && ` · предстоящих событий ${row.events}, записей ${row.signups}`}
       </>}

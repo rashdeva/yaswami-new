@@ -26,6 +26,7 @@ export default function Host() {
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <Button title="Написать" onPress={() => void Linking.openURL(host.contact_url)} />
           {host.channel_url && <Button plain title="Канал" onPress={() => void Linking.openURL(host.channel_url!)} />}
+          {host.instagram_handle && <Button plain title="Instagram" onPress={() => void Linking.openURL(`https://instagram.com/${host.instagram_handle}`)} />}
         </View>
         {!!host.practices.length && (
           <Section title="Услуги">

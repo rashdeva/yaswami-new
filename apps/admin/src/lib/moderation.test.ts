@@ -32,7 +32,7 @@ test('очередь: только ждущие решения, четыре г�
 
 test('строки: подпись и ссылка каждого вида', () => {
   const [events, services, hosts, jobs] = moderationQueue(sources).map((g) => g.rows);
-  assert.match(events![0]!.subtitle, /1 мая.* · tbilisi_events$/);
+  assert.match(events![0]!.subtitle, /1 мая.* · Telegram @tbilisi_events$/);
   assert.deepEqual(events![0]!.link, { entity: 'collected_event', id: 'e1' });
   assert.equal(events![0]!.url, 'https://t.me/tbilisi_events/5');
   assert.equal(services![0]!.subtitle, 'Аня · йога · 50 лари');
