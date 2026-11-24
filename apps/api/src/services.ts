@@ -473,7 +473,7 @@ export async function getCollectedEvent(db: Db, slug: string, anyStatus = false)
 
 type HostRecord = typeof hosts.$inferSelect;
 const hostCard = (h: HostRecord): Omit<CollectedHost, 'photos'> => ({
-  name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`,
+  name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`, instagram_handle: h.instagram_handle,
   photo_url: `https://t.me/i/userpic/320/${h.username}.jpg`, confirmed: h.user_id !== null,
 });
 /** Фото сообщества, новые сверху. Источник — telegram:<канал>/<публикация>: из него же ссылка на публикацию. */

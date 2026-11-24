@@ -20,6 +20,7 @@ test('события организатора: по контакту или по
   ];
   assert.deepEqual(hostEvents({ username: 'Anya_K', channel: 'anyachan' }, items).map((e) => e.id), [1, 2]);
   assert.deepEqual(hostEvents({ username: 'nobody', channel: null }, items), []);
+  assert.deepEqual(hostEvents({ username: 'nobody', channel: null, instagram_handle: 'Anna.Yoga' }, [...items, { id: 4, signup_url: source, source_url: source, channel: 'instagram:anna.yoga' }]).map((e) => e.id), [4]);
 });
 
 test('поиск по каталогу', () => {

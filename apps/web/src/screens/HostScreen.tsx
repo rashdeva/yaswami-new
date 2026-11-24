@@ -83,13 +83,14 @@ export function HostScreen({ id, city, onOpenEvent, onBack }: Props) {
           ))}
         </div>
       )}
-      <p className="note">Профиль собран из открытых каналов и чатов{host.confirmed ? ' и подтверждён организатором' : ''}.</p>
+      <p className="note">Профиль собран из открытых каналов и чатов{host.instagram_handle ? ' и Instagram' : ''}{host.confirmed ? ' и подтверждён организатором' : ''}.</p>
 
       <div className="main"><div>
         <button className="cta" onClick={() => { track('host_contacted', { host_id: id }); openExternal(host.contact_url); }}>Написать</button>
-        {host.channel_url && (
+        {(host.channel_url || host.instagram_handle) && (
           <div className="cta-row">
-            <button className="cta alt" onClick={() => { track('host_channel_opened', { host_id: id }); openExternal(host.channel_url!); }}>Канал</button>
+            {host.channel_url && <button className="cta alt" onClick={() => { track('host_channel_opened', { host_id: id }); openExternal(host.channel_url!); }}>Канал</button>}
+            {host.instagram_handle && <button className="cta alt" onClick={() => { track('host_instagram_opened', { host_id: id }); openExternal(`https://instagram.com/${host.instagram_handle}`); }}>Instagram</button>}
           </div>
         )}
       </div></div>

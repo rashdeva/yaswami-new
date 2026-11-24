@@ -5,7 +5,7 @@ import type { HostStatus } from '@yaswami/core';
 import { HOST_STATUSES, INBOX_STAGES } from '@yaswami/core';
 import { useState } from 'react';
 import { CityBadge } from '@/components/City';
-import { EntityLink, TelegramLink } from '@/components/EntityLink';
+import { EntityLink, InstagramLink, TelegramLink } from '@/components/EntityLink';
 import { Failed, Hint, Loading, Nothing, Page } from '@/components/Page';
 import { ActionsCell, ActionsHead } from '@/components/RowActions';
 import { Search } from '@/components/Search';
@@ -99,6 +99,7 @@ export function HostsScreen({ status, kind, query, onFilter, onOpen, onCreated }
                       <ItemTitle><EntityLink entity="host" id={h.id}>{h.name}</EntityLink></ItemTitle>
                       <ItemDescription><TelegramLink username={h.username} /></ItemDescription>
                       {h.channel && <ItemDescription>канал <TelegramLink username={h.channel} /></ItemDescription>}
+                      {h.instagram_handle && <ItemDescription><InstagramLink handle={h.instagram_handle} /></ItemDescription>}
                       <ItemDescription><CityBadge id={h.city_id} /></ItemDescription>
                     </ItemContent>
                   </Item>

@@ -133,10 +133,18 @@ export function createStore(url) {
       select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
       from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id
       where s.enabled and s.kind = 'announcements' and s.channel not like 'instagram:%' order by s.created_at, s.channel`,
-    /** Включённые профили Instagram (instagram:<ник>) — в той же форме, что sources(); читаются через Apify, а не юзерботом. */
+    /**
+     * Включённые профили Instagram (instagram:<ник>) — в той же форме, что sources(); читаются через Apify, а не юзерботом.
+     * Организатор не указан у источника — берём того, у кого этот Instagram в профиле: его Telegram станет контактом.
+     */
     instagramSources: () => sql`
       select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
-      from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id
+      from sources s join cities c on c.id = s.city_id
+      left join lateral (
+        select username from hosts
+        where id = s.host_id or (s.host_id is null and status <> 'rejected' and 'instagram:' || lower(instagram_handle) = lower(s.channel))
+        order by id = s.host_id desc, created_at limit 1
+      ) h on true
       where s.enabled and s.channel like 'instagram:%' order by s.created_at, s.channel`,
     /**
      * Включённые чаты, где ищем не анонсы: `leads` — вопросы, мастера и вакансии (бывший LEAD_CHATS), иначе только

@@ -5,7 +5,7 @@ import type { AdminCollectedEvent, CollectedUpdateInput as Input } from '@yaswam
 import { CollectedUpdateInput } from '@yaswami/core';
 import { useForm } from 'react-hook-form';
 import { Cover } from '@/components/Cover';
-import { ExternalLink } from '@/components/EntityLink';
+import { ExternalLink, SourceLink } from '@/components/EntityLink';
 import { AreaField, DateTimeField, SelectField, TextField } from '@/components/Fields';
 import { Hint, Loading, Nothing } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
@@ -34,7 +34,7 @@ function QueueCard({ event, onDecide, onSkip }: { event: AdminCollectedEvent; on
           <div className="flex min-w-0 gap-3 lg:col-span-2">
             <Cover url={event.cover_url} className="w-24 flex-none self-start" />
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <Hint>источник: {event.channel}</Hint>
+              <Hint>источник: <SourceLink channel={event.channel} /></Hint>
               <ExternalLink href={event.source_url} icon>исходный анонс</ExternalLink>
               {event.source_text && (
                 <ScrollArea className="h-96 rounded-md border">

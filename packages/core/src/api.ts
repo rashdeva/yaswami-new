@@ -143,6 +143,7 @@ export interface CollectedHost {
   name: string;
   summary: string | null; // сводка ИИ по каналу и «о себе»
   channel_url: string | null;
+  instagram_handle: string | null; // ник в Instagram без @, как у Host в Luma: страница — instagram.com/<ник>
   photo_url: string; // аватарка прямо с серверов Telegram, у себя не храним; если фото нет или оно скрыто — по адресу 404
   confirmed: boolean; // человек вошёл в Ясвами; иначе профиль собран без его участия
   /** Фото сообщества: последние картинки из канала, сохранённые у нас; новые сверху. `source_url` — публикация, из которой взято фото. */

@@ -5,7 +5,7 @@ import type { City, CityCreateInput as CreateInput, CityUpdateInput as UpdateInp
 import { CityCreateInput, CityUpdateInput } from '@yaswami/core';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
-import { ExternalLink } from '@/components/EntityLink';
+import { SourceLink } from '@/components/EntityLink';
 import { ListField, SaveBar, saveDirty, showIssues, TextField } from '@/components/Fields';
 import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,6 @@ import { FieldGroup } from '@/components/ui/field';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useCities } from '@/hooks/useCities';
 import { useSourceSearches } from '@/hooks/useSourceSearches';
-import { sourceLink, sourceName } from '@/lib/catalog';
 import { KIND_NAMES } from './SourcesScreen';
 
 const DESCRIPTION = 'Города, в которых работает сервис. У источника, события каталога, организатора и события Ясвами указан город; всё, что было до городов, — Дананг. Новому городу сборщик сам ищет источники в Telegram по названию и другим написаниям, а в Instagram — по хэштегам города — в первый же проход, потом раз в месяц. Каналы и профили, где за месяц хотя бы три публикации похожи на анонс, сразу становятся источниками: их события всё равно проходят модерацию. Группы и остальное найденное — ниже у города: добавьте нужное.';
@@ -37,12 +36,12 @@ function CitySources({ city }: { city: string }) {
       {!!found.length && (
         <Table>
           <TableHeader>
-            <TableRow><TableHead>Канал</TableHead><TableHead>Вид</TableHead><TableHead>Участников</TableHead><TableHead>Похожи на анонс / публикаций за месяц</TableHead><TableHead /></TableRow>
+            <TableRow><TableHead>Источник</TableHead><TableHead>Вид</TableHead><TableHead>Участников</TableHead><TableHead>Похожи на анонс / публикаций за месяц</TableHead><TableHead /></TableRow>
           </TableHeader>
           <TableBody>
             {found.map((r) => (
               <TableRow key={r.channel} data-state={r.added ? 'disabled' : undefined}>
-                <TableCell><ExternalLink href={sourceLink(r.channel)!}>{sourceName(r.channel)}</ExternalLink> <span className="text-muted-foreground">{r.title}</span></TableCell>
+                <TableCell><SourceLink channel={r.channel} /> <span className="text-muted-foreground">{r.title}</span></TableCell>
                 <TableCell>{KIND_NAMES[r.kind]}</TableCell>
                 <TableCell>{r.members ?? '—'}</TableCell>
                 <TableCell>{r.event_like} / {r.posts_30d}</TableCell>

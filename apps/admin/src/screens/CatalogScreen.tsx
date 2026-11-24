@@ -5,7 +5,7 @@ import type { AdminCollectedEvent, CollectedStatus } from '@yaswami/core';
 import { COLLECTED_STATUSES, collectedWhen } from '@yaswami/core';
 import { Cover } from '@/components/Cover';
 import { CityBadge } from '@/components/City';
-import { EntityLink, ExternalLink } from '@/components/EntityLink';
+import { EntityLink, SourceLink } from '@/components/EntityLink';
 import { Failed, Loading, Nothing, Page } from '@/components/Page';
 import { ActionsCell, ActionsHead } from '@/components/RowActions';
 import { Search } from '@/components/Search';
@@ -77,7 +77,7 @@ export function CatalogScreen({ status, query, onFilter, onKind }: Props) {
           {!!list?.length && (
             <Table>
               <TableHeader>
-                <TableRow><TableHead className="w-12" /><TableHead>Событие</TableHead><TableHead>Когда</TableHead><TableHead>Источник</TableHead><TableHead>Статус</TableHead><ActionsHead /></TableRow>
+                <TableRow><TableHead className="w-12" /><TableHead>Событие</TableHead><TableHead>Когда</TableHead><TableHead>Источник</TableHead><TableHead>Город</TableHead><TableHead>Статус</TableHead><ActionsHead /></TableRow>
               </TableHeader>
               <TableBody>
                 {list.map((e) => (
@@ -92,7 +92,8 @@ export function CatalogScreen({ status, query, onFilter, onKind }: Props) {
                       </Item>
                     </TableCell>
                     <TableCell>{collectedWhen(e.starts_at)}</TableCell>
-                    <TableCell><ExternalLink href={e.source_url}>{e.channel}</ExternalLink> <CityBadge id={e.city_id} /></TableCell>
+                    <TableCell><SourceLink channel={e.channel} href={e.source_url} /></TableCell>
+                    <TableCell><CityBadge id={e.city_id} /></TableCell>
                     <TableCell><Badge variant={e.status === 'pending' ? 'default' : e.status === 'rejected' ? 'outline' : 'secondary'}>{COLLECTED_LABELS[e.status]}</Badge></TableCell>
                     <ActionsCell>
                       <ButtonGroup>
