@@ -19,6 +19,16 @@ interface WebApp {
   onEvent(event: 'themeChanged' | 'safeAreaChanged' | 'contentSafeAreaChanged' | 'fullscreenChanged', cb: () => void): void;
   /** Разрешение боту писать человеку: без него сводка по подписке не дойдёт тому, кто не нажимал «Старт». */
   requestWriteAccess?(): void;
+  /** Геолокация средствами Telegram (Bot API 8.0): свой запрос разрешения и настройка в профиле бота. */
+  LocationManager?: {
+    isInited: boolean;
+    isLocationAvailable: boolean;
+    isAccessRequested: boolean;
+    isAccessGranted: boolean;
+    init(cb?: () => void): void;
+    getLocation(cb: (data: { latitude: number; longitude: number } | null) => void): void;
+    openSettings(): void;
+  };
   openTelegramLink(url: string): void;
   openLink(url: string): void;
   BackButton: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
@@ -100,4 +110,31 @@ export function syncFullscreen() {
 document.addEventListener('pointerdown', (e) => {
   const el = (e.target as Element).closest('button, a[href], summary');
   if (el && !(el as HTMLButtonElement).disabled) haptic.tap();
+});
+
+type Coords = { latitude: number; longitude: number };
+
+/** Где человек: в Telegram — его запросом разрешения, иначе — браузерным. null — не разрешил или не вышло. */
+export function currentPosition(): Promise<Coords | null> {
+  const lm = inTelegram && tg?.isVersionAtLeast('8.0') ? tg.LocationManager : undefined;
+  if (!lm) return browserPosition();
+  return new Promise((resolve) => {
+    const ask = () => {
+      if (!lm.isLocationAvailable) return void browserPosition().then(resolve);
+      // Раз уже отказал, Telegram второй раз не спросит: открываем настройку, где можно разрешить.
+      if (lm.isAccessRequested && !lm.isAccessGranted) return (safely(() => lm.openSettings()), resolve(null));
+      lm.getLocation((data) => resolve(data && { latitude: data.latitude, longitude: data.longitude }));
+    };
+    try {
+      if (lm.isInited) ask();
+      else lm.init(ask);
+    } catch {
+      void browserPosition().then(resolve);
+    }
+  });
+}
+
+const browserPosition = () => new Promise<Coords | null>((resolve) => {
+  if (!navigator.geolocation) return resolve(null);
+  navigator.geolocation.getCurrentPosition(({ coords }) => resolve(coords), () => resolve(null), { timeout: 10_000, maximumAge: 3_600_000 });
 });

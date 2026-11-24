@@ -6,6 +6,7 @@ import { DEFAULT_CITY_ID, nearestCityId } from '@yaswami/core';
 import { identify, track } from '../analytics.ts';
 import { api, hasCredentials } from '../api.ts';
 import { setLinkConfig } from '../format.ts';
+import { currentPosition } from '../tg.ts';
 import { served } from '../served.ts';
 import { keys } from './keys.ts';
 
@@ -132,14 +133,10 @@ export function useCity() {
   const { mutate } = set;
   useEffect(() => { if (carry) mutate(carry); }, [carry, mutate]);
   /** Город по геолокации: ближайший из наших; null — рядом наших нет или человек не разрешил. */
-  const locate = () => new Promise<string | null>((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => resolve(nearestCityId(cities, coords)),
-      () => resolve(null),
-      { timeout: 10_000, maximumAge: 3_600_000 },
-    );
-  });
+  const locate = async () => {
+    const at = await currentPosition();
+    return at && nearestCityId(cities, at);
+  };
   const name = (id: string) => cities.find((c) => c.id === id)?.name ?? '';
   return { city_id, name: name(city_id), nameOf: name, chosen, cities, set: set.mutate, locate };
 }
