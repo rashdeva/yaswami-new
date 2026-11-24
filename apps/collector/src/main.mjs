@@ -175,7 +175,7 @@ async function pollLeads({ chat, city_id, city }, leads_too, searches) {
   console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}, мастеров ${masters} из ${offers.length}, находок ${found} из ${candidates.length}, вакансий ${vacancies} из ${jobs.length}`);
 }
 
-// Railway проверяет /health при деплое (общий railway.json) и гасит старый контейнер, только когда новый ответил.
+// Railway проверяет /health при деплое (настройка сервиса на Railway) и гасит старый контейнер, только когда новый ответил.
 if (env.PORT) createServer((_, res) => res.end('ok')).listen(env.PORT);
 // Пока старый контейнер жив, к Telegram не подключаемся: одну сессию нельзя использовать в двух местах сразу —
 // Telegram отзывает её навсегда (AUTH_KEY_DUPLICATED), и аккаунт приходится подключать заново. Так уже было.

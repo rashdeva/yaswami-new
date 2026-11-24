@@ -106,7 +106,7 @@ React + Vite, форма на React Hook Form с правилами полей �
 - [x] Проект Railway `yaswami`: сервис `api` (Hono на Node, образ из `Dockerfile`, миграции при старте) и `postgres` из шаблона `postgresql-extensions` (PostGIS, pgmq). Адрес: https://api-production-2aba5fcf.up.railway.app, деплой — `railway up --service api`.
 - [ ] Задать `BOT_TOKEN` в переменных сервиса `api`; без него вход через Telegram закрыт.
 - [ ] Закрыть публичный TCP-доступ к базе, если он не нужен.
-- [ ] `railway.json` перестаёт работать 2026-12-01: перенести проверку `/health` в `.railway/railway.ts` (`railway config migrate`).
+- [x] `railway.json` удалён (2026-11-24): по `railway config migrate status` его не читал ни один сервис — проверка `/health`, таймаут и Dockerfile хранятся в настройках сервисов на Railway. Infrastructure as Code (`.railway/railway.ts`) не заводим, пока настройки не понадобится менять из кода.
 - [ ] Раздача мини-приложения и long polling → вебхук с проверкой секрета — вместе с ботом и фронтом.
 - [ ] App Sleeping на API выключен.
 - [ ] Новый токен бота в секретах, старый отозван.
