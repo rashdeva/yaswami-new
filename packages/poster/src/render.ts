@@ -78,11 +78,20 @@ export function weekRange(first: string, last: string): string {
   return `${fmt(first, first.slice(5, 7) !== last.slice(5, 7))} — ${fmt(last, true)}`;
 }
 
-/** Строка-крючок под названием: что человек унесёт, для кого это или что там будет. Цена — отдельно. */
-export function hook(e: CollectedEventItem): string {
-  const line = e.takeaway || e.for_whom || e.what_happens?.slice(0, 3).join(', ') || e.description;
-  return clip(cap(line.replace(/\s+/g, ' ').trim()), 110);
+/**
+ * Описание под названием: своими словами организатора из анонса, а если оно короткое — дополняем тем, для кого это
+ * и что человек унесёт. Обрезку по строкам делает слайд, здесь — только верхняя граница длины.
+ */
+export function about(e: CollectedEventItem, max = 320): string {
+  const parts = [e.description, e.for_whom, e.takeaway, e.what_happens?.join(', ')]
+    .map((p) => p?.replace(/\s+/g, ' ').trim()).filter((p): p is string => !!p);
+  let out = parts[0] ?? '';
+  for (const p of parts.slice(1)) if (out.length < 120 && !out.includes(p)) out += (/[.!?…]$/.test(out) ? ' ' : '. ') + cap(p);
+  return clip(cap(out), max);
 }
+
+// Сколько строк займёт название в колонке 656 px при Unbounded 32: в среднем ~27 знаков на строку.
+const titleLines = (title: string) => (clip(title, 60).length > 27 ? 2 : 1);
 
 function brand(city: string, mark: string, tone: 'ink' | 'light' = 'ink'): Node {
   return h('div', { alignItems: 'center', gap: 14 },
@@ -144,18 +153,25 @@ function eventCard(ctx: Ctx, e: CollectedEventItem, photo: string | null): Node 
   const time = collectedTime(e.starts_at);
   const where = [time, e.place && clip(e.place, 30)].filter(Boolean).join(' · ');
   // Высота постоянная: в дне с одним-двумя событиями карточки не раздуваются, а остаются как на соседних слайдах.
-  return h('div', { height: 320, backgroundColor: '#fff', borderRadius: 44, padding: 22, gap: 28, boxShadow: '0 10px 30px rgba(60,40,20,0.07)' },
+  // 276 — без полей: satori прибавляет padding к height, вместе выходит 320, и три карточки ровно встают в слайд.
+  return h('div', { height: 276, backgroundColor: '#fff', borderRadius: 44, padding: 22, gap: 28, boxShadow: '0 10px 30px rgba(60,40,20,0.07)' },
     photo
       ? img(photo, { width: 240, height: '100%', borderRadius: 30, objectFit: 'cover' })
       : h('div', { width: 240, height: '100%', borderRadius: 30, backgroundColor: color + '1f', alignItems: 'center', justifyContent: 'center' }, img(icon, { width: 160, height: 160 })),
     // Ширина колонки задана числом: иначе satori меряет текст по самой длинной строке и карточка вылезает за слайд.
-    h('div', { width: 656, flexDirection: 'column', paddingTop: 6, gap: 10 },
+    h('div', { width: 656, flexDirection: 'column', paddingTop: 4, gap: 6 },
       h('div', { alignItems: 'center', gap: 12 },
-        chip(e.topic && e.topic !== 'другое' ? e.topic : 'событие', color, icon, 22),
-        e.price && text(clip(e.price, 22), { fontFamily: INTER, fontWeight: 600, fontSize: 22, color: HINT })),
+        chip(e.topic && e.topic !== 'другое' ? e.topic : 'событие', color, icon, 20),
+        e.price && text(clip(e.price, 28), { fontFamily: INTER, fontWeight: 600, fontSize: 21, color: HINT })),
       text(clip(e.title, 60), { width: 656, fontFamily: UNB, fontWeight: 700, fontSize: 32, lineHeight: 1.15, color: INK, letterSpacing: -0.5 }, 2),
       where && text(where, { width: 656, fontFamily: INTER, fontWeight: 700, fontSize: 26, color }),
-      text(hook(e), { width: 656, fontFamily: INTER, fontWeight: 500, fontSize: 24, lineHeight: 1.3, color: HINT }, 2)));
+      // Описанию — всё, что осталось в карточке: 4 строки под коротким названием, 3 — под длинным, +1 без времени и места.
+      // satori считает высоту по всему тексту, даже с lineClamp и maxHeight, и карточка растёт. Поэтому текст режем заранее:
+      // Inter 22 в колонке 656 px — около 55 знаков в строке, берём 46 с запасом на переносы.
+      (() => {
+        const lines = 5 - titleLines(e.title) + (where ? 0 : 1);
+        return text(about(e, lines * 46), { width: 656, fontFamily: INTER, fontWeight: 500, fontSize: 22, lineHeight: 1.28, color: HINT });
+      })()));
 }
 
 function daySlide(ctx: Ctx, d: PosterDay, photos: (string | null)[], page: string): Node {
