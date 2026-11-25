@@ -3,13 +3,8 @@
 import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-<<<<<<< HEAD
-import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeFormat, PracticeStatus, ServiceCategory, Product, ProductStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, PRODUCT_CATEGORY_SLUGS, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
-=======
 import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, JoinedVia, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeFormat, PracticeStatus, ServiceCategory, Product, ProductStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, JOINED_VIA, PRODUCT_CATEGORIES, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
->>>>>>> origin/main
+import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, JOINED_VIA, PRODUCT_CATEGORY_SLUGS, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);

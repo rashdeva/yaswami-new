@@ -1,6 +1,6 @@
 {
   "id": "c68c8069-b52a-42ff-bbed-830a9b1d1ef2",
-  "prevId": "dccc2995-077c-4cac-a00e-54697366c168",
+  "prevId": "4a891587-36cc-4183-b5a5-e6fd94bdb76a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3197,6 +3197,85 @@
       },
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.user_activity": {
+      "name": "user_activity",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "joined_via": {
+          "name": "joined_via",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "start_param": {
+          "name": "start_param",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "user_activity_created_idx": {
+          "name": "user_activity_created_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "user_activity_user_id_users_id_fk": {
+          "name": "user_activity_user_id_users_id_fk",
+          "tableFrom": "user_activity",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "user_activity_joined_via_check": {
+          "name": "user_activity_joined_via_check",
+          "value": "joined_via in ('mini_app', 'bot', 'site', 'mobile_app')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.user_identities": {
