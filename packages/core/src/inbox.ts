@@ -212,8 +212,8 @@ export const LeadInput = z.object({
   sent_at: z.iso.datetime({ offset: true }).optional(),
   // Что за сигнал нашёл сборщик: ask — спрашивает, куда сходить; seek — ищет компанию или партнёра на занятие;
   // newcomer — только приехал, хочет знакомиться. Нет — ask.
-  // service — просит посоветовать мастера или услугу.
-  signal: z.enum(['ask', 'seek', 'newcomer', 'service']).optional(),
+  // service — просит посоветовать мастера или услугу; product — ищет, где купить то, что делают мастера (Товар).
+  signal: z.enum(['ask', 'seek', 'newcomer', 'service', 'product']).optional(),
 });
 /** Сколько часов после сообщения в чате на него ещё уместно ответить в самом чате; позже — только в личку. */
 export const LEAD_REPLY_HOURS = 2;

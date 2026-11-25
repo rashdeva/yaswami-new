@@ -22,7 +22,8 @@ mcp_servers:
       Authorization: "Bearer __MCP_TOKEN__"
     tools:
       # Публичный каталог и события самого собеседника (по билету от нашего API); переписка и чужие события роли не видны.
-      include: [collected_events_list, person_events_list, person_events_get, person_events_create, person_events_update]
+      # hosts_list и search правила роли звали и раньше (скилл find-service), а в списке их не было — добавлены вместе с товарами.
+      include: [collected_events_list, hosts_list, products_list, products_get, search, person_events_list, person_events_get, person_events_create, person_events_update]
       resources: false
       prompts: false
 
