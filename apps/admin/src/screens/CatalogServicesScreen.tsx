@@ -15,15 +15,16 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useHosts, usePracticeStatus } from '@/hooks/useHosts';
 import { PRACTICE_LABELS } from '@/lib/catalog';
 
-export type CatalogKind = 'events' | 'services';
+export type CatalogKind = 'events' | 'services' | 'products';
 export type ServiceFilter = 'all' | PracticeStatus;
 
-/** Что показывает «Каталог»: собранные события или услуги мастеров. */
+/** Что показывает «Каталог»: собранные события, услуги или товары мастеров. */
 export function KindToggle({ kind, onKind }: { kind: CatalogKind; onKind: (kind: CatalogKind) => void }) {
   return (
     <ButtonGroup>
       <Button size="sm" variant={kind === 'events' ? 'default' : 'outline'} onClick={() => onKind('events')}>События</Button>
       <Button size="sm" variant={kind === 'services' ? 'default' : 'outline'} onClick={() => onKind('services')}>Услуги</Button>
+      <Button size="sm" variant={kind === 'products' ? 'default' : 'outline'} onClick={() => onKind('products')}>Товары</Button>
     </ButtonGroup>
   );
 }

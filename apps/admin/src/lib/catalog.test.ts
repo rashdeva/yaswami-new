@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { contactOf, hostEvents, hostKind, matchCollected, topicOptions } from './catalog.ts';
+import { contactOf, countLabel, hostEvents, hostKind, matchCollected, matchProduct, productExpired, productPrice, topicOptions } from './catalog.ts';
 
 const source = 'https://t.me/chan/5';
 
@@ -42,4 +42,25 @@ test('hostKind: события важнее услуг, без того и др�
   assert.equal(hostKind(2, 3), 'events');
   assert.equal(hostKind(0, 1), 'services');
   assert.equal(hostKind(0, 0), 'none');
+});
+
+test('товар: не упоминали 30 дней — гостям не показывается', () => {
+  const now = Date.parse('2026-11-23T12:00:00Z');
+  assert.ok(!productExpired('2026-10-25T12:00:00Z', now));
+  assert.ok(productExpired('2026-10-23T12:00:00Z', now));
+});
+
+test('товар: цена и вес, поиск по товару и мастеру, счётчик', () => {
+  assert.equal(productPrice({ price: '55k', unit: '100 г' }), '55k · 100 г');
+  assert.equal(productPrice({ price: null, unit: null }), 'цена не указана');
+  const p = { title: 'Медовик', description: 'на сметане', host: { id: 'h', name: 'Аня', username: 'anya_bakes', city_id: 'danang' } };
+  assert.ok(matchProduct(p, ''));
+  assert.ok(matchProduct(p, 'МЕДОВ'));
+  assert.ok(matchProduct(p, 'сметан'));
+  assert.ok(matchProduct(p, '@anya'));
+  assert.ok(matchProduct(p, 'аня'));
+  assert.ok(!matchProduct(p, 'пельмени'));
+  assert.ok(matchProduct({ ...p, description: null }, 'мед'));
+  assert.equal(countLabel(3, false), '3');
+  assert.equal(countLabel(100, true), '100+');
 });

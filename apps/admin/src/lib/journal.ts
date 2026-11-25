@@ -20,6 +20,7 @@ export const ACTIONS: Record<string, string> = {
   admin_hosts_create: 'Добавлен организатор',
   admin_hosts_update: 'Изменён организатор',
   admin_practices_update: 'Изменена услуга',
+  admin_products_update: 'Изменён товар',
   admin_hosts_delete: 'Удалён организатор',
   admin_users_update: 'Изменён пользователь',
   admin_users_delete: 'Удалён пользователь',
@@ -65,11 +66,12 @@ export const ENTITIES: Record<AdminEntity, string> = {
   product: 'Товар',
 };
 
-/** Куда ведёт сущность в админке; null — своей карточки нет (сообщение, контакт). */
+/** Куда ведёт сущность в админке; null — своей карточки нет (сообщение, контакт). Товар — на свою вкладку «Каталога», все статусы. */
 export type EntityLink =
   | { to: '/events/$id' | '/catalog/$id' | '/hosts/$id' | '/users/$id'; params: { id: string } }
   | { to: '/'; search: { c: string } }
   | { to: '/accounts' | '/sources' | '/cities' | '/topics' | '/showcase' }
+  | { to: '/catalog'; search: { kind: 'products'; status: 'all' } }
   | null;
 
 export function entityLink(entity: AdminEntity, id: string): EntityLink {
@@ -84,6 +86,7 @@ export function entityLink(entity: AdminEntity, id: string): EntityLink {
     case 'city': return { to: '/cities' };
     case 'topic': return { to: '/topics' };
     case 'shelf': return { to: '/showcase' };
+    case 'product': return { to: '/catalog', search: { kind: 'products', status: 'all' } };
     default: return null;
   }
 }
