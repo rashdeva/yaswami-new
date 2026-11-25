@@ -58,7 +58,7 @@ Turn this event poster into a clean photograph: keep the same people, faces, pos
 Если в кадре есть люди — не больше двух, и в запрос дословно:
 
 ```
-People: no more than two, young Russian people in their mid-20s to early 30s, ordinary-looking, not models; candid moment, as if caught on a phone camera by a friend: natural skin texture with pores and slight imperfections, no retouching, no glamour, no posing for the camera; casual everyday clothes of today in different colours and patterns that do not match the main colour of the picture, never a plain solid-colour T-shirt, no bohemian styling, no headscarves; nobody else in the background.
+People: no more than two, young Russian people in their mid-20s to early 30s, attractive and well-groomed but natural, not models; candid moment, as if caught on a phone camera by a friend: natural skin, no retouching, no posing for the camera; stylish light summer clothes for a hot tropical city - linen shirts, summer dresses, tops, shorts, light trousers - in fresh bright colours that differ from the main colour of the picture; never hoodies, sweaters, flannel or plaid shirts, dark heavy or baggy clothes, uniforms; no bohemian styling, no headscarves; nobody else in the background.
 ```
 
 Запрос собери так:
