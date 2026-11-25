@@ -34,6 +34,22 @@ const extracted = { title: 'Йога', description: '', starts_at: '2026-11-20T0
 }
 console.log('extract ok');
 
+// Правила «что куда» называют только включённые темы: без «мафии» она идёт в «игры», туров без «путешествий» нет.
+{
+  const { topicRules } = await import('@yaswami/extract');
+  const { TOPIC_GUIDES, setTopics } = await import('@yaswami/core');
+  const saved = Object.entries(TOPIC_GUIDES).map(([name, g]) => ({ name, ...g }));
+  const topic = (name) => ({ name, slug: name, emoji: '·', color: '#000000', what: '', why: '', first: '', not_for: '', icon_url: null });
+  setTopics(['игры', 'спорт'].map(topic));
+  assert.match(topicRules(), /мафия и похожие игры на социальную дедукцию — «игры»/);
+  assert.doesNotMatch(topicRules(), /туры|путешествия|телесные/);
+  setTopics(['игры', 'мафия', 'путешествия'].map(topic));
+  assert.match(topicRules(), /дедукцию — «мафия»/);
+  assert.match(topicRules(), /кэмпы .*— «путешествия»/);
+  setTopics(saved);
+}
+console.log('topic rules ok');
+
 const { toAnnouncement } = await import('./mtproto.mjs');
 const msg = { id: 7, message: 'Завтрак в пятницу', date: 1794366000, sender: { className: 'User', username: 'ivan', bot: false } };
 assert.deepEqual(toAnnouncement('danangevent', msg), [{
