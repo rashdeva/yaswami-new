@@ -62,16 +62,16 @@
 | Действия админа | префикс `admin_` у инструмента, `/admin/` в пути | `admin_events_list` ↔ `GET /admin/events` |
 | Собранное событие (в Luma такого нет) | `collected_events_*`, `/collected-events` | `collected_events_signup` |
 | Правка одной услуги — Practice (в Luma такого нет) | `admin_practices_update`, `/admin/practices/:id`; запись на неё — по `practice_id` | `PATCH /admin/practices/<id>` `{ "status": "published" }` |
-| Вакансия — Job (в Luma такого нет) | `jobs_*`, `/jobs`; для команды `admin_jobs_*`, `/admin/jobs`; ссылка «Написать» — `contact_url` | `PATCH /admin/jobs/<id>` `{ "status": "published" }` |
 | Правка своих настроек: Подписка на темы, город и выключенные уведомления (в Luma такого нет; там `suppress_notifications` — флаг одной операции) | `users_update_self`, `PATCH /me`, поля `subscribed_topics`, `city_id` и `muted_notifications`, меняется только переданное — в пару к `users_get_self` | `PATCH /me` `{ "city_id": "danang" }` |
 | Календарь источников — Calendar (как в Luma; ADR-0011) | для команды `admin_calendars_list`, `admin_calendars_update`, `/admin/calendars`; источник в календаре — `calendar_id` в `admin_sources_create/update`, `null` — отделить в свой; вид `kind` и организатор `host_id` — наши: в Luma у календаря `is_personal` и `admins` | `PATCH /admin/sources/instagram:tea` `{ "calendar_id": "<id>" }` |
 | Город — City (в Luma такого нет: там город — поле адреса) | `cities_list`, `/cities`; для команды `admin_cities_*`, `/admin/cities`; в выдачах каталога — вход `city_id`, без него — первый город; выдача включает соседние города (`nearbyCities` в `services.ts`), у каждой записи свой `city_id`; координаты — `latitude`, `longitude`, как в `coordinate` Luma | `GET /collected-events?city_id=danang` |
 | Тема — Topic (в Luma такого нет) | `topics_list`, `/topics`; для команды `admin_topics_*`, `/admin/topics`; ключ — `name`, выключение — `enabled: false` вместо удаления; кандидаты из меток — `admin_topics_candidates` | `PATCH /admin/topics/<name>` `{ "enabled": false }` |
 | Витрина из Полок — Shelf (в Luma такого нет; ADR-0009) | гостю `showcase_get`, `GET /showcase?city_id=`; команде и куратору `admin_shelves_*`, `/admin/shelves`; правило — поле `rule`, ручная полка — `event_ids`; режим города — `showcase_mode` в `admin_cities_update`; куратор — токен с областью `curator`, его границы проверяет `shelves.ts` | `POST /admin/shelves` `{ "city_id": "danang", "title": "На выходных", "rule": { "period": "weekend" } }` |
 | Направление — над Topic (в Luma такого нет) | список — `DIRECTIONS` в `packages/core/src/topics.ts`, в коде; у темы поле `direction` (slug направления) в `topics_list` и `admin_topics_create/update` | `PATCH /admin/topics/<name>` `{ "direction": "body" }` |
-| Единый поиск по каталогу: события, услуги и вакансии (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
+| Товар мастера — Product (в Luma такого нет) | `products_*`, `/products`; для команды `admin_products_*`, `/admin/products`; ссылка «Написать» — `contact_url` | `PATCH /admin/products/<id>` `{ "status": "published" }` |
+| Единый поиск по каталогу: события, услуги и товары (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
 
-Новый публичный ресурс каталога добавляется в поиск в том же PR (так добавлены вакансии — `type: 'job'`): ещё один `type` в `SearchEntry` и ещё один запрос в `search` (`services.ts`).
+Новый публичный ресурс каталога добавляется в поиск в том же PR (так добавлены услуги — `type: 'practice'`, и товары — `type: 'product'`): ещё один `type` в `SearchEntry` и ещё один запрос в `search` (`services.ts`).
 
 Чего в Luma нет (Telegram, витрина собранных событий, переписка, `kind`, ответ «maybe») — называем сами словами из `CONTEXT.md` и пишем у типа: «в Luma такого нет». Сейчас так помечены поля в `packages/core/src/schema.ts`.
 
@@ -123,7 +123,7 @@
 
 ### Сборщик пишет в те же таблицы
 
-Сборщик (`apps/collector/src/store.mjs`) пишет в `collected_events`, `hosts`, `practices`, `sources`, `photos`, `tg_accounts` и `messages` сырым SQL: это `.mjs`, типы его не проверяют. Поэтому, меняя таблицу, которую он трогает:
+Сборщик (`apps/collector/src/store.mjs`) пишет в `collected_events`, `hosts`, `practices`, `products`, `sources`, `photos`, `tg_accounts` и `messages` сырым SQL: это `.mjs`, типы его не проверяют. Поэтому, меняя таблицу, которую он трогает:
 
 - поправь запрос в `store.mjs` в том же PR — старый сборщик и новая схема выкладываются одним образом;
 - каждый запрос хранилища вызван в `apps/api/src/collector-store.test.ts` на настоящей базе; новый запрос добавь и туда. Этот тест — единственное, что ловит переименованную колонку до прода;

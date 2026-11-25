@@ -2,6 +2,7 @@
 // запросы. Типы их не проверяют, поэтому каждый запрос прогоняет на настоящей базе apps/api/src/collector-store.test.ts:
 // переименовал колонку — упадёт тест, а не сборщик в проде. Новый запрос добавляй и туда.
 import postgres from 'postgres';
+import { productTitleKey } from '@yaswami/core';
 
 /**
  * Организатор уже входил в сервис — привязать профиль к его пользователю. Пользователя ищем по способу входа telegram:
@@ -43,7 +44,7 @@ export function createStore(url) {
     returning channel`).map((r) => r.channel);
   return {
     /**
-     * Источники из CHANNELS (LEAD_CHATS, JOB_CHATS — с `kind` leads, jobs): добавляем те, которых ещё нет, в первый город.
+     * Источники из CHANNELS (LEAD_CHATS — с `kind` leads): добавляем те, которых ещё нет, в первый город.
      * Выключенный, перенесённый в другой город или сменивший вид в админке так и остаётся.
      */
     addSources: async (channels, kind = 'announcements') => {
@@ -144,7 +145,7 @@ export function createStore(url) {
       }
       return true;
     }),
-    /** Города, первый — старейший: разовые скрипты (find-sources, scout, backfill-jobs) берут из них название города. */
+    /** Города, первый — старейший: разовые скрипты (find-sources, scout, backfill-leads) берут из них название города. */
     cities: () => sql`select id, name, aliases from cities order by created_at, id`, // и в архиве; порядок — как у listAllCities в API
     /**
      * Включённые источники работающих городов: город в архиве (`launch_status`) сборщик не читает вовсе — ни анонсы,
@@ -170,13 +171,66 @@ export function createStore(url) {
       ) h on true
       where s.enabled and c.launch_status = 'launched' and s.channel like 'instagram:%' order by s.created_at, s.channel`,
     /**
-     * Включённые чаты, где ищем не анонсы: `leads` — вопросы, мастера и вакансии (бывший LEAD_CHATS), иначе только
-     * вакансии (JOB_CHATS). Мастера и вакансии получают город чата (`city_id`, `city` — его название для ИИ).
+     * Включённые чаты города (`kind` leads, бывший LEAD_CHATS): вопросы, мастера и Находки. Мастера получают город
+     * чата (`city_id`, `city` — его название).
      */
     chats: () => sql`
-      select s.channel as chat, s.kind = 'leads' as leads, s.city_id, c.name as city
+      select s.channel as chat, s.city_id, c.name as city
       from sources s join cities c on c.id = s.city_id
-      where s.enabled and c.launch_status = 'launched' and s.kind in ('leads', 'jobs') and s.channel not like 'instagram:%' order by s.created_at`,
+      where s.enabled and c.launch_status = 'launched' and s.kind = 'leads' and s.channel not like 'instagram:%' order by s.created_at`,
+    /**
+     * Включённые источники товаров работающих городов (`kind` products): каналы мастеров и группы объявлений. Из них не
+     * берутся ни анонсы, ни вопросы, ни мастера-услуги. У канала мастера — его Host (Host календаря источника: `host_id`, username и статус):
+     * товары из канала — его; у группы Host нет, мастер — из текста поста. Новый мастер получает город источника.
+     */
+    productSources: () => sql`
+      select s.channel, k.host_id, h.username as host_username, h.status as host_status, s.city_id, c.name as city
+      from sources s join cities c on c.id = s.city_id join calendars k on k.id = s.calendar_id left join hosts h on h.id = k.host_id
+      where s.enabled and c.launch_status = 'launched' and s.kind = 'products' and s.channel not like 'instagram:%' order by s.created_at, s.channel`,
+    /**
+     * Пост с этим текстом уже разбирали (объявление повторяют каждый день): его товарам — дата и ссылка нового поста,
+     * если он новее. Возвращает, сколько товаров у этого текста; 0 — пост новый, его разберёт ИИ.
+     */
+    touchProducts: async ({ text, url, posted_at }) => (await sql`
+      with hit as (select id from products where announcement->>'text' = ${text}),
+      moved as (
+        update products set posted_at = ${posted_at}, announcement = ${sql.json({ url, text })}, updated_at = now()
+        where id in (select id from hit) and posted_at < ${posted_at} returning id)
+      select count(*)::int as n from hit`)[0].n,
+    /** Мастер по username (без @, в нижнем регистре): { id, status } или undefined. Найденный в Telegram — раньше заготовки команды. */
+    hostByUsername: async (username) => (await sql`
+      select id, status from hosts where username = ${username} order by telegram_id is null, created_at limit 1`)[0],
+    /**
+     * Мастер, найденный по товару, — новый Host (status pending): как мастер из самопредставления (saveOffer). Уже есть
+     * под этим Telegram id — только новый username. Возвращает { id, status }.
+     */
+    saveMaker: (host) => sql.begin(async (tx) => {
+      const [row] = await tx`
+        insert into hosts ${tx(host)} on conflict (telegram_id) do update set username = excluded.username
+        returning id, status`;
+      await linkUser(tx, host.telegram_id);
+      return row;
+    }),
+    /**
+     * Товары одного поста мастера `host_id`. Новый — строкой со статусом pending. Повтор (тот же `title_key` у того же
+     * мастера) строку не добавляет: из поста новее обновляет цену, вес, описание, фото, пост и `posted_at`; чего в новом
+     * посте нет, остаётся прежним. Название, категорию и решение команды (`status`) повтор не меняет.
+     * Возвращает записанные строки: [{ id, created }].
+     */
+    saveProducts: (host_id, products, { announcement, posted_at, photo_url }) => sql.begin(async (tx) => {
+      const saved = [];
+      for (const { title, description, price, unit, category } of products) {
+        saved.push(...await tx`
+          insert into products ${tx({ host_id, title, description, price, unit, category, photo_url, posted_at, title_key: productTitleKey(title), announcement: tx.json(announcement) })}
+          on conflict (host_id, title_key) do update set
+            price = coalesce(excluded.price, products.price), unit = coalesce(excluded.unit, products.unit),
+            description = coalesce(excluded.description, products.description), photo_url = coalesce(excluded.photo_url, products.photo_url),
+            announcement = excluded.announcement, posted_at = excluded.posted_at, updated_at = now()
+          where products.posted_at <= excluded.posted_at
+          returning id, (xmax = 0) as created`);
+      }
+      return saved;
+    }),
     /** Номер последней разобранной публикации по каждому источнику. */
     async cursors() {
       const rows = await sql`select channel, last_number from collector_cursors`;
@@ -358,14 +412,6 @@ export function createStore(url) {
     saveSearchMatch: ({ search_id, chat, message_id, url, author, text, sent_at }) => sql`
       insert into host_search_matches ${sql({ search_id, chat, message_id, url, author_id: author.id, author_name: author.name, author_username: author.username, text, sent_at })}
       on conflict do nothing`,
-    /** Повтор объявления (jobs.mjs): сдвигает posted_at, решение команды (status) не трогает; false — такой вакансии нет. */
-    touchJob: async (city_id, text_hash, posted_at) => (await sql`
-      update jobs set posted_at = greatest(posted_at, ${posted_at}) where city_id = ${city_id} and text_hash = ${text_hash}
-      returning id`).length > 0,
-    /** Новая вакансия ждёт решения команды (status по умолчанию — pending). Тот же текст в том же городе — только сдвиг posted_at. */
-    saveJob: (job) => sql`
-      insert into jobs ${sql({ ...job, announcement: sql.json(job.announcement) })}
-      on conflict (city_id, text_hash) do update set posted_at = greatest(jobs.posted_at, excluded.posted_at)`,
     end: () => sql.end(),
   };
 }

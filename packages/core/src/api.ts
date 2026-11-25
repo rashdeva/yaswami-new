@@ -1,9 +1,9 @@
 // Формы запросов и ответов. Одни и те же схемы проверяют REST-запросы, описывают инструменты MCP и формы на фронте.
 import * as z from 'zod';
 import type { Event, Feature, Guest, TicketType, User } from './schema.ts';
-import type { JobItem } from './jobs.ts';
 import { Event as EventSchema, Notification, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
 import { OTHER_TOPIC, isTopic } from './topics.ts';
+import type { ProductItem } from './products.ts';
 
 const isTimeZone = (tz: string) => {
   try {
@@ -195,14 +195,15 @@ export interface HostListItem extends Omit<CollectedHost, 'photos'> {
   upcoming_count: number; // предстоящих опубликованных событий
 }
 
-/** Страница организатора: то же, что в каталоге, плюс фото сообщества и предстоящие события. */
+/** Страница организатора: то же, что в каталоге, плюс фото сообщества, предстоящие события и товары. */
 export interface HostItem extends HostListItem {
   photos: CollectedHost['photos'];
   events: CollectedEventItem[];
+  products: ProductItem[]; // что мастер продаёт и что видит гость (как в products/list), свежие сверху
 }
 
 /**
- * Единый поиск по публичному каталогу: предстоящие события и услуги мастеров (Practice). В Luma общего поиска нет;
+ * Единый поиск по публичному каталогу: предстоящие события, услуги мастеров (Practice) и их товары (Product). В Luma общего поиска нет;
  * `query` — как у `places/search`, список — как у остальных (`entries`).
  */
 export const SearchInput = z.object({
@@ -218,13 +219,12 @@ export type CityFilterInput = z.infer<typeof CityFilterInput>;
 
 /**
  * Находка поиска; `type` говорит, что это. У Practice своей страницы нет — открывается её мастер (`host`).
- * Вакансия (`job`) — из раздела «Вакансии».
  * Самих организаторов поиск не выдаёт: человек ищет, куда пойти или что заказать, а не кого.
  */
 export type SearchEntry =
   | { type: 'event'; event: CollectedEventItem }
   | { type: 'practice'; practice: Practice; host: HostListItem }
-  | { type: 'job'; job: JobItem };
+  | { type: 'product'; product: ProductItem };
 export interface SearchResult { entries: SearchEntry[] } // самые подходящие первыми
 
 /** Фото или видео из публикации-источника; лежит в нашем бакете (ADR-0006). В Luma такого нет. */
@@ -292,12 +292,12 @@ export interface AdminSource {
 }
 
 /**
- * Что сборщик берёт из источника: announcements — анонсы событий; leads — большой чат города: вопросы «куда сходить»,
- * мастера и вакансии; jobs — чат о работе: только вакансии. Мастера и вакансии получают город источника.
+ * Что сборщик берёт из источника: announcements — анонсы событий; leads — большой чат города: вопросы «куда сходить»
+ * и мастера; products — канал мастера или группа объявлений: товары мастеров (products.ts). Мастера получают город источника.
  */
-export const SOURCE_KINDS = ['announcements', 'leads', 'jobs'] as const;
+export const SOURCE_KINDS = ['announcements', 'leads', 'products'] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
-const sourceKind = z.enum(SOURCE_KINDS).describe('announcements — event announcements (default); leads — a big city chat: questions "where to go", masters and job vacancies; jobs — a job chat: vacancies only');
+const sourceKind = z.enum(SOURCE_KINDS).describe('announcements — event announcements (default); leads — a big city chat: questions "where to go", and masters; products — a maker\'s channel or a classifieds group: goods made by local makers');
 
 /**
  * Источник Instagram хранится как `instagram:<ник>`: ник в Instagram может совпасть с чужим username в Telegram.

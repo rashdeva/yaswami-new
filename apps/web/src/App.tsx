@@ -32,9 +32,9 @@ export function App() {
   const [kind, setKind] = useState<Event['kind']>('o');
 
   // У публичных экранов свой нейтральный цвет; личные выставляют цвет шаблона события сами.
-  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/s/') || pathname.startsWith('/d/') || pathname === '/all' || pathname.startsWith('/hosts') || pathname.startsWith('/jobs') || pathname === '/services' || pathname === '/search') && kind !== 'o') setKind('o');
+  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/s/') || pathname.startsWith('/d/') || pathname === '/all' || pathname.startsWith('/hosts') || pathname === '/services' || pathname === '/search') && kind !== 'o') setKind('o');
 
-  // Куда ведёт «назад»: событие, полка, направление, все события, поиск и профиль → витрина, организатор → каталог, вакансия → вакансии, своё событие и поиск людей → профиль,
+  // Куда ведёт «назад»: событие, полка, направление, все события, поиск и профиль → витрина, организатор → каталог, своё событие и поиск людей → профиль,
   // создание → профиль или витрина. null — корень (вкладки таббара).
   const here = { includeSearch: false } as const; // ?signup, ?startapp в адресе маршрут не меняют
   const section = matchRoute({ to: '/events/$id/edit/$section', ...here });
@@ -43,8 +43,6 @@ export function App() {
     ? () => void navigate({ to: '/' })
     : matchRoute({ to: '/hosts/$id', ...here })
       ? () => void navigate({ to: '/services' })
-    : matchRoute({ to: '/jobs/$id', ...here })
-      ? () => void navigate({ to: '/jobs' })
     : section
       ? () => void navigate({ to: '/events/$id/edit', params: { id: section.id } })
       : edit
@@ -61,7 +59,7 @@ export function App() {
     const root = document.getElementById('app');
     if (root) root.toggleAttribute('data-wide', wide);
   }, [wide]);
-  const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/jobs' || pathname === '/search';
+  const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/search';
 
   return (
     <ShellContext value={{ toast: showToast, onKind: setKind, onBack: nativeBack ? null : back }}>
@@ -69,17 +67,17 @@ export function App() {
         <div className="air" />
         <Outlet />
         {/* Таббар — на корневых разделах; у страниц события и организатора внизу своя кнопка действия и «назад». */}
-        {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/services' ? 'hosts' : pathname === '/jobs' ? 'jobs' : null} />}
+        {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/services' ? 'hosts' : null} />}
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </ShellContext>
   );
 }
 
-/** Нижний таббар разделов: события, услуги, вакансии. Мои события — в профиле, за аватаркой в шапке. */
+/** Нижний таббар разделов: события, услуги. Мои события — в профиле, за аватаркой в шапке. */
 function AppTabBar({ current }: { current: Tab | null }) {
   const navigate = useNavigate();
-  const tabs: [Tab, () => void][] = [['feed', () => void navigate({ to: '/' })], ['hosts', () => void navigate({ to: '/services' })], ['jobs', () => void navigate({ to: '/jobs' })]];
+  const tabs: [Tab, () => void][] = [['feed', () => void navigate({ to: '/' })], ['hosts', () => void navigate({ to: '/services' })]];
   return <TabBar current={current} tabs={tabs} searching={current === null} onSearch={() => void navigate({ to: '/search' })} />;
 }
 

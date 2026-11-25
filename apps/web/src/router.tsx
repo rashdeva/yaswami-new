@@ -15,8 +15,6 @@ import { EventScreen } from './screens/EventScreen.tsx';
 import { FeedScreen } from './screens/FeedScreen.tsx';
 import { HostScreen } from './screens/HostScreen.tsx';
 import { HostsScreen } from './screens/HostsScreen.tsx';
-import { JobScreen } from './screens/JobScreen.tsx';
-import { JobsScreen } from './screens/JobsScreen.tsx';
 import { ListScreen } from './screens/ListScreen.tsx';
 import { ProfileScreen } from './screens/ProfileScreen.tsx';
 import { PeopleScreen } from './screens/PeopleScreen.tsx';
@@ -133,22 +131,6 @@ function HostPage() {
 }
 const hostRoute = createRoute({ getParentRoute: () => app, path: '/hosts/$id', component: HostPage });
 
-/** Вакансии — вкладка таббара. */
-function JobsPage() {
-  const navigate = useNavigate();
-  const { city } = useSession();
-  return <JobsScreen city={city} onOpen={(job) => void navigate({ to: '/jobs/$id', params: { id: job.id } })} />;
-}
-const jobsRoute = createRoute({ getParentRoute: () => app, path: '/jobs', component: JobsPage });
-
-function JobPage() {
-  const { id } = jobRoute.useParams();
-  const { city } = useSession();
-  const { onBack } = useShell();
-  return <JobScreen key={id} id={id} city={city} onBack={onBack} />;
-}
-const jobRoute = createRoute({ getParentRoute: () => app, path: '/jobs/$id', component: JobPage });
-
 /** Поиск. Запрос живёт в адресе (?q=): находками можно поделиться ссылкой, а «назад» браузера возвращает к ним. */
 function SearchPage() {
   const { q = '' } = searchRoute.useSearch();
@@ -159,9 +141,7 @@ function SearchPage() {
       onQuery={(next) => void navigate({ to: '/search', search: { q: next || undefined }, replace: true })}
       onOpen={(entry) => void (entry.type === 'event'
         ? navigate({ to: '/e/$id', params: { id: entry.event.id } })
-        : entry.type === 'job'
-          ? navigate({ to: '/jobs/$id', params: { id: entry.job.id } })
-          : navigate({ to: '/hosts/$id', params: { id: entry.host.id } }))}
+        : navigate({ to: '/hosts/$id', params: { id: entry.type === 'practice' ? entry.host.id : entry.product.host.id } }))}
     />
   );
 }
@@ -288,7 +268,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, allRoute, collected, hostsRoute, oldHostsRoute, hostRoute, jobsRoute, jobRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, allRoute, collected, hostsRoute, oldHostsRoute, hostRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 

@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminCalendar, AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Job, JobItem, JobList, AdminJobList, Me, Message, PracticeSignup, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
+import type { AdminCalendar, AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Me, Message, PracticeSignup, AdminProduct, AdminProductList, ProductItem, ProductList, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -14,7 +14,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, signInWith, telegramIdOf, userIdByTelegram, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, calendars, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, jobs, messages, photos, practices as practicesTable, practiceSignups, shelves, sources, sourceSearches, ticketTypes, topics as topicsTable, users, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, calendars, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, messages, photos, practices as practicesTable, practiceSignups, products, shelves, sources, sourceSearches, ticketTypes, topics as topicsTable, users, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { notify } from './notifications.ts';
@@ -53,7 +53,7 @@ before(async () => {
   url.pathname = `/${TEST_DB}`;
   db = createDb(url.href);
   await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
-  await db.execute(sql`truncate users, admin_actions, collected_events, hosts, tg_accounts, conversations, jobs, shelves cascade`);
+  await db.execute(sql`truncate users, admin_actions, collected_events, hosts, products, tg_accounts, conversations, shelves cascade`);
   // Города из прошлого запуска: Дананг создан миграцией, остальное добавляют тесты.
   await db.execute(sql`delete from sources where city_id <> 'danang'`);
   await db.execute(sql`delete from cities where id <> 'danang'`);
@@ -261,7 +261,7 @@ test('MCP: список инструментов, создание событи�
     'cities_list', 'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
     'events_ticket_types_update', 'events_update', 'host_searches_create', 'host_searches_delete', 'host_searches_list', 'host_searches_matches_list', 'host_searches_update',
-    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'jobs_get', 'jobs_list', 'me_collected_list', 'search', 'showcase_get', 'topics_list', 'users_get_self', 'users_update_self',
+    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'me_collected_list', 'products_get', 'products_list', 'search', 'showcase_get', 'topics_list', 'users_get_self', 'users_update_self',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
@@ -296,11 +296,13 @@ test('собранные события: витрина без входа, за�
   await db.insert(collectedEvents).values([
     row('telegram:danangevent/1#0', new Date(Date.now() + 86_400_000)),
     row('telegram:danangevent/2#0', new Date(Date.now() - 86_400_000)),
+    // Началось час назад и идёт ещё два часа: гостю его уже не показываем — не успеть.
+    { ...row('telegram:danangevent/4#0', new Date(Date.now() - 3600e3)), ends_at: new Date(Date.now() + 2 * 3600e3) },
     { ...row('telegram:danangevent/3#0', new Date(Date.now() + 2 * 86_400_000)), reactions: 12,
       announcement: { url: 'https://t.me/danangevent/3', media: [{ type: 'video' as const, url: 'https://media.x/telegram/danangevent/3.mp4' }] } },
   ]);
 
-  // витрина: только предстоящие, контакт организатора — только внутри ссылки записи
+  // витрина: только ещё не начавшиеся, контакт организатора — только внутри ссылки записи
   const items = (await (await app.request('/collected-events')).json()) as CollectedEventItem[];
   // отклик на анонс наружу не отдаём: из него только пометка «Популярное»
   assert.deepEqual(items.map((i) => [i.id, i.popular, 'reactions' in i]), [['danangevent-1-0', false, false], ['danangevent-3-0', true, false]]);
@@ -764,7 +766,7 @@ test('сообщение боту: /start — приветствие с карт
 
 });
 
-test('соседние города: витрина, услуги, вакансии и поиск города показывают и соседей в 25 км; координаты задаёт команда', async () => {
+test('соседние города: витрина, услуги и поиск города показывают и соседей в 25 км; координаты задаёт команда', async () => {
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
   await db.delete(collectedEvents);
@@ -833,7 +835,7 @@ test('поиск: события и Practice одним запросом; фор
   ]);
   const find = async (query: string, limit?: number) =>
     ((await (await app.request(`/search?query=${encodeURIComponent(query)}${limit ? `&pagination_limit=${limit}` : ''}`)).json()) as SearchResult).entries;
-  const names = (entries: SearchEntry[]) => entries.map((e) => (e.type === 'event' ? e.event.title : e.type === 'job' ? e.job.title : `${e.practice.title} @${e.host.username}`));
+  const names = (entries: SearchEntry[]) => entries.map((e) => (e.type === 'event' ? e.event.title : e.type === 'product' ? `${e.product.title} @${e.product.host.username}` : `${e.practice.title} @${e.host.username}`));
 
   // форма слова и «ё»: название важнее описания, из равных ближайшее выше; скрытое и прошедшее не находятся
   assert.deepEqual(names(await find('йогой')), ['Ещё одна йога', 'Йога на рассвете', 'Ретрит в горах']);
@@ -868,6 +870,118 @@ test('поиск: события и Practice одним запросом; фор
   const res = await call(tma(71, 'Аня'), 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search', arguments: { query: 'ретрит' } } });
   const { entries } = JSON.parse(((await res.json()) as { result: any }).result.content[0].text);
   assert.deepEqual(entries.map((e: any) => [e.type, e.event.title, e.event.url.includes('find-3-0')]), [['event', 'Ретрит в горах', true]]);
+});
+
+test('товары: гость видит одобренные и свежие своего города и соседей; у мастера и в поиске; команда видит все и решает через журнал', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const guest = tma(85, 'Оля');
+  await db.delete(collectedEvents);
+  await db.delete(hosts);
+  // Велигама и Мирисса — соседи (5 км), Хирикетия — 30 км, Ахангама рядом, но в архиве.
+  await db.execute(sql`insert into cities (id, name, timezone, latitude, longitude, launch_status) values
+    ('weligama', 'Велигама', 'Asia/Colombo', 5.9746, 80.4297, 'launched'), ('mirissa', 'Мирисса', 'Asia/Colombo', 5.9483, 80.4716, 'launched'),
+    ('hiriketiya', 'Хирикетия', 'Asia/Colombo', 5.9636, 80.7087, 'launched'), ('ahangama', 'Ахангама', 'Asia/Colombo', 5.9733, 80.3626, 'archived')`);
+  const maker = async (telegram_id: number, username: string, city_id: string, status: 'pending' | 'published' | 'rejected' = 'pending') =>
+    (await db.insert(hosts).values({ telegram_id, username, name: `Мастер ${username}`, city_id, status }).returning())[0]!;
+  const [cakes, dumplings, far, archived, banned] = [
+    await maker(9701, 'weli_cakes', 'weligama'), await maker(9702, 'mirissa_pelmeni', 'mirissa', 'published'), await maker(9703, 'hiri_cheese', 'hiriketiya'),
+    await maker(9704, 'ahangama_bread', 'ahangama'), await maker(9705, 'banned_baker', 'weligama', 'rejected'),
+  ];
+  // n — сколько дней назад товар упоминали.
+  const row = (host_id: string, n: number, title: string, more: Partial<typeof products.$inferInsert> = {}) => ({
+    host_id, title, title_key: title.toLowerCase(), description: 'Печём каждый день.', price: '55k', unit: '100 г', category: 'food' as const,
+    announcement: { url: `https://t.me/producttest/${n}`, text: `${title} — 55k` }, status: 'published' as const,
+    posted_at: new Date(Date.now() - n * 86_400_000), ...more,
+  });
+  const [honey, , waiting, , expired, , , , bannedProduct] = await db.insert(products).values([
+    row(cakes.id, 1, 'Медовик порционно'),
+    row(dumplings.id, 2, 'Пельмени с говядиной', { unit: '1 кг', price: '250k' }),
+    row(cakes.id, 3, 'Наполеон', { status: 'pending' }),
+    row(cakes.id, 4, 'Чизкейк', { status: 'rejected' }),
+    row(cakes.id, 31, 'Эклеры'), // не упоминали дольше PRODUCT_TTL_DAYS
+    row(dumplings.id, 5, 'Вязаная сумка', { category: 'handmade', price: null, unit: null }),
+    row(far.id, 1, 'Сыр бри'), // дальше 25 км
+    row(archived.id, 1, 'Хлеб на закваске'), // город в архиве
+    row(banned.id, 1, 'Медовый торт'), // мастер отклонён
+  ]).returning({ id: products.id });
+  const list = async (query = '') => (await (await app.request(`/products${query}`)).json()) as ProductList;
+  const titles = (entries: { title: string }[]) => entries.map((p) => p.title);
+
+  // Без входа: одобренные, свежие, своего города и соседей; свежие сверху. Контакт — ссылкой, исходного поста нет.
+  const all = await list('?city_id=weligama');
+  assert.deepEqual([titles(all.entries), all.has_more, all.next_cursor, all.hosts_count], [['Медовик порционно', 'Пельмени с говядиной', 'Вязаная сумка'], false, null, 2]);
+  const first = all.entries[0]!;
+  assert.deepEqual(Object.keys(first).sort(), ['category', 'city_id', 'contact_url', 'description', 'host', 'id', 'photo_url', 'posted_at', 'price', 'source_url', 'title', 'unit', 'url']);
+  assert.deepEqual([first.city_id, first.host.username, first.host.url, first.url], ['weligama', 'weli_cakes', `${settings.publicUrl}/hosts/${cakes.id}`, `${settings.publicUrl}/products/${honey!.id}`]);
+  assert.ok(first.contact_url.startsWith('https://t.me/weli_cakes?text='));
+  assert.ok(decodeURIComponent(first.contact_url).endsWith(`Хочу заказать «Медовик порционно». Нашёл на Ясвами: ${first.url}`));
+  assert.equal(first.source_url, 'https://t.me/producttest/1');
+  assert.equal(all.entries[1]!.city_id, 'mirissa');
+  // Категория отбирает записи, но не меняет число мастеров: вход в раздел — по всем товарам города.
+  const handmade = await list('?city_id=weligama&category=handmade');
+  assert.deepEqual([titles(handmade.entries), handmade.hosts_count], [['Вязаная сумка'], 2]);
+  assert.deepEqual(titles((await list('?city_id=hiriketiya')).entries), ['Сыр бри']);
+  const home = await list();
+  assert.deepEqual([titles(home.entries), home.hosts_count], [[], 0], 'без города — первый город, там товаров нет');
+  // Страницы: курсор ведёт дальше; кривой курсор — ошибка входа.
+  const page1 = await list('?city_id=weligama&pagination_limit=2');
+  assert.deepEqual([titles(page1.entries), page1.has_more], [['Медовик порционно', 'Пельмени с говядиной'], true]);
+  const page2 = await list(`?city_id=weligama&pagination_limit=2&pagination_cursor=${page1.next_cursor}`);
+  assert.deepEqual([titles(page2.entries), page2.has_more, page2.next_cursor], [['Вязаная сумка'], false, null]);
+  assert.equal((await app.request('/products?pagination_cursor=nope')).status, 400);
+  assert.equal((await app.request('/products?category=services')).status, 400);
+
+  // Один товар: неодобренного, просроченного, отклонённого мастера и несуществующего для гостя нет.
+  assert.deepEqual(await (await app.request(`/products/${honey!.id}`)).json(), JSON.parse(JSON.stringify(first)));
+  for (const id of [waiting!.id, expired!.id, bannedProduct!.id, randomUUID(), 'nope']) {
+    const res = await app.request(`/products/${id}`);
+    assert.deepEqual([res.status, await res.json()], [404, { error: 'not_found' }], id);
+  }
+  // MCP — то же самое.
+  assert.deepEqual(await mcpCall(guest, 'products_list', { city_id: 'weligama' }), { error: false, body: JSON.parse(JSON.stringify(all)) });
+  assert.deepEqual((await mcpCall(guest, 'products_get', { product_id: honey!.id })).body, JSON.parse(JSON.stringify(first)));
+  assert.deepEqual(await mcpCall(guest, 'products_get', { product_id: waiting!.id }), { error: true, body: { error: 'not_found' } });
+
+  // Карточка мастера: его живые товары; у мастера без событий и услуг страница есть, потому что он продаёт.
+  const page = (await (await app.request(`/hosts/${cakes.id}`)).json()) as HostItem;
+  assert.deepEqual(titles(page.products), ['Медовик порционно']);
+  assert.equal((await app.request(`/hosts/${far.id}`)).status, 200);
+  assert.equal((await app.request(`/hosts/${banned.id}`)).status, 404);
+  // Поиск: одобренный находится; ждущий решения, просроченный, чужого города и отклонённого мастера — нет.
+  const found = ((await (await app.request(`/search?query=${encodeURIComponent('медовик')}&city_id=weligama`)).json()) as SearchResult).entries;
+  assert.deepEqual(found.map((e) => e.type === 'product' && [e.product.title, e.product.contact_url === first.contact_url]), [['Медовик порционно', true]]);
+  assert.deepEqual(((await (await app.request(`/search?query=${encodeURIComponent('эклеры')}&city_id=weligama`)).json()) as SearchResult).entries, []);
+
+  // Команда: все статусы и сроки, целиком; остальным закрыто.
+  assert.equal((await call(guest, 'GET', '/admin/products')).status, 403);
+  assert.equal((await call(guest, 'PATCH', `/admin/products/${waiting!.id}`, { status: 'published' })).status, 403);
+  const adminList = async (query = '') => (await (await call(admin, 'GET', `/admin/products${query}`)).json()) as AdminProductList;
+  assert.deepEqual(titles((await adminList(`?host_id=${cakes.id}`)).entries), ['Медовик порционно', 'Наполеон', 'Чизкейк', 'Эклеры']);
+  assert.deepEqual(titles((await adminList('?status=published&city_id=mirissa')).entries), ['Пельмени с говядиной', 'Вязаная сумка']);
+  assert.equal((await adminList()).entries.length, 9);
+  const [pending] = (await mcpCall(admin, 'admin_products_list', { status: 'pending' })).body.entries as AdminProduct[];
+  assert.deepEqual([pending!.id, pending!.host.username, pending!.host.city_id, pending!.announcement.url], [waiting!.id, 'weli_cakes', 'weligama', 'https://t.me/producttest/3']);
+
+  // Решение и правка: товар выходит гостю; решение пишется в журнал; отмена возвращает его в очередь.
+  const res = await call(admin, 'PATCH', `/admin/products/${waiting!.id}`, { status: 'published', title: 'Наполеон классический', price: null });
+  assert.equal(res.status, 200);
+  const edited = (await res.json()) as AdminProduct;
+  assert.deepEqual([edited.status, edited.title, edited.title_key, edited.price], ['published', 'Наполеон классический', 'наполеон классический', null]);
+  assert.equal(((await (await app.request(`/products/${waiting!.id}`)).json()) as ProductItem).title, 'Наполеон классический');
+  const action = (await lastAction())!;
+  assert.deepEqual([action.action, action.entity, action.entity_id], ['admin_products_update', 'product', waiting!.id]);
+  assert.equal((await call(admin, 'POST', `/admin/actions/${action.id}/undo`)).status, 201);
+  assert.equal((await app.request(`/products/${waiting!.id}`)).status, 404);
+  assert.deepEqual(titles((await adminList('?status=pending')).entries), ['Наполеон']);
+  // Отказы правки: нет такого товара, название уже есть у мастера, кривое поле.
+  assert.equal((await call(admin, 'PATCH', `/admin/products/${randomUUID()}`, { status: 'published' })).status, 404);
+  assert.equal((await call(admin, 'PATCH', '/admin/products/nope', { status: 'published' })).status, 404);
+  assert.deepEqual(await (await call(admin, 'PATCH', `/admin/products/${waiting!.id}`, { title: 'Медовик  порционно' })).json(), { error: 'product_exists' });
+  assert.equal((await call(admin, 'PATCH', `/admin/products/${honey!.id}`, { status: 'archived' })).status, 400);
+
+  await db.delete(hosts);
+  await db.execute(sql`delete from cities where id in ('weligama', 'mirissa', 'hiriketiya', 'ahangama')`);
 });
 
 test('RSVP: одно подтверждение гостю, сводка организатору, клики туда-сюда не спамят', async () => {
@@ -1702,15 +1816,6 @@ test('охотник: старое сообщение из чата — черн
     const draft = feed.messages.find((m) => m.status === 'draft')!;
     assert.deepEqual(draft.meta, { reason: 'Писал в чате DaNang_girls 3 дн. назад', source_url: 'https://t.me/DaNang_girls/9' }); // без reply_to — уйдёт в личку
 
-    // Тот, кто ищет работу, — всегда в личку, даже если написал только что; у черновика видно, что это про вакансию.
-    await db.execute(sql`truncate conversations cascade`);
-    await recordLead(db, {
-      chat: 'danang_rabota', message_id: 10, url: 'https://t.me/danang_rabota/10', author: { id: 601, name: 'Артём', username: 'artem_cook' },
-      text: 'Ищу работу поваром, опыт 6 лет', context: [], sent_at: new Date().toISOString(), signal: 'job',
-    });
-    assert.match(asked, /^Личное сообщение\.[\s\S]*Ищет работу \(Артём\):\nИщу работу поваром/);
-    const jobFeed = (await (await call(tma(70, 'Админ'), 'GET', '/admin/inbox')).json()) as InboxFeed;
-    assert.deepEqual(jobFeed.messages.find((m) => m.status === 'draft')!.meta, { reason: 'Вакансия. Писал в чате danang_rabota сегодня', source_url: 'https://t.me/danang_rabota/10' });
     // Просьба об услуге, свежая — ответ в чат, с пометкой «Услуга».
     await db.execute(sql`truncate conversations cascade`);
     await recordLead(db, {
@@ -2058,93 +2163,6 @@ test('MCP для оператора: любое событие сервиса, �
   assert.ok(Array.isArray(await tool(admin, 'admin_accounts_list', {})) && Array.isArray(await tool(admin, 'admin_hosts_list', {})));
 });
 
-test('вакансии: гость видит одобренные и свежие своего города; команда видит все, решает, решение отменяется', async () => {
-  settings.adminIds = [70];
-  const admin = tma(70, 'Админ');
-  const guest = tma(84, 'Катя');
-  const tool = async (auth: string, name: string, args: object) =>
-    JSON.parse(((await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })).json()) as { result: any }).result.content[0].text);
-  await db.delete(jobs);
-  await db.execute(sql`insert into cities (id, name, timezone) values ('nhatrang', 'Нячанг', 'Asia/Ho_Chi_Minh') on conflict do nothing`);
-  // n — сколько дней назад объявление видели в чате.
-  const row = (n: number, title: string, more: Partial<typeof jobs.$inferInsert> = {}) => ({
-    title, employer: 'Кафе «Лотос»', description: 'Смены по восемь часов.', pay: 'от 500$', telegram_username: 'lotus_hr',
-    announcement: { url: `https://t.me/jobtest/${n}`, text: `Ищем: ${title}` }, author_id: 1, text_hash: `jobtest${n}`, status: 'published' as const,
-    posted_at: new Date(Date.now() - n * 86_400_000), ...more,
-  });
-  const [shown, , waiting, , expired] = await db.insert(jobs).values([
-    row(1, 'Официант в кафе'),
-    row(2, 'Бариста'),
-    row(3, 'Официант на подмену', { status: 'pending' }),
-    row(4, 'Повар', { status: 'rejected' }),
-    row(31, 'Официант, которого уже нашли'), // объявление не повторяли дольше JOB_TTL_DAYS
-    row(5, 'Официант в Нячанге', { city_id: 'nhatrang' }),
-  ]).returning({ id: jobs.id });
-  const list = async (query = '') => (await (await app.request(`/jobs${query}`)).json()) as JobList;
-  const titles = (entries: { title: string }[]) => entries.map((j) => j.title);
-
-  // Без входа: только одобренные, свежие, своего города; свежие сверху. Контакт — ссылкой, исходного сообщения нет.
-  const all = await list();
-  assert.deepEqual([titles(all.entries), all.has_more, all.next_cursor], [['Официант в кафе', 'Бариста'], false, null]);
-  assert.deepEqual(Object.keys(all.entries[0]!).sort(), ['city_id', 'contact_url', 'description', 'employer', 'id', 'pay', 'posted_at', 'source_url', 'title', 'url']);
-  assert.ok(all.entries[0]!.contact_url.startsWith('https://t.me/lotus_hr?text='));
-  assert.ok(decodeURIComponent(all.entries[0]!.contact_url).endsWith('Нашёл её на Ясвами: ' + all.entries[0]!.url)); // работодатель видит, о какой вакансии речь
-  assert.match(all.entries[0]!.source_url, /^https:\/\/t\.me\//); // исходное объявление
-  assert.ok(all.entries[0]!.url.endsWith('/jobs/' + all.entries[0]!.id)); // страница вакансии: её даёт человеку охотник
-  assert.deepEqual(titles((await list('?city_id=nhatrang')).entries), ['Официант в Нячанге']);
-  // Страницы: курсор ведёт дальше; кривой курсор — ошибка входа.
-  const first = await list('?pagination_limit=1');
-  assert.deepEqual([titles(first.entries), first.has_more], [['Официант в кафе'], true]);
-  const second = await list(`?pagination_limit=1&pagination_cursor=${first.next_cursor}`);
-  assert.deepEqual([titles(second.entries), second.has_more, second.next_cursor], [['Бариста'], false, null]);
-  assert.equal((await app.request('/jobs?pagination_cursor=nope')).status, 400);
-
-  // Одна вакансия: неодобренной, просроченной и несуществующей для гостя нет.
-  assert.equal(((await (await app.request(`/jobs/${shown!.id}`)).json()) as JobItem).title, 'Официант в кафе');
-  for (const id of [waiting!.id, expired!.id, randomUUID(), 'nope']) {
-    const res = await app.request(`/jobs/${id}`);
-    assert.deepEqual([res.status, await res.json()], [404, { error: 'not_found' }], id);
-  }
-  // MCP — то же самое.
-  assert.deepEqual(titles((await tool(guest, 'jobs_list', {})).entries), ['Официант в кафе', 'Бариста']);
-  assert.equal((await tool(guest, 'jobs_get', { job_id: shown!.id })).contact_url, all.entries[0]!.contact_url);
-  assert.deepEqual(await tool(guest, 'jobs_get', { job_id: waiting!.id }), { error: 'not_found' });
-
-  // Поиск: одобренная находится; ждущая решения, просроченная и чужого города — нет.
-  const found = ((await (await app.request(`/search?query=${encodeURIComponent('официант')}`)).json()) as SearchResult).entries;
-  assert.deepEqual(found.map((e) => e.type === 'job' && [e.job.title, e.job.contact_url === all.entries[0]!.contact_url]), [['Официант в кафе', true]]);
-
-  // Команда: все статусы и сроки, целиком; остальным закрыто.
-  assert.equal((await call(guest, 'GET', '/admin/jobs')).status, 403);
-  assert.equal((await call(guest, 'PATCH', `/admin/jobs/${waiting!.id}`, { status: 'published' })).status, 403);
-  const adminList = async (query = '') => (await (await call(admin, 'GET', `/admin/jobs${query}`)).json()) as AdminJobList;
-  assert.deepEqual(titles((await adminList()).entries), ['Официант в кафе', 'Бариста', 'Официант на подмену', 'Повар', 'Официант в Нячанге', 'Официант, которого уже нашли']);
-  assert.deepEqual(titles((await adminList('?status=published&city_id=danang')).entries), ['Официант в кафе', 'Бариста', 'Официант, которого уже нашли']);
-  const [pending] = (await tool(admin, 'admin_jobs_list', { status: 'pending' })).entries as Job[];
-  assert.deepEqual([pending!.id, pending!.telegram_username, pending!.announcement.url], [waiting!.id, 'lotus_hr', 'https://t.me/jobtest/3']);
-
-  // Решение и правка: вакансия выходит гостю; отмена возвращает её в очередь, хотя сборщик успел сдвинуть posted_at.
-  const res = await call(admin, 'PATCH', `/admin/jobs/${waiting!.id}`, { status: 'published', telegram_username: '@Lotus_Boss', pay: null });
-  assert.equal(res.status, 200);
-  const edited = (await res.json()) as Job;
-  assert.deepEqual([edited.status, edited.telegram_username, edited.pay], ['published', 'lotus_boss', null]);
-  assert.ok(((await (await app.request(`/jobs/${waiting!.id}`)).json()) as JobItem).contact_url.startsWith('https://t.me/lotus_boss?'));
-  const action = (await db.select().from(adminActions).orderBy(desc(adminActions.created_at)).limit(1))[0]!;
-  assert.deepEqual([action.action, action.entity, action.entity_id], ['admin_jobs_update', 'job', waiting!.id]);
-  await db.update(jobs).set({ posted_at: new Date() }).where(eq(jobs.id, waiting!.id));
-  assert.equal((await call(admin, 'POST', `/admin/actions/${action.id}/undo`)).status, 201);
-  assert.equal((await app.request(`/jobs/${waiting!.id}`)).status, 404);
-  assert.deepEqual(titles((await adminList('?status=pending')).entries), ['Официант на подмену']);
-  // Отказы правки: нет такой вакансии, нет такого города, кривое поле.
-  assert.equal((await call(admin, 'PATCH', `/admin/jobs/${randomUUID()}`, { status: 'published' })).status, 404);
-  assert.equal((await call(admin, 'PATCH', '/admin/jobs/nope', { status: 'published' })).status, 404);
-  assert.deepEqual(await (await call(admin, 'PATCH', `/admin/jobs/${shown!.id}`, { city_id: 'atlantis' })).json(), { error: 'city_not_found' });
-  assert.equal((await call(admin, 'PATCH', `/admin/jobs/${shown!.id}`, { status: 'archived' })).status, 400);
-
-  await db.delete(jobs);
-  await db.execute(sql`delete from cities where id = 'nhatrang'`);
-});
-
 test('витрина: полки по умолчанию, полки команды, куратор предлагает и публикует в своих границах', async () => {
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
@@ -2432,8 +2450,8 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_hosts_get: 'GET /admin/hosts/:id',
   admin_hosts_update: 'PATCH /admin/hosts/:id',
   admin_practices_update: 'PATCH /admin/practices/:id',
-  admin_jobs_list: 'GET /admin/jobs',
-  admin_jobs_update: 'PATCH /admin/jobs/:id',
+  admin_products_list: 'GET /admin/products',
+  admin_products_update: 'PATCH /admin/products/:id',
   admin_shelves_list: 'GET /admin/shelves',
   admin_shelves_create: 'POST /admin/shelves',
   admin_shelves_update: 'PATCH /admin/shelves/:id',
@@ -2822,8 +2840,8 @@ test('парность: у каждого инструмента MCP есть м
     hosts_list: 'GET /hosts',
     hosts_get: 'GET /hosts/:id',
     search: 'GET /search',
-    jobs_list: 'GET /jobs',
-    jobs_get: 'GET /jobs/:id',
+    products_list: 'GET /products',
+    products_get: 'GET /products/:id',
     showcase_get: 'GET /showcase',
     hosts_practices_signup: 'POST /hosts/:id/practices/signup',
     collected_events_claim: 'POST /collected-events/:id/claim',
@@ -2898,7 +2916,7 @@ async function world() {
   });
   const [profile] = await db.insert(hosts).values({ telegram_id: base + 5, username: `host${n}`, name: 'Орг' }).returning();
   const [practice] = await db.insert(practicesTable).values({ host_id: profile!.id, title: 'Массаж', topic: 'телесные практики' }).returning();
-  const [job] = await db.insert(jobs).values({ title: 'Официант', telegram_username: 'cafe_hr', announcement: { url: `https://t.me/auditjobs/${n}`, text: 'Ищем официанта' }, text_hash: `audit${n}` }).returning();
+  const [product] = await db.insert(products).values({ host_id: profile!.id, title: 'Медовик', title_key: 'медовик', category: 'food', announcement: { url: `https://t.me/auditfood/${n}`, text: 'Медовик 55k' } }).returning();
   const [account] = await db.insert(tgAccounts).values({ label: 'Основной', phone: `+7900${base}` }).returning();
   const [shelf] = await db.insert(shelves).values({ city_id: 'danang', title: `Полка ${n}`, rule: { period: 'week' }, author: 'team', position: 1000 + n }).returning();
   const source = `auditsrc${n}`;
@@ -2907,7 +2925,7 @@ async function world() {
   const [conversation] = await db.insert(conversations).values({ channel: 'bot', peer_id: guestId, peer_name: 'Гость' }).returning();
   const [draft] = await db.insert(messages).values({ conversation_id: conversation!.id, direction: 'out', author: 'agent:host', text: 'Привет', status: 'draft' }).returning();
   return {
-    n, hostId, guestId, otherId, eventId, t1: t1!.id, t2: t2!.id, slug: `auditchan-${n}-0`, profileId: profile!.id, practiceId: practice!.id, jobId: job!.id, accountId: account!.id,
+    n, hostId, guestId, otherId, eventId, t1: t1!.id, t2: t2!.id, slug: `auditchan-${n}-0`, profileId: profile!.id, practiceId: practice!.id, productId: product!.id, accountId: account!.id,
     conversationId: conversation!.id, draftId: draft!.id, contactId: contact!.id, source, calendarId: calendar!.id, shelfId: shelf!.id,
   };
 }
@@ -2939,7 +2957,7 @@ const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
   admin_hosts_create: (w) => ({ args: { username: `@newhost${w.n}` }, body: { username: `t.me/newhost${w.n}` }, entity_id: (r) => r.id }),
   admin_hosts_update: (w) => ({ args: { host_id: w.profileId, name: 'Игорь' }, params: { id: w.profileId }, body: { name: 'Игорь' }, entity_id: w.profileId }),
   admin_practices_update: (w) => ({ args: { practice_id: w.practiceId, status: 'published' }, params: { id: w.practiceId }, body: { status: 'published' }, entity_id: w.profileId }),
-  admin_jobs_update: (w) => ({ args: { job_id: w.jobId, status: 'published' }, params: { id: w.jobId }, body: { status: 'published' }, entity_id: w.jobId }),
+  admin_products_update: (w) => ({ args: { product_id: w.productId, status: 'published' }, params: { id: w.productId }, body: { status: 'published' }, entity_id: w.productId }),
   admin_shelves_create: (w) => {
     const input = { city_id: 'danang', title: `Новая ${w.n}`, rule: { period: 'week' } };
     return { args: input, body: input, entity_id: (r) => r.id };
@@ -3177,8 +3195,8 @@ test('безопасность: чужой контакт не даёт прав
   const rpc = async (auth: string, method: string, params?: object) => (await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params })).json()) as any;
   const names = async (auth: string) => ((await rpc(auth, 'tools/list')).result.tools as { name: string }[]).map((t) => t.name).sort();
   const role = `Bearer ${await issueToken(db, await uid(70), { scope: 'support' })}`;
-  assert.deepEqual(await names(role), ['collected_events_list', 'hosts_list', 'jobs_get', 'jobs_list', 'person_events_create', 'person_events_get', 'person_events_list', 'person_events_update', 'search']);
-  assert.deepEqual(await names(`Bearer ${await issueToken(db, await uid(70), { scope: 'catalog' })}`), ['collected_events_list', 'hosts_list', 'jobs_get', 'jobs_list', 'search']);
+  assert.deepEqual(await names(role), ['collected_events_list', 'hosts_list', 'person_events_create', 'person_events_get', 'person_events_list', 'person_events_update', 'products_get', 'products_list', 'search']);
+  assert.deepEqual(await names(`Bearer ${await issueToken(db, await uid(70), { scope: 'catalog' })}`), ['collected_events_list', 'hosts_list', 'products_get', 'products_list', 'search']);
   const denied = await rpc(role, 'tools/call', { name: 'admin_users_search', arguments: {} });
   assert.ok(denied.error || denied.result.isError, 'инструмент команды токену роли не отвечает');
   for (const path of ['/me', '/events', '/admin/inbox']) assert.equal((await call(role, 'GET', path)).status, 403, `REST закрыт: ${path}`);

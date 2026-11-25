@@ -9,6 +9,6 @@ export * from './inbox.ts';
 export * from './admin.ts';
 export * from './sse.ts';
 export * from './host-searches.ts';
-export * from './jobs.ts';
 export * from './cities.ts';
 export * from './shelves.ts';
+export * from './products.ts';

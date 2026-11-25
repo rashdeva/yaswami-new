@@ -17,7 +17,6 @@ export const keys = {
   collectedEvent: (id: string) => ['collected-event', id],
   covers: ['covers'],
   hosts: ['hosts'],
-  jobs: (filter: object) => ['jobs', filter],
   host: (id: string) => ['host', id],
   users: (query?: string) => ['users', query],
   user: (id: number) => ['user', id],

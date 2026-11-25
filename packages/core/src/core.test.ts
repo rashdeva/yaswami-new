@@ -230,3 +230,12 @@ test('вид календаря: один контакт — организат�
   assert.equal(suggestCalendarKind({ events: 9, contacts: 5, topics: 1 }), 'community');
   assert.equal(suggestCalendarKind({ events: 3, contacts: 2, topics: 1 }), 'community');
 });
+
+test('началось ли событие: со временем — с начала, без времени (00:00) — после конца дня', async () => {
+  const { collectedStarted } = await import('./index.ts');
+  const now = Date.parse('2026-11-26T10:00:00+07:00');
+  assert.equal(collectedStarted({ starts_at: '2026-11-26T09:30:00+07:00' }, now), true);
+  assert.equal(collectedStarted({ starts_at: '2026-11-26T18:00:00+07:00' }, now), false);
+  assert.equal(collectedStarted({ starts_at: '2026-11-26T00:00:00+07:00' }, now), false, 'время не указано — весь день в выдаче');
+  assert.equal(collectedStarted({ starts_at: '2026-11-25T00:00:00+07:00' }, now), true);
+});

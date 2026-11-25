@@ -1,12 +1,12 @@
-// Каталог из анонсов глазами команды: собранные события любого статуса и профили их организаторов (hosts).
+// Каталог из анонсов глазами команды: собранные события любого статуса, профили их организаторов (hosts) и товары мастеров.
 import { and, asc, count, desc, eq, notInArray } from 'drizzle-orm';
-import type { AdminCollectedEvent, AdminCollectedEventView, AdminHost, AdminHostListItem, AdminHostView, AdminJobList, AdminJobListInput, CollectedUpdateInput, HostCreateInput, HostUpdateInput, Job, JobUpdateInput, Practice, PracticeUpdateInput } from '@yaswami/core';
-import { normalUsername } from '@yaswami/core';
+import type { AdminCollectedEvent, AdminCollectedEventView, AdminHost, AdminHostListItem, AdminHostView, AdminProduct, AdminProductList, AdminProductListInput, CollectedUpdateInput, HostCreateInput, HostUpdateInput, Practice, PracticeUpdateInput, ProductUpdateInput } from '@yaswami/core';
+import { normalUsername, productTitleKey } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
 import { assertLibrarianMayEditEvent } from '../librarian.ts';
 import type { Db } from '../db/client.ts';
-import { collectedEvents, collectedEventSignups, hosts, jobs, photos, practices, practiceSignups, users } from '../db/schema.ts';
+import { collectedEvents, collectedEventSignups, hosts, photos, practices, practiceSignups, products, users } from '../db/schema.ts';
 import { photoUrl } from '../photos.ts';
 import * as s from '../services.ts';
 
@@ -126,19 +126,37 @@ export const deleteHost = (db: Db, ctx: Ctx, id: string): Promise<void> =>
     if (!gone.length) throw new s.AppError('not_found', 404);
   });
 
-/** Вакансии глазами команды: любого статуса и срока, свежие сверху. */
-export const listJobs = (db: Db, { status, city_id, ...page }: AdminJobListInput): Promise<AdminJobList> =>
-  s.jobPage(db, and(status ? eq(jobs.status, status) : undefined, city_id ? eq(jobs.city_id, city_id) : undefined), page);
 
-/** Правка вакансии: решение модератора или её текст. `posted_at` не трогаем — его сдвигает сборщик. */
-export async function updateJob(db: Db, ctx: Ctx, id: string, input: JobUpdateInput): Promise<Job> {
+type ProductRow = { product: typeof products.$inferSelect; host: typeof hosts.$inferSelect };
+const toAdminProduct = ({ product, host }: ProductRow): AdminProduct =>
+  ({ ...product, host: { id: host.id, name: host.name, username: host.username, city_id: host.city_id } });
+
+/** Товары глазами команды: любого статуса и срока, свежие сверху. Город — город мастера. */
+export async function listProducts(db: Db, { status, city_id, host_id, ...page }: AdminProductListInput): Promise<AdminProductList> {
+  const result = await s.productPage(db, and(status ? eq(products.status, status) : undefined, city_id ? eq(hosts.city_id, city_id) : undefined, host_id ? eq(products.host_id, host_id) : undefined), page);
+  return { ...result, entries: result.entries.map(toAdminProduct) };
+}
+
+/**
+ * Правка товара: решение модератора или его текст. `posted_at` не трогаем — его сдвигает сборщик. Новое название
+ * меняет и ключ повтора (`title_key`): иначе сборщик не узнал бы товар в следующем «наличии».
+ */
+export async function updateProduct(db: Db, ctx: Ctx, id: string, input: ProductUpdateInput): Promise<AdminProduct> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new s.AppError('not_found', 404);
-  return audited(db, ctx, { action: 'admin_jobs_update', entity: 'job', id, input }, async (tx) => {
-    await s.assertCity(tx, input.city_id);
-    const [job] = Object.keys(input).length
-      ? await tx.update(jobs).set(input).where(eq(jobs.id, id)).returning()
-      : await tx.select().from(jobs).where(eq(jobs.id, id));
-    if (!job) throw new s.AppError('not_found', 404);
-    return job;
+  return audited(db, ctx, { action: 'admin_products_update', entity: 'product', id, input }, async (tx) => {
+    if (Object.keys(input).length) {
+      const values = { ...input, ...(input.title ? { title_key: productTitleKey(input.title) } : {}), updated_at: new Date() };
+      try {
+        await tx.update(products).set(values).where(eq(products.id, id));
+      } catch (e) {
+        // Такое название у этого мастера уже есть (products_host_title_idx).
+        const code = (e as { cause?: { code?: string } }).cause?.code ?? (e as { code?: string }).code;
+        if (code === '23505') throw new s.AppError('product_exists', 409);
+        throw e;
+      }
+    }
+    const [row] = await tx.select({ product: products, host: hosts }).from(products).innerJoin(hosts, eq(hosts.id, products.host_id)).where(eq(products.id, id));
+    if (!row) throw new s.AppError('not_found', 404);
+    return toAdminProduct(row);
   });
 }

@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createExtractor, createJobExtractor, createOfferExtractor, createSearchMatcher, createSummarizer, createTopicProposer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
+import { createExtractor, createOfferExtractor, createProductExtractor, createSearchMatcher, createSummarizer, createTopicProposer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
 import { connect, goneReason, loadPeers, newPeers, downloadCover, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { refreshOld } from './refresh.mjs';
@@ -11,8 +11,9 @@ import { contactFor, fetchChannelPhotos, fetchProfile } from './host.mjs';
 import { backfillTopics } from './backfill.mjs';
 import { createSender } from './sender.mjs';
 import { fetchLeads } from './lead.mjs';
-import { saveJobs } from './jobs.mjs';
 import { resolveAuthor, saveOffers } from './offers.mjs';
+import { pickProducts, saveProducts, uploadFirstPhoto } from './products.mjs';
+import { PRODUCT_TTL_DAYS } from '@yaswami/core';
 import { searchChannels, TOPICS } from './find-sources.mjs';
 import { cityMatcher } from './city.mjs';
 import { candidatesFrom, cityHashtags, createInstagram, download, mediaOf, toAnnouncement as fromInstagram, toJpeg, toStats as instagramStats } from './instagram.mjs';
@@ -43,9 +44,9 @@ const extract = (announcement, place) => extractFor(place)(announcement);
 
 const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const extractOffer = createOfferExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
+const extractProducts = createProductExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 // Новая тема из меток: TOPIC_MODEL — модель для неё (гид читают все, можно взять посильнее), TOPICS_AUTO=0 — не добавлять темы самому.
 const proposeTopic = createTopicProposer({ model: env.TOPIC_MODEL ?? env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
-const extractJob = createJobExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const matcher = createSearchMatcher({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 // Поиск по username — самый флудоопасный вызов Telegram: за проход собираем немного профилей, остальные — в следующий.
 const PROFILES_PER_PASS = 15;
@@ -136,8 +137,8 @@ const toApi = async (path, body) => {
   if (!res.ok) throw new Error(`API ответил ${res.status}`);
 };
 
-// Чаты, где ищем не анонсы, — источники с kind leads и jobs (store.chats()): у каждого свой город, его получают
-// мастера и вакансии. LEAD_CHATS и JOB_CHATS (username без @ через запятую) лишь добавляются туда при старте, дальше
+// Чаты, где ищем не анонсы, — источники с kind leads (store.chats()): у каждого свой город, его получают
+// мастера. LEAD_CHATS (username без @ через запятую) лишь добавляются туда при старте, дальше
 // чатами управляет команда в админке («Источники»).
 const chatList = (value) => (value ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
 
@@ -153,12 +154,11 @@ async function activeSearches() {
   return searches;
 }
 
-/** Один чат: вакансии — всегда; вопросы, Находки и мастера — только при `leads` (чат с kind leads и есть API). */
-async function pollLeads({ chat, city_id, city }, leads_too, searches) {
-  const key = `lead:${chat}`; // отметка в той же таблице, что у каналов с анонсами; у чатов о работе ключ того же вида
-  const { last, read, leads, offers, candidates, jobs } = await fetchLeads(userbot, chat, cursors[key] ?? 0, { leads: leads_too, searches });
-  // Из чата о работе сюда приходят только те, кто сам ищет работу; без адреса API отправлять некуда.
-  if (env.API_URL && env.COLLECTOR_SECRET) for (const lead of leads) await toApi('lead', lead);
+/** Один чат города: вопросы — в API, Находки и мастера — в базу. */
+async function pollLeads({ chat, city_id }, searches) {
+  const key = `lead:${chat}`; // отметка в той же таблице, что у каналов с анонсами
+  const { last, read, leads, offers, candidates } = await fetchLeads(userbot, chat, cursors[key] ?? 0, { searches });
+  for (const lead of leads) await toApi('lead', lead);
   // Кандидатов в Находки проверяет ИИ: ключевые слова ловят и тех, кто сам предлагает услугу.
   // ponytail: каждый кандидат — запрос к ИИ; если слова Запроса окажутся слишком общими, ограничить число за проход.
   let found = 0;
@@ -171,8 +171,26 @@ async function pollLeads({ chat, city_id, city }, leads_too, searches) {
   if (last !== cursors[key]) await store.saveCursor(key, (cursors[key] = last));
   const masters = await saveOffers({ store, extractOffer, resolve: (u) => resolveAuthor(userbot, u), pause: () => sleep(llmPauseMs), city_id }, offers);
   // Каждый проход — в журнал: иначе не отличить «вопросов нет» от «чат не читается».
-  const vacancies = await saveJobs({ store, extractJob, pause: () => sleep(llmPauseMs), city: { id: city_id, name: city } }, jobs);
-  console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}, мастеров ${masters} из ${offers.length}, находок ${found} из ${candidates.length}, вакансий ${vacancies} из ${jobs.length}`);
+  console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}, мастеров ${masters} из ${offers.length}, находок ${found} из ${candidates.length}`);
+}
+
+/**
+ * Один источник товаров (канал мастера или группа объявлений): новые посты — в ИИ, товары — в базу. Посты старше
+ * PRODUCT_TTL_DAYS гость всё равно бы не увидел — их не разбираем. Анонсы, вопросы и мастера-услуги отсюда не берутся.
+ */
+async function pollProducts(source) {
+  const key = `product:${source.channel}`; // отметка в той же таблице, что у каналов с анонсами
+  const chat = /^-?\d+$/.test(source.channel) ? Number(source.channel) : source.channel;
+  const messages = (await userbot.getMessages(chat, { limit: 100, minId: cursors[key] ?? 0 })).reverse();
+  if (!messages.length) return;
+  const posts = pickProducts(source.channel, messages, { maxAgeMs: PRODUCT_TTL_DAYS * 86_400_000 });
+  const { products, hosts } = await saveProducts({
+    store, extractProducts, resolve: (u) => resolveAuthor(userbot, u), pause: () => sleep(llmPauseMs),
+    photo: (post) => uploadFirstPhoto({ bucket, downloadPhotos: (album) => downloadPhotos(userbot, album) }, post),
+  }, source, posts);
+  // Отметка — после записи: упали посередине (FLOOD_WAIT) — перечитаем эти же сообщения.
+  await store.saveCursor(key, (cursors[key] = messages.at(-1).id));
+  console.log(`товары ${source.channel}: прочитано ${messages.length}, похоже на товары ${posts.length}, записано ${products} у мастеров: ${hosts}`);
 }
 
 // Railway проверяет /health при деплое (настройка сервиса на Railway) и гасит старый контейнер, только когда новый ответил.
@@ -225,7 +243,7 @@ let cursors = await store.cursors();
 await store.requeueSourceSearches();
 // Канал, который уже есть в источниках с другим видом, не переделываем — вид правит команда; но говорим о нём:
 // иначе чат из LEAD_CHATS молча остался бы источником анонсов и вопросы из него не собирались бы.
-for (const [list, kind] of [[channels, 'announcements'], [chatList(env.LEAD_CHATS), 'leads'], [chatList(env.JOB_CHATS), 'jobs']]) {
+for (const [list, kind] of [[channels, 'announcements'], [chatList(env.LEAD_CHATS), 'leads']]) {
   for (const s of await store.addSources(list, kind)) console.warn(`источник @${s.channel} — вид ${s.kind}, а в окружении он как ${kind}: поменяйте вид в админке («Источники»), если нужно`);
 }
 
@@ -245,7 +263,7 @@ const SOURCE_AUTO_ADD_MIN = Number(env.SOURCE_AUTO_ADD_MIN ?? 3);
 // ponytail: по одному слову на тему — 19 запросов на каждое написание города по 3 с, у Дананга с пятью написаниями
 // поиск идёт минут 8 раз в месяц; шире — упрёмся в флуд-лимиты Telegram.
 const CITY_WORDS = {
-  '': [''], город: ['афиша', 'события', 'events', 'чат', 'chat', 'работа', 'jobs'],
+  '': [''], город: ['афиша', 'события', 'events', 'чат', 'chat'],
   ...Object.fromEntries(Object.entries(TOPICS).map(([topic, words]) => [topic, words.slice(0, 1)])),
 };
 
@@ -436,13 +454,17 @@ do {
     await sleep(2000); // не частим с запросами к Telegram
   }
   await pollInstagram(known, trusted).catch((e) => console.error(`Instagram: ${e.message}`));
+  for (const source of await store.productSources()) {
+    await pollProducts(source).catch((e) => failed(source.channel, `товары ${source.channel}`, e));
+    await sleep(2000);
+  }
   await savePeers().catch((e) => console.error(`каналы: ${e.message}`));
   await sourceSearch().catch((e) => console.error(`поиск источников: ${e.message}`));
-  const chats = await store.chats();
-  const searches = chats.some((c) => c.leads) ? await activeSearches().catch((e) => (console.error(`запросы организаторов: ${e.message}`), [])) : [];
-  // Вопросы уходят в API: без его адреса из чатов берём только вакансии.
+  // Вопросы уходят в API: без его адреса чаты города не читаем.
+  const chats = env.API_URL && env.COLLECTOR_SECRET ? await store.chats() : [];
+  const searches = chats.length ? await activeSearches().catch((e) => (console.error(`запросы организаторов: ${e.message}`), [])) : [];
   for (const chat of chats) {
-    await pollLeads(chat, Boolean(chat.leads && env.API_URL && env.COLLECTOR_SECRET), searches).catch((e) => failed(chat.chat, `вопросы ${chat.chat}`, e));
+    await pollLeads(chat, searches).catch((e) => failed(chat.chat, `вопросы ${chat.chat}`, e));
     await sleep(2000);
   }
   await refreshPosts().catch((e) => console.error(`публикации: ${e.message}`));

@@ -19,6 +19,15 @@ export function collectedWhen(iso: string): string {
   return part(iso, { weekday: 'short', day: 'numeric', month: 'long' }) + (time && `, ${time}`);
 }
 
+/**
+ * Началось ли событие: гостю начатое уже не показываем, даже если оно идёт до вечера. Время в анонсе не указано
+ * (00:00) — считаем начавшимся только после конца того дня. То же правило — `notStarted` в apps/api/src/services.ts.
+ */
+export function collectedStarted(e: Pick<CollectedEventItem, 'starts_at'>, now = Date.now()): boolean {
+  const start = Date.parse(e.starts_at);
+  return collectedTime(e.starts_at) ? start <= now : start + 86_400_000 <= now;
+}
+
 /** Прошло ли событие. Без времени окончания считаем, что оно длится три часа. */
 export const collectedIsPast = (e: Pick<CollectedEventItem, 'starts_at' | 'ends_at'>, now = Date.now()) =>
   new Date(e.ends_at ?? e.starts_at).getTime() + (e.ends_at ? 0 : 3 * 3600e3) < now;
