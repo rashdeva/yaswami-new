@@ -20,7 +20,7 @@ const source = inTelegram ? 'telegram' : 'web';
  * Услуги: hosts_viewed → hosts_filtered (плитка направления, `direction`) → practice_opened (шторка услуги) → practice_signup_clicked.
  * Поиск — строка в шапке «Событий» и «Услуг»: search_used (первый ответ на запрос, `tab`) → search_result_opened (`type`, `tab`).
  * Все события: all_events_opened (кнопка в конце витрины) → all_events_day (выбрал день, `day`).
- * Источник от гостя: source_suggest_opened (кнопка внизу «Всех событий») → source_added (заявка отправлена, `channel`).
+ * Источник от гостя: source_suggest_opened (кнопка внизу главной) → source_added (заявка отправлена, `channel`).
  * Товары: products_viewed → product_viewed → product_contact_clicked (заказ в базе не хранится — считаем только здесь).
  * «Первый заход» отдельным действием не шлём: в PostHog у шага воронки есть условие «впервые для пользователя».
  */
