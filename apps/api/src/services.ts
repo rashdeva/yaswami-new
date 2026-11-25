@@ -4,14 +4,14 @@ import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNot
 import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedListInput, CollectedStatus, CollectedUpdateInput,
-  City, CityFilterInput, CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, Practice, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
+  City, CityFilterInput, CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, Practice, Product, ProductItem, ProductList, ProductListInput, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, UserSelfUpdateInput, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
-import { ADDRESS_MAX, DEFAULT_CITY_ID, Feature, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
+import { ADDRESS_MAX, DEFAULT_CITY_ID, Feature, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, PRODUCT_TTL_DAYS, productContactUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
-import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, photos, practices, practiceSignups, sources, subscriptions, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
+import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, photos, practices, practiceSignups, products, sources, subscriptions, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
@@ -513,12 +513,13 @@ export async function practicesByHost(db: Db | Tx, hostId?: string): Promise<Map
  * Организатор в каталоге. Practice вне наших Topic не показываем: Topic — контент-политика каталога (CONTEXT.md).
  * `all` — все его Practice; `eventTopics` — темы его предстоящих опубликованных событий, по одной на событие.
  */
-function toHostListItem(h: HostRecord, all: Practice[], eventTopics: (string | undefined)[]): HostListItem | null {
+function toHostListItem(h: HostRecord, all: Practice[], eventTopics: (string | undefined)[], sells = false): HostListItem | null {
   // Отклонённого организатора не показываем целиком. Остальное решается по отдельности: события — своим статусом,
-  // Practice — своим (PRACTICE_STATUSES).
+  // Practice — своим (PRACTICE_STATUSES), товары — своим (PRODUCT_STATUSES).
   if (h.status === 'rejected') return null;
   const practices = all.filter((p) => p.status === 'published' && p.topic in TOPIC_GUIDES);
-  if (!practices.length && !eventTopics.length) return null;
+  // `sells` — у мастера есть товары, которые видит гость: тогда его страница нужна и без событий и Practice.
+  if (!practices.length && !eventTopics.length && !sells) return null;
   const mentioned = new Set([...practices.map((p) => p.topic), ...eventTopics]);
   return {
     ...hostCard(h), id: h.id, username: h.username, contact_url: `https://t.me/${h.username}`, url: `${settings.publicUrl}/hosts/${h.id}`,
@@ -544,14 +545,64 @@ export async function listHosts(db: Db, { city_id = DEFAULT_CITY_ID }: CityFilte
     .sort((a, b) => b.upcoming_count - a.upcoming_count || b.practices.length - a.practices.length || a.name.localeCompare(b.name));
 }
 
-/** Страница организатора: профиль, Practice, фото сообщества и предстоящие события. */
+/** Страница организатора: профиль, Practice, товары, фото сообщества и предстоящие события. */
 export async function getHost(db: Db, id: string): Promise<HostItem> {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new AppError('not_found', 404);
+  if (!UUID.test(id)) throw new AppError('not_found', 404);
   const [h] = await db.select().from(hosts).where(eq(hosts.id, id));
-  const item = h && toHostListItem(h, (await practicesByHost(db, h.id)).get(h.id) ?? [], (await upcomingTopicsByHost(db, h.username)).get(h.username) ?? []);
+  const sold = h ? await db.select().from(products).where(and(eq(products.host_id, h.id), liveProduct)).orderBy(desc(products.posted_at), desc(products.id)) : [];
+  const item = h && toHostListItem(h, (await practicesByHost(db, h.id)).get(h.id) ?? [], (await upcomingTopicsByHost(db, h.username)).get(h.username) ?? [], sold.length > 0);
   if (!item) throw new AppError('not_found', 404);
   const rows = await collectedWithCover(db).where(and(notStarted, published, eq(collectedEvents.telegram_username, h!.username))).orderBy(asc(collectedEvents.starts_at));
-  return { ...item, photos: await hostPhotos(db, h!.id), events: rows.map(toCollectedItem) };
+  return { ...item, photos: await hostPhotos(db, h!.id), events: rows.map(toCollectedItem), products: sold.map((p) => toProductItem(p, h!)) };
+}
+
+// --- Товары мастеров (Product в CONTEXT.md). Пишет их сборщик; здесь — что видит гость.
+
+const UUID = /^[0-9a-f-]{36}$/i;
+/** Что видит гость: одобрено командой и товар упоминали не раньше PRODUCT_TTL_DAYS дней назад. Мастер — не отклонённый. */
+const liveProduct = and(eq(products.status, 'published'), sql`${products.posted_at} > now() - make_interval(days => ${PRODUCT_TTL_DAYS})`);
+const visibleMaker = ne(hosts.status, 'rejected');
+
+/** Товар для гостя. Город товара — город мастера; «Написать» ведёт в чат мастера с готовым текстом. */
+const toProductItem = ({ id, title, description, price, unit, category, photo_url, posted_at, announcement }: Product, h: HostRecord): ProductItem => {
+  const url = `${settings.publicUrl}/products/${id}`;
+  return {
+    id, title, description, price, unit, category, photo_url, posted_at, city_id: h.city_id,
+    host: { id: h.id, name: h.name, username: h.username, photo_url: hostCard(h).photo_url, url: `${settings.publicUrl}/hosts/${h.id}` },
+    contact_url: productContactUrl(h.username, title, url), source_url: announcement.url, url,
+  };
+};
+
+/** Страница товаров с мастерами, свежие сверху. Курсор — id последнего на прошлой странице. */
+export async function productPage(db: Db, where: SQL | undefined, { pagination_cursor: cursor, pagination_limit: limit = 50 }: Pick<ProductListInput, 'pagination_cursor' | 'pagination_limit'>) {
+  if (cursor && !UUID.test(cursor)) throw new AppError('invalid_input', 400);
+  const rows = await db.select({ product: products, host: hosts }).from(products).innerJoin(hosts, eq(hosts.id, products.host_id))
+    // Сравнение в базе: в JS время теряет микросекунды, и курсор промахнулся бы.
+    .where(and(where, cursor ? sql`(${products.posted_at}, ${products.id}) < (select posted_at, id from products where id = ${cursor})` : undefined))
+    .orderBy(desc(products.posted_at), desc(products.id)).limit(limit + 1);
+  const entries = rows.slice(0, limit);
+  const has_more = rows.length > limit;
+  return { entries, has_more, next_cursor: has_more ? entries.at(-1)!.product.id : null };
+}
+
+/** Товары мастеров города и его соседей для гостя (без города — первого). Открыт всем, как витрина событий. */
+export async function listProducts(db: Db, { city_id = DEFAULT_CITY_ID, category, ...page }: ProductListInput): Promise<ProductList> {
+  const inCity = and(liveProduct, visibleMaker, inArray(hosts.city_id, await nearbyCities(db, city_id)));
+  const [result, [makers]] = await Promise.all([
+    productPage(db, and(inCity, category ? eq(products.category, category) : undefined), page),
+    // Вход в раздел решается по всем товарам города, без отбора по категории (PRODUCTS_MIN_HOSTS).
+    db.select({ n: sql<number>`count(distinct ${products.host_id})::int` }).from(products).innerJoin(hosts, eq(hosts.id, products.host_id)).where(inCity),
+  ]);
+  return { ...result, entries: result.entries.map((r) => toProductItem(r.product, r.host)), hosts_count: makers?.n ?? 0 };
+}
+
+/** Один товар. Неодобренный, просроченный и товар отклонённого мастера для гостя не существуют. */
+export async function getProduct(db: Db, id: string): Promise<ProductItem> {
+  const [row] = UUID.test(id)
+    ? await db.select({ product: products, host: hosts }).from(products).innerJoin(hosts, eq(hosts.id, products.host_id)).where(and(eq(products.id, id), liveProduct, visibleMaker))
+    : [];
+  if (!row) throw new AppError('not_found', 404);
+  return toProductItem(row.product, row.host);
 }
 
 const SEARCH_LIMIT = 20;
@@ -580,26 +631,30 @@ function searchMatch(query: string, title: SQL, b: SQL[], c: SQL[]) {
 const jsonText = (column: typeof collectedEvents.event, key: string) => sql`${column}->>'${sql.raw(key)}'`;
 
 /**
- * Единый поиск по публичному каталогу: события из ленты, услуги из вкладки «Услуги», самое подходящее первым. Открыт всем.
+ * Единый поиск по публичному каталогу: события из ленты, услуги из вкладки «Услуги», товары мастеров, самое подходящее первым. Открыт всем.
  * Ищет в городе и его соседях, как витрина: без `city_id` — в первом (DEFAULT_CITY_ID).
  */
 export async function search(db: Db, { query, city_id = DEFAULT_CITY_ID, pagination_limit: limit = SEARCH_LIMIT }: SearchInput): Promise<SearchResult> {
   const e = (key: string) => jsonText(collectedEvents.event, key);
   const event = searchMatch(query, e('title'), [e('place'), e('address'), e('tags'), e('topic'), e('for_whom')], [e('description'), e('what_happens'), e('takeaway')]);
   const practice = searchMatch(query, sql`${practices.title}`, [sql`${practices.topic}`], [sql`${practices.description}`]);
-  if (!event || !practice) return { entries: [] };
+  const product = searchMatch(query, sql`${products.title}`, [sql`${products.unit}`], [sql`${products.description}`]);
+  if (!event || !practice || !product) return { entries: [] };
   const near = await nearbyCities(db, city_id);
 
   // ponytail: среди одинаково подходящих событий ближайшее чуть выше — надбавка на глаз, до 0.1 и тает за недели
   const eventScore = sql<number>`${event.score} + 0.1 / (1 + greatest(0, extract(epoch from ${collectedEvents.starts_at} - now())) / 604800)`;
 
-  const [events, offers, topics, offered] = await Promise.all([
+  const [events, offers, goods, topics, offered] = await Promise.all([
     db.select({ ...getTableColumns(collectedEvents), cover_id: photos.id, score: eventScore })
       .from(collectedEvents).leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id))
       .where(and(notStarted, published, inArray(collectedEvents.city_id, near), event.where)).orderBy(desc(eventScore)).limit(limit),
     db.select({ host: hosts, id: practices.id, score: practice.score })
       .from(practices).innerJoin(hosts, eq(hosts.id, practices.host_id))
       .where(and(eq(practices.status, 'published'), ne(hosts.status, 'rejected'), inArray(hosts.city_id, near), practice.where)),
+    db.select({ product: products, host: hosts, score: product.score })
+      .from(products).innerJoin(hosts, eq(hosts.id, products.host_id))
+      .where(and(liveProduct, visibleMaker, inArray(hosts.city_id, near), product.where)).orderBy(desc(product.score)).limit(limit),
     upcomingTopicsByHost(db),
     practicesByHost(db),
   ]);
@@ -612,6 +667,7 @@ export async function search(db: Db, { query, city_id = DEFAULT_CITY_ID, paginat
       const practice = item?.practices.find((p) => p.id === r.id);
       return item && practice ? [{ type: 'practice' as const, practice, host: item, score: r.score }] : [];
     }),
+    ...goods.map((r) => ({ type: 'product' as const, product: toProductItem(r.product, r.host), score: r.score })),
   ];
   return { entries: found.sort((a, b) => b.score - a.score).slice(0, limit).map(({ score: _, ...entry }) => entry as SearchEntry) };
 }

@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import type { SearchEntry, Wire } from '@yaswami/core';
 import { SearchInput } from '@yaswami/core';
 import { api } from '../api.ts';
 import { keys } from './keys.ts';
@@ -25,5 +26,8 @@ export function useSearch(typed: string) {
     placeholderData: keepPreviousData,
     staleTime: 60_000,
   });
-  return { ready, entries: ready ? data?.entries ?? null : null, failed: ready ? error : null };
+  return { ready, entries: ready ? data?.entries.filter(shown) ?? null : null, failed: ready ? error : null };
 }
+
+// Товары экран поиска пока не рисует — их карточку делает #194.
+const shown = (entry: Wire<SearchEntry>): entry is Exclude<Wire<SearchEntry>, { type: 'product' }> => entry.type !== 'product';

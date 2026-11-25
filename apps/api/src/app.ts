@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
+  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, AdminProductListInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -120,6 +120,8 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/hosts', async (c) => c.json(await s.listHosts(db, CityFilterInput.parse(c.req.query()))))
     .get('/hosts/:id', async (c) => c.json(await s.getHost(db, c.req.param('id'))))
     .get('/search', async (c) => c.json(await s.search(db, SearchInput.parse(c.req.query()))))
+    .get('/products', async (c) => c.json(await s.listProducts(db, ProductListInput.parse(c.req.query()))))
+    .get('/products/:id', async (c) => c.json(await s.getProduct(db, c.req.param('id'))))
     // Фото из базы (ADR-0003). Открыто всем: <img> не шлёт заголовок входа, а id фото не угадать.
     .get('/photos/:id', async (c) => {
       const data = await getPhoto(db, c.req.param('id'));
@@ -323,6 +325,8 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       return c.body(null, 204);
     })
     .patch('/admin/practices/:id', json(PracticeUpdateInput), async (c) => c.json(await admin.updatePractice(db, ctx(c), c.req.param('id'), c.req.valid('json'))))
+    .get('/admin/products', async (c) => c.json(await admin.listProducts(db, AdminProductListInput.parse(c.req.query()))))
+    .patch('/admin/products/:id', json(ProductUpdateInput), async (c) => c.json(await admin.updateProduct(db, ctx(c), c.req.param('id'), c.req.valid('json'))))
     // Города (admin/cities.ts).
     .get('/admin/cities', async (c) => c.json(await admin.listCities(db)))
     .post('/admin/cities', json(CityCreateInput), async (c) => c.json(await admin.createCity(db, ctx(c), c.req.valid('json')), 201))

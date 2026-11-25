@@ -68,9 +68,9 @@
 | Витрина из Полок — Shelf (в Luma такого нет; ADR-0009) | гостю `showcase_get`, `GET /showcase?city_id=`; команде и куратору `admin_shelves_*`, `/admin/shelves`; правило — поле `rule`, ручная полка — `event_ids`; режим города — `showcase_mode` в `admin_cities_update`; куратор — токен с областью `curator`, его границы проверяет `shelves.ts` | `POST /admin/shelves` `{ "city_id": "danang", "title": "На выходных", "rule": { "period": "weekend" } }` |
 | Направление — над Topic (в Luma такого нет) | список — `DIRECTIONS` в `packages/core/src/topics.ts`, в коде; у темы поле `direction` (slug направления) в `topics_list` и `admin_topics_create/update` | `PATCH /admin/topics/<name>` `{ "direction": "body" }` |
 | Товар мастера — Product (в Luma такого нет) | `products_*`, `/products`; для команды `admin_products_*`, `/admin/products`; ссылка «Написать» — `contact_url` | `PATCH /admin/products/<id>` `{ "status": "published" }` |
-| Единый поиск по каталогу: события и услуги (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
+| Единый поиск по каталогу: события, услуги и товары (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
 
-Новый публичный ресурс каталога добавляется в поиск в том же PR (так добавлены услуги — `type: 'practice'`): ещё один `type` в `SearchEntry` и ещё один запрос в `search` (`services.ts`).
+Новый публичный ресурс каталога добавляется в поиск в том же PR (так добавлены услуги — `type: 'practice'`, и товары — `type: 'product'`): ещё один `type` в `SearchEntry` и ещё один запрос в `search` (`services.ts`).
 
 Чего в Luma нет (Telegram, витрина собранных событий, переписка, `kind`, ответ «maybe») — называем сами словами из `CONTEXT.md` и пишем у типа: «в Luma такого нет». Сейчас так помечены поля в `packages/core/src/schema.ts`.
 
