@@ -15,6 +15,7 @@
 | `apps/api/src/services.ts`, `inbox.ts`, `admin.ts` и соседи | операции: правила доступа, запись, побочные действия | знания о том, кто вызвал — REST или MCP |
 | `packages/core` | схемы zod, типы, чистые правила (RSVP, темы) | базы, Telegram, сети |
 | `packages/extract` | разбор анонса в событие через ИИ | базы |
+| `packages/poster` | афиша недели: PNG-карусель и текст поста из публичного API | базы; своих правил показа событий |
 | `apps/collector` | юзербот MTProto: читает каналы, шлёт с наших аккаунтов; собранное пишет в базу своими запросами (`store.mjs`), о сообщениях сообщает в `/internal/*` | правил домена; запросов к базе вне `store.mjs` |
 | `agents/` | роли Hermes; работают через наш MCP | прямого доступа к базе и Telegram |
 
@@ -39,7 +40,7 @@
 - Выкладка, Railway → `docs/adr/0002-railway-kak-edinaya-platforma.md`
 - Исследуешь домен, пишешь термин или ADR → `docs/agents/domain.md`
 - Задачи и метки (GitHub Issues `rashdeva/yaswami-new`, через `gh`) → `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`
-- Маркетинг и тексты → `docs/marketing-strategy.md`
+- Маркетинг и тексты → `docs/marketing-strategy.md`; афиша недели → `packages/poster/README.md`
 
 ## База знаний растёт вместе с кодом
 

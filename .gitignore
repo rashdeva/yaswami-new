@@ -33,3 +33,6 @@ coverage/
 ### Claude Code: рабочие копии соседних сессий и личные настройки
 .claude/worktrees/
 .claude/settings.local.json
+
+### Афиша недели: вывод генератора (packages/poster)
+poster-out/
