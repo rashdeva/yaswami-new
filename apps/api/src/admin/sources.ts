@@ -57,6 +57,8 @@ export async function updateSource(db: Db, ctx: Ctx, channel: string, input: Sou
     if (input.enabled) values.empty_parses = 0; // включили — счёт пустых разборов заново, иначе первый же выключит снова
     const before = await getSource(tx, key);
     if (Object.keys(values).length) await tx.update(sources).set(values).where(eq(sources.channel, key));
+    // Включили выключенный источник товаров — сборщик перечитает его свежие посты: так команда возвращает пропущенное.
+    if (input.enabled && !before.enabled && (input.kind ?? before.kind) === 'products') await tx.delete(collectorCursors).where(eq(collectorCursors.channel, `product:${key}`));
     if (input.host_id && input.host_id !== before.host?.id) {
       // У товаров своя отметка — product:<канал> (pollProducts в сборщике): перечитать нужно и их.
       await tx.delete(collectorCursors).where(inArray(collectorCursors.channel, [key, `product:${key}`]));

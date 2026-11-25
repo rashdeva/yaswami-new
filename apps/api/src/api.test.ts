@@ -2538,6 +2538,13 @@ test('источники: команда добавляет и выключае�
   assert.deepEqual((await db.select().from(collectorCursors)).map((c) => c.channel), ['Danang_Yoga']);
   assert.equal((await db.select().from(hosts).where(eq(hosts.id, stub.id)))[0]!.channel, 'danang_yoga');
   assert.deepEqual(await (await call(admin, 'PATCH', '/admin/sources/danang_yoga', { host_id: randomUUID() })).json(), { error: 'host_not_found' });
+  // Источник товаров включили снова — его отметка товаров сбрасывается: сборщик перечитает посты. Анонсы не трогаем.
+  await db.insert(sources).values({ channel: 'jerky_shop', kind: 'products', enabled: false });
+  await db.insert(collectorCursors).values([{ channel: 'product:jerky_shop', last_number: 90 }, { channel: 'jerky_shop', last_number: 90 }]);
+  await tool('admin_sources_update', { channel: 'jerky_shop', enabled: true });
+  assert.deepEqual((await db.select().from(collectorCursors)).map((c) => c.channel).filter((c) => c.includes('jerky')), ['jerky_shop']);
+  await db.delete(collectorCursors).where(eq(collectorCursors.channel, 'jerky_shop'));
+  await db.delete(sources).where(eq(sources.channel, 'jerky_shop'));
 
   // Сборщик (apps/collector/src/store.mjs) находит человека в Telegram: заготовка заполняется на месте, источник остаётся за ней.
   const { createStore } = await import(new URL('../../collector/src/store.mjs', import.meta.url).href);
