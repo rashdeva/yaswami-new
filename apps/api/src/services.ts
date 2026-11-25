@@ -167,7 +167,7 @@ export async function assertCity(db: Db | Tx, id: string | undefined): Promise<v
 /**
  * Предстоящие собранные события города и его соседей для витрины; без города — первого (DEFAULT_CITY_ID). Открыты всем: это пересказ публичных анонсов.
  */
-export async function listCollectedEvents(db: Db, { city_id = DEFAULT_CITY_ID }: CityFilterInput = {}): Promise<CollectedEventItem[]> {
+export async function listCollectedEvents(db: Db | Tx, { city_id = DEFAULT_CITY_ID }: CityFilterInput = {}): Promise<CollectedEventItem[]> {
   const rows = await collectedWithCover(db)
     .where(and(upcomingCollected, published, inArray(collectedEvents.city_id, await nearbyCities(db, city_id))))
     .orderBy(asc(collectedEvents.starts_at))

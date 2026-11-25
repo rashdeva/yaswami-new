@@ -5,7 +5,7 @@ import * as z from 'zod';
 import type { CollectedEventItem, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, AdminGuestUpdateInput, CityCreateInput, CityUpdateInput,
-  CityFilterInput, CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TEMPLATES, cityId, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSelfUpdateInput,
+  CityFilterInput, CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TEMPLATES, cityId, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSelfUpdateInput,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
@@ -19,6 +19,7 @@ import {
 import { collectedUrl, eventUrl } from './notifications.ts';
 import * as hs from './host-searches.ts';
 import * as s from './services.ts';
+import { createShelf, deleteShelf, getShowcase, listShelves, updateShelf } from './shelves.ts';
 import { listTopics } from './topics.ts';
 
 const event_id = z.string().describe('Event id, e.g. e_2a9c41b7d0');
@@ -32,6 +33,8 @@ const PERSON_TOOLS = ['person_events_list', 'person_events_get', 'person_events_
 const SCOPE_TOOLS: Record<TokenScope, Set<string>> = {
   support: new Set(['collected_events_list', 'hosts_list', 'jobs_list', 'jobs_get', 'search', ...PERSON_TOOLS]),
   catalog: new Set(['collected_events_list', 'hosts_list', 'jobs_list', 'jobs_get', 'search']),
+  // Куратор витрины (agents/curator): читает каталог и правит только полки; что ему можно с полкой, решает shelves.ts.
+  curator: new Set(['cities_list', 'topics_list', 'collected_events_list', 'showcase_get', 'admin_shelves_list', 'admin_shelves_create', 'admin_shelves_update', 'admin_shelves_delete']),
 };
 
 function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolean) {
@@ -41,7 +44,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
   // Админ (оператор в командном чате) может выполнить любой «пользовательский» инструмент от имени другого человека:
   // так он управляет чем угодно в сервисе. Гостю параметр недоступен; роль поддержки эти инструменты не получает вовсе.
   const asAdmin = team && !allowed;
-  const ctx: Ctx = { actor, via: 'mcp' }; // для журнала: агент действует как владелец токена
+  const ctx: Ctx = { actor, via: 'mcp', scope }; // для журнала: агент действует как владелец токена
   const AS_USER = { as_user_id: z.number().int().optional().describe('Admin only: act on behalf of this user (user id — not a Telegram id; see admin_users_search or host_id in admin_events_list). Omit to act as yourself.') };
 
   // Ошибка правил (нет мест, нет прав) — это ответ инструмента, а не сбой протокола: модель должна её прочитать.
@@ -90,6 +93,14 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
     title: 'Upcoming events in the city', readOnly: true, shape: CityFilterInput.shape,
     description: 'Public catalogue: upcoming events of one city and its neighbours within 25 km (`city_id`, default the first city) collected from organizers\' announcements, ordered by start time. `url` opens the event in the Telegram mini app, where a person reads details and signs up; `id` names the event for an event card. Use it to answer "where to go" and "what is on".',
   }, async (a) => (await s.listCollectedEvents(db, a)).map(eventBrief));
+
+  tool('showcase_get', {
+    title: 'Showcase of the city', readOnly: true, shape: ShelfListInput.shape,
+    description: 'What the main screen of the app shows a guest in one city (`city_id`, default the first city): shelves top to bottom, each with a title, a cover topic and its upcoming events (only shelves with at least 3 events). A city without its own shelves shows the default rule shelves. All events of the city by day are collected_events_list.',
+  }, async (a) => {
+    const showcase = await getShowcase(db, a);
+    return { ...showcase, shelves: showcase.shelves.map((sh) => ({ ...sh, events: sh.events.map(eventBrief) })) };
+  });
 
   tool('search', {
     title: 'Search the public catalogue', readOnly: true, shape: SearchInput.shape,
@@ -477,7 +488,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
 
     tool('admin_cities_update', {
       title: 'Edit city', shape: { city_id: z.string().describe('City id from admin_cities_list'), ...CityUpdateInput.shape },
-      description: `Rename a city, change its time zone or coordinates; the zone applies to events collected afterwards. Only passed fields change. ${ONLY_TEAM} Errors: not_found.`,
+      description: `Rename a city, change its time zone or coordinates (the zone applies to events collected afterwards), or its showcase_mode: draft — the curator only proposes shelves, auto — it publishes itself. Only passed fields change. ${ONLY_TEAM} Errors: not_found.`,
     }, ({ city_id, ...input }) => admin.updateCity(db, ctx, city_id, input));
 
     // --- Источники сборщика (admin/sources.ts)
@@ -526,6 +537,29 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
       title: 'Edit topic', shape: { name: z.string().describe('Topic name from admin_topics_list'), ...TopicUpdateInput.shape },
       description: `Change a topic's guide, emoji, colour, tags or icon, or hide it (enabled: false — instead of deleting: events keep the name). Only passed fields change. ${ONLY_TEAM} Errors: not_found, bad_image_url, bad_image.`,
     }, ({ name, ...input }) => admin.updateTopic(db, ctx, name, input));
+
+    // --- Полки витрины (shelves.ts, ADR-0009)
+    const shelf_id = z.uuid().describe('Shelf id from admin_shelves_list');
+    const CURATOR = 'The curator role may change only its own unpinned shelves; in a city with showcase_mode draft only its own proposed shelves, and its new shelves are proposed until the team publishes them. A team edit pins the shelf.';
+    tool('admin_shelves_list', {
+      title: 'Showcase shelves', readOnly: true, shape: ShelfListInput.shape,
+      description: 'All shelves of one city\'s showcase in display order, including proposed and hidden: rule or hand-picked events, author (team or curator), pinned, note, ends_at, events_count and the first events now on the shelf. Empty — the guest sees the default rule shelves. The city\'s showcase_mode is in admin_cities_list.',
+    }, (a) => listShelves(db, a));
+
+    tool('admin_shelves_create', {
+      title: 'Add a showcase shelf', shape: ShelfCreateInput.shape,
+      description: `Add a shelf to a city's showcase: either a rule (period, topic, free, beginner_friendly, popular — events are picked on every view) or hand-picked event_ids (ids from collected_events_list, upcoming events of this city only). Title in Russian, short. Write \`note\` — why this shelf, for the team. ${CURATOR} Logged; undo with admin_actions_undo. Errors: city_not_found, shelf_empty (neither rule nor event_ids), event_not_found, forbidden (the curator set pinned), too_many_changes (the curator's daily limit).`,
+    }, (a) => createShelf(db, ctx, a));
+
+    tool('admin_shelves_update', {
+      title: 'Edit a showcase shelf', shape: { shelf_id, ...ShelfUpdateInput.shape },
+      description: `Change a shelf: title, cover topic, rule or event_ids, position (reorder), status (published, hidden, proposed), ends_at, note. Only passed fields change. ${CURATOR} Logged; undo with admin_actions_undo. Errors: not_found, shelf_locked (pinned or the team's shelf), showcase_draft (draft mode: the curator may change only its proposed shelves and cannot publish), shelf_empty, event_not_found, forbidden, too_many_changes.`,
+    }, ({ shelf_id: id, ...input }) => updateShelf(db, ctx, id, input));
+
+    tool('admin_shelves_delete', {
+      title: 'Delete a showcase shelf', destructive: true, shape: { shelf_id },
+      description: `Delete a shelf. To take it off for a while set status hidden instead. ${CURATOR} Logged; undo with admin_actions_undo. Errors: not_found, shelf_locked, showcase_draft, too_many_changes.`,
+    }, (a) => deleteShelf(db, ctx, a.shelf_id));
 
     // --- Пользователи и аудитория (admin/users.ts)
     tool('admin_users_search', {

@@ -29,4 +29,7 @@ export const keys = {
   topics: ['topics'],
   topicCandidates: ['topics', 'candidates'],
   cities: ['cities'],
+  /** Полки витрины города и его предстоящие события (для ручной полки). */
+  shelves: (city: string) => ['shelves', city],
+  cityEvents: (city: string) => ['city-events', city],
 } as const;

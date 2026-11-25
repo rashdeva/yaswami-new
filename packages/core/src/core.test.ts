@@ -173,3 +173,32 @@ test('соседние города: в радиусе NEARBY_KM, ближние
   assert.equal(nearestCityId(cities, { latitude: 5.95, longitude: 80.46 }), 'mirissa');
   assert.equal(nearestCityId(cities, { latitude: 55.75, longitude: 37.62 }), null, 'Москва — не рядом ни с кем');
 });
+
+test('полки: период по календарю города, правило, порядок по подпискам', async () => {
+  const { cityNow, matchesShelfRule, orderShelvesFor, periodDays, ShelfRule, shelfEvents } = await import('./index.ts');
+  // 2026-11-25 — среда; 23:30 UTC — уже четверг в Дананге (UTC+7).
+  assert.deepEqual(cityNow('Asia/Ho_Chi_Minh', Date.parse('2026-11-25T23:30:00Z')), { day: '2026-11-26', minutes: 6 * 60 + 30 });
+  assert.deepEqual(periodDays('weekend', '2026-11-25'), ['2026-11-28', '2026-11-29']);
+  assert.deepEqual(periodDays('weekend', '2026-11-28'), ['2026-11-28', '2026-11-29']);
+  assert.deepEqual(periodDays('weekend', '2026-11-29'), ['2026-11-29']);
+  assert.equal(periodDays('week', '2026-11-25').at(-1), '2026-12-01');
+
+  const e = (starts_at: string, more: object = {}) => ({ starts_at, price: null, topic: 'танцы', beginner_friendly: null, popular: false, ...more });
+  const today = '2026-11-25';
+  assert.equal(matchesShelfRule({ period: 'tonight' }, e('2026-11-25T19:00:00+07:00'), today), true);
+  assert.equal(matchesShelfRule({ period: 'tonight' }, e('2026-11-25T11:00:00+07:00'), today), false);
+  assert.equal(matchesShelfRule({ period: 'tonight' }, e('2026-11-25T00:00:00+07:00'), today), false, 'время не указано — не знаем, вечер ли');
+  assert.equal(matchesShelfRule({ period: 'tomorrow', topic: 'танцы' }, e('2026-11-26T10:00:00+07:00'), today), true);
+  assert.equal(matchesShelfRule({ topic: 'игры' }, e('2026-11-26T10:00:00+07:00'), today), false);
+  assert.equal(matchesShelfRule({ free: true }, e('2026-11-26T10:00:00+07:00', { price: 'Бесплатно' }), today), true);
+  assert.equal(matchesShelfRule({ beginner_friendly: true }, e('2026-11-26T10:00:00+07:00'), today), false, 'null — в анонсе не сказано');
+  assert.equal(ShelfRule.safeParse({ period: 'month' }).success, false);
+  assert.equal(ShelfRule.safeParse({ topic: 'нет такой темы' }).success, false);
+
+  const items = ['a', 'b', 'c'].map((id, i) => ({ ...e(`2026-11-2${6 + i}T10:00:00+07:00`), id }) as never);
+  assert.deepEqual(shelfEvents({ rule: null, event_ids: ['c', 'x', 'a'] }, items, today).map((x: { id: string }) => x.id), ['c', 'a']);
+
+  const shelves = [{ topic: null }, { topic: 'игры' }, { topic: 'кино' }, { topic: 'танцы' }].map((s, i) => ({ ...s, i }));
+  assert.deepEqual(orderShelvesFor(shelves, ['танцы']).map((s) => s.i), [0, 3, 1, 2], 'полка темы поднимается, первое место — за командой');
+  assert.deepEqual(orderShelvesFor(shelves, []).map((s) => s.i), [0, 1, 2, 3]);
+});

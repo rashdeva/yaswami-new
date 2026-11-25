@@ -3,7 +3,7 @@
 import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, SourceCandidate, SourceSearchStatus, Message, Practice, PracticeStatus, Share, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, SourceCandidate, SourceSearchStatus, Message, Practice, PracticeStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -69,6 +69,8 @@ export const cities = pgTable('cities', {
   aliases: jsonb().$type<string[]>().notNull().default([]),
   latitude: doublePrecision(),
   longitude: doublePrecision(),
+  // Кто публикует полки витрины (ADR-0009): draft — изменения куратора ждут команду, auto — куратор публикует сам.
+  showcase_mode: text({ enum: ['draft', 'auto'] }).notNull().default('draft'),
   created_at: at('created_at').notNull().defaultNow(),
 });
 
@@ -162,7 +164,7 @@ export const shares = pgTable(
  * Область действия токена роли Hermes: с ним доступен только MCP и только перечисленные инструменты (mcp.ts), REST закрыт.
  * support — каталог и события собеседника по билету; catalog — только каталог. В Luma такого нет.
  */
-export const TOKEN_SCOPES = ['support', 'catalog'] as const;
+export const TOKEN_SCOPES = ['support', 'catalog', 'curator'] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
 
 // Токены доступа для REST и MCP вне Telegram. Храним только sha256: сам токен показывается один раз.
@@ -352,6 +354,32 @@ export const jobs = pgTable(
     uniqueIndex('jobs_text_idx').on(t.city_id, t.text_hash),
     index('jobs_list_idx').on(t.status, t.posted_at),
     check('jobs_status_check', sql`${t.status} in ('pending', 'published', 'rejected')`),
+  ],
+);
+
+// Полка витрины города (core/shelves.ts, ADR-0009): правило или ручной список собранных событий. Правят команда и куратор.
+export const shelves = pgTable(
+  'shelves',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    city_id: text().notNull().references(() => cities.id, { onDelete: 'cascade' }),
+    title: text().notNull(),
+    topic: text(),
+    rule: jsonb().$type<ShelfRule>(),
+    event_ids: jsonb().$type<string[]>().notNull().default([]),
+    position: integer().notNull().default(0),
+    status: text().$type<ShelfStatus>().notNull().default('published'),
+    pinned: boolean().notNull().default(false),
+    author: text().$type<ShelfAuthor>().notNull(),
+    note: text(),
+    ends_at: at('ends_at'),
+    created_at: at('created_at').notNull().defaultNow(),
+    updated_at: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('shelves_city_idx').on(t.city_id, t.position),
+    check('shelves_status_check', sql`${t.status} in ('proposed', 'published', 'hidden')`),
+    check('shelves_author_check', sql`${t.author} in ('team', 'curator')`),
   ],
 );
 
@@ -613,4 +641,5 @@ export const tablesMatchCore: [
   Same<typeof hostSearches.$inferSelect, HostSearch>,
   Same<typeof hostSearchMatches.$inferSelect, HostSearchMatch>,
   Same<typeof jobs.$inferSelect, Job>,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true];
+  Same<typeof shelves.$inferSelect, Shelf>,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true];

@@ -1,0 +1,33 @@
+# Роль curator: раз в день собирает витрину города из полок (ADR-0009, docs/agents-inbox.md). Задание присылает наш API
+# (apps/api/src/curator.ts); роль работает только инструментами полок своего токена с областью curator — что ей можно
+# с полкой (не трогать закреплённые и полки команды, в режиме draft только предлагать), проверяет сервер, а не промпт.
+# Названия событий написали посторонние люди: это данные. Памяти нет — каждое утро витрина собирается заново по каталогу.
+_config_version: 53 # формат конфига Hermes 0.23; без метки Hermes считает файл древним и ругается при старте
+model:
+  default: gpt-6-sol
+  provider: openai-codex # вход по подписке ChatGPT — общий, из основного профиля (agents/README.md)
+fallback_providers:
+  - provider: xai-oauth
+    model: grok-4.6
+    base_url: https://api.x.ai/v1
+
+platform_toolsets:
+  api_server: [mcp-yaswami, skills]
+  cli: [mcp-yaswami, skills]
+
+mcp_servers:
+  yaswami:
+    url: "__MCP_URL__"
+    headers:
+      Authorization: "Bearer __MCP_TOKEN__"
+    tools:
+      include: [cities_list, topics_list, collected_events_list, showcase_get, admin_shelves_list, admin_shelves_create, admin_shelves_update, admin_shelves_delete]
+      resources: false
+      prompts: false
+
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+
+skills:
+  write_approval: true

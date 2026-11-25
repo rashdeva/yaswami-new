@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Job, JobItem, JobList, AdminJobList, Me, Message, PracticeSignup, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
+import type { AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Job, JobItem, JobList, AdminJobList, Me, Message, PracticeSignup, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -14,7 +14,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, signInWith, telegramIdOf, userIdByTelegram, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, jobs, messages, photos, practices as practicesTable, practiceSignups, sources, sourceSearches, ticketTypes, topics as topicsTable, users, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, jobs, messages, photos, practices as practicesTable, practiceSignups, shelves, sources, sourceSearches, ticketTypes, topics as topicsTable, users, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { notify } from './notifications.ts';
@@ -27,8 +27,9 @@ import { refreshTopics, requestNextTopicIcon } from './topics.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
 
 import sharp from 'sharp';
-import { host, hunter, illustrator, parseIllustration, parseSupportReply, support, verifyTicket } from './support.ts';
+import { curator, host, hunter, illustrator, parseIllustration, parseSupportReply, support, verifyTicket } from './support.ts';
 import { recordHostLead, recordLead } from './inbox.ts';
+import { requestCuration } from './curator.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
 
@@ -51,7 +52,7 @@ before(async () => {
   url.pathname = `/${TEST_DB}`;
   db = createDb(url.href);
   await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
-  await db.execute(sql`truncate users, admin_actions, collected_events, hosts, tg_accounts, conversations, jobs cascade`);
+  await db.execute(sql`truncate users, admin_actions, collected_events, hosts, tg_accounts, conversations, jobs, shelves cascade`);
   // Города из прошлого запуска: Дананг создан миграцией, остальное добавляют тесты.
   await db.execute(sql`delete from sources where city_id <> 'danang'`);
   await db.execute(sql`delete from cities where id <> 'danang'`);
@@ -259,7 +260,7 @@ test('MCP: список инструментов, создание событи�
     'cities_list', 'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
     'events_ticket_types_update', 'events_update', 'host_searches_create', 'host_searches_delete', 'host_searches_list', 'host_searches_matches_list', 'host_searches_update',
-    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'jobs_get', 'jobs_list', 'me_collected_list', 'search', 'topics_list', 'users_get_self', 'users_update_self',
+    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'jobs_get', 'jobs_list', 'me_collected_list', 'search', 'showcase_get', 'topics_list', 'users_get_self', 'users_update_self',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
@@ -2143,6 +2144,151 @@ test('вакансии: гость видит одобренные и свежи
   await db.execute(sql`delete from cities where id = 'nhatrang'`);
 });
 
+test('витрина: полки по умолчанию, полки команды, куратор предлагает и публикует в своих границах', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const guest = tma(85, 'Лена');
+  await call(admin, 'GET', '/me'); // админ вошёл: токен куратора выпускается на него
+  const curator = `Bearer ${await issueToken(db, await uid(70), { scope: 'curator' })}`;
+  const mcpTool = async (auth: string, name: string, args: object) => {
+    const res = await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+    const { result } = (await res.json()) as { result: { isError?: boolean; content: { text: string }[] } };
+    return JSON.parse(result.content[0]!.text);
+  };
+  const showcase = async () => ((await (await app.request('/showcase?city_id=danang')).json()) as Showcase).shelves;
+  await db.delete(shelves);
+  await db.execute(sql`delete from collected_events where channel = 'shelftest'`);
+  // Дананг — UTC+7 без перехода на летнее время: время события записываем по его часам, как сборщик.
+  const at = (days: number) => {
+    const t = new Date(Date.now() + days * 86_400_000);
+    t.setUTCHours(12, 0, 0, 0); // 19:00 по Данангу
+    return { starts_at: t, iso: `${new Date(t.getTime() + 7 * 3600e3).toISOString().slice(0, 19)}+07:00` };
+  };
+  const row = (n: number, title: string, days: number, more: Partial<CollectedEvent> = {}) => {
+    const { starts_at, iso } = at(days);
+    return {
+      external_id: `telegram:shelftest/${n}#0`, channel: 'shelftest', status: 'published' as const, city_id: 'danang', starts_at, signup_url: '', announcement: { url: `https://t.me/shelftest/${n}` },
+      event: { title, description: '', starts_at: iso, ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null, topic: 'танцы', beginner_friendly: true, ...more },
+    };
+  };
+  await db.insert(collectedEvents).values([
+    row(1, 'Бачата', 2), row(2, 'Сальса', 3), row(3, 'Кизомба', 4),
+    row(4, 'Покер', 2, { topic: 'игры', beginner_friendly: false }),
+  ]);
+  const ids = ['shelftest-1-0', 'shelftest-2-0', 'shelftest-3-0', 'shelftest-4-0'];
+
+  // Своих полок у города нет — витрина из полок по умолчанию; полка, где меньше трёх событий, не показывается.
+  let shelvesNow = await showcase();
+  assert.ok(shelvesNow.every((sh) => sh.id.startsWith('default-')));
+  assert.deepEqual(shelvesNow.find((sh) => sh.title === 'Можно без опыта')?.events.map((e) => e.title), ['Бачата', 'Сальса', 'Кизомба']);
+  assert.ok(!shelvesNow.some((sh) => sh.title === 'Популярное'));
+  // Полки есть, но гостю показывать нечего (снята, предложена) — витрина всё равно из полок по умолчанию.
+  const [hiddenShelf] = await db.insert(shelves).values([
+    { city_id: 'danang', title: 'Снятая', rule: { topic: 'танцы' }, author: 'team', status: 'hidden' },
+    { city_id: 'danang', title: 'Предложенная', rule: { topic: 'танцы' }, author: 'curator', status: 'proposed' },
+  ]).returning();
+  assert.ok((await showcase()).some((sh) => sh.title === 'Можно без опыта') && !(await showcase()).some((sh) => sh.id === hiddenShelf!.id));
+  await db.delete(shelves);
+
+  // Команда: полка по правилу и ручная; гостю закрыто, пустая и с чужим событием — отказ.
+  assert.equal((await call(guest, 'POST', '/admin/shelves', { city_id: 'danang', title: 'Х', rule: {} })).status, 403);
+  assert.deepEqual(await (await call(admin, 'POST', '/admin/shelves', { city_id: 'danang', title: 'Пусто' })).json(), { error: 'shelf_empty' });
+  assert.deepEqual(await (await call(admin, 'POST', '/admin/shelves', { city_id: 'danang', title: 'Х', event_ids: ['nope-1-0'] })).json(), { error: 'event_not_found' });
+  assert.deepEqual(await (await call(admin, 'POST', '/admin/shelves', { city_id: 'atlantis', title: 'Х', rule: {} })).json(), { error: 'city_not_found' });
+  const created = await call(admin, 'POST', '/admin/shelves', { city_id: 'danang', title: 'Где потанцевать', topic: 'танцы', rule: { period: 'week', topic: 'танцы' } });
+  assert.equal(created.status, 201);
+  const dance = (await created.json()) as AdminShelf;
+  assert.deepEqual([dance.author, dance.status, dance.pinned, dance.events_count], ['team', 'published', false, 3]);
+  const picked = (await (await call(admin, 'POST', '/admin/shelves', { city_id: 'danang', title: 'Выбор команды', event_ids: [ids[2], ids[0], ids[3]] })).json()) as AdminShelf;
+  const small = (await (await call(admin, 'POST', '/admin/shelves', { city_id: 'danang', title: 'Почти пусто', event_ids: [ids[0], ids[1]] })).json()) as AdminShelf;
+  assert.deepEqual([dance.position, picked.position, small.position], [0, 1, 2]);
+  shelvesNow = await showcase();
+  assert.deepEqual(shelvesNow.map((sh) => sh.title), ['Где потанцевать', 'Выбор команды'], 'полки по умолчанию ушли, полупустая не показана');
+  assert.deepEqual(shelvesNow[1]!.events.map((e) => e.title), ['Кизомба', 'Бачата', 'Покер'], 'ручная — в порядке команды');
+
+  // Куратор: видит только каталог и полки; в режиме draft его полка — предложенная, гостям не видна.
+  const listed = await call(curator, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+  const curatorTools = ((await listed.json()) as { result: { tools: { name: string }[] } }).result.tools.map((x) => x.name).sort();
+  assert.deepEqual(curatorTools, ['admin_shelves_create', 'admin_shelves_delete', 'admin_shelves_list', 'admin_shelves_update', 'cities_list', 'collected_events_list', 'showcase_get', 'topics_list']);
+  assert.equal((await call(curator, 'GET', '/admin/shelves')).status, 403, 'токен роли — только MCP');
+  const proposed = await mcpTool(curator, 'admin_shelves_create', { city_id: 'danang', title: 'Танцы недели', event_ids: ids.slice(0, 3), note: 'много новых студий', status: 'published' });
+  assert.deepEqual([proposed.author, proposed.status, proposed.pinned], ['curator', 'proposed', false]);
+  assert.ok(!(await showcase()).some((sh) => sh.id === proposed.id));
+  assert.deepEqual(await mcpTool(curator, 'admin_shelves_create', { city_id: 'danang', title: 'Х', rule: {}, pinned: true }), { error: 'forbidden' });
+  assert.deepEqual(await mcpTool(curator, 'admin_shelves_update', { shelf_id: dance.id, title: 'Моё' }), { error: 'shelf_locked' });
+  assert.deepEqual(await mcpTool(curator, 'admin_shelves_delete', { shelf_id: dance.id }), { error: 'shelf_locked' });
+  assert.deepEqual(await mcpTool(curator, 'admin_shelves_update', { shelf_id: proposed.id, status: 'published' }), { error: 'showcase_draft' });
+  assert.equal((await mcpTool(curator, 'admin_shelves_update', { shelf_id: proposed.id, title: 'Танцуем всю неделю' })).title, 'Танцуем всю неделю');
+
+  // Режим auto: куратор публикует свою полку сам.
+  assert.equal((await call(admin, 'PATCH', '/admin/cities/danang', { showcase_mode: 'auto' })).status, 200);
+  // Выше полок команды, что стоят над его полкой, куратору не встать: просил первое место — остаётся после них.
+  const published = await mcpTool(curator, 'admin_shelves_update', { shelf_id: proposed.id, status: 'published', position: 0 });
+  assert.deepEqual([published.status, published.position], ['published', 3]);
+  assert.deepEqual((await showcase()).map((sh) => sh.title), ['Где потанцевать', 'Выбор команды', 'Танцуем всю неделю']);
+  assert.deepEqual((await mcpTool(curator, 'showcase_get', { city_id: 'danang' })).shelves.map((sh: { title: string }) => sh.title), ['Где потанцевать', 'Выбор команды', 'Танцуем всю неделю']);
+
+  // Место и статус от команды полку не закрепляют: куратор по-прежнему ведёт её сам.
+  const moved = (await (await call(admin, 'PATCH', `/admin/shelves/${proposed.id}`, { status: 'hidden', position: 4 })).json()) as AdminShelf;
+  assert.deepEqual([moved.status, moved.position, moved.pinned], ['hidden', 4, false]);
+  assert.equal((await mcpTool(curator, 'admin_shelves_update', { shelf_id: proposed.id, status: 'published' })).status, 'published');
+
+  // Правка содержимого человеком закрепляет полку куратора — дальше куратор её не трогает.
+  const edited = (await (await call(admin, 'PATCH', `/admin/shelves/${proposed.id}`, { title: 'Танцы на неделе' })).json()) as AdminShelf;
+  assert.deepEqual([edited.title, edited.pinned, edited.author], ['Танцы на неделе', true, 'curator']);
+  assert.deepEqual(await mcpTool(curator, 'admin_shelves_update', { shelf_id: proposed.id, title: 'Снова моё' }), { error: 'shelf_locked' });
+
+  // Список команды: все полки со статусами и числом событий; удаление отменяется из журнала.
+  const all = (await (await call(admin, 'GET', '/admin/shelves?city_id=danang')).json()) as AdminShelf[];
+  assert.deepEqual(all.map((sh) => [sh.title, sh.events_count]), [['Где потанцевать', 3], ['Выбор команды', 3], ['Почти пусто', 2], ['Танцы на неделе', 3]]);
+  const extra = await mcpTool(curator, 'admin_shelves_create', { city_id: 'danang', title: 'Наверх', rule: { topic: 'танцы' }, position: 0 });
+  assert.equal(extra.position, 5, 'новая полка куратора — ниже всех полок команды и закреплённых');
+  assert.equal((await mcpTool(curator, 'admin_shelves_delete', { shelf_id: extra.id })).ok, true);
+  assert.equal((await call(admin, 'DELETE', `/admin/shelves/${picked.id}`)).status, 204);
+  const removal = (await db.select().from(adminActions).orderBy(desc(adminActions.created_at)).limit(1))[0]!;
+  assert.deepEqual([removal.action, removal.entity, removal.entity_id], ['admin_shelves_delete', 'shelf', picked.id]);
+  assert.equal((await call(admin, 'POST', `/admin/actions/${removal.id}/undo`)).status, 201);
+  assert.ok((await showcase()).some((sh) => sh.id === picked.id));
+  assert.equal((await call(admin, 'PATCH', `/admin/shelves/${randomUUID()}`, { title: 'Х' })).status, 404);
+  assert.equal((await call(admin, 'PATCH', '/admin/shelves/nope', { title: 'Х' })).status, 404);
+
+  // Событие ручной полки прошло — полку всё равно можно править тем же списком; новое неизвестное — отказ.
+  await db.execute(sql`update collected_events set starts_at = now() - interval '2 days' where external_id = 'telegram:shelftest/1#0'`);
+  const kept = await call(admin, 'PATCH', `/admin/shelves/${picked.id}`, { title: 'Выбор недели', event_ids: [ids[2], ids[0], ids[3]] });
+  assert.equal(kept.status, 200);
+  assert.deepEqual(((await kept.json()) as AdminShelf).events.map((e) => e.title), ['Кизомба', 'Покер']);
+  assert.deepEqual(await (await call(admin, 'PATCH', `/admin/shelves/${picked.id}`, { event_ids: [ids[2], 'nope-1-0'] })).json(), { error: 'event_not_found' });
+
+  // Лимит куратора: за сутки не больше CURATOR_DAILY_CHANGES изменений.
+  const actor_id = await uid(70);
+  await db.insert(adminActions).values(Array.from({ length: 40 }, () => ({ actor_id, via: 'mcp' as const, action: 'admin_shelves_update', entity: 'shelf' as const, entity_id: proposed.id, input: { author: 'curator' }, undoable: false })));
+  assert.deepEqual(await mcpTool(curator, 'admin_shelves_create', { city_id: 'danang', title: 'Ещё', rule: { topic: 'танцы' } }), { error: 'too_many_changes' });
+
+  await call(admin, 'PATCH', '/admin/cities/danang', { showcase_mode: 'draft' });
+  await db.delete(shelves);
+  await db.execute(sql`delete from collected_events where channel = 'shelftest'`);
+});
+
+test('куратор: задание раз в день в его час по времени города, с режимом витрины', async () => {
+  const tasks: string[] = [];
+  const ask = curator.ask;
+  curator.ask = async (task) => (tasks.push(task), 'Добавил «Сегодня вечером»');
+  assert.deepEqual(await requestCuration(db, Date.parse('2026-12-01T00:30:00Z')), [], 'роль не настроена — ничего');
+  settings.curatorUrl = 'http://curator.test';
+  // 00:30 UTC — 07:30 в Дананге (UTC+7): час куратора.
+  assert.deepEqual(await requestCuration(db, Date.parse('2026-12-01T00:30:00Z')), ['danang']);
+  assert.match(tasks[0]!, /city_id: danang\) на 2026-12-01\. Режим витрины: draft/);
+  assert.deepEqual(await requestCuration(db, Date.parse('2026-12-01T00:50:00Z')), [], 'за день — один раз');
+  assert.deepEqual(await requestCuration(db, Date.parse('2026-12-01T03:00:00Z')), [], 'не его час');
+  assert.deepEqual(await requestCuration(db, Date.parse('2026-12-02T00:10:00Z')), ['danang'], 'на следующий день — снова');
+  // Роль не ответила — день не засчитан: следующий проход в тот же час спрашивает снова.
+  curator.ask = async (task) => (tasks.push(task), null);
+  assert.deepEqual(await requestCuration(db, Date.parse('2026-12-03T00:05:00Z')), ['danang']);
+  assert.deepEqual(await requestCuration(db, Date.parse('2026-12-03T00:15:00Z')), ['danang']);
+  settings.curatorUrl = '';
+  curator.ask = ask;
+});
+
 // Операции команды: инструмент MCP ↔ маршрут REST. Изменяющие из них проверяет тест журнала ниже.
 const ADMIN_PAIRS: Record<string, string> = {
   admin_overview_get: 'GET /admin/overview',
@@ -2197,6 +2343,10 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_practices_update: 'PATCH /admin/practices/:id',
   admin_jobs_list: 'GET /admin/jobs',
   admin_jobs_update: 'PATCH /admin/jobs/:id',
+  admin_shelves_list: 'GET /admin/shelves',
+  admin_shelves_create: 'POST /admin/shelves',
+  admin_shelves_update: 'PATCH /admin/shelves/:id',
+  admin_shelves_delete: 'DELETE /admin/shelves/:id',
   admin_hosts_delete: 'DELETE /admin/hosts/:id',
   admin_users_search: 'GET /admin/users',
   admin_users_get: 'GET /admin/users/:id',
@@ -2503,6 +2653,7 @@ test('парность: у каждого инструмента MCP есть м
     search: 'GET /search',
     jobs_list: 'GET /jobs',
     jobs_get: 'GET /jobs/:id',
+    showcase_get: 'GET /showcase',
     hosts_practices_signup: 'POST /hosts/:id/practices/signup',
     collected_events_claim: 'POST /collected-events/:id/claim',
     collected_events_signup: 'POST /collected-events/:id/signup',
@@ -2578,13 +2729,14 @@ async function world() {
   const [practice] = await db.insert(practicesTable).values({ host_id: profile!.id, title: 'Массаж', topic: 'телесные практики' }).returning();
   const [job] = await db.insert(jobs).values({ title: 'Официант', telegram_username: 'cafe_hr', announcement: { url: `https://t.me/auditjobs/${n}`, text: 'Ищем официанта' }, text_hash: `audit${n}` }).returning();
   const [account] = await db.insert(tgAccounts).values({ label: 'Основной', phone: `+7900${base}` }).returning();
+  const [shelf] = await db.insert(shelves).values({ city_id: 'danang', title: `Полка ${n}`, rule: { period: 'week' }, author: 'team', position: 1000 + n }).returning();
   const source = `auditsrc${n}`;
   await db.insert(sources).values({ channel: source });
   const [conversation] = await db.insert(conversations).values({ channel: 'bot', peer_id: guestId, peer_name: 'Гость' }).returning();
   const [draft] = await db.insert(messages).values({ conversation_id: conversation!.id, direction: 'out', author: 'agent:host', text: 'Привет', status: 'draft' }).returning();
   return {
     n, hostId, guestId, otherId, eventId, t1: t1!.id, t2: t2!.id, slug: `auditchan-${n}-0`, profileId: profile!.id, practiceId: practice!.id, jobId: job!.id, accountId: account!.id,
-    conversationId: conversation!.id, draftId: draft!.id, contactId: contact!.id, source,
+    conversationId: conversation!.id, draftId: draft!.id, contactId: contact!.id, source, shelfId: shelf!.id,
   };
 }
 type World = Awaited<ReturnType<typeof world>>;
@@ -2616,6 +2768,12 @@ const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
   admin_hosts_update: (w) => ({ args: { host_id: w.profileId, name: 'Игорь' }, params: { id: w.profileId }, body: { name: 'Игорь' }, entity_id: w.profileId }),
   admin_practices_update: (w) => ({ args: { practice_id: w.practiceId, status: 'published' }, params: { id: w.practiceId }, body: { status: 'published' }, entity_id: w.profileId }),
   admin_jobs_update: (w) => ({ args: { job_id: w.jobId, status: 'published' }, params: { id: w.jobId }, body: { status: 'published' }, entity_id: w.jobId }),
+  admin_shelves_create: (w) => {
+    const input = { city_id: 'danang', title: `Новая ${w.n}`, rule: { period: 'week' } };
+    return { args: input, body: input, entity_id: (r) => r.id };
+  },
+  admin_shelves_update: (w) => ({ args: { shelf_id: w.shelfId, title: 'Другая' }, params: { id: w.shelfId }, body: { title: 'Другая' }, entity_id: w.shelfId }),
+  admin_shelves_delete: (w) => ({ args: { shelf_id: w.shelfId }, params: { id: w.shelfId }, entity_id: w.shelfId }),
   admin_hosts_delete: (w) => ({ args: { host_id: w.profileId }, params: { id: w.profileId }, entity_id: w.profileId }),
   admin_users_update: (w) => ({ args: { user_id: w.otherId, first_name: 'Иван' }, params: { id: w.otherId }, body: { first_name: 'Иван' }, entity_id: String(w.otherId) }),
   admin_users_delete: (w) => ({ args: { user_id: w.guestId }, params: { id: w.guestId }, entity_id: String(w.guestId) }),

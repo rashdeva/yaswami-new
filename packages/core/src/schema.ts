@@ -71,6 +71,8 @@ export const City = z.object({
   // Центр города, имена — как у coordinate в Luma. По ним считаются соседние города (nearbyCityIds) и город по геолокации.
   latitude: z.number().min(-90).max(90).nullable().describe('Latitude of the city centre, e.g. 5.9746; with longitude it makes cities within 25 km neighbours whose events the catalogue shows too'),
   longitude: z.number().min(-180).max(180).nullable().describe('Longitude of the city centre, e.g. 80.4297'),
+  // Кто публикует полки витрины города (shelves.ts, ADR-0009). В Luma такого нет.
+  showcase_mode: z.enum(['draft', 'auto']).describe('Showcase of the city: draft — curator changes wait for the team (new curator shelves are proposed); auto — the curator publishes itself'),
   created_at: z.date(),
 });
 export type City = z.infer<typeof City>;

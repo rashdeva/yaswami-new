@@ -7,8 +7,9 @@ import { and, desc, eq, getTableColumns, sql } from 'drizzle-orm';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { AdminAction, AdminActionList, AdminActionListInput, AdminEntity, User } from '@yaswami/core';
 import type { Db } from './db/client.ts';
+import type { TokenScope } from './db/schema.ts';
 import {
-  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hostSearches, hosts, jobs, messages, photos, practices, practiceSignups, shares, sources, topics,
+  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hostSearches, hosts, jobs, messages, photos, practices, practiceSignups, shares, shelves, sources, topics,
   ticketTypes, tgAccounts, users,
 } from './db/schema.ts';
 import { AppError, collectedExternalId } from './services.ts';
@@ -17,6 +18,8 @@ import { AppError, collectedExternalId } from './services.ts';
 export interface Ctx {
   actor: User;
   via: AdminAction['via'];
+  /** Область токена роли Hermes (MCP): по ней сервис узнаёт, например, куратора витрины. */
+  scope?: TokenScope | null;
 }
 
 // --- Побочные действия вне базы
@@ -74,6 +77,7 @@ const KINDS: Record<AdminEntity, Kind> = {
   city: { root: cities, key: cities.id },
   // posted_at сдвигает сборщик при каждом повторе объявления: в снимке он ломал бы отмену.
   job: { root: jobs, key: jobs.id, omit: ['posted_at'] },
+  shelf: { root: shelves, key: shelves.id },
 };
 
 /** Снимок — JSON: даты строками ISO, байты (фото) — base64. Строки детей по порядку, чтобы снимки сравнивались. */

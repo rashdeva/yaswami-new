@@ -52,3 +52,9 @@ if [ -n "${HOST_API_KEY:-}" ]; then install_profile host "$HOST_API_KEY"; fi
 # illustrator — рисует ролики о событиях. Ключ не задан — профиль не ставим: роль необязательная,
 # из-за неё контейнер падать не должен.
 if [ -n "${ILLUSTRATOR_API_KEY:-}" ]; then install_profile illustrator "$ILLUSTRATOR_API_KEY"; fi
+# curator — раз в день собирает витрину из полок (ADR-0009). Только со своим токеном области curator: на токене админа
+# сервер принял бы его правки за правки команды (закреплял бы полки) и не держал бы его в границах.
+if [ -n "${CURATOR_API_KEY:-}" ]; then
+  if [ -n "${YASWAMI_CURATOR_MCP_TOKEN:-}" ]; then install_profile curator "$CURATOR_API_KEY" "$YASWAMI_CURATOR_MCP_TOKEN"
+  else echo "[yaswami] ВНИМАНИЕ: CURATOR_API_KEY задан без YASWAMI_CURATOR_MCP_TOKEN — роль curator не ставится"; fi
+fi

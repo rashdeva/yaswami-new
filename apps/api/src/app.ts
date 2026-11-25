@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
+  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -28,6 +28,7 @@ import { handleMcp } from './mcp.ts';
 import { getPhoto } from './photos.ts';
 import * as hs from './host-searches.ts';
 import * as s from './services.ts';
+import { createShelf, deleteShelf, getShowcase, listShelves, updateShelf } from './shelves.ts';
 import { getTopicIcon, listTopics } from './topics.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
@@ -85,6 +86,17 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/candidates', async (c) => c.json(await admin.listTopicCandidates(db, TopicCandidateListInput.parse(c.req.query()))))
     .post('/', json(TopicCreateInput), async (c) => c.json(await admin.createTopic(db, ctx(c), c.req.valid('json')), 201))
     .patch('/:name', json(TopicUpdateInput), async (c) => c.json(await admin.updateTopic(db, ctx(c), c.req.param('name'), c.req.valid('json'))));
+  // Витрина из полок (shelves.ts, ADR-0009) — по той же причине отдельно. Витрину видит и анонимный посетитель.
+  const showcase: Hono<Env> = new Hono<Env>()
+    .get('/', async (c) => c.json(await getShowcase(db, ShelfListInput.parse(c.req.query()))));
+  const adminShelves: Hono<Env> = new Hono<Env>()
+    .get('/', async (c) => c.json(await listShelves(db, ShelfListInput.parse(c.req.query()))))
+    .post('/', json(ShelfCreateInput), async (c) => c.json(await createShelf(db, ctx(c), c.req.valid('json')), 201))
+    .patch('/:id', json(ShelfUpdateInput), async (c) => c.json(await updateShelf(db, ctx(c), c.req.param('id'), c.req.valid('json'))))
+    .delete('/:id', async (c) => {
+      await deleteShelf(db, ctx(c), c.req.param('id'));
+      return c.body(null, 204);
+    });
   // Поиск источников для города (admin/sources.ts) — по той же причине отдельно.
   const adminSourceSearches: Hono<Env> = new Hono<Env>()
     .get('/', async (c) => c.json(await admin.listSourceSearches(db, c.req.query('city_id'))))
@@ -118,6 +130,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       return c.body(new Uint8Array(data), 200, { 'content-type': data[0] === 0x89 ? 'image/png' : 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' });
     });
   open.route('/topics', topics);
+  open.route('/showcase', showcase);
   const app = open
     .post('/telegram/webhook', async (c) => {
       const secret = Buffer.from(telegram?.webhookSecret ?? '');
@@ -357,6 +370,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     });
   app.route('/admin/topics', adminTopics); // после `.use('/admin/*')`: только команде
   app.route('/admin/source-searches', adminSourceSearches);
+  app.route('/admin/shelves', adminShelves);
   return app;
 }
 
