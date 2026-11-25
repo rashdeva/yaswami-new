@@ -8,7 +8,7 @@ import { createDb } from './db/client.ts';
 import { DEFAULT_CITY_ID } from '@yaswami/core';
 import { eventPage, feedPage, inject, notFoundPage, sitemap } from './pages.ts';
 import type { Page } from './pages.ts';
-import { AppError, getCollectedEvent, listCities, listCollectedEvents, startVideoLoop } from './services.ts';
+import { AppError, getCollectedEvent, listAllCities, listCities, listCollectedEvents, startVideoLoop } from './services.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 import { startCuratorLoop } from './curator.ts';
@@ -88,7 +88,7 @@ if (existsSync(WEB)) {
     const withCities = { ...page, initial: { ...page.initial, cities: await listCities(db) } };
     return new Response(inject(template, withCities), { status: page.status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } });
   };
-  const cityName = async (id: string) => (await listCities(db)).find((c) => c.id === id)?.name ?? '';
+  const cityName = async (id: string) => (await listAllCities(db)).find((c) => c.id === id)?.name ?? '';
   server
     // Витрина для поисковиков — первого города: её же приложение берёт как ленту первого города (served.feed).
     .get('/', async () => html(feedPage(await listCollectedEvents(db), PUBLIC_URL, await cityName(DEFAULT_CITY_ID))))

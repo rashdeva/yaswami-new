@@ -58,6 +58,9 @@ export const User = z.object({
 });
 export type User = z.infer<typeof User>;
 
+/** Статус города: работает или в архиве. */
+export const CITY_LAUNCH_STATUSES = ['launched', 'archived'] as const;
+
 /**
  * Город: к нему относятся источники, собранные события, организаторы и события Ясвами. В Luma такого нет: там город —
  * поле адреса, отдельного ресурса нет. `id` — короткое латинское имя, оно же стоит в `city_id` у остальных сущностей.
@@ -73,6 +76,8 @@ export const City = z.object({
   longitude: z.number().min(-180).max(180).nullable().describe('Longitude of the city centre, e.g. 80.4297'),
   // Кто публикует полки витрины города (shelves.ts, ADR-0009). В Luma такого нет.
   showcase_mode: z.enum(['draft', 'auto']).describe('Showcase of the city: draft — curator changes wait for the team (new curator shelves are proposed); auto — the curator publishes itself'),
+  // Имя и смысл — как launch_status календаря в Luma; там есть ещё coming-soon, нам он пока не нужен.
+  launch_status: z.enum(CITY_LAUNCH_STATUSES).describe('launched — the city is live; archived — paused: hidden from guests, the collector reads none of its sources and searches no new ones, the curator and the librarian skip it. Nothing is deleted: launching it again brings everything back'),
   created_at: z.date(),
 });
 export type City = z.infer<typeof City>;

@@ -4,10 +4,21 @@ import { DEFAULT_CITY_ID } from '@yaswami/core';
 
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Название города и его другие написания; канал «про город», если в названии есть основа любого из них (без окончания: «Дананге»). */
+/**
+ * Название города и его другие написания: канал «про город», если город в нём — отдельным словом. Русскому названию
+ * можно падежное окончание («в Дананге», «Коломбо», но не «Эллипс» для Эллы), латинскому — нет: иначе Galle находил GT_Gallery, а Kandy — kandybaaa, и поиск
+ * источников приносил галереи, рестораны и обменники. В username слова склеены (danangevent, eventnhatrang): там
+ * латинское название может стоять в начале или в конце слова, но только длинное — от шести букв, короткое — лишь целиком
+ * или между подчёркиваниями (gt_galle).
+ */
 export function cityMatcher(names) {
-  const stems = names.map((n) => escape(n.trim().toLowerCase().replace(/[аяоеыиуьй]$/, '')).replace(/\s+/g, '\\s?')).filter(Boolean);
-  return new RegExp(stems.join('|'), 'i');
+  const stems = names.map((n) => n.trim().toLowerCase().replace(/[аяоеыиуьй]$/, '')).filter(Boolean);
+  const words = stems.map((s) => escape(s).replace(/\s+/g, '\\s?'));
+  const word = new RegExp(`(?<![\\p{L}\\p{N}])(?:${words.join('|')})(?:[аеиоуыэюяёь][мхйю]?)?(?![\\p{L}\\p{N}])`, 'iu');
+  const glued = stems.map((s) => s.replace(/[^a-z0-9]/g, '')).filter((s, i) => s && /^[a-z0-9\s.'-]+$/.test(stems[i]));
+  const inUsername = (token) => [token.replace(/_/g, ''), ...token.split('_')].some((t) =>
+    glued.some((c) => t === c || (c.length >= 6 && (t.startsWith(c) || t.endsWith(c)))));
+  return { test: (text) => word.test(text) || text.toLowerCase().split(/[^a-z0-9_]+/).some((t) => t && inUsername(t)) };
 }
 
 /** Город разовых скриптов: CITY_ID (по умолчанию первый), его другие написания из базы и из CITY_ALIASES через запятую. */
