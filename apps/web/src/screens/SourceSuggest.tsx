@@ -15,8 +15,8 @@ interface Props {
 }
 
 /**
- * Внизу «Всех событий»: гость предлагает канал Telegram или профиль Instagram с анонсами. Заявку решает команда в
- * админке; одобрит — бот напишет. Канал записывается за городом, который гость смотрит.
+ * В самом низу главной: не нашли своё событие — предложите канал Telegram или профиль Instagram, где о нём пишут.
+ * Заявку решает команда в админке; одобрит — бот напишет. Канал записывается за городом, который гость смотрит.
  */
 export function SourceSuggest({ city_id, authed, onLogin }: Props) {
   const [open, setOpen] = useState(false);
@@ -40,8 +40,8 @@ export function SourceSuggest({ city_id, authed, onLogin }: Props) {
 
   return (
     <section className="suggest">
-      <b>Знаете канал с анонсами?</b>
-      <p>Пришлите Telegram-канал или Instagram, где пишут о событиях города. Проверим и начнём собирать события оттуда.</p>
+      <b>Не нашли своё событие?</b>
+      <p>Предложите Telegram-канал или Instagram, где о нём пишут. Проверим и начнём собирать события оттуда.</p>
       <button className="cta alt" onClick={start}>Предложить канал</button>
       <Drawer.Root open={open} onOpenChange={close}>
         <Drawer.Portal>

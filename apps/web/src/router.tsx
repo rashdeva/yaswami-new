@@ -7,7 +7,8 @@ import { startLogin } from './api.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
 import { useFeature } from './hooks/useFeature.ts';
 import { contactMatch, useHostSearches } from './hooks/useHostSearches.ts';
-import { useSession } from './hooks/useSession.ts';
+import { useCity, useSession } from './hooks/useSession.ts';
+import { SourceSuggest } from './screens/SourceSuggest.tsx';
 import { useViewed } from './hooks/useViewed.ts';
 import { CollectedScreen } from './screens/CollectedScreen.tsx';
 import { CreateScreen } from './screens/CreateScreen.tsx';
@@ -70,9 +71,12 @@ function useOpenEntry() {
 function FeedPage() {
   const { q = '' } = feed.useSearch();
   const navigate = useNavigate();
+  const { authed, canLogin } = useSession();
+  const { city_id } = useCity();
   return (
     <FeedScreen
       lead={<Claims />}
+      tail={<SourceSuggest city_id={city_id} authed={authed} onLogin={canLogin ? () => startLogin('/') : null} />}
       onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })}
       onOpenShelf={(id) => void navigate({ to: '/s/$id', params: { id } })}
       onOpenDirection={(slug) => void navigate({ to: '/d/$slug', params: { slug } })}
@@ -109,11 +113,7 @@ const directionRoute = createRoute({ getParentRoute: () => app, path: '/d/$slug'
 function AllEventsPage() {
   const navigate = useNavigate();
   const { onBack } = useShell();
-  const { authed, canLogin } = useSession();
-  return (
-    <AllEventsScreen onBack={onBack} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })}
-      authed={authed} onLogin={canLogin ? () => startLogin('/all') : null} />
-  );
+  return <AllEventsScreen onBack={onBack} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
 }
 const allRoute = createRoute({ getParentRoute: () => app, path: '/all', component: AllEventsPage });
 

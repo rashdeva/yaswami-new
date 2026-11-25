@@ -21,6 +21,8 @@ import { dayLabel, eventsCount } from '../format.ts';
 interface Props {
   /** Блок над списком: предложение организатору подтвердить свои события. */
   lead?: ReactNode;
+  /** Блок в самом низу, когда витрина загрузилась: «Не нашли своё событие? Предложите канал». */
+  tail?: ReactNode;
   onOpen: (event: CollectedEventItem) => void;
   /** «Все» у полки — экран полки целиком. */
   onOpenShelf: (id: string) => void;
@@ -43,7 +45,7 @@ const POPULAR = '🔥';
  * и соседних городов по дням. Открыта без входа; кто ещё не выбрал город — сначала выбирает. Выбрал тему в фильтре —
  * полки прячутся: человек ищет сам. Набрал запрос в строке поиска — вместо витрины находки, события первыми.
  */
-export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection, onOpenAll, query, onQuery, onOpenEntry }: Props) {
+export function FeedScreen({ lead, tail, onOpen, onOpenShelf, onOpenDirection, onOpenAll, query, onQuery, onOpenEntry }: Props) {
   const city = useCity();
   const search = useSearch(query, 'feed');
   const { items, failed } = useCollectedFeed();
@@ -165,6 +167,7 @@ export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection, onOpenA
           </section>
         );
       })}
+      {items && tail}
     </>
   );
 }
