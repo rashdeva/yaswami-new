@@ -48,6 +48,8 @@ test('сборщик: события, источники и отметки', asy
   assert.deepEqual((await store.addSources(['Big_Chat'])).map((s: any) => [s.channel, s.kind]), [['big_chat', 'leads']]);
   assert.deepEqual(await store.addSources([]), []);
   assert.deepEqual((await store.sources()).map((s: any) => [s.channel, s.city_id, s.host_username]), [['danang', 'danang', null], ['yoga', 'danang', null]]);
+  // У каждого нового источника — свой календарь с его именем.
+  assert.deepEqual((await sql`select s.channel, k.name from sources s join calendars k on k.id = s.calendar_id where s.channel in ('danang', 'yoga') order by s.channel`).map((r) => [r.channel, r.name]), [['danang', 'danang'], ['yoga', 'yoga']]);
   assert.deepEqual((await store.chats()).map((c: any) => [c.chat, c.city_id, c.city]), [['big_chat', 'danang', 'Дананг']]);
   assert.deepEqual((await store.cities()).map((c: any) => [c.id, c.name]), [['danang', 'Дананг']]);
   await sql`update sources set enabled = false where channel = 'yoga'`;
@@ -287,14 +289,20 @@ test('сборщик: профили Instagram — свой список, Instag
   assert.deepEqual([...await store.adoptHostInstagram(5)], ['instagram:anna.yoga'], 'отклонённый организатор — не источник');
   assert.deepEqual([...await store.adoptHostInstagram(5)], [], 'уже в источниках');
   await store.addSources(['danang']);
-  await sql`insert into sources (channel, kind) values ('instagram:leads_by_mistake', 'leads')`;
+  await sql`with k as (insert into calendars (name) values ('leads_by_mistake') returning id) insert into sources (channel, kind, calendar_id) select 'instagram:leads_by_mistake', 'leads', id from k`;
   assert.deepEqual((await store.sources()).map((s: any) => s.channel), ['danang'], 'юзербот Instagram не читает');
   assert.deepEqual((await store.chats()).map((c: any) => c.chat), []);
   assert.deepEqual((await store.instagramSources()).map((s: any) => [s.channel, s.host_username, s.city]), [['instagram:anna.yoga', 'ig_anna', 'Дананг'], ['instagram:leads_by_mistake', null, 'Дананг']]);
-  // Профиль нашёл поиск, организатор у источника не указан, но этот Instagram записан у организатора — контакт его.
-  await sql`insert into sources (channel) values ('instagram:Found.By.Tag')`;
+  // Профиль нашёл поиск, организатор у календаря источника не указан, но этот Instagram записан у организатора — контакт его.
+  assert.deepEqual(await store.addFoundSources('danang', ['instagram:Found.By.Tag']), ['instagram:Found.By.Tag']);
   await sql`insert into hosts (username, name, instagram_handle) values ('ig_found', 'Найденный', 'found.by.tag')`;
   assert.equal((await store.instagramSources()).find((s: any) => s.channel === 'instagram:Found.By.Tag').host_username, 'ig_found');
+  // Telegram и Instagram организатора — в одном его календаре, с его именем.
+  await sql`update hosts set channel = 'anna_tg_channel' where username = 'ig_anna'`;
+  assert.ok((await store.adoptHostChannels(5)).includes('anna_tg_channel'));
+  assert.deepEqual((await sql`
+    select k.name, h.username, array_agg(s.channel order by s.channel) as channels from sources s join calendars k on k.id = s.calendar_id join hosts h on h.id = k.host_id
+    where h.username = 'ig_anna' group by k.id, h.username`).map((r) => [r.name, r.username, r.channels]), [['Анна', 'ig_anna', ['anna_tg_channel', 'instagram:anna.yoga']]]);
 
   const event = { title: 'Йога', description: '', starts_at: new Date(Date.now() + 86_400_000).toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, instagram_username: 'anna.yoga', url: null };
   await store.upsert({ external_id: 'instagram:C1#0', channel: 'instagram:anna.yoga', city_id: 'danang', announcement: { id: 'C1', url: 'https://www.instagram.com/p/C1/', text: '' }, event, signup_url: 'https://ig.me/m/anna.yoga' });
@@ -314,11 +322,13 @@ test('сборщик: профили Instagram — свой список, Instag
 
 test('сборщик: товары мастеров — источники, мастер из товаров, повтор не меняет решение команды', async () => {
   await sql`delete from sources`;
-  // Канал мастера (у источника Host) и группа объявлений; анонсы и вопросы из них не берутся.
+  // Канал мастера (у календаря источника — Host) и группа объявлений; анонсы и вопросы из них не берутся.
   const [melody] = await sql`insert into hosts (telegram_id, username, name) values (-100900, 'melody_cafe', 'Melody') returning id`;
-  await sql`insert into sources (channel, kind, host_id) values ('danangmelody', 'products', ${melody!.id})`;
-  await sql`insert into sources (channel, kind) values ('ads_danang', 'products')`;
-  await sql`insert into sources (channel, kind, enabled) values ('off_products', 'products', false)`;
+  // Канал мастера — в его календаре; у группы календарь свой, без Host.
+  await sql`with k as (insert into calendars (name, host_id) values ('Melody', ${melody!.id}) returning id) insert into sources (channel, kind, calendar_id) select 'danangmelody', 'products', id from k`;
+  await store.addSources(['ads_danang'], 'products');
+  await store.addSources(['off_products'], 'products');
+  await sql`update sources set enabled = false where channel = 'off_products'`;
   assert.deepEqual((await store.productSources()).map((s: any) => [s.channel, s.host_id, s.host_username, s.host_status, s.city_id, s.city]), [
     ['danangmelody', melody!.id, 'melody_cafe', 'pending', 'danang', 'Дананг'],
     ['ads_danang', null, null, null, 'danang', 'Дананг'],

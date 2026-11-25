@@ -5,7 +5,7 @@ import * as z from 'zod';
 import type { CollectedEventItem, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, AdminGuestUpdateInput, CityCreateInput, CityUpdateInput,
-  CityFilterInput, CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminProductListInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TEMPLATES, cityId, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSelfUpdateInput,
+  CityFilterInput, CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminProductListInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, CalendarUpdateInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TEMPLATES, cityId, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSelfUpdateInput,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
@@ -496,18 +496,29 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
     // --- Источники сборщика (admin/sources.ts)
     tool('admin_sources_list', {
       title: 'Announcement sources', readOnly: true, shape: {},
-      description: 'Telegram channels and groups the collector reads, newest first. `kind`: announcements — events are taken from it; leads — a big city chat: questions "where to go" and masters. Masters get the city of the chat. `host` — the organizer the source belongs to: set by the collector when it takes a channel from an organizer\'s profile, or by the team; null — none. Disabled sources are not read; `disabled_reason` — the collector disabled it itself (the channel is gone or private), null — the team did.',
+      description: 'Telegram channels and groups and Instagram profiles (instagram:<handle>) the collector reads, newest first. `kind`: announcements — events are taken from it; leads — a big city chat: questions "where to go" and masters. Masters get the city of the chat. `calendar` — the calendar the source belongs to (admin_calendars_list); `host` — the organizer of that calendar, null — none. Disabled sources are not read; `disabled_reason` — the collector disabled it itself (the channel is gone or private), null — the team did.',
     }, () => admin.listSources(db));
 
     tool('admin_sources_create', {
       title: 'Add announcement source', shape: SourceCreateInput.shape,
-      description: `Start reading announcements from a public Telegram channel or group; the collector picks it up on its next pass. Pass city_id when the channel is about another city than the first one, and kind for a city chat. ${ONLY_TEAM} Errors: source_exists, city_not_found.`,
+      description: `Start reading announcements from a public Telegram channel or group or an Instagram profile; the collector picks it up on its next pass. Pass city_id when the channel is about another city than the first one, kind for a city chat, and calendar_id when it is another platform of a venue, community or organizer already added. ${ONLY_TEAM} Errors: source_exists, city_not_found, calendar_not_found.`,
     }, (a) => admin.createSource(db, ctx, a));
 
     tool('admin_sources_update', {
       title: 'Edit announcement source', shape: { channel: z.string().describe('Channel from admin_sources_list'), ...SourceUpdateInput.shape },
-      description: `Stop or resume reading a source (e.g. when an organizer's channel turns out to be someone else's or not about events), or set the organizer it belongs to: announcements without a contact then get this organizer as the contact. Only passed fields change. ${ONLY_TEAM} Errors: not_found, host_not_found, city_not_found.`,
+      description: `Stop or resume reading a source (e.g. when an organizer's channel turns out to be someone else's or not about events), or move it into another calendar: the Telegram channel and the Instagram profile of one venue, community or organizer belong to one calendar. Moved into an organizer's calendar, announcements without a contact get this organizer as the contact. Only passed fields change. ${ONLY_TEAM} Errors: not_found, calendar_not_found, city_not_found.`,
     }, ({ channel, ...input }) => admin.updateSource(db, ctx, channel, input));
+
+    // --- Календари источников (admin/calendars.ts)
+    tool('admin_calendars_list', {
+      title: 'Source calendars', readOnly: true, shape: {},
+      description: 'Calendars, as in Luma: a venue, community, organizer or listing that publishes announcements, with its `sources` (its Telegram channel, Instagram profile). Every source is in a calendar. `kind`: host — personal channel of an organizer; venue — a place; community — own events by several leaders; listing — other people\'s events; null — not set. `suggested_kind` — guessed from collected events of 90 days by the number of different contacts and topics; null — too few events. `host` — the organizer the calendar belongs to. Only the team sees calendars for now.',
+    }, () => admin.listCalendars(db));
+
+    tool('admin_calendars_update', {
+      title: 'Edit source calendar', shape: { calendar_id: z.uuid().describe('Calendar id from admin_calendars_list'), ...CalendarUpdateInput.shape },
+      description: `Rename a calendar, set its kind (e.g. accept suggested_kind) or the organizer it belongs to: announcements without a contact from any of its sources then get this organizer as the contact. An organizer has one calendar: if they already have one, move the sources there with admin_sources_update instead. Only passed fields change. ${ONLY_TEAM} Errors: not_found, host_not_found, host_has_calendar.`,
+    }, ({ calendar_id, ...input }) => admin.updateCalendar(db, ctx, calendar_id, input));
 
     tool('admin_source_searches_list', {
       title: 'Source searches', readOnly: true, shape: { city_id: cityId.optional().describe('Only searches of this city') },

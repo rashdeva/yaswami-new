@@ -9,7 +9,7 @@ import type { AdminAction, AdminActionList, AdminActionListInput, AdminEntity, U
 import type { Db } from './db/client.ts';
 import type { TokenScope } from './db/schema.ts';
 import {
-  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hostSearches, hosts, messages, photos, practices, practiceSignups, products, shares, shelves, sources, topics,
+  adminActions, calendars, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hostSearches, hosts, messages, photos, practices, practiceSignups, products, shares, shelves, sources, topics,
   ticketTypes, tgAccounts, users,
 } from './db/schema.ts';
 import { AppError, collectedExternalId } from './services.ts';
@@ -72,6 +72,8 @@ const KINDS: Record<AdminEntity, Kind> = {
   message: { root: messages, key: messages.id },
   contact: { root: contacts, key: contacts.id },
   source: { root: sources, key: sources.channel },
+  // Источники — отдельные сущности со своим журналом: в снимок календаря не входят.
+  calendar: { root: calendars, key: calendars.id },
   // Иконку рисует иллюстратор сам по себе, и она тяжёлая: в снимок не входит, отмена её не трогает.
   topic: { root: topics, key: topics.name, omit: ['icon', 'icon_at', 'icon_tries'] },
   city: { root: cities, key: cities.id },

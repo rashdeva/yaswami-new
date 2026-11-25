@@ -14,6 +14,34 @@ const linkUser = (tx, telegramId) => tx`
 
 export function createStore(url) {
   const sql = postgres(url, { onnotice: () => {} });
+  /**
+   * Новые источники (строки `sources` без calendar_id), каждый в свой календарь: у каждого источника есть календарь,
+   * имя нового — ник или username, команда переименует и склеит. Уже известный канал не трогаем. Возвращает добавленные.
+   */
+  const insertSources = (rows) => rows.length ? sql.begin(async (tx) => {
+    const added = [];
+    for (const row of rows) {
+      const [calendar] = await tx`
+        insert into calendars (name) select ${row.channel.replace(/^instagram:/, '')}
+        where not exists (select 1 from sources where lower(channel) = lower(${row.channel})) returning id`;
+      if (!calendar) continue;
+      const [source] = await tx`insert into sources ${tx({ ...row, calendar_id: calendar.id })} on conflict do nothing returning channel`;
+      if (source) added.push(source.channel);
+    }
+    return added;
+  }) : [];
+  /**
+   * Канал или Instagram организаторов — в источники, в календарь организатора (нет — заводим, с его именем): там его
+   * Telegram и Instagram оказываются вместе. `picked` — запрос `id, name, channel, city_id` по hosts, не больше `limit` строк.
+   */
+  const adoptForHosts = async (picked) => (await sql`
+    with picked as (${picked}),
+    made as (insert into calendars (name, host_id) select name, id from picked on conflict (host_id) do nothing returning id, host_id)
+    insert into sources (channel, calendar_id, city_id)
+    select p.channel, coalesce(m.id, k.id), p.city_id from picked p
+    left join made m on m.host_id = p.id left join calendars k on k.host_id = p.id
+    on conflict do nothing
+    returning channel`).map((r) => r.channel);
   return {
     /**
      * Источники из CHANNELS (LEAD_CHATS — с `kind` leads): добавляем те, которых ещё нет, в первый город.
@@ -21,7 +49,7 @@ export function createStore(url) {
      */
     addSources: async (channels, kind = 'announcements') => {
       if (!channels.length) return [];
-      await sql`insert into sources ${sql(channels.map((channel) => ({ channel, kind })))} on conflict do nothing`;
+      await insertSources(channels.map((channel) => ({ channel, kind })));
       // Уже были с другим видом: сборщик их не переделывает (вид правит команда), но о расхождении скажет.
       return sql`select channel, kind from sources where lower(channel) in ${sql(channels.map((c) => c.toLowerCase()))} and kind <> ${kind}`;
     },
@@ -52,9 +80,7 @@ export function createStore(url) {
       update source_searches set status = ${error ? 'failed' : 'done'}, error = ${error}, results = ${sql.json(results)}, finished_at = now()
       where id = ${id}`,
     /** Найденные поиском каналы — в источники города; уже известный канал не трогаем. Возвращает добавленные. */
-    addFoundSources: async (city_id, channels) => channels.length ? (await sql`
-      insert into sources ${sql(channels.map((channel) => ({ channel, city_id, kind: 'announcements' })))}
-      on conflict do nothing returning channel`).map((r) => r.channel) : [],
+    addFoundSources: (city_id, channels) => insertSources(channels.map((channel) => ({ channel, city_id, kind: 'announcements' }))),
     /** Каналы и группы, которые аккаунт `account` уже нашёл по username (tg_peers): [{ username, peer_id, access_hash }]. */
     peers: (account) => sql`select username, peer_id, access_hash from tg_peers where account = ${account}`,
     savePeers: (account, peers) => peers.length ? sql`
@@ -64,22 +90,16 @@ export function createStore(url) {
     disableSource: (channel, reason) => sql`
       update sources set enabled = false, disabled_reason = ${reason} where lower(channel) = lower(${channel}) and enabled`,
     /** Каналы организаторов, которых ещё нет в источниках, — не больше `limit` за раз; возвращает добавленные. */
-    adoptHostChannels: async (limit) => (await sql`
-      insert into sources (channel, host_id, city_id)
-      select channel, id, city_id from hosts h
+    adoptHostChannels: (limit) => adoptForHosts(sql`
+      select id, name, channel, city_id from hosts h
       where channel is not null and h.city_id in (select id from cities where launch_status = 'launched') and not exists (select 1 from sources s where lower(s.channel) = lower(h.channel))
-      order by created_at limit ${limit}
-      on conflict do nothing
-      returning channel`).map((r) => r.channel),
+      order by created_at limit ${limit}`),
     /** Instagram организаторов (hosts.instagram_handle), которого ещё нет в источниках, — не больше `limit` за раз; возвращает добавленные. */
-    adoptHostInstagram: async (limit) => (await sql`
-      insert into sources (channel, host_id, city_id)
-      select 'instagram:' || instagram_handle, id, city_id from hosts h
+    adoptHostInstagram: (limit) => adoptForHosts(sql`
+      select id, name, 'instagram:' || instagram_handle as channel, city_id from hosts h
       where instagram_handle is not null and status <> 'rejected'
         and h.city_id in (select id from cities where launch_status = 'launched') and not exists (select 1 from sources s where lower(s.channel) = 'instagram:' || lower(h.instagram_handle))
-      order by created_at limit ${limit}
-      on conflict do nothing
-      returning channel`).map((r) => r.channel),
+      order by created_at limit ${limit}`),
     /** Включённые темы в порядке фильтров — как `GET /topics`: ими сборщик заменяет реестр ядра каждый проход. */
     topics: () => sql`
       select name, slug, emoji, color, what, why, first, not_for from topics where enabled order by position, created_at`,
@@ -131,22 +151,23 @@ export function createStore(url) {
      * Включённые источники работающих городов: город в архиве (`launch_status`) сборщик не читает вовсе — ни анонсы,
      * ни чаты, ни Instagram, — и не ищет ему новых каналов. У канала организатора — его username: контакт для анонсов
      * без контакта. Город источника (id, название, часовой пояс) получают события из него; в этом поясе ИИ читает время.
+     * Организатор источника — организатор его календаря.
      */
     sources: () => sql`
       select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
-      from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id
+      from sources s join cities c on c.id = s.city_id join calendars k on k.id = s.calendar_id left join hosts h on h.id = k.host_id
       where s.enabled and c.launch_status = 'launched' and s.kind = 'announcements' and s.channel not like 'instagram:%' order by s.created_at, s.channel`,
     /**
      * Включённые профили Instagram (instagram:<ник>) — в той же форме, что sources(); читаются через Apify, а не юзерботом.
-     * Организатор не указан у источника — берём того, у кого этот Instagram в профиле: его Telegram станет контактом.
+     * Организатор не указан у календаря источника — берём того, у кого этот Instagram в профиле: его Telegram станет контактом.
      */
     instagramSources: () => sql`
       select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
-      from sources s join cities c on c.id = s.city_id
+      from sources s join cities c on c.id = s.city_id join calendars k on k.id = s.calendar_id
       left join lateral (
         select username from hosts
-        where id = s.host_id or (s.host_id is null and status <> 'rejected' and 'instagram:' || lower(instagram_handle) = lower(s.channel))
-        order by id = s.host_id desc, created_at limit 1
+        where id = k.host_id or (k.host_id is null and status <> 'rejected' and 'instagram:' || lower(instagram_handle) = lower(s.channel))
+        order by id = k.host_id desc, created_at limit 1
       ) h on true
       where s.enabled and c.launch_status = 'launched' and s.channel like 'instagram:%' order by s.created_at, s.channel`,
     /**
@@ -159,12 +180,12 @@ export function createStore(url) {
       where s.enabled and c.launch_status = 'launched' and s.kind = 'leads' and s.channel not like 'instagram:%' order by s.created_at`,
     /**
      * Включённые источники товаров работающих городов (`kind` products): каналы мастеров и группы объявлений. Из них не
-     * берутся ни анонсы, ни вопросы, ни мастера-услуги. У канала мастера — его Host (`host_id`, username и статус):
+     * берутся ни анонсы, ни вопросы, ни мастера-услуги. У канала мастера — его Host (Host календаря источника: `host_id`, username и статус):
      * товары из канала — его; у группы Host нет, мастер — из текста поста. Новый мастер получает город источника.
      */
     productSources: () => sql`
-      select s.channel, s.host_id, h.username as host_username, h.status as host_status, s.city_id, c.name as city
-      from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id
+      select s.channel, k.host_id, h.username as host_username, h.status as host_status, s.city_id, c.name as city
+      from sources s join cities c on c.id = s.city_id join calendars k on k.id = s.calendar_id left join hosts h on h.id = k.host_id
       where s.enabled and c.launch_status = 'launched' and s.kind = 'products' and s.channel not like 'instagram:%' order by s.created_at, s.channel`,
     /**
      * Пост с этим текстом уже разбирали (объявление повторяют каждый день): его товарам — дата и ссылка нового поста,
@@ -266,14 +287,20 @@ export function createStore(url) {
       where username = ${username} and telegram_id is null`,
     /**
      * Профиль организатора. Сменил username — строка та же. Уже входил в Ясвами — профиль сразу привязан к нему.
-     * Заготовку команды (username без telegram_id) заполняем на месте: её id уже может стоять у источников. Если этот
-     * человек уже есть под другим username, источники заготовки переходят к его строке, а заготовка удаляется.
+     * Заготовку команды (username без telegram_id) заполняем на месте: её id уже может стоять у календаря. Если этот
+     * человек уже есть под другим username, календарь заготовки переходит к его строке, а заготовка удаляется; если
+     * календарь есть и у него — источники заготовки переносятся в его календарь.
      */
     saveHost: (host) => sql.begin(async (tx) => {
       const stub = () => tx`username = ${host.username} and telegram_id is null`;
       await tx`update hosts set ${tx(host)} where ${stub()} and not exists (select 1 from hosts where telegram_id = ${host.telegram_id})`;
       await tx`insert into hosts ${tx(host)} on conflict (telegram_id) do update set username = excluded.username`;
-      await tx`update sources set host_id = (select id from hosts where telegram_id = ${host.telegram_id}) where host_id in (select id from hosts where ${stub()})`;
+      const real = () => tx`(select id from hosts where telegram_id = ${host.telegram_id})`;
+      const stubCalendars = () => tx`(select k.id from calendars k join hosts h on h.id = k.host_id where ${stub()})`;
+      await tx`update sources set calendar_id = (select id from calendars where host_id = ${real()})
+        where calendar_id in ${stubCalendars()} and exists (select 1 from calendars where host_id = ${real()})`;
+      await tx`update calendars set host_id = null where id in ${stubCalendars()} and exists (select 1 from calendars where host_id = ${real()})`;
+      await tx`update calendars set host_id = ${real()} where id in ${stubCalendars()}`;
       await tx`delete from hosts where ${stub()}`;
       await linkUser(tx, host.telegram_id);
       await tx`update hosts set profiled_at = now() where telegram_id = ${host.telegram_id}`;

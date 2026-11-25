@@ -284,8 +284,8 @@ export interface AdminSource {
   // Почему выключил сборщик: канала нет в Telegram или он закрыт. null — выключила команда или источник включён.
   disabled_reason: string | null;
   city_id: string; // город источника: его получают события из этого источника, в его часовом поясе ИИ читает время
-  // Организатор источника: чей это канал. Сборщик ставит его сам, когда берёт канал из профиля; команда может указать
-  // или сменить. Анонс без контакта из такого источника получает контактом этого организатора. null — не указан.
+  calendar: { id: string; name: string }; // календарь, в который входит источник: Telegram и Instagram одной вывески — в одном
+  // Организатор календаря источника (AdminCalendar.host) — только для чтения: указывают его у календаря.
   host: { id: string; name: string; username: string } | null;
   events_count: number; // сколько собранных событий из него пришло за всё время
   created_at: Date;
@@ -318,6 +318,7 @@ export const SourceCreateInput = z.object({
   channel: z.string().trim().regex(new RegExp(`^(?:https?:\\/\\/)?(?:t\\.me\\/|@)?\\w{4,32}\\/?$|^-100\\d+$|${INSTAGRAM_INPUT.source}`))
     .describe('Channel username, @username, t.me link, -100… id of a private chat, or an Instagram profile link (instagram.com/<handle>) or instagram:<handle>'),
   city_id: cityId.optional(),
+  calendar_id: z.uuid().optional().describe('Calendar to add the source to (id from admin_calendars_list), e.g. the Instagram profile of a Telegram channel already added; without it the source gets a calendar of its own'),
 });
 export type SourceCreateInput = z.infer<typeof SourceCreateInput>;
 
@@ -325,11 +326,60 @@ export const SourceUpdateInput = z
   .object({
     enabled: z.boolean().describe('false — stop reading this source'),
     kind: sourceKind,
-    host_id: z.uuid().nullable().describe('Organizer this source belongs to (id from admin_hosts_list); null — none'),
+    calendar_id: z.uuid().nullable().describe('Move the source into this calendar (id from admin_calendars_list): the Telegram channel and the Instagram profile of one venue, community or organizer belong to one calendar. null — split it off into a new calendar of its own'),
     city_id: cityId.describe('City of the source (id from admin_cities_list); events collected from now on get it, already collected ones keep theirs'),
   })
   .partial();
 export type SourceUpdateInput = z.infer<typeof SourceUpdateInput>;
+
+/**
+ * Вид календаря: host — личный канал организатора; venue — площадка (ресторан, студия, клуб); community — сообщество:
+ * свои события, разные ведущие; listing — афиша: чужие события. В Luma вида нет: там у календаря только `is_personal`,
+ * а своё событие или чужое — `access` каждого события (manage или view).
+ */
+export const CALENDAR_KINDS = ['host', 'venue', 'community', 'listing'] as const;
+export type CalendarKind = (typeof CALENDAR_KINDS)[number];
+
+/** Сколько событий календаря нужно, чтобы подсказать его вид: по одному-двум не видно, свои они или чужие. */
+export const CALENDAR_KIND_MIN_EVENTS = 3;
+
+/**
+ * Подсказка вида календаря по его собранным событиям: у канала организатора контакт для записи один, у афиши — много
+ * разных контактов и тем, у сообщества — несколько ведущих одной-двух тем. Площадку по событиям не отличить — её
+ * ставит команда. null — событий мало. Пороги — по сверке docs/research/sources-as-calendars-2026-11.md.
+ */
+export function suggestCalendarKind({ events, contacts, topics }: { events: number; contacts: number; topics: number }): CalendarKind | null {
+  if (events < CALENDAR_KIND_MIN_EVENTS || contacts === 0) return null;
+  if (contacts === 1) return 'host';
+  if (contacts >= 3 && topics >= 3) return 'listing';
+  return 'community';
+}
+
+/**
+ * Календарь (Calendar, как в Luma): вывеска, от имени которой публикуются анонсы, — организатор, площадка, сообщество
+ * или афиша. В него входят источники одной вывески: Telegram-канал и Instagram-профиль. Пока виден только команде.
+ * `name`, `kind` и `host` — правит команда; `suggested_kind` считается по событиям при каждом чтении.
+ */
+export interface AdminCalendar {
+  id: string;
+  name: string;
+  kind: CalendarKind | null; // null — не указан
+  suggested_kind: CalendarKind | null; // suggestCalendarKind по собранным событиям за 90 дней
+  // Организатор, чей это календарь (в Luma такого нет: там у календаря admins). Анонс без контакта из любого источника
+  // календаря получает контактом этого организатора.
+  host: { id: string; name: string; username: string } | null;
+  sources: Omit<AdminSource, 'calendar' | 'host'>[];
+  created_at: Date;
+}
+
+export const CalendarUpdateInput = z
+  .object({
+    name: z.string().trim().min(1).max(100).describe('Name of the venue, community or organizer'),
+    kind: z.enum(CALENDAR_KINDS).nullable().describe('host — personal channel of an organizer; venue — a place (restaurant, studio, club); community — own events by several leaders; listing — a listing of other people\'s events. null — not set'),
+    host_id: z.uuid().nullable().describe('Organizer this calendar belongs to (id from admin_hosts_list); an announcement without a contact from any of its sources gets this organizer as the contact. null — none'),
+  })
+  .partial();
+export type CalendarUpdateInput = z.infer<typeof CalendarUpdateInput>;
 
 /**
  * Поиск источников для города: команда просит, сборщик в следующий проход ищет в Telegram каналы и группы по названию

@@ -219,6 +219,18 @@ test('части дня: утро до 12, день до 17, вечер; без 
   assert.deepEqual(parts.map((p) => [p.part.key, p.events.length]), [['morning', 1], ['evening', 1]]);
 });
 
+test('вид календаря: один контакт — организатор, много контактов и тем — афиша, несколько ведущих — сообщество', async () => {
+  const { suggestCalendarKind } = await import('./index.ts');
+  // Цифры — из сверки docs/research/sources-as-calendars-2026-11.md.
+  assert.equal(suggestCalendarKind({ events: 2, contacts: 2, topics: 2 }), null, 'по двум событиям не видно');
+  assert.equal(suggestCalendarKind({ events: 5, contacts: 0, topics: 1 }), null, 'контактов нет');
+  assert.equal(suggestCalendarKind({ events: 5, contacts: 1, topics: 4 }), 'host');
+  assert.equal(suggestCalendarKind({ events: 13, contacts: 10, topics: 7 }), 'listing');
+  assert.equal(suggestCalendarKind({ events: 6, contacts: 4, topics: 3 }), 'listing');
+  assert.equal(suggestCalendarKind({ events: 9, contacts: 5, topics: 1 }), 'community');
+  assert.equal(suggestCalendarKind({ events: 3, contacts: 2, topics: 1 }), 'community');
+});
+
 test('началось ли событие: со временем — с начала, без времени (00:00) — после конца дня', async () => {
   const { collectedStarted } = await import('./index.ts');
   const now = Date.parse('2026-11-26T10:00:00+07:00');

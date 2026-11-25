@@ -63,6 +63,7 @@
 | Собранное событие (в Luma такого нет) | `collected_events_*`, `/collected-events` | `collected_events_signup` |
 | Правка одной услуги — Practice (в Luma такого нет) | `admin_practices_update`, `/admin/practices/:id`; запись на неё — по `practice_id` | `PATCH /admin/practices/<id>` `{ "status": "published" }` |
 | Правка своих настроек: Подписка на темы, город и выключенные уведомления (в Luma такого нет; там `suppress_notifications` — флаг одной операции) | `users_update_self`, `PATCH /me`, поля `subscribed_topics`, `city_id` и `muted_notifications`, меняется только переданное — в пару к `users_get_self` | `PATCH /me` `{ "city_id": "danang" }` |
+| Календарь источников — Calendar (как в Luma; ADR-0011) | для команды `admin_calendars_list`, `admin_calendars_update`, `/admin/calendars`; источник в календаре — `calendar_id` в `admin_sources_create/update`, `null` — отделить в свой; вид `kind` и организатор `host_id` — наши: в Luma у календаря `is_personal` и `admins` | `PATCH /admin/sources/instagram:tea` `{ "calendar_id": "<id>" }` |
 | Город — City (в Luma такого нет: там город — поле адреса) | `cities_list`, `/cities`; для команды `admin_cities_*`, `/admin/cities`; в выдачах каталога — вход `city_id`, без него — первый город; выдача включает соседние города (`nearbyCities` в `services.ts`), у каждой записи свой `city_id`; координаты — `latitude`, `longitude`, как в `coordinate` Luma | `GET /collected-events?city_id=danang` |
 | Тема — Topic (в Luma такого нет) | `topics_list`, `/topics`; для команды `admin_topics_*`, `/admin/topics`; ключ — `name`, выключение — `enabled: false` вместо удаления; кандидаты из меток — `admin_topics_candidates` | `PATCH /admin/topics/<name>` `{ "enabled": false }` |
 | Витрина из Полок — Shelf (в Luma такого нет; ADR-0009) | гостю `showcase_get`, `GET /showcase?city_id=`; команде и куратору `admin_shelves_*`, `/admin/shelves`; правило — поле `rule`, ручная полка — `event_ids`; режим города — `showcase_mode` в `admin_cities_update`; куратор — токен с областью `curator`, его границы проверяет `shelves.ts` | `POST /admin/shelves` `{ "city_id": "danang", "title": "На выходных", "rule": { "period": "weekend" } }` |
@@ -74,7 +75,7 @@
 
 Чего в Luma нет (Telegram, витрина собранных событий, переписка, `kind`, ответ «maybe») — называем сами словами из `CONTEXT.md` и пишем у типа: «в Luma такого нет». Сейчас так помечены поля в `packages/core/src/schema.ts`.
 
-Чем мы сознательно отличаемся: вход — Telegram (`tma <initData>`, cookie сайта, токен `ysw_…`), а не `x-luma-api-key`; ошибка — `{ "error": "код" }`; оплаты, купонов и календарей нет.
+Чем мы сознательно отличаемся: вход — Telegram (`tma <initData>`, cookie сайта, токен `ysw_…`), а не `x-luma-api-key`; ошибка — `{ "error": "код" }`; оплаты и купонов нет; календари — только у источников и только для команды (ADR-0011).
 
 ## Вход и его границы
 

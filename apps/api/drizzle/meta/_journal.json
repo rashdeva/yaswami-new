@@ -449,6 +449,20 @@
       "when": 1795618994986,
       "tag": "20261125150314_products",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1795620168161,
+      "tag": "20261125152248_source_calendars",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1795620169267,
+      "tag": "20261125152249_source_host_to_calendar",
+      "breakpoints": true
     }
   ]
 }
