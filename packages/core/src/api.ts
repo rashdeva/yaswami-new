@@ -168,6 +168,26 @@ export type PracticeStatus = (typeof PRACTICE_STATUSES)[number];
 export const PRACTICE_FORMATS = ['personal', 'group', 'online', 'workshop'] as const;
 export type PracticeFormat = (typeof PRACTICE_FORMATS)[number];
 
+/**
+ * Категория услуги (CONTEXT.md, ADR-0012): раздел вкладки «Услуги» и контент-политика каталога услуг. Список в коде, как
+ * направления; `what` — что в неё входит: по нему ИИ относит услугу. В Luma такого нет.
+ */
+export const SERVICE_CATEGORIES = [
+  { slug: 'beauty', name: 'Красота', emoji: '💅', what: 'стрижка, парикмахер, барбер, маникюр и педикюр, ресницы и брови, косметолог, визаж, депиляция' },
+  { slug: 'body', name: 'Массаж и тело', emoji: '💆', what: 'массаж, телесные практики, баня и парение, остеопатия без врачебной практики' },
+  { slug: 'sport', name: 'Спорт и тренеры', emoji: '🏋️', what: 'персональные и групповые тренировки, йога, растяжка, единоборства, плавание, танцы' },
+  { slug: 'lessons', name: 'Уроки и языки', emoji: '📚', what: 'языки, музыка, рисование, репетиторы, подготовка к экзаменам, обучение навыкам и профессиям' },
+  { slug: 'kids', name: 'Детям', emoji: '🧸', what: 'няня, детские кружки и секции, занятия и праздники для детей' },
+  { slug: 'psy', name: 'Психолог и коуч', emoji: '🫶', what: 'психолог, психотерапевт, коуч, группы поддержки, арт-терапия' },
+  { slug: 'home', name: 'Дом и быт', emoji: '🧹', what: 'уборка, мастер на час, ремонт техники и байков, переезд, доставка, швея' },
+  { slug: 'photo', name: 'Фото и видео', emoji: '📸', what: 'фотограф, фотосессия, видеосъёмка, монтаж, дизайн' },
+  { slug: 'pets', name: 'Питомцы', emoji: '🐾', what: 'груминг, передержка, выгул, дрессировка' },
+  { slug: 'classes', name: 'Мастер-классы и клубы', emoji: '🎨', what: 'разовые мастер-классы, творческие воркшопы, клубы, игры, экскурсии и туры' },
+] as const;
+export type ServiceCategory = (typeof SERVICE_CATEGORIES)[number]['slug'];
+export const SERVICE_CATEGORY_SLUGS = SERVICE_CATEGORIES.map((c) => c.slug) as [ServiceCategory, ...ServiceCategory[]];
+export const serviceCategoryBySlug = (slug: string | null | undefined) => SERVICE_CATEGORIES.find((c) => c.slug === slug);
+
 export interface Practice {
   id: string; // по нему на Practice записываются и команда принимает решение: название можно править
   title: string;
@@ -177,6 +197,7 @@ export interface Practice {
   status: PracticeStatus; // модерация: в каталоге видна только published
   // Разбор услуги (сборщик, packages/extract): null — ещё не разобрана, `formats` пустой — формат не понять.
   formats: PracticeFormat[] | null;
+  category: ServiceCategory | null; // категория услуги (SERVICE_CATEGORIES); null — ещё не размечена
   for_kids: boolean | null; // занятия для детей или подростков (родители ищут их отдельно)
   // Цена числом — чтобы сравнивать и писать одинаково: обычная цена одного занятия (нижняя, если диапазон), 0 — бесплатно.
   // В целых единицах валюты, как пишут мастера («150k» → 150000): в Luma цена — `cents` + `currency` у типа билета.

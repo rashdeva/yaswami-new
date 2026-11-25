@@ -87,7 +87,7 @@ const tma = (id: number, name: string) => `tma ${initData(id, name)}`;
 /** Пользователь, вошедший через этот Telegram. users.id — не Telegram id (ADR-0008): тесты не должны их путать. */
 const uid = async (telegramId: number) => (await userIdByTelegram(db, telegramId))!;
 
-type NewPractice = Pick<typeof practicesTable.$inferInsert, 'title' | 'topic' | 'description' | 'price' | 'status'>;
+type NewPractice = Pick<typeof practicesTable.$inferInsert, 'title' | 'topic' | 'description' | 'price' | 'status'> & Partial<Pick<typeof practicesTable.$inferInsert, 'category'>>;
 /** Профили организаторов вместе с их Practice (у кого они есть) — по порядку списка. */
 async function insertHosts(list: (typeof hosts.$inferInsert & { practices?: NewPractice[] })[]) {
   for (const { practices: offered = [], ...host } of list) {
@@ -358,6 +358,8 @@ test('каталог организаторов: с событиями или Pr
     { telegram_id: 41, username: 'dasha_yoga', name: 'Даша', summary: 'Ведёт йогу.', status: 'published' as const, practices: [
       { title: 'Утренняя йога', topic: 'йога', description: 'Группа у моря.', price: '150k', status: 'published' as const },
       { title: 'Ремонт телефонов', topic: 'другое', description: null, price: null, status: 'published' as const }, // не наша тема — не показываем
+      // темы нет, но есть категория услуги — показываем (ADR-0012)
+      { title: 'Маникюр', topic: 'другое', category: 'beauty' as const, description: null, price: '250k', status: 'published' as const },
     ] },
     { telegram_id: 42, username: 'nobody', name: 'Без всего' }, // ни событий, ни Practice — не в каталоге
     // мастер ждёт модерации: Practice есть, но в каталоге его нет, пока команда не одобрит
@@ -367,7 +369,7 @@ test('каталог организаторов: с событиями или Pr
   const list = (await (await app.request('/hosts')).json()) as HostListItem[];
   assert.deepEqual(list.map((h) => [h.username, h.upcoming_count, h.topics, h.practices.map((p) => p.title)]), [
     ['club', 1, ['игры'], []],
-    ['dasha_yoga', 0, ['йога'], ['Утренняя йога']],
+    ['dasha_yoga', 0, ['йога'], ['Утренняя йога', 'Маникюр']],
   ]);
   assert.equal(list[1]!.contact_url, 'https://t.me/dasha_yoga');
 
@@ -399,7 +401,7 @@ test('каталог организаторов: с событиями или Pr
   // команда правит список Practice целиком: с id — правка на месте (запись на неё остаётся даже после переименования),
   // без id — новая, чего в списке нет — удалено; заявки видны в списке админки по id
   // Разбор услуги команда тоже может поправить: формат, «для детей», цену числом.
-  const fixed = [{ id: yoga.id, title: 'Йога на рассвете', topic: 'йога', description: 'Группа у моря.', price: '200k', status: 'published', formats: ['group'], for_kids: false, price_amount: 200000, price_currency: 'VND' }];
+  const fixed = [{ id: yoga.id, title: 'Йога на рассвете', topic: 'йога', description: 'Группа у моря.', price: '200k', status: 'published', category: 'sport', formats: ['group'], for_kids: false, price_amount: 200000, price_currency: 'VND' }];
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: fixed })).status, 200);
   assert.deepEqual(((await (await app.request(`/hosts/${dasha.id}`)).json()) as HostItem).practices, fixed);
   assert.equal((await db.select().from(practicesTable).where(eq(practicesTable.host_id, dasha.id))).length, 1, '«Ремонт телефонов» в список не вошёл — удалён');

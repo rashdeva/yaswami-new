@@ -427,6 +427,9 @@ console.log('cover ok');
   assert.ok(looksLikeOffer(svetlana));
   assert.ok(!looksLikeOffer('Посоветуйте хорошего массажиста в районе Ан Тхыонг, пожалуйста, очень нужно на этой неделе, спина болит после перелёта'), 'ищет мастера, а не предлагает');
   assert.ok(!looksLikeOffer('Провожу массаж'), 'слишком коротко');
+  // Бытовые услуги (ADR-0012): мастер красоты не пишет «провожу» и «тренер», но его тоже берём.
+  assert.ok(looksLikeOffer('Девочки, маникюр и педикюр с покрытием в Ан Тхыонг, наращивание ресниц. Стерильные инструменты, кофе в подарок. Маникюр 250k, ресницы от 400k. Пишите в лс!'));
+  assert.ok(looksLikeOffer('Генеральная уборка квартир и вилл, мытьё окон, химчистка диванов. Работаем командой, свои средства. Стоимость от 300k за квартиру, записывайтесь заранее.'));
   const user = (id, username) => ({ className: 'User', id: BigInt(id), firstName: 'Светлана', username, bot: false });
   const offers = pickOffers('danang_women', [
     { id: 1, message: svetlana, sender: user(7, 'Sveta_Rehab') },

@@ -8,7 +8,7 @@ import type {
   TicketTypeCreateInput, TicketTypeUpdateInput, User, UserSelfUpdateInput, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
-import { ADDRESS_MAX, collectedSlug, DEFAULT_CITY_ID, Feature, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, PRODUCT_TTL_DAYS, productContactUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
+import { ADDRESS_MAX, collectedSlug, DEFAULT_CITY_ID, Feature, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, PRODUCT_TTL_DAYS, productContactUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, serviceCategoryBySlug, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
 import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, photos, practices, practiceSignups, products, sources, subscriptions, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
@@ -493,7 +493,7 @@ async function hostPhotos(db: Db, hostId: string): Promise<CollectedHost['photos
 
 const practiceFields = {
   id: practices.id, title: practices.title, topic: practices.topic, description: practices.description, price: practices.price, status: practices.status,
-  formats: practices.formats, for_kids: practices.for_kids, price_amount: practices.price_amount, price_currency: practices.price_currency,
+  formats: practices.formats, category: practices.category, for_kids: practices.for_kids, price_amount: practices.price_amount, price_currency: practices.price_currency,
 };
 
 /** Practice организаторов по порядку, как у каждого: всех (`hostId` не задан) или одного. Любого статуса — что показать, решает зовущий. */
@@ -506,14 +506,15 @@ export async function practicesByHost(db: Db | Tx, hostId?: string): Promise<Map
 }
 
 /**
- * Организатор в каталоге. Practice вне наших Topic не показываем: Topic — контент-политика каталога (CONTEXT.md).
+ * Организатор в каталоге. Practice показываем, если у неё есть категория услуги или — пока не размечена — наш Topic:
+ * список категорий — контент-политика каталога услуг (ADR-0012).
  * `all` — все его Practice; `eventTopics` — темы его предстоящих опубликованных событий, по одной на событие.
  */
 function toHostListItem(h: HostRecord, all: Practice[], eventTopics: (string | undefined)[], sells = false): HostListItem | null {
   // Отклонённого организатора не показываем целиком. Остальное решается по отдельности: события — своим статусом,
   // Practice — своим (PRACTICE_STATUSES), товары — своим (PRODUCT_STATUSES).
   if (h.status === 'rejected') return null;
-  const practices = all.filter((p) => p.status === 'published' && p.topic in TOPIC_GUIDES);
+  const practices = all.filter((p) => p.status === 'published' && (serviceCategoryBySlug(p.category) || p.topic in TOPIC_GUIDES));
   // `sells` — у мастера есть товары, которые видит гость: тогда его страница нужна и без событий и Practice.
   if (!practices.length && !eventTopics.length && !sells) return null;
   const mentioned = new Set([...practices.map((p) => p.topic), ...eventTopics]);
@@ -659,7 +660,7 @@ export async function search(db: Db, { query, city_id = DEFAULT_CITY_ID, paginat
     ...events.map((r) => ({ type: 'event' as const, event: toCollectedItem(r), score: r.score })),
     ...offers.flatMap((r) => {
       const item = hostItem(r.host);
-      // Только то, что видно в каталоге: одобренная Practice из наших Topic
+      // Только то, что видно в каталоге: одобренная Practice с категорией услуги или из наших Topic
       const practice = item?.practices.find((p) => p.id === r.id);
       return item && practice ? [{ type: 'practice' as const, practice, host: item, score: r.score }] : [];
     }),

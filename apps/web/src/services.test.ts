@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { HostListItem, Practice, SearchEntry, TopicItem, Wire } from '@yaswami/core';
-import { cheapest, formatLabel, money, practicePrice, searchSections, serviceGroups, serviceShortcuts, usefulFilters, type ServiceItem } from './services.ts';
+import { categoryOf, cheapest, formatLabel, money, practicePrice, searchSections, serviceGroups, serviceShortcuts, usefulFilters, type ServiceItem } from './services.ts';
 
 const practice = (title: string, topic: string, details: Partial<Practice> = {}): Practice =>
-  ({ id: title, title, topic, description: null, price: null, status: 'published', formats: null, for_kids: null, price_amount: null, price_currency: null, ...details });
+  ({ id: title, title, topic, description: null, price: null, status: 'published', category: null, formats: null, for_kids: null, price_amount: null, price_currency: null, ...details });
 const item = (title: string, details: Partial<Practice> = {}, topic = 'спорт'): ServiceItem => ({ practice: practice(title, topic, details), host: host('Мастер', []) });
 
 test('цена коротко и одинаково: донги тысячами и миллионами, доллары знаком, бесплатно словом', () => {
@@ -27,10 +27,10 @@ test('«Попробовать недорого»: самые дешёвые в 
   assert.deepEqual(cheapest(items.slice(0, 2), 3), []);
 });
 
-test('сквозные разделы: мастер-классы по формату, «Детям» — по разбору и по теме направления', () => {
+test('«Детям»: категория «Детям» и размеченное «для детей» в других категориях', () => {
   const topics = [topic('детям', 'kids', 'kids'), topic('спорт', 'sport', 'sport')];
-  const items = [item('Акрил', { formats: ['workshop'] }), item('Скрипка', { for_kids: true }), item('Лего', {}, 'детям'), item('Бокс', { formats: ['personal'] })];
-  assert.deepEqual(serviceShortcuts(items, topics).map((g) => [g.key, g.items.map((i) => i.practice.title)]), [['workshops', ['Акрил']], ['kids', ['Скрипка', 'Лего']]]);
+  const items = [item('Няня', { category: 'kids' }), item('Скрипка', { for_kids: true, category: 'lessons' }), item('Лего', {}, 'детям'), item('Бокс')];
+  assert.deepEqual(serviceShortcuts(items, topics).map((g) => [g.key, g.items.map((i) => i.practice.title)]), [['kids', ['Няня', 'Скрипка', 'Лего']]]);
   assert.deepEqual(serviceShortcuts([item('Бокс')], topics), []);
 });
 
@@ -41,26 +41,27 @@ test('фильтры раздела — только те, что что-то м
 const host = (name: string, practices: Practice[]) => ({ id: name, name, practices }) as unknown as HostListItem;
 const topic = (name: string, slug: string, direction: TopicItem['direction']) => ({ name, slug, direction }) as TopicItem;
 
-test('услуги по направлениям: порядок направлений, тема без направления — своим разделом, неизвестная — в «Другом», сверху разные мастера', () => {
-  const topics = [topic('йога', 'yoga', 'body'), topic('спорт', 'sport', 'sport'), topic('баня', 'banya', 'body'), topic('падел', 'padel', null), topic('танцы', 'dance', 'sport')];
+test('услуги по категориям: порядок SERVICE_CATEGORIES, без категории — по направлению темы, не к чему отнести — «Другое», сверху разные мастера', () => {
+  const topics = [topic('йога', 'yoga', 'sport'), topic('спорт', 'sport', 'sport'), topic('баня', 'banya', 'body'), topic('падел', 'padel', null)];
   const hosts = [
     host('Максим', [practice('Бокс', 'спорт'), practice('Кроссфит', 'спорт')]),
     host('Катя', [practice('Стретчинг', 'спорт')]),
     host('Саша', [practice('Живая баня', 'баня')]),
-    host('Ксения', [practice('Йога', 'йога')]),
+    host('Лена', [practice('Маникюр', 'другое', { category: 'beauty' })]),
     host('Иван', [practice('Падел', 'падел'), practice('Что-то', 'неизвестно')]),
   ];
   const groups = serviceGroups(hosts, topics);
   assert.deepEqual(groups.map((g) => [g.key, g.name, g.items.map((i) => i.practice.title)]), [
-    ['body', 'Тело и практики', ['Живая баня', 'Йога']],
-    ['sport', 'Спорт и движение', ['Бокс', 'Стретчинг', 'Кроссфит']],
-    ['padel', 'Падел', ['Падел']],
-    ['other', 'Другое', ['Что-то']],
+    ['beauty', 'Красота', ['Маникюр']],
+    ['body', 'Массаж и тело', ['Живая баня']],
+    ['sport', 'Спорт и тренеры', ['Бокс', 'Стретчинг', 'Кроссфит']],
+    ['other', 'Другое', ['Падел', 'Что-то']],
   ]);
-  assert.equal(groups[0]!.items[0]!.host.name, 'Саша');
+  assert.equal(groups[1]!.items[0]!.host.name, 'Саша');
+  assert.equal(categoryOf(practice('Йога', 'йога', { category: 'body' }), topics), 'body', 'размеченная категория важнее темы');
 });
 
-test('пока темы не пришли — все услуги в «Другом»; без услуг — пусто', () => {
+test('пока темы не пришли и категорий нет — всё в «Другом»; без услуг — пусто', () => {
   assert.deepEqual(serviceGroups([host('Максим', [practice('Бокс', 'спорт')])], []).map((g) => g.key), ['other']);
   assert.deepEqual(serviceGroups([host('Организатор', [])], []), []);
 });

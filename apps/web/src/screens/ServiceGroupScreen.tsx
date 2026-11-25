@@ -1,16 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { HostListItem } from '@yaswami/core';
-import { topicIcon, topicSlug } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { PracticeSheet } from '../components/PracticeSheet.tsx';
 import { ServiceRow } from '../components/ServiceRow.tsx';
 import { servicesCount } from '../format.ts';
 import { usePracticeSheet, useServices } from '../hooks/useHosts.ts';
-import { useTopics } from '../hooks/useTopics.ts';
 import { FILTER_LABELS, matchesFilter, usefulFilters, type ServiceFilter } from '../services.ts';
 
 interface Props {
-  /** Ключ раздела: направление, тема без направления или сквозной раздел (serviceGroups, serviceShortcuts, CHEAP). */
+  /** Ключ раздела: категория услуги или сквозной раздел (serviceGroups, serviceShortcuts, CHEAP). */
   groupKey: string;
   city: string;
   onBack: (() => void) | null;
@@ -24,7 +22,6 @@ interface Props {
  * Шапка — в цвет темы раздела.
  */
 export function ServiceGroupScreen({ groupKey, city, onBack, onOpenHost, onGone }: Props) {
-  useTopics();
   const { sections, find, failed } = useServices();
   const sheet = usePracticeSheet();
   const [filter, setFilter] = useState<ServiceFilter | null>(null);
@@ -46,9 +43,9 @@ export function ServiceGroupScreen({ groupKey, city, onBack, onOpenHost, onGone 
   };
   return (
     <>
-      <div className={`hero${onBack ? '' : ' nb'}`} data-topic={topicSlug(group.topic)}>
+      <div className={`hero${onBack ? '' : ' nb'}`} data-topic={group.tint}>
         {onBack && <button className="back" onClick={onBack}>← Услуги</button>}
-        <img className="emo" src={topicIcon(group.topic)} alt="" />
+        <span className="emo emo-glyph" aria-hidden="true">{group.emoji}</span>
         <small>{city} · {servicesCount(group.items.length)}</small>
         <h1>{group.name}</h1>
       </div>
