@@ -1,6 +1,7 @@
 // Все маршруты приложения. Страница здесь — тонкая связка: берёт адрес, вход и общие вещи layout и раздаёт экрану.
 import { useCallback } from 'react';
 import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect, useNavigate } from '@tanstack/react-router';
+import type { SearchEntry, Wire } from '@yaswami/core';
 import { App, Claims, useClaim, useLogout, useShell } from './App.tsx';
 import { startLogin } from './api.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
@@ -20,7 +21,7 @@ import { ProductScreen } from './screens/ProductScreen.tsx';
 import { ProductsScreen } from './screens/ProductsScreen.tsx';
 import { ProfileScreen } from './screens/ProfileScreen.tsx';
 import { PeopleScreen } from './screens/PeopleScreen.tsx';
-import { SearchScreen } from './screens/SearchScreen.tsx';
+import { ServiceGroupScreen } from './screens/ServiceGroupScreen.tsx';
 import { ShelfScreen } from './screens/ShelfScreen.tsx';
 import { DirectionScreen } from './screens/DirectionScreen.tsx';
 import { AllEventsScreen } from './screens/AllEventsScreen.tsx';
@@ -49,8 +50,25 @@ const root = createRootRoute({
 
 const app = createRoute({ getParentRoute: () => root, id: 'app', component: App });
 
+/**
+ * Запрос строки поиска живёт в адресе (?q=) и у «Событий», и у «Услуг»: находками можно поделиться ссылкой,
+ * а «назад» браузера возвращает к ним. Отдельного экрана поиска нет.
+ */
+const withQuery = (search: Record<string, unknown>): { q?: string } => (typeof search.q === 'string' && search.q ? { q: search.q } : {});
+
+/** Куда ведёт находка поиска. У услуги своей страницы нет — её мастер (вкладка «Услуги» вместо этого открывает шторку). */
+function useOpenEntry() {
+  const navigate = useNavigate();
+  return (entry: Wire<SearchEntry>) => void (entry.type === 'event'
+    ? navigate({ to: '/e/$id', params: { id: entry.event.id } })
+    : entry.type === 'product'
+      ? navigate({ to: '/products/$id', params: { id: entry.product.id } })
+      : navigate({ to: '/hosts/$id', params: { id: entry.host.id } }));
+}
+
 /** Витрина — главная и в Telegram, и на сайте; свои события — за аватаркой. */
 function FeedPage() {
+  const { q = '' } = feed.useSearch();
   const navigate = useNavigate();
   return (
     <FeedScreen
@@ -59,10 +77,13 @@ function FeedPage() {
       onOpenShelf={(id) => void navigate({ to: '/s/$id', params: { id } })}
       onOpenDirection={(slug) => void navigate({ to: '/d/$slug', params: { slug } })}
       onOpenAll={() => void navigate({ to: '/all' })}
+      query={q}
+      onQuery={(next) => void navigate({ to: '/', search: { q: next || undefined }, replace: true })}
+      onOpenEntry={useOpenEntry()}
     />
   );
 }
-const feed = createRoute({ getParentRoute: () => app, path: '/', component: FeedPage });
+const feed = createRoute({ getParentRoute: () => app, path: '/', component: FeedPage, validateSearch: withQuery });
 
 /** Полка витрины целиком (ADR-0009). Данные — из уже загруженной витрины. */
 function ShelfPage() {
@@ -116,11 +137,32 @@ function CollectedPage() {
 const collected = createRoute({ getParentRoute: () => app, path: '/e/$id', component: CollectedPage });
 
 function HostsPage() {
+  const { q = '' } = hostsRoute.useSearch();
   const navigate = useNavigate();
   const { city } = useSession();
-  return <HostsScreen city={city} onOpen={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} />;
+  return (
+    <HostsScreen
+      city={city}
+      query={q}
+      onQuery={(next) => void navigate({ to: '/services', search: { q: next || undefined }, replace: true })}
+      onOpenGroup={(key) => void navigate({ to: '/services/$group', params: { group: key } })}
+      onOpenHost={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })}
+      onOpenEntry={useOpenEntry()}
+    />
+  );
 }
-const hostsRoute = createRoute({ getParentRoute: () => app, path: '/services', component: HostsPage });
+const hostsRoute = createRoute({ getParentRoute: () => app, path: '/services', component: HostsPage, validateSearch: withQuery });
+
+/** Раздел «Услуг» целиком: все услуги направления (или темы без направления). */
+function ServiceGroupPage() {
+  const { group } = serviceGroupRoute.useParams();
+  const navigate = useNavigate();
+  const { city } = useSession();
+  const { onBack } = useShell();
+  const gone = useCallback(() => void navigate({ to: '/services', replace: true }), [navigate]);
+  return <ServiceGroupScreen key={group} groupKey={group} city={city} onBack={onBack} onGone={gone} onOpenHost={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })} />;
+}
+const serviceGroupRoute = createRoute({ getParentRoute: () => app, path: '/services/$group', component: ServiceGroupPage });
 // Старый адрес вкладки: раньше она называлась «Организаторы». Страница мастера осталась на /hosts/$id — это Host.
 const oldHostsRoute = createRoute({ getParentRoute: () => app, path: '/hosts', beforeLoad: () => { throw redirect({ to: '/services', replace: true }); } });
 
@@ -154,25 +196,10 @@ function ProductPage() {
 }
 const productRoute = createRoute({ getParentRoute: () => app, path: '/products/$id', component: ProductPage });
 
-/** Поиск. Запрос живёт в адресе (?q=): находками можно поделиться ссылкой, а «назад» браузера возвращает к ним. */
-function SearchPage() {
-  const { q = '' } = searchRoute.useSearch();
-  const navigate = useNavigate();
-  return (
-    <SearchScreen
-      query={q}
-      onQuery={(next) => void navigate({ to: '/search', search: { q: next || undefined }, replace: true })}
-      onOpen={(entry) => void (entry.type === 'event'
-        ? navigate({ to: '/e/$id', params: { id: entry.event.id } })
-        : entry.type === 'product'
-          ? navigate({ to: '/products/$id', params: { id: entry.product.id } })
-          : navigate({ to: '/hosts/$id', params: { id: entry.host.id } }))}
-    />
-  );
-}
+// Старый адрес поиска: теперь это строка в шапке витрины.
 const searchRoute = createRoute({
-  getParentRoute: () => app, path: '/search', component: SearchPage,
-  validateSearch: (search: Record<string, unknown>): { q?: string } => (typeof search.q === 'string' && search.q ? { q: search.q } : {}),
+  getParentRoute: () => app, path: '/search', validateSearch: withQuery,
+  beforeLoad: ({ search }) => { throw redirect({ to: '/', search, replace: true }); },
 });
 
 /** Личные страницы: без входа — приглашение войти. */
@@ -293,7 +320,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, allRoute, collected, hostsRoute, oldHostsRoute, hostRoute, productsRoute, productRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, allRoute, collected, hostsRoute, serviceGroupRoute, oldHostsRoute, hostRoute, productsRoute, productRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 

@@ -33,16 +33,16 @@ export function App() {
   const [kind, setKind] = useState<Event['kind']>('o');
 
   // У публичных экранов свой нейтральный цвет; личные выставляют цвет шаблона события сами.
-  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/s/') || pathname.startsWith('/d/') || pathname === '/all' || pathname.startsWith('/hosts') || pathname.startsWith('/products') || pathname === '/services' || pathname === '/search') && kind !== 'o') setKind('o');
+  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/s/') || pathname.startsWith('/d/') || pathname === '/all' || pathname.startsWith('/hosts') || pathname.startsWith('/products') || pathname.startsWith('/services')) && kind !== 'o') setKind('o');
 
-  // Куда ведёт «назад»: событие, полка, направление, все события, поиск и профиль → витрина, организатор → каталог, товар → товары, своё событие и поиск людей → профиль,
+  // Куда ведёт «назад»: событие, полка, направление, все события и профиль → витрина, организатор и раздел услуг → «Услуги», товар → товары, своё событие и поиск людей → профиль,
   // создание → профиль или витрина. null — корень (вкладки таббара).
   const here = { includeSearch: false } as const; // ?signup, ?startapp в адресе маршрут не меняют
   const section = matchRoute({ to: '/events/$id/edit/$section', ...here });
   const edit = matchRoute({ to: '/events/$id/edit', ...here });
-  const back = matchRoute({ to: '/e/$id', ...here }) || matchRoute({ to: '/s/$id', ...here }) || matchRoute({ to: '/d/$slug', ...here }) || matchRoute({ to: '/all', ...here }) || matchRoute({ to: '/search', ...here }) || matchRoute({ to: '/my', ...here })
+  const back = matchRoute({ to: '/e/$id', ...here }) || matchRoute({ to: '/s/$id', ...here }) || matchRoute({ to: '/d/$slug', ...here }) || matchRoute({ to: '/all', ...here }) || matchRoute({ to: '/my', ...here })
     ? () => void navigate({ to: '/' })
-    : matchRoute({ to: '/hosts/$id', ...here })
+    : matchRoute({ to: '/hosts/$id', ...here }) || matchRoute({ to: '/services/$group', ...here })
       ? () => void navigate({ to: '/services' })
     : matchRoute({ to: '/products/$id', ...here })
       ? () => void navigate({ to: '/products' })
@@ -62,7 +62,7 @@ export function App() {
     const root = document.getElementById('app');
     if (root) root.toggleAttribute('data-wide', wide);
   }, [wide]);
-  const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/products' || pathname === '/search';
+  const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/products';
 
   return (
     <ShellContext value={{ toast: showToast, onKind: setKind, onBack: nativeBack ? null : back }}>
@@ -89,7 +89,7 @@ function AppTabBar({ current }: { current: Tab | null }) {
     ['hosts', () => void navigate({ to: '/services' })],
     ...(products ? [['products', () => void navigate({ to: '/products' })] satisfies [Tab, () => void]] : []),
   ];
-  return <TabBar current={current} tabs={tabs} searching={current === null} onSearch={() => void navigate({ to: '/search' })} />;
+  return <TabBar current={current} tabs={tabs} />;
 }
 
 /** Выйти на сайте; null — в Telegram, там человек опознан самим Telegram. */

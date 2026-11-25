@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { track } from '../analytics.ts';
 import { useViewed } from '../hooks/useViewed.ts';
 import { useEffect, useState } from 'react';
-import type { CollectedEventItem, Direction, TopicItem } from '@yaswami/core';
+import type { CollectedEventItem, Direction, SearchEntry, TopicItem, Wire } from '@yaswami/core';
 import { collectedBadges, collectedDayKey, collectedPath, collectedTime, topicIcon, topicsByDirection, topicSlug } from '@yaswami/core';
 import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
 import { CityPick } from '../components/CityPick.tsx';
@@ -11,6 +11,9 @@ import { useTopicSubscription } from '../hooks/useTopicSubscription.ts';
 import { useTopicItems, useTopics } from '../hooks/useTopics.ts';
 import { ProfileButton } from '../components/Avatar.tsx';
 import { EventRow } from '../components/EventRow.tsx';
+import { SearchField } from '../components/SearchField.tsx';
+import { SearchResults } from '../components/SearchResults.tsx';
+import { useSearch } from '../hooks/useSearch.ts';
 import { ShelfRail } from '../components/ShelfRail.tsx';
 import { useShowcase } from '../hooks/useShowcase.ts';
 import { dayLabel, eventsCount } from '../format.ts';
@@ -25,6 +28,11 @@ interface Props {
   onOpenDirection: (slug: string) => void;
   /** «Все события» в конце витрины — экран всех событий по дням. */
   onOpenAll: () => void;
+  /** Запрос в строке поиска; пустой — витрина. */
+  query: string;
+  onQuery: (query: string) => void;
+  /** Находка поиска: событие, услуга (страница мастера) или товар. */
+  onOpenEntry: (entry: Wire<SearchEntry>) => void;
 }
 
 /** Значение фильтра «Популярное»: стоит в одном ряду с темами, но темой не является. */
@@ -33,10 +41,11 @@ const POPULAR = '🔥';
 /**
  * Витрина: сверху полки (ADR-0009) — подборки, которые собирают команда и куратор, ниже все предстоящие события города
  * и соседних городов по дням. Открыта без входа; кто ещё не выбрал город — сначала выбирает. Выбрал тему в фильтре —
- * полки прячутся: человек ищет сам.
+ * полки прячутся: человек ищет сам. Набрал запрос в строке поиска — вместо витрины находки, события первыми.
  */
-export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection, onOpenAll }: Props) {
+export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection, onOpenAll, query, onQuery, onOpenEntry }: Props) {
   const city = useCity();
+  const search = useSearch(query, 'feed');
   const { items, failed } = useCollectedFeed();
   const { shelves } = useShowcase();
   const [topic, pickTopic] = useState<string | null>(null);
@@ -81,9 +90,19 @@ export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection, onOpenA
   if (city.chosen === undefined) return <>{top}<div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div></>;
   if (!city.chosen) return <>{top}<CityPicker cities={city.cities} locate={city.locate} onPick={city.set} /></>;
 
+  const searchField = <SearchField value={query} onChange={onQuery} label="Поиск событий" placeholder="Йога, концерт, пиклбол…" />;
+  if (query) {
+    const open = (entry: Wire<SearchEntry>) => {
+      track('search_result_opened', { type: entry.type, tab: 'feed' });
+      onOpenEntry(entry);
+    };
+    return <>{top}{searchField}<SearchResults {...search} first="event" onOpen={open} /></>;
+  }
+
   return (
     <>
       {top}
+      {searchField}
       {/* Быстрый поиск: плитки направлений — «Тело и практики», «Детям»…; внутри направления — его темы. */}
       {(topics.length > 1 || items?.some((e) => e.popular)) && (
         <div className="quick" role="group" aria-label="Темы">

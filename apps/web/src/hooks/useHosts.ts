@@ -1,10 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import type { HostItem, HostListItem, Practice } from '@yaswami/core';
 import { practiceSignupUrl } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { api } from '../api.ts';
+import { serviceGroups, type ServiceItem } from '../services.ts';
 import { openExternal } from '../tg.ts';
 import { keys } from './keys.ts';
+import { useTopicItems } from './useTopics.ts';
 import { useCity, useSession } from './useSession.ts';
 
 /** Каталог организаторов города человека: у кого есть предстоящие события или регулярные занятия. */
@@ -12,6 +15,29 @@ export function useHosts() {
   const { city_id } = useCity();
   const { data, error } = useQuery({ queryKey: keys.hosts(city_id), queryFn: () => api.listHosts(city_id) });
   return { hosts: data ?? null, failed: error };
+}
+
+/** Услуги города, разложенные по направлениям (вкладка «Услуги»). `groups` null — каталог ещё грузится. */
+export function useServices() {
+  const { hosts, failed } = useHosts();
+  const topics = useTopicItems();
+  return { groups: hosts ? serviceGroups(hosts, topics) : null, failed };
+}
+
+/** Шторка услуги: какая открыта, переключение на другую услугу того же мастера и запись. */
+export function usePracticeSheet() {
+  const [open, setOpen] = useState<ServiceItem | null>(null);
+  const signUp = usePracticeSignup();
+  return {
+    open,
+    show: (item: ServiceItem) => {
+      track('practice_opened', { host_id: item.host.id, title: item.practice.title });
+      setOpen(item);
+    },
+    close: () => setOpen(null),
+    pick: (practice: Practice) => setOpen((o) => (o ? { ...o, practice } : o)),
+    signUp,
+  };
 }
 
 /**

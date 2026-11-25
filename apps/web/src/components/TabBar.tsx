@@ -30,9 +30,9 @@ const LABELS: Record<Tab, string> = { feed: 'События', hosts: 'Услуг
 /**
  * Нижний таббар, как в iOS. `tabs` — вкладка и куда она ведёт.
  * Подложка активной вкладки переезжает пружиной; смена вкладки — лёгкий хаптик, нажатие на открытую — наверх страницы.
- * Справа отдельной круглой кнопкой — поиск, как в iOS; `searching` — он открыт, ни одна вкладка не активна.
+ * Поиска здесь нет: он — строкой в шапке «Событий» и «Услуг».
  */
-export function TabBar({ current, tabs, searching, onSearch }: { current: Tab | null; tabs: [Tab, () => void][]; searching: boolean; onSearch: () => void }) {
+export function TabBar({ current, tabs }: { current: Tab | null; tabs: [Tab, () => void][] }) {
   const index = tabs.findIndex(([t]) => t === current);
   const open = (tab: Tab, go: () => void) => {
     if (tab === current) {
@@ -54,9 +54,6 @@ export function TabBar({ current, tabs, searching, onSearch }: { current: Tab | 
           </button>
         ))}
       </div>
-      <button className="find" aria-label="Поиск" aria-current={searching ? 'page' : undefined} onClick={() => { haptic.select(); onSearch(); }}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5" /></svg>
-      </button>
     </nav>
   );
 }

@@ -67,6 +67,12 @@ export function dayLabel(wall: string): string {
   return key === localDate() ? 'Сегодня' : key === localDate(1) ? 'Завтра' : collectedDay(wall);
 }
 
+/** «1 услуга», «3 услуги», «14 услуг». */
+export function servicesCount(n: number): string {
+  const d = n % 10, h = n % 100;
+  return `${n} ${d === 1 && h !== 11 ? 'услуга' : d >= 2 && d <= 4 && (h < 12 || h > 14) ? 'услуги' : 'услуг'}`;
+}
+
 /** «4 события», «5 событий», «21 событие». */
 export function eventsCount(n: number): string {
   const d = n % 10, h = n % 100;
