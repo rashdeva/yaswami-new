@@ -314,7 +314,7 @@ export async function setAttention(db: Db, id: string, attention: string | null)
 /** Запись исходящего: её вызывает `bot.send` на каждое сообщение бота человеку — ответ, уведомление, наше из админки. */
 export const logSent = (db: Db) => async (method: string, body: { chat_id: number; text?: unknown; caption?: unknown }, result: BotResult, author: string) => {
   // Виджет не прошёл — следом то же уходит обычным сообщением (notifications.ts); неудачную попытку не пишем.
-  // Оповещение нам самим (alertAdmins) — не переписка с человеком.
+  // Оповещение нам самим (alertTeam) — не переписка с человеком.
   if ((method === 'sendWidget' && !result.ok) || author === 'alert') return;
   const userId = await userIdByTelegram(db, body.chat_id); // chat_id — Telegram id собеседника, не users.id
   const [user] = userId === null ? [] : await db.select().from(users).where(eq(users.id, userId));
@@ -329,7 +329,12 @@ export const logSent = (db: Db) => async (method: string, body: { chat_id: numbe
 export async function alertAdmins(conversation: Conversation, reason: string): Promise<void> {
   const text = `${conversation.peer_name}${conversation.peer_username ? ` (@${conversation.peer_username})` : ''} ждёт человека: ${reason}\n${settings.publicUrl}/admin/?c=${conversation.id}`; // сразу открывает этот диалог в «Людях»
   // Админу, который сам и есть собеседник (проверяет бота), не пишем: оповещение упало бы в тот же чат.
-  const admins = settings.adminIds.filter((chat_id) => chat_id !== conversation.peer_id);
+  await alertTeam(text, conversation.peer_id);
+}
+
+/** Сообщение команде в Telegram (ADMIN_IDS — Telegram id), кроме `except` — того, о ком оно. Не бросает. */
+export async function alertTeam(text: string, except: number | null = null): Promise<void> {
+  const admins = settings.adminIds.filter((chat_id) => chat_id !== except);
   const token = settings.teamBotToken;
   // ponytail: в командный бот — прямой вызов без очереди bot.send: оповещений мало, лимиты Telegram не грозят.
   const send = (chat_id: number) => token

@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, AdminProductListInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
+  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, AdminProductListInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceAddInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -27,6 +27,7 @@ import { live } from './live.ts';
 import { handleMcp } from './mcp.ts';
 import { getPhoto } from './photos.ts';
 import * as hs from './host-searches.ts';
+import { addSource } from './sources.ts';
 import * as s from './services.ts';
 import { createShelf, deleteShelf, getShowcase, listShelves, updateShelf } from './shelves.ts';
 import { getTopicIcon, listTopics } from './topics.ts';
@@ -97,6 +98,9 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await deleteShelf(db, ctx(c), c.req.param('id'));
       return c.body(null, 204);
     });
+  // Человек предлагает источник (sources.ts) — по той же причине отдельно; решает команда в /admin/sources.
+  const userSources: Hono<Env> = new Hono<Env>()
+    .post('/', json(SourceAddInput), async (c) => c.json(await addSource(db, c.var.actor, c.req.valid('json')), 201));
   // Поиск источников для города (admin/sources.ts) — по той же причине отдельно.
   const adminSourceSearches: Hono<Env> = new Hono<Env>()
     .get('/', async (c) => c.json(await admin.listSourceSearches(db, c.req.query('city_id'))))
@@ -371,6 +375,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await revokeTokens(db, c.var.actor.id);
       return c.body(null, 204);
     });
+  app.route('/sources', userSources); // после входа и запрета токенам ролей: только вошедшему человеку
   app.route('/admin/topics', adminTopics); // после `.use('/admin/*')`: только команде
   app.route('/admin/source-searches', adminSourceSearches);
   app.route('/admin/shelves', adminShelves);

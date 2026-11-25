@@ -14,3 +14,8 @@ export function useSources() {
     update: useAct(({ channel, ...input }: { channel: string } & SourceUpdateInput) => api.sourceUpdate(channel, input), { undo }),
   };
 }
+
+/** Сколько источников, предложенных людьми, ждут решения: счётчик «Источников» в меню. Кэш — тот же, что у экрана. */
+export function usePendingSources(): number | undefined {
+  return useQuery({ queryKey: keys.sources, queryFn: api.sources, select: (all) => all.filter((s) => s.approval_status === 'pending_approval').length }).data;
+}

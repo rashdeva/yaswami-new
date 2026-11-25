@@ -107,6 +107,7 @@ test('размер: код виджета ≤ 4096 байт после сжат�
     event_collected: templates.event_collected({ item: { ...item, id: 'x'.repeat(32) + '-1234567890-12', title: 'Щ'.repeat(500), place: 'Щ'.repeat(500) } }),
     guest_registered: templates.guest_registered({ event: big, guests: Array.from({ length: 500 }, () => ({ first_name: 'Щ'.repeat(64), username: 'b'.repeat(32) })), going: 100000 }),
     rsvp_confirmed: templates.rsvp_confirmed({ event: big }),
+    source_approved: templates.source_approved({ channel: `instagram:${'щ'.repeat(30)}` }),
     topic_digest: templates.topic_digest({ items: Array.from({ length: 50 }, () => ({ id: 'x'.repeat(32) + '-1234567890-12', title: 'Щ'.repeat(500), starts_at: item.starts_at, topic: 'психологические группы' })) }),
     feedback_request: templates.feedback_request({ event: big }),
     feedback_received: templates.feedback_received({

@@ -19,7 +19,7 @@ import { recordHostLead } from './inbox.ts';
 import { guestRegistered } from './rsvp-notices.ts';
 import { settings } from './settings.ts';
 
-export type ErrorStatus = 400 | 401 | 403 | 404 | 409;
+export type ErrorStatus = 400 | 401 | 403 | 404 | 409 | 429;
 export class AppError extends Error {
   code: string;
   status: ErrorStatus;

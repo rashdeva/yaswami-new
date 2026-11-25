@@ -290,8 +290,24 @@ export interface AdminSource {
   // или сменить. Анонс без контакта из такого источника получает контактом этого организатора. null — не указан.
   host: { id: string; name: string; username: string } | null;
   events_count: number; // сколько собранных событий из него пришло за всё время
+  // Решение команды по источнику, который предложил человек (sources_add); источник команды и сборщика — сразу approved.
+  // Пока решения нет, источник выключен и сборщик его не читает.
+  approval_status: SourceApprovalStatus;
+  // Кто предложил источник: человек из приложения, с сайта или из переписки с ботом. null — добавили команда или сборщик.
+  submitted_by: { id: number; first_name: string; username: string | null } | null;
   created_at: Date;
 }
+
+/**
+ * Решение по предложенному источнику — как `approval_status` заявки события в календарь Luma (`calendars/events/add`
+ * с `submission_mode: pending`, затем `approve` или `reject`): pending_approval — ждёт команду, approved — читается,
+ * declined — отклонён и остаётся в таблице, чтобы его не предложили снова.
+ */
+export const SOURCE_APPROVAL_STATUSES = ['pending_approval', 'approved', 'declined'] as const;
+export type SourceApprovalStatus = (typeof SOURCE_APPROVAL_STATUSES)[number];
+
+/** Сколько источников человек может предложить за сутки: каждый — проверка в Telegram и работа команды. */
+export const SOURCES_PER_DAY = 3;
 
 /**
  * Что сборщик берёт из источника: announcements — анонсы событий; leads — большой чат города: вопросы «куда сходить»
@@ -329,9 +345,31 @@ export const SourceUpdateInput = z
     kind: sourceKind,
     host_id: z.uuid().nullable().describe('Organizer this source belongs to (id from admin_hosts_list); null — none'),
     city_id: cityId.describe('City of the source (id from admin_cities_list); events collected from now on get it, already collected ones keep theirs'),
+    approval_status: z.enum(['approved', 'declined']).describe('Decision on a source a person suggested (approval_status pending_approval): approved — start reading it and tell the person; declined — keep it off'),
   })
   .partial();
 export type SourceUpdateInput = z.infer<typeof SourceUpdateInput>;
+
+const TELEGRAM_INPUT = /^(?:https?:\/\/)?(?:t\.me\/|telegram\.me\/|@)?([a-z]\w{3,31})\/?$/i;
+/**
+ * Предложить источник может любой вошедший: только публичный канал Telegram (не группа, не закрытый чат) или профиль
+ * Instagram. Источник ждёт решения команды (`approval_status: pending_approval`). В Luma так добавляют событие
+ * в чужой календарь (`calendars/events/add`), источника там нет.
+ */
+export const SourceAddInput = z.object({
+  channel: z.string().trim().max(200).refine((v) => TELEGRAM_INPUT.test(v) || INSTAGRAM_INPUT.test(v), 'Нужна ссылка на канал Telegram или профиль Instagram')
+    .describe('A public Telegram channel: @username, username or t.me/username; or an Instagram profile: instagram.com/<handle>'),
+  city_id: cityId.optional().describe('City the channel is about (id from cities_list); default — the person\'s city'),
+});
+export type SourceAddInput = z.infer<typeof SourceAddInput>;
+/** Предложенный источник в форме таблицы: username канала без @ и ссылки или `instagram:<ник>`. */
+export const submittedChannel = (input: string): string => TELEGRAM_INPUT.exec(input.trim())?.[1] ?? sourceChannel(input);
+/** Ответ на предложение источника: что записали и что с ним дальше. В Luma такого нет. */
+export interface SourceSubmission {
+  channel: string; // username канала без @ или instagram:<ник>
+  city_id: string;
+  approval_status: SourceApprovalStatus; // всегда pending_approval: решает команда
+}
 
 /**
  * Поиск источников для города: команда просит, сборщик в следующий проход ищет в Telegram каналы и группы по названию

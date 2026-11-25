@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, City, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, ProductItem, ProductList, ProductListInput, RsvpInput, SearchResult, Showcase, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
+import type { AppConfig, City, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, ProductItem, ProductList, ProductListInput, RsvpInput, SearchResult, Showcase, SourceAddInput, SourceSubmission, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
 import { track } from './analytics.ts';
 import { inTelegram, tg } from './tg.ts';
 
@@ -31,6 +31,11 @@ const MESSAGES: Record<string, string> = {
   invalid_input: 'Проверьте заполненные поля',
   too_many_requests: 'Слишком много запросов. Подождите минуту',
   not_host: 'Поиск людей — для организаторов каталога',
+  sources_limit: 'За сутки можно предложить три канала. Остальные пришлите завтра',
+  source_exists: 'Этот канал у нас уже есть или мы его уже смотрели',
+  not_a_channel: 'Это группа или чат, а мы читаем только каналы',
+  channel_not_found: 'Такого публичного канала в Telegram нет. Проверьте username',
+  city_not_found: 'Такого города у нас нет',
 };
 
 export class ApiError extends Error {
@@ -88,6 +93,7 @@ export const api = {
   createEvent: (input: EventCreateInput) => request<EventData>('POST', '/events', input),
   updateEvent: (id: string, input: EventUpdateInput) => request<EventData>('PATCH', `/events/${encodeURIComponent(id)}`, input),
   rsvp: (id: string, input: RsvpInput) => request<EventData>('POST', `/events/${encodeURIComponent(id)}/rsvp`, input),
+  addSource: (input: SourceAddInput) => request<SourceSubmission>('POST', '/sources', input),
   listHostSearches: () => request<Wire<HostSearchList>>('GET', '/host-searches'),
   createHostSearch: (input: HostSearchCreateInput) => request<Wire<HostSearch>>('POST', '/host-searches', input),
   updateHostSearch: (id: string, input: HostSearchUpdateInput) => request<Wire<HostSearch>>('PATCH', `/host-searches/${encodeURIComponent(id)}`, input),

@@ -109,7 +109,11 @@ const directionRoute = createRoute({ getParentRoute: () => app, path: '/d/$slug'
 function AllEventsPage() {
   const navigate = useNavigate();
   const { onBack } = useShell();
-  return <AllEventsScreen onBack={onBack} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
+  const { authed, canLogin } = useSession();
+  return (
+    <AllEventsScreen onBack={onBack} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })}
+      authed={authed} onLogin={canLogin ? () => startLogin('/all') : null} />
+  );
 }
 const allRoute = createRoute({ getParentRoute: () => app, path: '/all', component: AllEventsPage });
 

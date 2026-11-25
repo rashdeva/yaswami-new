@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useCollectedEvents } from '@/hooks/useCollectedEvents';
 import { useInbox } from '@/hooks/useInbox';
+import { usePendingSources } from '@/hooks/useSources';
 import { useTopicList } from '@/hooks/useTopics';
 import { useLive } from '@/hooks/useLive';
 import { useLogout } from '@/hooks/useLogout';
@@ -105,11 +106,13 @@ export function App() {
   useLive(!!feed);
   useTopicList(); // темы из базы — в реестр ядра: формы предлагают их на выбор
   const { data: collected } = useCollectedEvents(); // загружается сразу: нужен счётчик в меню
+  const pendingSources = usePendingSources(); // источники от людей, ждут решения
   const match = useMatchRoute();
   if (!feed) return <Gate problem={problem} />;
 
   const counts: Partial<Record<To, number>> = {
     '/catalog': collected?.filter((e) => e.status === 'pending').length, // ждут решения
+    '/sources': pendingSources, // предложили люди, ждут решения
     '/accounts': feed.accounts.filter((a) => a.status === 'active').length, // на связи
   };
   const inFeed = !!match({ to: '/feed' });

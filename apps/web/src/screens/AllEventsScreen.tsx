@@ -6,10 +6,14 @@ import { dayLabel, eventsCount, localDate } from '../format.ts';
 import { CityPick } from '../components/CityPick.tsx';
 import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
 import { useCity } from '../hooks/useSession.ts';
+import { SourceSuggest } from './SourceSuggest.tsx';
 
 interface Props {
   onBack: (() => void) | null;
   onOpen: (event: CollectedEventItem) => void;
+  /** Внизу — «Предложить канал»: вошедший предлагает сразу, гость сайта сначала входит (`onLogin`). */
+  authed: boolean;
+  onLogin: (() => void) | null;
 }
 
 const WEEKDAY = new Intl.DateTimeFormat('ru', { weekday: 'short', timeZone: 'UTC' });
@@ -28,9 +32,9 @@ const dayOf = (e: CollectedEventItem, today: string) => {
 
 /**
  * «Все события»: один день за раз, по частям — утро, день, вечер; события плитками в две колонки. Дни — переключателем
- * сверху, все дни, где что-то есть. Вход — кнопка в конце витрины.
+ * сверху, все дни, где что-то есть. Вход — кнопка в конце витрины. Внизу — предложить канал с анонсами.
  */
-export function AllEventsScreen({ onBack, onOpen }: Props) {
+export function AllEventsScreen({ onBack, onOpen, authed, onLogin }: Props) {
   const city = useCity();
   const { items, failed } = useCollectedFeed();
   const today = localDate();
@@ -87,6 +91,7 @@ export function AllEventsScreen({ onBack, onOpen }: Props) {
           </div>
         </section>
       ))}
+      {items && <SourceSuggest city_id={city.city_id} authed={authed} onLogin={onLogin} />}
     </>
   );
 }

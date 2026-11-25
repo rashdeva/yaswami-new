@@ -1333,6 +1333,9 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.ok((await tool('person_events_list', { ticket })).some((e: any) => e.event.name === 'Йога на пляже' && e.is_host), 'в списке событий человека');
   assert.equal((await tool('person_events_update', { ticket, event_id: made.event.id, name: 'Йога на рассвете' })).event.name, 'Йога на рассвете');
   assert.deepEqual(await tool('person_events_list', { ticket: 'подделка' }), { error: 'bad_ticket' });
+  // Человек в переписке просит добавить канал: заявка — его (по билету), а не владельца токена.
+  assert.equal((await tool('person_sources_add', { ticket, channel: 't.me/anya_events' })).approval_status, 'pending_approval');
+  assert.equal((await db.select().from(sources).where(eq(sources.channel, 'anya_events')))[0]!.submitted_by, await uid(71));
   const view = (await (await call(tma(71, 'Аня'), 'GET', `/events/${made.event.id}`)).json()) as EventView;
   assert.deepEqual([view.event.name, view.is_host], ['Йога на рассвете', true], 'событие принадлежит человеку, а не владельцу токена');
   settings.supportKey = '';
@@ -2571,6 +2574,66 @@ test('источники: команда добавляет и выключае�
   }
 });
 
+test('источник от человека: предложить канал, лимит в сутки, решение команды, спасибо от бота', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const ira = tma(8101, 'Ира');
+  const stub = bot.call;
+  let chat: object = { ok: true, result: { id: -1001, type: 'channel' } };
+  bot.call = async (method, body) => (method === 'getChat' ? (sent.push([method, body]), chat as never) : stub(method, body));
+  try {
+    // Канал Telegram — ссылкой, @username или просто username; проверяется в Telegram; ждёт решения выключенным.
+    const res = await call(ira, 'POST', '/sources', { channel: 'https://t.me/Danang_Party' });
+    assert.equal(res.status, 201);
+    assert.deepEqual(await res.json(), { channel: 'Danang_Party', city_id: 'danang', approval_status: 'pending_approval' });
+    assert.deepEqual(sent.findLast(([m]) => m === 'getChat')![1], { chat_id: '@Danang_Party' });
+    // Тот же канал ещё раз (в другом регистре, от другого человека) — уже известен.
+    assert.deepEqual(await (await call(tma(8102, 'Олег'), 'POST', '/sources', { channel: '@danang_party' })).json(), { error: 'source_exists' });
+    // Только публичные каналы: группа, человек или бот (Telegram не знает такого чата) — нет; закрытый чат и сайт — не вход.
+    chat = { ok: true, result: { id: -1002, type: 'supergroup' } };
+    assert.deepEqual(await (await call(ira, 'POST', '/sources', { channel: '@danang_chat' })).json(), { error: 'not_a_channel' });
+    chat = { ok: false, error_code: 400, description: 'Bad Request: chat not found' };
+    assert.deepEqual(await (await call(ira, 'POST', '/sources', { channel: 'nobody_channel' })).json(), { error: 'channel_not_found' });
+    for (const channel of ['-1001234567', 'https://example.com/page', 'a b']) assert.equal((await call(ira, 'POST', '/sources', { channel })).status, 400, channel);
+    // Instagram в Telegram не проверить — записывается сразу.
+    const ig = (await (await call(ira, 'POST', '/sources', { channel: 'https://www.instagram.com/Danang.Yoga/?igsh=x' })).json()) as { channel: string };
+    assert.equal(ig.channel, 'instagram:danang.yoga');
+    // Лимит: SOURCES_PER_DAY (3) предложения в сутки на человека; отказы Telegram не в счёт.
+    chat = { ok: true, result: { id: -1003, type: 'channel' } };
+    assert.equal((await call(ira, 'POST', '/sources', { channel: 'danang_market' })).status, 201);
+    const limited = await call(ira, 'POST', '/sources', { channel: 'danang_more' });
+    assert.deepEqual([limited.status, await limited.json()], [429, { error: 'sources_limit' }]);
+
+    // Команда видит заявку и кто её прислал; сборщик её не читает, пока не одобрят.
+    const list = (await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[];
+    const party = list.find((x) => x.channel === 'Danang_Party')!;
+    assert.deepEqual([party.approval_status, party.enabled, party.submitted_by?.id, party.submitted_by?.first_name], ['pending_approval', false, await uid(8101), 'Ира']);
+    assert.ok(list.filter((x) => !x.submitted_by).every((x) => x.approval_status === 'approved'), 'источники команды и сборщика — сразу одобрены');
+    // Одобрить: источник включается, бот благодарит того, кто предложил (в его чат — по Telegram id, ADR-0008). Не отменяется.
+    const approved = (await (await call(admin, 'PATCH', '/admin/sources/danang_party', { approval_status: 'approved' })).json()) as AdminSource;
+    assert.deepEqual([approved.approval_status, approved.enabled], ['approved', true]);
+    assert.equal((await lastAction())!.undoable, false);
+    await new Promise((r) => setTimeout(r, 200)); // спасибо уходит после фиксации журнала
+    // Команде о заявке написал бот сразу, с тем, кто предложил.
+    assert.ok(sent.some(([m, b]) => m === 'sendMessage' && b.chat_id === 70 && b.text.startsWith('Ира (@u8101) предлагает источник: t.me/Danang_Party')), 'команде — кто и что предложил');
+    const thanks = sent.findLast(([m, b]) => m === 'sendWidget' && b.chat_id === 8101);
+    assert.match(thanks![1].caption, /Источник добавлен: @Danang_Party/);
+    // Отклонить: остаётся выключенным строкой, второй раз его не предложить; отклонение отменяется.
+    const declined = (await (await call(admin, 'PATCH', '/admin/sources/danang_market', { approval_status: 'declined' })).json()) as AdminSource;
+    assert.deepEqual([declined.approval_status, declined.enabled], ['declined', false]);
+    assert.equal((await lastAction())!.undoable, true);
+    assert.equal((await call(tma(8102, 'Олег'), 'POST', '/sources', { channel: 'danang_market' })).status, 409);
+    // Тот же вызов в MCP — от имени владельца токена; токену роли REST закрыт.
+    chat = { ok: true, result: { id: -1004, type: 'channel' } };
+    const oleg = `Bearer ${await issueToken(db, await uid(8102))}`;
+    const viaMcp = await mcpCall(oleg, 'sources_add', { channel: '@oleg_events' });
+    assert.deepEqual(viaMcp, { error: false, body: { channel: 'oleg_events', city_id: 'danang', approval_status: 'pending_approval' } });
+    assert.equal((await call(`Bearer ${await issueToken(db, await uid(8102), { scope: 'support' })}`, 'POST', '/sources', { channel: 'any_channel' })).status, 403);
+  } finally {
+    bot.call = stub;
+  }
+});
+
 test('источники: профиль Instagram — по ссылке, у организатора становится его Instagram; событие из него записывает в директ', async () => {
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
@@ -2869,6 +2932,7 @@ test('парность: у каждого инструмента MCP есть м
     users_update_self: 'PATCH /me',
     me_collected_list: 'GET /me/collected',
     contacts_list: 'GET /contacts',
+    sources_add: 'POST /sources',
     host_searches_list: 'GET /host-searches',
     host_searches_create: 'POST /host-searches',
     host_searches_update: 'PATCH /host-searches/:id',
@@ -2884,7 +2948,7 @@ test('парность: у каждого инструмента MCP есть м
     events_ticket_types_delete: 'DELETE /ticket-types/:id',
     ...ADMIN_PAIRS,
   };
-  const MCP_ONLY = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update'];
+  const MCP_ONLY = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update', 'person_sources_add'];
   const REST_ONLY = [
     'GET /health', 'GET /config', 'GET /photos/:id', 'GET /topics/:slug/icon', 'POST /telegram/webhook', 'POST /internal/account-message', 'POST /internal/account-typing', 'POST /internal/lead', 'GET /admin/live',
     'GET /auth/telegram/login', 'GET /auth/telegram/callback', 'POST /auth/logout', 'POST /auth/apple', 'POST /auth/google', 'POST /tokens', 'DELETE /tokens', 'DELETE /me',
@@ -3252,7 +3316,7 @@ test('безопасность: чужой контакт не даёт прав
   const rpc = async (auth: string, method: string, params?: object) => (await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params })).json()) as any;
   const names = async (auth: string) => ((await rpc(auth, 'tools/list')).result.tools as { name: string }[]).map((t) => t.name).sort();
   const role = `Bearer ${await issueToken(db, await uid(70), { scope: 'support' })}`;
-  assert.deepEqual(await names(role), ['collected_events_list', 'hosts_list', 'person_events_create', 'person_events_get', 'person_events_list', 'person_events_update', 'products_get', 'products_list', 'search']);
+  assert.deepEqual(await names(role), ['collected_events_list', 'hosts_list', 'person_events_create', 'person_events_get', 'person_events_list', 'person_events_update', 'person_sources_add', 'products_get', 'products_list', 'search']);
   assert.deepEqual(await names(`Bearer ${await issueToken(db, await uid(70), { scope: 'catalog' })}`), ['collected_events_list', 'hosts_list', 'products_get', 'products_list', 'search']);
   const denied = await rpc(role, 'tools/call', { name: 'admin_users_search', arguments: {} });
   assert.ok(denied.error || denied.result.isError, 'инструмент команды токену роли не отвечает');
