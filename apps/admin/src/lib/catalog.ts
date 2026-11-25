@@ -1,6 +1,6 @@
 // Чистые функции каталога: подписи статусов, контакт для записи из ссылки «Записаться», события организатора.
-import type { AdminCollectedEvent, CollectedStatus, Feature, Guest, HostStatus, IdentityProvider, PracticeStatus } from '@yaswami/core';
-import { instagramOf, OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
+import type { AdminCollectedEvent, AdminProduct, CollectedStatus, Feature, Guest, HostStatus, IdentityProvider, PracticeStatus, ProductCategory, ProductStatus, Wire } from '@yaswami/core';
+import { instagramOf, OTHER_TOPIC, PRODUCT_TTL_DAYS, TOPIC_GUIDES } from '@yaswami/core';
 
 /** Ссылка на источник: профиль Instagram или канал в Telegram; у закрытого чата (-100…) ссылки нет. */
 export function sourceLink(channel: string): string | null {
@@ -30,6 +30,24 @@ export const HOST_KINDS: Record<HostKind, string> = { events: 'Организа�
 export const hostKind = (events: number, practices: number): HostKind => (events > 0 ? 'events' : practices > 0 ? 'services' : 'none');
 
 export const PRACTICE_LABELS: Record<PracticeStatus, string> = { pending: 'Ждёт решения', published: 'Опубликована', rejected: 'Отклонена' };
+
+export const PRODUCT_LABELS: Record<ProductStatus, string> = { pending: 'Ждёт решения', published: 'Опубликован', rejected: 'Отклонён' };
+export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = { food: 'Еда', handmade: 'Хендмейд' };
+
+/** Товар не упоминали PRODUCT_TTL_DAYS дней: гостям он уже не показывается, даже одобренный. */
+export const productExpired = (posted_at: string, now = Date.now()) => now - Date.parse(posted_at) >= PRODUCT_TTL_DAYS * 86_400_000;
+
+/** Цена и вес одной строкой: «55k · 100 г»; ничего не указано — «цена не указана». */
+export const productPrice = (p: Pick<AdminProduct, 'price' | 'unit'>) => [p.price ?? 'цена не указана', p.unit].filter(Boolean).join(' · ');
+
+/** Поиск в «Каталоге → Товары»: по товару (название, описание) и мастеру (имя, @username), без регистра. */
+export function matchProduct(p: Pick<Wire<AdminProduct>, 'title' | 'description' | 'host'>, query: string): boolean {
+  const q = query.trim().toLowerCase().replace(/^@/, '');
+  return !q || [p.title, p.description, p.host.name, p.host.username].some((s) => s?.toLowerCase().includes(q));
+}
+
+/** Счётчик вкладки по загруженным страницам: есть ещё страницы — с плюсом. */
+export const countLabel = (n: number, more: boolean) => `${n}${more ? '+' : ''}`;
 
 export const COLLECTED_LABELS: Record<CollectedStatus, string> = {
   pending: 'Ждёт решения',

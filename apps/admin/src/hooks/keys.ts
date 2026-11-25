@@ -18,6 +18,7 @@ export const keys = {
   covers: ['covers'],
   hosts: ['hosts'],
   host: (id: string) => ['host', id],
+  products: (filter: object) => ['products', filter],
   users: (query?: string) => ['users', query],
   user: (id: number) => ['user', id],
   contacts: (hostUser: number) => ['contacts', hostUser],
