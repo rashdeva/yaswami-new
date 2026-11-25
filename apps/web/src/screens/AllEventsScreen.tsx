@@ -3,6 +3,7 @@ import type { CollectedEventItem } from '@yaswami/core';
 import { byDaypart, collectedDay, collectedDayKey, collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { dayLabel, eventsCount, localDate } from '../format.ts';
+import { CityPick } from '../components/CityPick.tsx';
 import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
 import { useCity } from '../hooks/useSession.ts';
 
@@ -51,6 +52,7 @@ export function AllEventsScreen({ onBack, onOpen }: Props) {
         <div className="head">
           <h1>{title ? capital(title) : 'Все события'}</h1>
           {day && <p>{title === 'Сегодня' || title === 'Завтра' ? `${collectedDay(noon(day))} · ` : ''}{eventsCount(events.length)}</p>}
+          <CityPick />
         </div>
       </div>
       {days.length > 1 && (

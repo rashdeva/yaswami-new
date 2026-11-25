@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import type { CollectedEventItem, Direction, TopicItem } from '@yaswami/core';
 import { collectedBadges, collectedDayKey, collectedPath, collectedTime, topicIcon, topicsByDirection, topicSlug } from '@yaswami/core';
 import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
+import { CityPick } from '../components/CityPick.tsx';
 import { useCity } from '../hooks/useSession.ts';
 import { useTopicSubscription } from '../hooks/useTopicSubscription.ts';
 import { useTopicItems, useTopics } from '../hooks/useTopics.ts';
@@ -73,14 +74,7 @@ export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection, onOpenA
       <ProfileButton />
       <div className="head">
         <h1>События</h1>
-        {city.chosen && (
-          <label className="city-pick">
-            📍{' '}
-            <select aria-label="Город" value={city.city_id} onChange={(e) => city.set(e.target.value)}>
-              {city.cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </label>
-        )}
+        {city.chosen && <CityPick />}{/* пока не выбран — ниже полноэкранный выбор города */}
       </div>
     </div>
   );
