@@ -3,10 +3,10 @@ import { createCipheriv, randomBytes } from 'node:crypto';
 import { and, asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type {
   AccountCreateInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminOverview, AgentKey, Conversation, ConversationUpdateInput, DraftSendInput, InboxConversation, InboxFeed, InboxSendInput,
-  LeadInput, Message, MessageMeta,
+  LeadInput, Message, MessageMedia, MessageMeta,
   TgAccount, User,
 } from '@yaswami/core';
-import { AGENTS, collectedPath, collectedWhen, LEAD_REPLY_HOURS } from '@yaswami/core';
+import { AGENTS, collectedPath, collectedWhen, LEAD_REPLY_HOURS, messageWithMedia } from '@yaswami/core';
 // Цикл с auth.ts (dropHostPitch) безопасен: обе стороны берут только функции и зовут их после загрузки.
 import { telegramIdOf, userIdByTelegram, usersByTelegram } from './auth.ts';
 import type { Ctx } from './audit.ts';
@@ -14,6 +14,7 @@ import { audited } from './audit.ts';
 import type { Db } from './db/client.ts';
 import { cities, collectedEvents, collectedEventSignups, conversations, hosts, messages, sources, tgAccounts, users } from './db/schema.ts';
 import { live, USER_TYPING_MS, writing } from './live.ts';
+import { transcribeMedia } from './media.ts';
 import { AppError, collectedSlug, sameChannel } from './services.ts';
 import { settings } from './settings.ts';
 import { host, hunter } from './support.ts';
@@ -60,8 +61,11 @@ async function record(db: Db, peer: Peer, message: Pick<Message, 'direction' | '
   return conversation!;
 }
 
-export const recordIncoming = (db: Db, m: Incoming) =>
-  record(db, { id: m.chatId, name: m.from.first_name, username: m.from.username }, { direction: 'in', author: 'user', text: m.text || NO_TEXT, status: 'received' });
+export const recordIncoming = (db: Db, m: Incoming, media?: MessageMedia[]) =>
+  record(db, { id: m.chatId, name: m.from.first_name, username: m.from.username }, {
+    // Голосовое без подписи — без текста: что в нём, говорит вложение с расшифровкой.
+    direction: 'in', author: 'user', text: m.text || (media?.length ? '' : NO_TEXT), status: 'received', ...(media?.length ? { meta: { media } } : {}),
+  });
 
 /**
  * Сообщение на нашем аккаунте Telegram — о нём сообщает сборщик: личное или ответ нам в чате (`reply_to`).
@@ -70,7 +74,9 @@ export const recordIncoming = (db: Db, m: Incoming) =>
  */
 export async function recordAccountMessage(db: Db, input: AccountMessageInput): Promise<void> {
   const peer = { ...input.peer, account_id: input.account_id };
-  const meta = { account_id: input.account_id };
+  // Вложения сборщик уже положил в бакет; речь расшифровываем до записи — по расшифровке роль готовит ответ.
+  const media = input.media?.length ? await transcribeMedia(input.media) : undefined;
+  const meta = { account_id: input.account_id, ...(media ? { media } : {}) };
   if (input.direction === 'out') {
     const conversation = await record(db, peer, { direction: 'out', author: 'admin', text: input.text, status: 'sent', meta }, null);
     await db.update(conversations).set({ mode: 'human' }).where(eq(conversations.id, conversation.id));
@@ -347,7 +353,7 @@ export async function alertTeam(text: string, except: number | null = null): Pro
 /** Последние сообщения диалога в виде, который понимает роль поддержки: человек — user, всё наше — assistant. */
 export async function supportHistory(db: Db, id: string): Promise<SupportTurn[]> {
   const rows = await db.select().from(messages).where(eq(messages.conversation_id, id)).orderBy(desc(messages.created_at)).limit(20);
-  return rows.reverse().filter((m) => m.status !== 'failed' && m.status !== 'draft').map((m) => ({ role: m.direction === 'in' ? 'user' : 'assistant', content: m.text }));
+  return rows.reverse().filter((m) => m.status !== 'failed' && m.status !== 'draft').map((m) => ({ role: m.direction === 'in' ? 'user' : 'assistant', content: messageWithMedia(m.text, m.meta?.media) || NO_TEXT }));
 }
 
 /** Человек из команды: его Telegram id в ADMIN_IDS. Сверяем Telegram, а не users.id (ADR-0008). */

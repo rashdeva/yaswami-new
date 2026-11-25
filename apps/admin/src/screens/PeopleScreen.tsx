@@ -1,6 +1,6 @@
 // «Люди»: слева собеседники с фильтрами и поиском, справа переписка с выбранным.
 import type { AgentKey } from '@yaswami/core';
-import { AGENTS } from '@yaswami/core';
+import { AGENTS, messageWithMedia } from '@yaswami/core';
 import { BotIcon, CheckIcon, CircleAlertIcon, EyeIcon, EyeOffIcon, HandIcon, PencilLineIcon, SendIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Draft } from '@/components/Draft';
@@ -105,7 +105,7 @@ export function PeopleScreen({ selected, agent, onSelect, onAgent }: Props) {
                           <Badge key={t.who} variant="outline" title={typingText(t)}>{t.who === 'agent' ? <BotIcon /> : <PencilLineIcon />}{t.who === 'agent' ? 'пишет' : 'печатает'}</Badge>
                         ))}
                       </ItemTitle>
-                      <ItemDescription className="line-clamp-1">{lastMsg?.direction === 'out' && 'Мы: '}{lastMsg?.text ?? drafts.get(p.id)?.text}</ItemDescription>
+                      <ItemDescription className="line-clamp-1">{lastMsg?.direction === 'out' && 'Мы: '}{lastMsg ? messageWithMedia(lastMsg.text, lastMsg.meta?.media) : drafts.get(p.id)?.text}</ItemDescription>
                       <ItemDescription className="line-clamp-1">{person(p)} · {leads(p)}</ItemDescription>
                     </ItemContent>
                     <ItemDescription>{time(p.last_message_at)}</ItemDescription>

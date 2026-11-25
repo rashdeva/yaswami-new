@@ -50,6 +50,72 @@ export interface MessageMeta {
    * (`conversations.account_id` — текущий), а у сообщения остаётся тот, через который оно прошло. В Luma такого нет.
    */
   account_id?: string;
+  /** Голосовое, видео, фото или файл в сообщении. */
+  media?: MessageMedia[];
+}
+
+/**
+ * Вложение сообщения. Файл лежит в бакете (`inbox/<bot|account>/<Telegram id собеседника>/…`); `url` null — не сохранили
+ * (бакет не задан, файл больше лимита, Telegram не отдал). `transcript` — расшифровка речи голосового, аудио или видео:
+ * по ней роль Hermes понимает, что сказал человек. В Luma переписки нет; имя `media` — как у анонса (`announcement.media`).
+ */
+export interface MessageMedia {
+  type: MessageMediaType;
+  url: string | null;
+  mime_type: string | null;
+  /** Длительность в секундах у голосового, аудио и видео. */
+  duration: number | null;
+  file_name: string | null;
+  /** null — расшифровки нет: речи нет, ИИ не настроен или не справился. */
+  transcript: string | null;
+}
+export const MESSAGE_MEDIA_TYPES = ['voice', 'audio', 'video', 'video_note', 'photo', 'document'] as const;
+export type MessageMediaType = (typeof MESSAGE_MEDIA_TYPES)[number];
+
+/** Вложение, как его передаёт сборщик: файл уже в бакете, расшифровку делает API. */
+export const MessageMediaInput = z.object({
+  type: z.enum(MESSAGE_MEDIA_TYPES),
+  url: z.url().nullable(),
+  mime_type: z.string().max(200).nullable(),
+  duration: z.number().nonnegative().nullable(),
+  file_name: z.string().max(500).nullable(),
+});
+export type MessageMediaInput = z.infer<typeof MessageMediaInput>;
+
+/**
+ * Ключ вложения в бакете: папка на канал и папка на собеседника, имя файла случайное. Бакет читается открыто,
+ * поэтому имя нельзя угадать: по Telegram id и номеру сообщения чужое голосовое не найти. `id` — случайный uuid.
+ */
+export const inboxMediaKey = (channel: Conversation['channel'], peerId: number, id: string, ext: string) => `inbox/${channel}/${peerId}/${id}.${ext}`;
+
+/** Расширение файла по типу содержимого: так файл откроется и после скачивания из бакета. */
+export function mediaExt(mime: string | null, type: MessageMediaType, fileName?: string | null): string {
+  const fromName = fileName && /\.([a-z0-9]{1,8})$/i.exec(fileName)?.[1];
+  if (fromName) return fromName.toLowerCase();
+  const known: Record<string, string> = { 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' };
+  return (mime && known[mime]) ?? { voice: 'ogg', audio: 'mp3', video: 'mp4', video_note: 'mp4', photo: 'jpg', document: 'bin' }[type];
+}
+
+/** Речь в этом вложении можно расшифровать. */
+export const hasSpeech = (type: MessageMediaType) => type === 'voice' || type === 'audio' || type === 'video' || type === 'video_note';
+
+const MEDIA_WORDS:Record<MessageMediaType, string> = {
+  voice: 'голосовое', audio: 'аудио', video: 'видео', video_note: 'видеокружок', photo: 'фото', document: 'файл',
+};
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+
+/** Короткая подпись вложения: «голосовое 0:12», «файл price.pdf». */
+export const mediaLabel = (m: Pick<MessageMedia, 'type' | 'duration' | 'file_name'>): string =>
+  [MEDIA_WORDS[m.type], m.duration ? clock(m.duration) : m.type === 'document' ? m.file_name : null].filter(Boolean).join(' ');
+
+/**
+ * Сообщение словами для роли Hermes и для ленты: текст и под ним каждое вложение с расшифровкой.
+ * Роли получают переписку текстом — голосовое без расшифровки для них пустое место.
+ */
+export function messageWithMedia(text: string, media: MessageMedia[] | undefined): string {
+  if (!media?.length) return text;
+  const lines = media.map((m) => `[${mediaLabel(m)}${m.transcript ? `, расшифровка: ${m.transcript}` : m.type === 'photo' || m.type === 'document' ? '' : ', расшифровки нет'}]`);
+  return [text, ...lines].filter(Boolean).join('\n');
 }
 
 /** Лента админки: последние диалоги и последние сообщения во всех диалогах, свежие первыми. */
@@ -177,9 +243,11 @@ export const AccountMessageInput = z.object({
   account_id: z.uuid(),
   peer: z.object({ id: z.number().int(), name: z.string().min(1).max(200), username: z.string().nullable() }),
   direction: z.enum(['in', 'out']),
-  text: z.string().min(1).max(10_000),
+  /** Пусто — только когда есть вложение: голосовое без подписи. */
+  text: z.string().max(10_000),
   reply_to: z.object({ chat: z.string().min(1).max(100), message_id: z.number().int() }).optional(),
-});
+  media: z.array(MessageMediaInput).max(10).optional(),
+}).refine((m) => m.text.trim() || m.media?.length, { message: 'text or media is required', path: ['text'] });
 export type AccountMessageInput = z.infer<typeof AccountMessageInput>;
 
 /**

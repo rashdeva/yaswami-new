@@ -2,6 +2,7 @@
 import { ArrowDownIcon } from 'lucide-react';
 import { useEffect } from 'react';
 import type { Account, Conv, Msg } from '@/api';
+import { Attachments } from '@/components/Attachments';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { Message, MessageContent, MessageFooter } from '@/components/ui/message';
@@ -49,7 +50,10 @@ export function Thread({ conversation, messages, me, accounts, typing }: Props) 
                   <Message align={align}>
                     <MessageContent className="gap-1">
                       <Bubble variant={BUBBLE[kind(m)]} align={align}>
-                        <BubbleContent className="whitespace-pre-wrap">{m.text}</BubbleContent>
+                        <BubbleContent className="flex flex-col gap-1.5 whitespace-pre-wrap">
+                          <Attachments media={m.meta?.media} />
+                          {m.text}
+                        </BubbleContent>
                       </Bubble>
                       <MessageFooter className={m.status === 'failed' ? 'text-destructive' : ''}>{who(conversation, m, me, accounts)} · {statusText(m, true)}</MessageFooter>
                     </MessageContent>

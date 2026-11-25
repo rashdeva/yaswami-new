@@ -7,6 +7,7 @@ import { touchUser, upsertUser } from './auth.ts';
 import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { writing } from './live.ts';
+import { saveBotMedia } from './media.ts';
 import { collectedUrl } from './notifications.ts';
 import { cityOf, getCollectedEvent, getEvent, listEvents, myCollectedEvents } from './services.ts';
 import { settings } from './settings.ts';
@@ -22,7 +23,7 @@ export const REPLIES = {
     '🗓 Подскажу, куда сходить сегодня или в выходные\n✍️ Запишу к организатору в пару нажатий\n🎉 Проводите события сами? Помогу завести событие и собрать гостей',
     'Просто напишите, что ищете, а всю афишу можно открыть в приложении.',
   ].join('\n\n'),
-  photo: 'Пока я читаю только текст. Напишите словами, что ищете 🙂',
+  photo: 'Картинки и файлы я пока не разбираю. Напишите словами или голосовым, что ищете 🙂',
   too_often: 'Слишком много сообщений подряд. Подождите минуту и напишите ещё раз.',
   unavailable: 'Сообщение получили, ответим здесь чуть позже.',
 };
@@ -156,14 +157,18 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   // Новый человек пришёл через бота; хвост `/start <параметр>` — ссылка t.me/<бот>?start=…, с которой он пришёл.
   const actor = await upsertUser(db, m.from, { joined_via: 'bot', start_param: /^\/start\s+(\S+)/.exec(m.text)?.[1] ?? null });
   await touchUser(db, actor.id);
-  const conversation = await recordIncoming(db, m);
+  // Голосовое, видео, фото — в бакет, речь в расшифровку: роль читает переписку текстом. Занимает секунды, поэтому до записи
+  // в переписку: иначе админка покажет голосовое без плеера, а роль спросят раньше, чем готова расшифровка.
+  const media = m.file ? [await saveBotMedia(m.file, m.chatId)] : undefined;
+  const conversation = await recordIncoming(db, m, media);
+  const said = m.text || (media ?? []).map((f) => f.transcript).filter(Boolean).join('\n'); // голосовое — его расшифровка
   // Бот не смог ответить — повод нам заглянуть в диалог.
   const say = async (text: string) => {
     await bot.send('sendMessage', { chat_id: m.chatId, text });
     await setAttention(db, conversation.id, 'Бот не ответил');
   };
   // Ответ на «что понравилось и что улучшить?» — текст отзыва о событии, а не вопрос.
-  if (m.replyTo && m.text && await saveFeedbackComment(db, actor.id, m.replyTo, m.text)) {
+  if (m.replyTo && said && await saveFeedbackComment(db, actor.id, m.replyTo, said)) {
     return void (await bot.send('sendMessage', { chat_id: m.chatId, text: 'Спасибо! Отзыв сохранён, организатор его увидит.' }));
   }
   // Команда — приветствие, без пометки: иначе каждый /start ждал бы нас.
@@ -175,7 +180,7 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   };
   // Диалог ведём мы сами: бот молчит.
   if (conversation.mode === 'human') return callHuman('Ответил вам');
-  if (!m.text) return say(REPLIES.photo);
+  if (!said) return say(REPLIES.photo);
   // Всё остальное ведёт роль поддержки. Её нет, она недоступна — отвечаем, что вернёмся, и диалог ждёт нас.
   const allowed = !settings.supportUserIds.length || settings.supportUserIds.includes(m.from.id);
   if (!settings.supportUrl || !allowed) return say(REPLIES.unavailable);

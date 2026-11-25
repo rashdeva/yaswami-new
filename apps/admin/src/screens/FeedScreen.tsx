@@ -1,6 +1,7 @@
 // «Лента»: сверху диалоги, которые ждут нас, под ними — очередь модерации, ниже — живой поток всех сообщений; переписка выезжает сбоку.
 import { CheckIcon, EyeOffIcon } from 'lucide-react';
 import { useState } from 'react';
+import { Attachments } from '@/components/Attachments';
 import { Draft } from '@/components/Draft';
 import { ModerationQueue } from '@/components/ModerationQueue';
 import { Reply } from '@/components/Reply';
@@ -60,7 +61,7 @@ export function FeedScreen() {
             <CardContent className="flex flex-col gap-2">
               <ItemGroup className="gap-1">
                 {feed.messages.filter((m) => m.conversation_id === c.id && m.direction === 'in').slice(0, 2).reverse().map((m) => (
-                  <Item key={m.id} size="xs" variant="muted"><ItemContent><ItemDescription className="line-clamp-none whitespace-pre-wrap">{m.text}</ItemDescription></ItemContent></Item>
+                  <Item key={m.id} size="xs" variant="muted"><ItemContent><Attachments media={m.meta?.media} /><ItemDescription className="line-clamp-none whitespace-pre-wrap">{m.text}</ItemDescription></ItemContent></Item>
                 ))}
               </ItemGroup>
               {pending ? (
@@ -100,6 +101,7 @@ export function FeedScreen() {
                   {(m.status === 'queued' || m.status === 'sending') && <Badge variant="secondary">отправляется</Badge>}
                   {m.status === 'failed' && <Badge variant="destructive">не доставлено</Badge>}
                 </ItemTitle>
+                <Attachments media={m.meta?.media} />
                 <ItemDescription className="line-clamp-none whitespace-pre-wrap">{m.text}</ItemDescription>
                 {sel && <Reply from={from(c)} onSend={(text, sent) => send({ id: c.id, text, account_id: from(c).account }, { onSuccess: sent })} />}
               </ItemContent>
