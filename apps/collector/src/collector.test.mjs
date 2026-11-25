@@ -558,6 +558,14 @@ console.log('cover ok');
 // Товары мастеров: дешёвый отбор, разбор ответа ИИ, мастер поста и запись (store — подделка; запросы — в collector-store.test.ts).
 {
   const { looksLikeProduct, pickProducts, makerOf, saveProducts, uploadFirstPhoto } = await import('./products.mjs');
+  // Короткие посты в канале мастера (DragonTapDaNang, danang_cheese — настоящие тексты, ноябрь 2026): одного признака хватает.
+  const channel1 = { channel: true };
+  assert.ok(looksLikeProduct('Готовы пивчики из куриной грудки с ароматными специями 🐔 Цена прежняя 50g- 40k', channel1));
+  assert.ok(looksLikeProduct('Курочка готова 🐔 В нашем original соусе 50g - 40k', channel1));
+  assert.ok(looksLikeProduct('Друзья, напоминаем о себе! Говядина, курица, лосось и тунец. Всё в наличии! Принимаем заказы, доставляем по Данангу!', channel1));
+  assert.ok(looksLikeProduct('Наш домашній Адигейський сир ми готуємо через день. Вартість: 500.000 VND за 1 кг. Як замовити — пишіть', channel1));
+  assert.ok(!looksLikeProduct('Готовы куриные колбаски — 40k', {}), 'в группе одного признака мало');
+  assert.ok(!looksLikeProduct('Продам платье, надевала 2 раза, цена 300k, самовывоз', channel1), 'перепродажа и в канале не товар');
   const { parseProducts } = await import('@yaswami/extract');
   const melody = '📅 Наличие 21 ноября на 16:00\nМедовик порционно 100гр/55к\nНаполеон 100гр/55к\nТворог 0,5 кг/120к\nКефир 1 л/90к\nЗаказы в лс @melody_cafe';
   const pelmeni = 'Домашние пельмени с говядиной и свининой! Лепим вручную, без добавок. В наличии: 5кг / 250 000 ₫ / кг. Доставка по My An и Son Tra, пишите @DaNang_pelmeshki';
