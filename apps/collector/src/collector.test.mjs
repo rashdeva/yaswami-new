@@ -36,7 +36,7 @@ console.log('extract ok');
 
 // Правила «что куда» называют только включённые темы: без «мафии» она идёт в «игры», туров без «путешествий» нет.
 {
-  const { topicRules } = await import('@yaswami/extract');
+  const { topicRules, topicBoundaries } = await import('@yaswami/extract');
   const { TOPIC_GUIDES, setTopics } = await import('@yaswami/core');
   const saved = Object.entries(TOPIC_GUIDES).map(([name, g]) => ({ name, ...g }));
   const topic = (name) => ({ name, slug: name, emoji: '·', color: '#000000', what: '', why: '', first: '', not_for: '', icon_url: null });
@@ -46,6 +46,9 @@ console.log('extract ok');
   setTopics(['игры', 'мафия', 'путешествия'].map(topic));
   assert.match(topicRules(), /дедукцию — «мафия»/);
   assert.match(topicRules(), /кэмпы .*— «путешествия»/);
+  assert.doesNotMatch(topicRules(), /концерты/, 'без «музыки» концерты не уходят во «встречи»');
+  setTopics([topic('кино')]);
+  assert.equal(topicBoundaries('Границы: '), '', 'ни одного правила — ни одной оборванной фразы');
   setTopics(saved);
 }
 console.log('topic rules ok');
