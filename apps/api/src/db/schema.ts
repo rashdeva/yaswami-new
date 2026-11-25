@@ -3,7 +3,7 @@
 import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -332,33 +332,6 @@ export const practiceSignups = pgTable(
   (t) => [primaryKey({ columns: [t.practice_id, t.user_id] }), index('practice_signups_user_idx').on(t.user_id), index('practice_signups_host_idx').on(t.host_id)],
 );
 
-// Вакансия (Job в @yaswami/core): работодатель ищет человека в городе. Пишет сборщик из чатов о работе (jobs.mjs),
-// команда одобряет в «Каталоге». Гость видит published не старше JOB_TTL_DAYS от posted_at.
-export const jobs = pgTable(
-  'jobs',
-  {
-    id: uuid().primaryKey().defaultRandom(),
-    city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
-    title: text().notNull(),
-    employer: text(),
-    description: text(),
-    pay: text(),
-    telegram_username: text().notNull(), // без @, в нижнем регистре
-    announcement: jsonb().$type<Job['announcement']>().notNull(),
-    author_id: telegramId('author_id'),
-    text_hash: text().notNull(),
-    status: text().$type<JobStatus>().notNull().default('pending'),
-    posted_at: at('posted_at').notNull().defaultNow(),
-    created_at: at('created_at').notNull().defaultNow(),
-  },
-  (t) => [
-    // Повтор объявления — тот же текст в том же городе: сборщик сдвигает posted_at, а не пишет вторую строку.
-    uniqueIndex('jobs_text_idx').on(t.city_id, t.text_hash),
-    index('jobs_list_idx').on(t.status, t.posted_at),
-    check('jobs_status_check', sql`${t.status} in ('pending', 'published', 'rejected')`),
-  ],
-);
-
 // Полка витрины города (core/shelves.ts, ADR-0009): правило или ручной список собранных событий. Правят команда и куратор.
 export const shelves = pgTable(
   'shelves',
@@ -491,7 +464,7 @@ export const sources = pgTable(
     // Выключенный источник сборщик не читает. Строку не удаляем: иначе канал организатора добавился бы снова.
     enabled: boolean().notNull().default(true),
     city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
-    // Что сборщик берёт из чата: анонсы событий, вопросы и мастеров с вакансиями (бывший LEAD_CHATS) или только вакансии (JOB_CHATS).
+    // Что сборщик берёт из чата: анонсы событий или вопросы и мастеров (бывший LEAD_CHATS).
     kind: text({ enum: SOURCE_KINDS }).notNull().default('announcements'),
     // Почему выключен сборщиком: канала больше нет в Telegram или он стал закрытым. null — выключила команда или включён.
     disabled_reason: text(),
@@ -644,6 +617,5 @@ export const tablesMatchCore: [
   Same<Omit<typeof practices.$inferSelect, 'host_id' | 'position' | 'created_at'>, Practice>,
   Same<typeof hostSearches.$inferSelect, HostSearch>,
   Same<typeof hostSearchMatches.$inferSelect, HostSearchMatch>,
-  Same<typeof jobs.$inferSelect, Job>,
   Same<typeof shelves.$inferSelect, Shelf>,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true];
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true];

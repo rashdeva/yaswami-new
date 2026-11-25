@@ -16,7 +16,7 @@ const limit = Number(process.env.LEADS_LIMIT ?? 60);
 const pauseMs = Number(process.env.LEADS_PAUSE_MS ?? 20_000); // роль отвечает в фоне; не держим десятки её запросов сразу
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const store = createStore(DATABASE_URL);
-const chats = (await chatsToRead(store, args, ['leads'])).map((c) => c.chat);
+const chats = (await chatsToRead(store, args)).map((c) => c.chat);
 await store.end();
 
 const WEIGHT = { seek: 3, ask: 2, newcomer: 1 };

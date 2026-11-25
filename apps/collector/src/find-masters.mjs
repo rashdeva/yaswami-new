@@ -14,7 +14,7 @@ if (!SCOUT_SESSION || !DATABASE_URL || !GEMINI_API_KEY) throw new Error('Нуж�
 const days = Number(process.env.SCOUT_DAYS ?? 30);
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const store = createStore(DATABASE_URL);
-const chats = await chatsToRead(store, args, ['leads']);
+const chats = await chatsToRead(store, args);
 
 const client = connect({ apiId: TG_API_ID, apiHash: TG_API_HASH, session: SCOUT_SESSION });
 await client.connect();

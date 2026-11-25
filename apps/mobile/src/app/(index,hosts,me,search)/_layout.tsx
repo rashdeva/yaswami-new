@@ -1,4 +1,4 @@
-// Стек каждой вкладки. Экраны события, организатора и вакансии общие: открываются поверх любой вкладки.
+// Стек каждой вкладки. Экраны события и организатора общие: открываются поверх любой вкладки.
 import { Stack } from 'expo-router/stack';
 import { colors } from '@/theme';
 
@@ -33,8 +33,6 @@ export default function Layout({ segment }: { segment: string }) {
       <Stack.Screen name="e/[id]" options={{ title: '' }} />
       <Stack.Screen name="events/[id]" options={{ title: '' }} />
       <Stack.Screen name="hosts/[id]" options={{ title: '' }} />
-      <Stack.Screen name="jobs/index" options={{ title: 'Вакансии', headerLargeTitleEnabled: true }} />
-      <Stack.Screen name="jobs/[id]" options={{ title: '' }} />
     </Stack>
   );
 }

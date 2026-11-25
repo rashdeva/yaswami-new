@@ -2,7 +2,7 @@
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
   AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminShelf, AdminSource, AdminTopic, CollectedEventItem, ShelfCreateInput, ShelfUpdateInput, TopicCandidate, TopicCreateInput, TopicUpdateInput,
-  AdminUser, AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, AdminJobList, AdminJobListInput, HostUpdateInput, Job, JobUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceSearch, SourceSearchCreateInput, SourceUpdateInput,
+  AdminUser, AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, HostUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceSearch, SourceSearchCreateInput, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
 import { sseEvents } from '@yaswami/core';
@@ -176,10 +176,6 @@ export const api = {
   hostUpdate: (host: string, input: HostUpdateInput) => request<Wire<AdminHost>>('PATCH', `/admin/hosts/${id(host)}`, input),
   practiceUpdate: (practice: string, input: PracticeUpdateInput) => request<Practice>('PATCH', `/admin/practices/${id(practice)}`, input),
   hostDelete: (host: string) => request<void>('DELETE', `/admin/hosts/${id(host)}`),
-
-  // Вакансии
-  jobs: (input: AdminJobListInput = {}) => request<Wire<AdminJobList>>('GET', `/admin/jobs${qs(input)}`),
-  jobUpdate: (job: string, input: JobUpdateInput) => request<Wire<Job>>('PATCH', `/admin/jobs/${id(job)}`, input),
 
   // Пользователи и контакты
   users: (query?: string) => request<AdminUser[]>('GET', `/admin/users${qs({ query })}`),

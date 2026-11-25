@@ -1,7 +1,6 @@
 // Формы запросов и ответов. Одни и те же схемы проверяют REST-запросы, описывают инструменты MCP и формы на фронте.
 import * as z from 'zod';
 import type { Event, Feature, Guest, TicketType, User } from './schema.ts';
-import type { JobItem } from './jobs.ts';
 import { Event as EventSchema, Notification, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
 import { OTHER_TOPIC, isTopic } from './topics.ts';
 
@@ -218,13 +217,11 @@ export type CityFilterInput = z.infer<typeof CityFilterInput>;
 
 /**
  * Находка поиска; `type` говорит, что это. У Practice своей страницы нет — открывается её мастер (`host`).
- * Вакансия (`job`) — из раздела «Вакансии».
  * Самих организаторов поиск не выдаёт: человек ищет, куда пойти или что заказать, а не кого.
  */
 export type SearchEntry =
   | { type: 'event'; event: CollectedEventItem }
-  | { type: 'practice'; practice: Practice; host: HostListItem }
-  | { type: 'job'; job: JobItem };
+  | { type: 'practice'; practice: Practice; host: HostListItem };
 export interface SearchResult { entries: SearchEntry[] } // самые подходящие первыми
 
 /** Фото или видео из публикации-источника; лежит в нашем бакете (ADR-0006). В Luma такого нет. */
@@ -292,12 +289,12 @@ export interface AdminSource {
 }
 
 /**
- * Что сборщик берёт из источника: announcements — анонсы событий; leads — большой чат города: вопросы «куда сходить»,
- * мастера и вакансии; jobs — чат о работе: только вакансии. Мастера и вакансии получают город источника.
+ * Что сборщик берёт из источника: announcements — анонсы событий; leads — большой чат города: вопросы «куда сходить»
+ * и мастера. Мастера получают город источника.
  */
-export const SOURCE_KINDS = ['announcements', 'leads', 'jobs'] as const;
+export const SOURCE_KINDS = ['announcements', 'leads'] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
-const sourceKind = z.enum(SOURCE_KINDS).describe('announcements — event announcements (default); leads — a big city chat: questions "where to go", masters and job vacancies; jobs — a job chat: vacancies only');
+const sourceKind = z.enum(SOURCE_KINDS).describe('announcements — event announcements (default); leads — a big city chat: questions "where to go", and masters');
 
 /**
  * Источник Instagram хранится как `instagram:<ник>`: ник в Instagram может совпасть с чужим username в Telegram.

@@ -15,7 +15,7 @@ export function createStore(url) {
   const sql = postgres(url, { onnotice: () => {} });
   return {
     /**
-     * Источники из CHANNELS (LEAD_CHATS, JOB_CHATS — с `kind` leads, jobs): добавляем те, которых ещё нет, в первый город.
+     * Источники из CHANNELS (LEAD_CHATS — с `kind` leads): добавляем те, которых ещё нет, в первый город.
      * Выключенный, перенесённый в другой город или сменивший вид в админке так и остаётся.
      */
     addSources: async (channels, kind = 'announcements') => {
@@ -124,7 +124,7 @@ export function createStore(url) {
       }
       return true;
     }),
-    /** Города, первый — старейший: разовые скрипты (find-sources, scout, backfill-jobs) берут из них название города. */
+    /** Города, первый — старейший: разовые скрипты (find-sources, scout, backfill-leads) берут из них название города. */
     cities: () => sql`select id, name, aliases from cities order by created_at, id`, // и в архиве; порядок — как у listAllCities в API
     /**
      * Включённые источники работающих городов: город в архиве (`launch_status`) сборщик не читает вовсе — ни анонсы,
@@ -149,13 +149,13 @@ export function createStore(url) {
       ) h on true
       where s.enabled and c.launch_status = 'launched' and s.channel like 'instagram:%' order by s.created_at, s.channel`,
     /**
-     * Включённые чаты, где ищем не анонсы: `leads` — вопросы, мастера и вакансии (бывший LEAD_CHATS), иначе только
-     * вакансии (JOB_CHATS). Мастера и вакансии получают город чата (`city_id`, `city` — его название для ИИ).
+     * Включённые чаты города (`kind` leads, бывший LEAD_CHATS): вопросы, мастера и Находки. Мастера получают город
+     * чата (`city_id`, `city` — его название).
      */
     chats: () => sql`
-      select s.channel as chat, s.kind = 'leads' as leads, s.city_id, c.name as city
+      select s.channel as chat, s.city_id, c.name as city
       from sources s join cities c on c.id = s.city_id
-      where s.enabled and c.launch_status = 'launched' and s.kind in ('leads', 'jobs') and s.channel not like 'instagram:%' order by s.created_at`,
+      where s.enabled and c.launch_status = 'launched' and s.kind = 'leads' and s.channel not like 'instagram:%' order by s.created_at`,
     /** Номер последней разобранной публикации по каждому источнику. */
     async cursors() {
       const rows = await sql`select channel, last_number from collector_cursors`;
@@ -331,14 +331,6 @@ export function createStore(url) {
     saveSearchMatch: ({ search_id, chat, message_id, url, author, text, sent_at }) => sql`
       insert into host_search_matches ${sql({ search_id, chat, message_id, url, author_id: author.id, author_name: author.name, author_username: author.username, text, sent_at })}
       on conflict do nothing`,
-    /** Повтор объявления (jobs.mjs): сдвигает posted_at, решение команды (status) не трогает; false — такой вакансии нет. */
-    touchJob: async (city_id, text_hash, posted_at) => (await sql`
-      update jobs set posted_at = greatest(posted_at, ${posted_at}) where city_id = ${city_id} and text_hash = ${text_hash}
-      returning id`).length > 0,
-    /** Новая вакансия ждёт решения команды (status по умолчанию — pending). Тот же текст в том же городе — только сдвиг posted_at. */
-    saveJob: (job) => sql`
-      insert into jobs ${sql({ ...job, announcement: sql.json(job.announcement) })}
-      on conflict (city_id, text_hash) do update set posted_at = greatest(jobs.posted_at, excluded.posted_at)`,
     end: () => sql.end(),
   };
 }

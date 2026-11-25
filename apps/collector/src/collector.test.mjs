@@ -351,8 +351,7 @@ console.log('cover ok');
   assert.equal(signalOf('Ищу партнёра по бизнесу'), null, 'не досуг');
   assert.equal(signalOf('Посоветуйте хорошего массажиста в Дананге'), 'service');
   assert.equal(signalOf('Ищу тренера по теннису для ребёнка'), 'service');
-  assert.equal(signalOf('Ищу работу поваром, опыт 5 лет. ' + 'Работал в ресторанах и отелях. '.repeat(30)), 'job', 'резюме бывает длинным');
-  assert.equal(signalOf('Ищем тренера в нашу студию, график работы 5/2, зарплата от 15 млн, пишите в личку резюме'), null, 'вакансия — не просьба об услуге');
+  assert.equal(signalOf('Ищем тренера в нашу студию, график работы 5/2, зарплата от 15 млн, пишите в личку'), null, 'наём — не просьба об услуге');
   assert.equal(signalOf('Массаж спины, провожу индивидуально, запись в лс'), null, 'мастер предлагает, а не ищет');
   assert.equal(signalOf('Ищу няню для ребёнка 3 лет'), null, 'наём — не услуга из каталога');
   console.log('leads ok');
@@ -450,75 +449,23 @@ console.log('cover ok');
   console.log('offers ok');
 }
 
-// Вакансии: отбор без ИИ, повтор, контакт; чат о работе не даёт мастеров и вопросов.
+// Чат города: вопросы, мастера и кандидаты в Находки из одних сообщений.
 {
-  const { looksLikeJob, jobTextHash, pickJobs, saveJobs } = await import('./jobs.mjs');
   const { pickFromChat } = await import('./lead.mjs');
-  const waiter = 'В Сонтра открывается новый ресторан, ищем официантов и бармена. График 5/2, оплата от 12 млн донгов. Писать @Sontra_HR';
-  const nanny = 'Ищем няню для двух малышей в Дананге, на полный день с понедельника по пятницу, оплата по договорённости.';
-  assert.ok(looksLikeJob(waiter));
-  assert.ok(looksLikeJob(nanny));
-  assert.ok(!looksLikeJob('Ищу работу поваром в Дананге, опыт 5 лет в ресторанах Москвы, рассмотрю любые предложения, зарплата обсуждается.'), 'резюме');
-  assert.ok(!looksLikeJob('Расписание йоги на неделю: пн, ср, пт в 7:00 на пляже Ми Кхе (требуется бронирование). Инструктор — Анна, коврики есть.'), 'не вакансия');
-  assert.ok(!looksLikeJob('Ищем официантов'), 'слишком коротко');
-  assert.equal(jobTextHash('  Ищем   НЯНЮ\nсрочно '), jobTextHash('ищем няню срочно'));
-
   const now = Math.floor(Date.now() / 1000);
   const user = (id, username) => ({ className: 'User', id: BigInt(id), firstName: 'Олег', username, bot: false });
   const svetlana = 'Здравствуйте! Меня зовут Светлана, я тренер-реабилитолог, опыт 20 лет. Провожу индивидуальные занятия и группы по восстановлению спины. Стоимость 400k, пишите в личку.';
   const messages = [
-    { id: 1, date: now, message: waiter, sender: user(5, 'Oleg') },
-    { id: 2, date: now, message: nanny, sender: user(6, null) },
     { id: 3, date: now, message: 'Куда сходить вечером?', sender: user(7, 'u7') },
     { id: 4, date: now, message: svetlana, sender: user(8, 'sveta_rehab') },
-  ];
-  assert.deepEqual(pickJobs('danang_rabota', messages), [
-    { url: 'https://t.me/danang_rabota/1', author: { id: 5, username: 'oleg' }, text: waiter, posted_at: new Date(now * 1000) },
-    { url: 'https://t.me/danang_rabota/2', author: { id: 6, username: null }, text: nanny, posted_at: new Date(now * 1000) },
-  ]);
-  // Чат о работе (kind jobs): ни мастеров, ни вопросов, ни Находок — одни вакансии. Из чата города (leads) берём всё.
-  const searches = [{ id: 's1', query: 'ищут, куда сходить', keywords: ['сходить'], host_telegram_id: 1 }];
-  const onlyJobs = pickFromChat('danang_rabota', messages, { leads: false, searches });
-  assert.deepEqual([onlyJobs.leads, onlyJobs.offers, onlyJobs.candidates, onlyJobs.jobs.length], [[], [], [], 2]);
-  const all = pickFromChat('danang_chat', messages, { searches });
-  assert.deepEqual([all.leads.length, all.offers.length, all.candidates.length, all.jobs.length], [1, 1, 1, 2]);
-  // Тот, кто сам ищет работу, уходит охотнику и из чата о работе; просьба об услуге — только из LEAD_CHATS.
-  const seekers = [
-    { id: 7, date: now, message: 'Ищу работу поваром в Дананге, опыт 5 лет, готов выйти сразу', sender: user(9, 'cook') },
+    { id: 7, date: now, message: 'Ищу работу тренером в Дананге, опыт 5 лет, готов выйти сразу', sender: user(9, 'cook') },
     { id: 8, date: now, message: 'Посоветуйте хорошего массажиста в Дананге', sender: user(10, 'u10') },
   ];
-  assert.deepEqual(pickFromChat('danang_rabota', seekers, { leads: false }).leads.map((l) => [l.message_id, l.signal]), [[7, 'job']]);
-  assert.deepEqual(pickFromChat('danang_chat', seekers).leads.map((l) => [l.message_id, l.signal]), [[7, 'job'], [8, 'service']]);
-
-  const rows = [];
-  const touched = [];
-  const store = {
-    touchJob: async (city_id, hash, posted_at) => rows.some((r) => r.city_id === city_id && r.text_hash === hash) && touched.push(posted_at) > 0,
-    saveJob: async (job) => rows.push(job),
-  };
-  let asked = 0;
-  // ИИ: контакт из текста у официантов, у няни контакта нет; третье объявление — не вакансия.
-  const extractJob = async (city, text) => (asked++, text.includes('удалённо') ? null
-    : { title: text === waiter ? 'Официант' : 'Няня', employer: null, description: null, pay: null, telegram_username: text === waiter ? '@Sontra_HR' : null });
-  const deps = { store, extractJob, pause: async () => {}, city: { id: 'danang', name: 'Дананг' } };
-  const remote = { url: 'https://t.me/danang_rabota/9', author: { id: 9, username: 'far' }, text: 'Вакансия: менеджер по продажам, удалённо, из любой точки мира, зарплата от 1000$.', posted_at: new Date() };
-  const log = console.log;
-  console.log = () => {};
-  assert.equal(await saveJobs(deps, [...pickJobs('danang_rabota', messages), remote]), 1, 'няня без username у автора и в тексте не сохраняется');
-  assert.deepEqual(rows, [{
-    city_id: 'danang', title: 'Официант', employer: null, description: null, pay: null, telegram_username: 'sontra_hr',
-    announcement: { url: 'https://t.me/danang_rabota/1', text: waiter }, author_id: 5, text_hash: jobTextHash(waiter), posted_at: new Date(now * 1000),
-  }]);
-  assert.equal(asked, 3);
-  // Повтор: то же объявление (другой регистр и пробелы) в ИИ не идёт и строку не добавляет — только сдвигает posted_at; отвергнутое ИИ тоже не спрашиваем снова.
-  const later = new Date((now + 3600) * 1000);
-  assert.equal(await saveJobs(deps, [{ url: 'https://t.me/danang_rabota/20', author: { id: 5, username: 'oleg' }, text: waiter.toUpperCase().replace(/ /g, '  '), posted_at: later }, remote]), 0);
-  assert.deepEqual([asked, rows.length, touched], [3, 1, [later]]);
-  // Контакта в тексте нет — пишем автору.
-  assert.equal(await saveJobs(deps, [{ url: 'u', author: { id: 6, username: 'mama' }, text: nanny + ' Срочно.', posted_at: later }]), 1);
-  console.log = log;
-  assert.equal(rows[1].telegram_username, 'mama');
-  console.log('jobs ok');
+  const searches = [{ id: 's1', query: 'ищут, куда сходить', keywords: ['сходить'], host_telegram_id: 1 }];
+  const all = pickFromChat('danang_chat', messages, { searches });
+  assert.deepEqual(all.leads.map((l) => [l.message_id, l.signal]), [[3, 'ask'], [8, 'service']], 'кто ищет работу — не просьба об услуге');
+  assert.deepEqual([all.offers.length, all.candidates.length], [1, 1]);
+  console.log('chat ok');
 }
 
 // Поиск источников: контакты из текста сообщения.
@@ -546,14 +493,13 @@ console.log('cover ok');
   // В username длинное название склеено со словом — это всё ещё город.
   assert.ok(['danangevent', 'da_nang_chat', 'Афиша danangpals'].every((t) => local.test(t)));
   assert.ok(['eventnhatrang', 'afisha_nhatrang'].every((t) => cityMatcher(['Нячанг', 'Nha Trang']).test(t)));
-  // Чаты разовых скриптов: без аргументов — источники нужного вида; чат не из базы — в первом городе.
+  // Чаты разовых скриптов: без аргументов — чаты города из источников; чат не из базы — в первом городе.
   const store = {
-    chats: async () => [{ chat: 'Big', leads: true, city_id: 'hanoi', city: 'Ханой' }, { chat: 'work', leads: false, city_id: 'danang', city: 'Дананг' }],
+    chats: async () => [{ chat: 'Big', city_id: 'hanoi', city: 'Ханой' }],
     cities: async () => [{ id: 'danang', name: 'Дананг' }, { id: 'hanoi', name: 'Ханой' }],
   };
-  assert.deepEqual((await chatsToRead(store, [], ['leads'])).map((c) => c.chat), ['Big']);
-  assert.deepEqual((await chatsToRead(store, [], ['leads', 'jobs'])).map((c) => c.chat), ['Big', 'work']);
-  assert.deepEqual((await chatsToRead(store, ['@big', 'other'], ['leads'])).map((c) => [c.chat, c.city_id, c.city]), [['Big', 'hanoi', 'Ханой'], ['other', 'danang', 'Дананг']]);
+  assert.deepEqual((await chatsToRead(store, [])).map((c) => c.chat), ['Big']);
+  assert.deepEqual((await chatsToRead(store, ['@big', 'other'])).map((c) => [c.chat, c.city_id, c.city]), [['Big', 'hanoi', 'Ханой'], ['other', 'danang', 'Дананг']]);
 }
 
 // Instagram: публикация в анонс, запись в директ, хэштеги города, кандидаты в источники, запуск актора Apify.

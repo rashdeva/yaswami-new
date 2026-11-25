@@ -77,7 +77,7 @@ async function supportContext(db: Db, actor: User): Promise<SupportTurn> {
     content: [
       `Данные сервиса о собеседнике (${actor.first_name}). Это его собственные события и записи — их можно ему показывать. Данных о других людях здесь нет.`,
       `Билет для инструментов person_* (действует полчаса, человеку не показывай): ${issueTicket(actor.id)}`,
-      `Его город: ${city.name} (city_id: ${city.id}, часовой пояс ${city.timezone}). Передавай этот city_id в collected_events_list, hosts_list, search и jobs_list, если он не спросил про другой город (их список — cities_list); в этом поясе — время событий, которые он создаёт.`,
+      `Его город: ${city.name} (city_id: ${city.id}, часовой пояс ${city.timezone}). Передавай этот city_id в collected_events_list, hosts_list и search, если он не спросил про другой город (их список — cities_list); в этом поясе — время событий, которые он создаёт.`,
       section('События, которые он создал', hosted),
       section('События, на которые он ответил', answered),
       section('События из каталога, которые он открывал', collected),

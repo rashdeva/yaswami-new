@@ -225,11 +225,10 @@ export async function recordLead(db: Db, lead: LeadInput): Promise<void> {
   const before = lead.context.length ? `Перед этим в чате писали:\n${lead.context.map((t) => `- ${t}`).join('\n')}\n\n` : '';
   // Свежий вопрос — ответ в чат реплаем; старый — в чате отвечать поздно, пишем в личку (раздел «Личное сообщение» в SOUL роли).
   const hoursAgo = lead.sent_at ? (Date.now() - Date.parse(lead.sent_at)) / 3600e3 : 0;
-  // Тому, кто ищет работу, пишем только в личку: в чатах о работе наши аккаунты не состоят, а вакансия — разговор личный.
-  const direct = lead.signal === 'job' || hoursAgo > LEAD_REPLY_HOURS;
+  const direct = hoursAgo > LEAD_REPLY_HOURS;
   const when = hoursAgo < 24 ? 'сегодня' : `${Math.round(hoursAgo / 24)} дн. назад`;
-  const what = { ask: 'Вопрос', seek: 'Ищет компанию', newcomer: 'Недавно приехал', service: 'Ищет мастера или услугу', job: 'Ищет работу' }[lead.signal ?? 'ask'];
-  // Город чата — из источников (kind leads или jobs): в нём охотник ищет события, мастеров и вакансии. Чата нет — первый город.
+  const what = { ask: 'Вопрос', seek: 'Ищет компанию', newcomer: 'Недавно приехал', service: 'Ищет мастера или услугу' }[lead.signal ?? 'ask'];
+  // Город чата — из источников (kind leads): в нём охотник ищет события и мастеров. Чата нет — первый город.
   const [city] = await db.select({ id: cities.id, name: cities.name }).from(sources).innerJoin(cities, eq(cities.id, sources.city_id))
     .where(sameChannel(lead.chat));
   const where = city ? `Город чата: ${city.name} (city_id: ${city.id}).\n` : '';
@@ -241,8 +240,8 @@ export async function recordLead(db: Db, lead: LeadInput): Promise<void> {
   if (!text) return;
 
   const reason = direct ? 'Черновик в личку' : 'Черновик ответа в чат';
-  // Какой это поток — видно команде у черновика: событие (без пометки), услуга или вакансия.
-  const kind = lead.signal === 'job' ? 'Вакансия. ' : lead.signal === 'service' ? 'Услуга. ' : '';
+  // Какой это поток — видно команде у черновика: событие (без пометки) или услуга.
+  const kind = lead.signal === 'service' ? 'Услуга. ' : '';
   const peer = { ...lead.author, account_id: account?.id ?? null };
   const conversation = await record(db, peer, { direction: 'in', author: 'user', text: `[чат ${lead.chat}] ${lead.text}`, status: 'received' }, reason);
   await db.insert(messages).values({

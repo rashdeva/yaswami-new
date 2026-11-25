@@ -72,7 +72,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     for (const c of found.chats) if (c.megagroup) add(c, 'поиск');
     await sleep(1500);
   }
-  for (const { chat } of (await store.chats()).filter((c) => c.leads && c.city_id === city.id)) {
+  for (const { chat } of (await store.chats()).filter((c) => c.city_id === city.id)) {
     add(await client.getEntity(chat).catch(() => null), 'чат города');
   }
   // Обсуждения при каналах-источниках города: там отвечают на анонсы — самые тёплые люди.

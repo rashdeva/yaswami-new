@@ -1,8 +1,8 @@
 // Все маршруты админки. Страница здесь — тонкая связка: берёт адрес и раздаёт экрану props; экраны про адреса не знают.
 // Ссылки на карточки сущностей рисует components/EntityLink.tsx — второе и последнее место, где известны адреса.
 import { createRootRoute, createRoute, createRouter, useNavigate } from '@tanstack/react-router';
-import type { AdminEntity, AgentKey, CollectedStatus, JobStatus, PracticeStatus } from '@yaswami/core';
-import { ADMIN_ENTITIES, AGENTS, COLLECTED_STATUSES, DEFAULT_CITY_ID, HOST_STATUSES, JOB_STATUSES, PRACTICE_STATUSES } from '@yaswami/core';
+import type { AdminEntity, AgentKey, CollectedStatus, PracticeStatus } from '@yaswami/core';
+import { ADMIN_ENTITIES, AGENTS, COLLECTED_STATUSES, DEFAULT_CITY_ID, HOST_STATUSES, PRACTICE_STATUSES } from '@yaswami/core';
 import { App } from '@/App';
 import type { EventsWhen } from '@/hooks/useEvents';
 import { AccountsScreen } from '@/screens/AccountsScreen';
@@ -11,7 +11,6 @@ import { ActionsScreen } from '@/screens/ActionsScreen';
 import { AgentsScreen } from '@/screens/AgentsScreen';
 import type { CatalogFilter } from '@/screens/CatalogScreen';
 import { CatalogItemScreen } from '@/screens/CatalogItemScreen';
-import { CatalogJobsScreen } from '@/screens/CatalogJobsScreen';
 import { CatalogScreen } from '@/screens/CatalogScreen';
 import type { CatalogKind } from '@/screens/CatalogServicesScreen';
 import { CatalogServicesScreen } from '@/screens/CatalogServicesScreen';
@@ -127,16 +126,6 @@ function CatalogPage() {
   const onKind = (next: CatalogKind) => void navigate({ to: '/catalog', search: { kind: next === 'events' ? undefined : next } });
   const onFilter = (f: { status: CatalogFilter; query: string }) => void navigate({ to: '/catalog', search: { kind, status: f.status === 'all' ? undefined : f.status, q: f.query || undefined }, replace: true });
   // У услуг шага обработки нет: отбор только по их статусам (PRACTICE_STATUSES).
-  // Вакансии: без статуса в адресе — ждущие решения; «Все» записано явно (на него ссылается журнал).
-  if (kind === 'jobs') {
-    return (
-      <CatalogJobsScreen
-        status={status === undefined ? 'pending' : oneOf<JobStatus>(status, [...JOB_STATUSES]) ?? 'all'}
-        onStatus={(next) => void navigate({ to: '/catalog', search: { kind, status: next === 'pending' ? undefined : next }, replace: true })}
-        onKind={onKind}
-      />
-    );
-  }
   if (kind === 'services') return <CatalogServicesScreen status={oneOf<PracticeStatus>(status, [...PRACTICE_STATUSES]) ?? 'all'} query={q ?? ''} onFilter={onFilter} onKind={onKind} />;
   return <CatalogScreen status={status ?? 'all'} query={q ?? ''} onFilter={onFilter} onKind={onKind} />;
 }
@@ -144,8 +133,8 @@ const catalog = createRoute({
   getParentRoute: () => root,
   path: '/catalog',
   component: CatalogPage,
-  validateSearch: (s: Record<string, unknown>): { kind?: 'services' | 'jobs'; status?: CatalogFilter; q?: string } => ({
-    kind: oneOf<'services' | 'jobs'>(s.kind, ['services', 'jobs']),
+  validateSearch: (s: Record<string, unknown>): { kind?: 'services'; status?: CatalogFilter; q?: string } => ({
+    kind: oneOf<'services'>(s.kind, ['services']),
     status: oneOf<CatalogFilter>(s.status, ['all', ...COLLECTED_STATUSES, 'covers', 'queue', 'past'] as CatalogFilter[]),
     q: str(s.q),
   }),

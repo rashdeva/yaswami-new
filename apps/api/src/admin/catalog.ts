@@ -1,12 +1,12 @@
 // Каталог из анонсов глазами команды: собранные события любого статуса и профили их организаторов (hosts).
 import { and, asc, count, desc, eq, notInArray } from 'drizzle-orm';
-import type { AdminCollectedEvent, AdminCollectedEventView, AdminHost, AdminHostListItem, AdminHostView, AdminJobList, AdminJobListInput, CollectedUpdateInput, HostCreateInput, HostUpdateInput, Job, JobUpdateInput, Practice, PracticeUpdateInput } from '@yaswami/core';
+import type { AdminCollectedEvent, AdminCollectedEventView, AdminHost, AdminHostListItem, AdminHostView, CollectedUpdateInput, HostCreateInput, HostUpdateInput, Practice, PracticeUpdateInput } from '@yaswami/core';
 import { normalUsername } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
 import { assertLibrarianMayEditEvent } from '../librarian.ts';
 import type { Db } from '../db/client.ts';
-import { collectedEvents, collectedEventSignups, hosts, jobs, photos, practices, practiceSignups, users } from '../db/schema.ts';
+import { collectedEvents, collectedEventSignups, hosts, photos, practices, practiceSignups, users } from '../db/schema.ts';
 import { photoUrl } from '../photos.ts';
 import * as s from '../services.ts';
 
@@ -126,19 +126,3 @@ export const deleteHost = (db: Db, ctx: Ctx, id: string): Promise<void> =>
     if (!gone.length) throw new s.AppError('not_found', 404);
   });
 
-/** Вакансии глазами команды: любого статуса и срока, свежие сверху. */
-export const listJobs = (db: Db, { status, city_id, ...page }: AdminJobListInput): Promise<AdminJobList> =>
-  s.jobPage(db, and(status ? eq(jobs.status, status) : undefined, city_id ? eq(jobs.city_id, city_id) : undefined), page);
-
-/** Правка вакансии: решение модератора или её текст. `posted_at` не трогаем — его сдвигает сборщик. */
-export async function updateJob(db: Db, ctx: Ctx, id: string, input: JobUpdateInput): Promise<Job> {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new s.AppError('not_found', 404);
-  return audited(db, ctx, { action: 'admin_jobs_update', entity: 'job', id, input }, async (tx) => {
-    await s.assertCity(tx, input.city_id);
-    const [job] = Object.keys(input).length
-      ? await tx.update(jobs).set(input).where(eq(jobs.id, id)).returning()
-      : await tx.select().from(jobs).where(eq(jobs.id, id));
-    if (!job) throw new s.AppError('not_found', 404);
-    return job;
-  });
-}
