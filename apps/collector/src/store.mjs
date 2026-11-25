@@ -357,9 +357,12 @@ export function createStore(url) {
       where external_id like 'instagram:%' and coalesce(ends_at, starts_at) >= now() and m->>'type' = 'photo'
         and not exists (select 1 from photos p where p.collected_external_id = e.external_id)
         and n = (select min(n2) from jsonb_array_elements(e.announcement->'media') with ordinality as b(m2, n2) where m2->>'type' = 'photo')`,
-    /** Фото анонса как обложка события. Обложка уже есть (нарисовал иллюстратор) — не трогаем. */
-    saveCover: (external_id, source, data) => sql`
-      insert into photos (collected_external_id, source, data) values (${external_id}, ${source}, ${data})
+    /**
+     * Фото анонса как обложка события: `{ url }` — файл уже в бакете (ADR-0011), `{ data }` — байты в базу (бакета нет).
+     * Обложка уже есть (нарисовал иллюстратор) — не трогаем.
+     */
+    saveCover: (external_id, source, { data = null, url = null }) => sql`
+      insert into photos (collected_external_id, source, data, url) values (${external_id}, ${source}, ${data}, ${url})
       on conflict (collected_external_id) do nothing`,
     /** Аккаунты Telegram, с которых мы пишем людям (sender.mjs), вместе с сессией и шагом входа. */
     accounts: () => sql`select id, label, phone, status, session, login from tg_accounts order by created_at`,

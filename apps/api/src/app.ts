@@ -124,7 +124,10 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .get('/products/:id', async (c) => c.json(await s.getProduct(db, c.req.param('id'))))
     // Фото из базы (ADR-0003). Открыто всем: <img> не шлёт заголовок входа, а id фото не угадать.
     .get('/photos/:id', async (c) => {
-      const data = await getPhoto(db, c.req.param('id'));
+      const photo = await getPhoto(db, c.req.param('id'));
+      // Обложка переехала в бакет (ADR-0011): старые ссылки — в сообщениях, кэше Telegram, журнале — ведут туда.
+      if (photo?.url) return c.redirect(photo.url, 301);
+      const data = photo?.data;
       if (!data) return c.json({ error: 'not_found' }, 404);
       // Всё хранится JPEG; PNG — только старые необработанные обложки.
       return c.body(new Uint8Array(data), 200, { 'content-type': data[0] === 0x89 ? 'image/png' : 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' });

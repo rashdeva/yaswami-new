@@ -279,12 +279,15 @@ export const photos = pgTable(
     // Обложка события «Я с вами», одна на событие: нарисованная иллюстратором, когда организатор свою не дал.
     event_id: text().unique().references(() => events.id, { onDelete: 'cascade' }),
     source: text().notNull(), // откуда взято: адрес аватара или telegram:<канал>/<публикация>; по нему не качаем повторно
-    data: bytea().notNull(),
+    // Байты лежат либо здесь, либо в бакете R2 (url — открытый адрес файла). Обложки уходят в бакет, аватары и фото сообщества — здесь (ADR-0011).
+    data: bytea(),
+    url: text(),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex('photos_host_source_idx').on(t.host_id, t.source),
     check('photos_owner_check', sql`num_nonnulls(${t.user_id}, ${t.host_id}, ${t.collected_external_id}, ${t.event_id}) = 1`),
+    check('photos_place_check', sql`num_nonnulls(${t.data}, ${t.url}) = 1`),
   ],
 );
 

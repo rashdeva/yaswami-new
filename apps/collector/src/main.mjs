@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createExtractor, createOfferExtractor, createProductExtractor, createSearchMatcher, createSummarizer, createTopicProposer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
@@ -13,7 +14,7 @@ import { createSender } from './sender.mjs';
 import { fetchLeads } from './lead.mjs';
 import { resolveAuthor, saveOffers } from './offers.mjs';
 import { pickProducts, saveProducts, uploadFirstPhoto } from './products.mjs';
-import { PRODUCT_TTL_DAYS } from '@yaswami/core';
+import { collectedCoverKey, PRODUCT_TTL_DAYS } from '@yaswami/core';
 import { searchChannels, TOPICS } from './find-sources.mjs';
 import { cityMatcher } from './city.mjs';
 import { candidatesFrom, cityHashtags, createInstagram, download, mediaOf, toAnnouncement as fromInstagram, toJpeg, toStats as instagramStats } from './instagram.mjs';
@@ -104,6 +105,13 @@ async function refreshPhotos() {
 // ponytail: события без фото помним в памяти процесса — после перезапуска посмотрим ещё раз.
 const noCover = new Set();
 
+/** Фото анонса как обложка: есть бакет — файл туда, в базу только адрес (ADR-0011); нет — байты в базу, как раньше. */
+async function saveCover(external_id, source, data) {
+  const hash = createHash('sha256').update(data).digest('hex').slice(0, 16);
+  const place = bucket ? { url: await bucket.put(collectedCoverKey(external_id, hash), data, 'image/jpeg') } : { data };
+  await store.saveCover(external_id, source, place);
+}
+
 async function refreshPosts() {
   const byChat = new Map();
   for (const { external_id, has_cover } of await store.upcoming()) {
@@ -120,7 +128,7 @@ async function refreshPosts() {
       const bare = posts.get(number).filter((e) => !e.has_cover && !noCover.has(e.external_id));
       const cover = bare.length ? await downloadCover(userbot, msg) : null;
       for (const { external_id } of bare) {
-        if (cover) await store.saveCover(external_id, `telegram:${chat}/${number}`, cover);
+        if (cover) await saveCover(external_id, `telegram:${chat}/${number}`, cover);
         else noCover.add(external_id);
       }
     }
@@ -338,7 +346,7 @@ async function saveEvents({ channel, host_username, city_id, city, timezone }, a
       external_id, channel, city_id, announcement: media ? { ...announcement, media } : announcement, event: merged,
       signup_url: signupUrl(merged, announcement, signupMessage), status,
     });
-    if (!same && cover) await store.saveCover(external_id, `instagram:${announcement.id}`, cover);
+    if (!same && cover) await saveCover(external_id, `instagram:${announcement.id}`, cover);
     if (same) same.event = merged; else known.push({ external_id, city_id, event, status });
     if (!same && status === 'approved') console.log(`${external_id}: одобрено само — доверенный источник`);
   }
@@ -359,7 +367,7 @@ async function pollInstagram(known, trusted) {
   for (const { external_id, url } of await store.instagramWithoutCover()) {
     const file = await download(url, INSTAGRAM_PHOTO_MAX);
     const cover = file && await toJpeg(file.data, INSTAGRAM_COVER_SIDE, 78);
-    if (cover && cover.data.length <= 400_000) await store.saveCover(external_id, `instagram:${external_id.replace(/^instagram:|#\d+$/g, '')}`, cover.data);
+    if (cover && cover.data.length <= 400_000) await saveCover(external_id, `instagram:${external_id.replace(/^instagram:|#\d+$/g, '')}`, cover.data);
   }
   const sources = await store.instagramSources();
   if (!sources.length) return;

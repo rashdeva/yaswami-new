@@ -108,6 +108,9 @@ importers:
       '@yaswami/extract':
         specifier: workspace:*
         version: link:../../packages/extract
+      aws4fetch:
+        specifier: ^1.0.20
+        version: 1.0.20
       drizzle-orm:
         specifier: ^0.45
         version: 0.45.4(postgres@3.4.9)

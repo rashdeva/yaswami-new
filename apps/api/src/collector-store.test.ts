@@ -67,8 +67,9 @@ test('сборщик: события, источники и отметки', asy
   assert.equal((await sql`select telegram_username from collected_events`)[0]!.telegram_username, 'anna_yoga', 'контакт — без @ и в нижнем регистре');
 
   await store.setStats('telegram:danang/42#', { views: 100, reactions: 5 });
-  await store.saveCover(external_id, 'telegram:danang/42', Buffer.from([0xff, 0xd8, 1]));
-  await store.saveCover(external_id, 'telegram:danang/42', Buffer.from([0xff, 0xd8, 2])); // обложка уже есть — не трогаем
+  await store.saveCover(external_id, 'telegram:danang/42', { url: 'https://media.test/covers/collected/danang-42-0-ab.jpg' });
+  await store.saveCover(external_id, 'telegram:danang/42', { data: Buffer.from([0xff, 0xd8, 2]) }); // обложка уже есть — не трогаем
+  assert.deepEqual((await sql`select url, data from photos where collected_external_id = ${external_id}`).map((r) => [r.url, r.data]), [['https://media.test/covers/collected/danang-42-0-ab.jpg', null]], 'файл в бакете — в базе только адрес');
   assert.deepEqual((await store.upcoming()).map((e: any) => e.has_cover), [true]);
   assert.deepEqual((await store.withoutTopic()).map((e: any) => [e.external_id, e.city, e.timezone]), [[external_id, 'Дананг', 'Asia/Ho_Chi_Minh']], 'повторный разбор — в городе и поясе события');
   await store.setEvent(external_id, { ...event, topic: 'йога' });
@@ -302,7 +303,7 @@ test('сборщик: профили Instagram — свой список, Instag
   assert.deepEqual([...await store.instagramWithoutCover()], [], 'без фото в бакете — нечем');
   await sql`update collected_events set announcement = announcement || ${sql.json({ media: [{ type: 'video', url: 'https://m/v.mp4' }, { type: 'photo', url: 'https://m/1.jpg' }, { type: 'photo', url: 'https://m/2.jpg' }] })} where external_id = 'instagram:C1#0'`;
   assert.deepEqual((await store.instagramWithoutCover()).map((r: any) => [r.external_id, r.url]), [['instagram:C1#0', 'https://m/1.jpg']], 'первое фото, а не ролик');
-  await store.saveCover('instagram:C1#0', 'instagram:C1', Buffer.from([0xff, 0xd8]));
+  await store.saveCover('instagram:C1#0', 'instagram:C1', { data: Buffer.from([0xff, 0xd8]) });
   assert.deepEqual([...await store.instagramWithoutCover()], [], 'обложка уже есть');
   assert.deepEqual((await sql`select views, reactions from collected_events where external_id = 'instagram:C1#0'`).map((r) => [r.views, r.reactions]), [[5, 7]]);
   assert.ok(!(await store.withoutMedia()).some((e: any) => e.external_id === 'instagram:C1#0'));
