@@ -8,5 +8,8 @@ export const keys = {
   mine: ['mine'] as const,
   hosts: (city: string) => ['hosts', city] as const,
   host: (id: string) => ['host', id] as const,
+  products: (city: string, category: string) => ['products', city, category] as const,
+  productsHosts: (city: string) => ['products-hosts', city] as const,
+  product: (id: string) => ['product', id] as const,
   search: (query: string, city: string) => ['search', city, query] as const,
 };

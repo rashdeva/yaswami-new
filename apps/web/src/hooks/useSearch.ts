@@ -1,13 +1,12 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import type { SearchEntry, Wire } from '@yaswami/core';
 import { SearchInput } from '@yaswami/core';
 import { api } from '../api.ts';
 import { keys } from './keys.ts';
 import { useCity } from './useSession.ts';
 
 /**
- * Единый поиск по каталогу города человека: события и Practice. Запрос уходит, когда человек перестал печатать;
+ * Единый поиск по каталогу города человека: события, Practice и товары. Запрос уходит, когда человек перестал печатать;
  * пока идёт новый — на экране прежние находки. `entries` null — искать ещё нечего (запрос короткий) или первый ответ в пути.
  */
 export function useSearch(typed: string) {
@@ -26,8 +25,5 @@ export function useSearch(typed: string) {
     placeholderData: keepPreviousData,
     staleTime: 60_000,
   });
-  return { ready, entries: ready ? data?.entries.filter(shown) ?? null : null, failed: ready ? error : null };
+  return { ready, entries: ready ? data?.entries ?? null : null, failed: ready ? error : null };
 }
-
-// Товары экран поиска пока не рисует — их карточку делает #194.
-const shown = (entry: Wire<SearchEntry>): entry is Exclude<Wire<SearchEntry>, { type: 'product' }> => entry.type !== 'product';

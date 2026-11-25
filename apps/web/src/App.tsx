@@ -5,6 +5,7 @@ import type { CollectedEventItem, Event } from '@yaswami/core';
 import { tint } from './format.ts';
 import { useFeature } from './hooks/useFeature.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
+import { useProductsTab } from './hooks/useProducts.ts';
 import { useSession } from './hooks/useSession.ts';
 import { useTelegramBack } from './hooks/useTelegramBack.ts';
 import { useToast } from './hooks/useToast.ts';
@@ -32,9 +33,9 @@ export function App() {
   const [kind, setKind] = useState<Event['kind']>('o');
 
   // У публичных экранов свой нейтральный цвет; личные выставляют цвет шаблона события сами.
-  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/s/') || pathname.startsWith('/d/') || pathname === '/all' || pathname.startsWith('/hosts') || pathname === '/services' || pathname === '/search') && kind !== 'o') setKind('o');
+  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/s/') || pathname.startsWith('/d/') || pathname === '/all' || pathname.startsWith('/hosts') || pathname.startsWith('/products') || pathname === '/services' || pathname === '/search') && kind !== 'o') setKind('o');
 
-  // Куда ведёт «назад»: событие, полка, направление, все события, поиск и профиль → витрина, организатор → каталог, своё событие и поиск людей → профиль,
+  // Куда ведёт «назад»: событие, полка, направление, все события, поиск и профиль → витрина, организатор → каталог, товар → товары, своё событие и поиск людей → профиль,
   // создание → профиль или витрина. null — корень (вкладки таббара).
   const here = { includeSearch: false } as const; // ?signup, ?startapp в адресе маршрут не меняют
   const section = matchRoute({ to: '/events/$id/edit/$section', ...here });
@@ -43,6 +44,8 @@ export function App() {
     ? () => void navigate({ to: '/' })
     : matchRoute({ to: '/hosts/$id', ...here })
       ? () => void navigate({ to: '/services' })
+    : matchRoute({ to: '/products/$id', ...here })
+      ? () => void navigate({ to: '/products' })
     : section
       ? () => void navigate({ to: '/events/$id/edit', params: { id: section.id } })
       : edit
@@ -59,7 +62,7 @@ export function App() {
     const root = document.getElementById('app');
     if (root) root.toggleAttribute('data-wide', wide);
   }, [wide]);
-  const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/search';
+  const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/products' || pathname === '/search';
 
   return (
     <ShellContext value={{ toast: showToast, onKind: setKind, onBack: nativeBack ? null : back }}>
@@ -67,17 +70,25 @@ export function App() {
         <div className="air" />
         <Outlet />
         {/* Таббар — на корневых разделах; у страниц события и организатора внизу своя кнопка действия и «назад». */}
-        {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/services' ? 'hosts' : null} />}
+        {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/services' ? 'hosts' : pathname === '/products' ? 'products' : null} />}
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </ShellContext>
   );
 }
 
-/** Нижний таббар разделов: события, услуги. Мои события — в профиле, за аватаркой в шапке. */
+/**
+ * Нижний таббар разделов: события, услуги и товары. Мои события — в профиле, за аватаркой в шапке.
+ * «Товары» — когда в городе набралось мастеров с товарами (useProductsTab); открытый по прямой ссылке раздел вкладку показывает всегда.
+ */
 function AppTabBar({ current }: { current: Tab | null }) {
   const navigate = useNavigate();
-  const tabs: [Tab, () => void][] = [['feed', () => void navigate({ to: '/' })], ['hosts', () => void navigate({ to: '/services' })]];
+  const products = useProductsTab() || current === 'products';
+  const tabs: [Tab, () => void][] = [
+    ['feed', () => void navigate({ to: '/' })],
+    ['hosts', () => void navigate({ to: '/services' })],
+    ...(products ? [['products', () => void navigate({ to: '/products' })] satisfies [Tab, () => void]] : []),
+  ];
   return <TabBar current={current} tabs={tabs} searching={current === null} onSearch={() => void navigate({ to: '/search' })} />;
 }
 

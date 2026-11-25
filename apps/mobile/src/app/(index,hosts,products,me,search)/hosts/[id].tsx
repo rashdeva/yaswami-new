@@ -1,10 +1,11 @@
-// Страница организатора: о нём, его услуги с записью в Telegram и ближайшие события.
+// Страница организатора: о нём, его услуги с записью в Telegram, товары и ближайшие события.
 import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import { practiceSignupUrl } from '@yaswami/core';
 import { Button } from '@/components/button';
 import { EventRow } from '@/components/event-row';
+import { ProductCard } from '@/components/product-card';
 import { Row, Section } from '@/components/section';
 import { State } from '@/components/state';
 import { useHost } from '@/queries';
@@ -39,6 +40,14 @@ export default function Host() {
             ))}
           </Section>
         )}
+        {!!host.products.length && (
+          <View style={{ gap: 6 }}>
+            <Text style={{ color: colors.secondaryLabel, fontSize: 13, textTransform: 'uppercase', paddingHorizontal: 16 }}>Товары</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', margin: -5 }}>
+              {host.products.map((p) => <View key={p.id} style={{ width: '50%', padding: 5 }}><ProductCard product={p} /></View>)}
+            </View>
+          </View>
+        )}
         {!!host.events.length && <Section title="Ближайшие события">{host.events.map((e) => <EventRow key={e.id} event={e} />)}</Section>}
         {!!host.photos.length && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
@@ -49,7 +58,7 @@ export default function Host() {
             ))}
           </ScrollView>
         )}
-        {!host.practices.length && !host.events.length && <Section><Row>Скоро здесь появятся услуги и события</Row></Section>}
+        {!host.practices.length && !host.products.length && !host.events.length && <Section><Row>Скоро здесь появятся услуги и события</Row></Section>}
       </ScrollView>
     </>
   );

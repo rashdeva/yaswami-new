@@ -1,3 +1,4 @@
+import type { ProductCategory } from '@yaswami/core';
 import { collectedDay, collectedDayKey, topicIcon } from '@yaswami/core';
 import { SITE } from './api';
 
@@ -23,3 +24,11 @@ export function when(startAt: string, timeZone: string): string {
   const part = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('ru', { timeZone, ...o }).format(date);
   return `${part({ weekday: 'short', day: 'numeric', month: 'long' })}, ${part({ hour: '2-digit', minute: '2-digit' })}`;
 }
+
+/** Цена товара с весом или количеством: «55k · 100 г»; цены нет — «цена по запросу». Как в мини-приложении. */
+export const productPrice = (p: { price: string | null; unit: string | null }) => [p.price ?? 'цена по запросу', p.unit].filter(Boolean).join(' · ');
+
+/** Заглушка вместо фото товара — знак категории. */
+export const productPlaceholder = (category: ProductCategory) => (category === 'food' ? '🥧' : '🧶');
+
+export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = { food: 'Еда', handmade: 'Хендмейд' };

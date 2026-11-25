@@ -17,6 +17,11 @@ export const keys = {
   allHosts: ['hosts'],
   hosts: (city: string) => ['hosts', city],
   host: (id: string) => ['host', id],
+  /** Товары мастеров: список страницами по категории, сколько мастеров с товарами (вход в раздел) и карточка. */
+  allProducts: ['products'],
+  products: (city: string, category: string) => ['products', city, category],
+  productsHosts: (city: string) => ['products-hosts', city],
+  product: (id: string) => ['product', id],
   /** Единый поиск по каталогу. */
   search: (query: string, city: string) => ['search', city, query],
   /** «Мои события»: свои и собранные, куда заходил. */

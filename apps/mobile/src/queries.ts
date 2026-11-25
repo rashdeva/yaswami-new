@@ -1,7 +1,7 @@
 // Данные экранов: useQuery на чтение, useMutation на изменение. Экран зовёт хук, api.* видит только этот файл.
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CollectedEventItem, Me, RsvpInput } from '@yaswami/core';
-import { collectedDayKey, DEFAULT_CITY_ID, setTopics, TOPIC_GUIDES } from '@yaswami/core';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import type { CollectedEventItem, Me, ProductCategory, ProductList, RsvpInput, Wire } from '@yaswami/core';
+import { collectedDayKey, DEFAULT_CITY_ID, PRODUCTS_MIN_HOSTS, setTopics, TOPIC_GUIDES } from '@yaswami/core';
 import { api } from './api';
 import { keys } from './keys';
 import { useSession } from './session';
@@ -16,7 +16,7 @@ export function useTopics(): string[] {
 }
 
 /**
- * Город, чью витрину, мастеров и поиск показывает приложение: город вошедшего (`me.city_id`, выбирается
+ * Город, чью витрину, мастеров, товары и поиск показывает приложение: город вошедшего (`me.city_id`, выбирается
  * в мини-приложении), иначе первый. ponytail: своего выбора города в приложении нет, пока оно только для Вьетнама.
  */
 function useCityId(): string {
@@ -84,6 +84,40 @@ export function useHosts() {
   return useQuery({ queryKey: keys.hosts(city), queryFn: () => api.hosts(city) });
 }
 export const useHost = (id: string) => useQuery({ queryKey: keys.host(id), queryFn: () => api.host(id) });
+
+/** Товары мастеров города страницами, свежие сверху; `category` null — еда и хендмейд вместе. */
+export function useProducts(category: ProductCategory | null) {
+  const city = useCityId();
+  const q = useInfiniteQuery({
+    queryKey: keys.products(city, category ?? 'all'),
+    queryFn: ({ pageParam }) => api.products({ city_id: city, category: category ?? undefined, pagination_cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => (last.has_more ? last.next_cursor ?? undefined : undefined),
+  });
+  return { ...q, products: q.data?.pages.flatMap((p) => p.entries) ?? [] };
+}
+
+export function useProduct(id: string) {
+  const client = useQueryClient();
+  // Карточка из списка — сразу, пока грузится сам товар.
+  return useQuery({
+    queryKey: keys.product(id),
+    queryFn: () => api.product(id),
+    placeholderData: () =>
+      client.getQueriesData<InfiniteData<Wire<ProductList>>>({ queryKey: ['products'] }).flatMap(([, d]) => d?.pages.flatMap((p) => p.entries) ?? []).find((p) => p.id === id),
+  });
+}
+
+/** Показывать ли вкладку «Товары»: товары хотя бы у PRODUCTS_MIN_HOSTS мастеров города. Нужен только `hosts_count` — берём одну строку. */
+export function useProductsTab(): boolean {
+  const city = useCityId();
+  const { data } = useQuery({
+    queryKey: keys.productsHosts(city),
+    queryFn: async () => (await api.products({ city_id: city, pagination_limit: 1 })).hosts_count,
+    staleTime: 10 * 60_000,
+  });
+  return (data ?? 0) >= PRODUCTS_MIN_HOSTS;
+}
 
 /** Поиск начинается с двух букв — так же проверяет сервер. */
 export function useSearch(query: string) {
