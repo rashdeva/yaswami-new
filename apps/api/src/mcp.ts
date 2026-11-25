@@ -35,6 +35,8 @@ const SCOPE_TOOLS: Record<TokenScope, Set<string>> = {
   catalog: new Set(['collected_events_list', 'hosts_list', 'jobs_list', 'jobs_get', 'search']),
   // Куратор витрины (agents/curator): читает каталог и правит только полки; что ему можно с полкой, решает shelves.ts.
   curator: new Set(['cities_list', 'topics_list', 'collected_events_list', 'showcase_get', 'admin_shelves_list', 'admin_shelves_create', 'admin_shelves_update', 'admin_shelves_delete']),
+  // Хранитель тем (agents/librarian): темы и раскладка событий; у события — только тема и снятие (librarian.ts).
+  librarian: new Set(['cities_list', 'topics_list', 'collected_events_list', 'admin_collected_events_list', 'admin_collected_events_get', 'admin_collected_events_update', 'admin_topics_list', 'admin_topics_candidates', 'admin_topics_create', 'admin_topics_update', 'admin_actions_list']),
 };
 
 function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolean) {

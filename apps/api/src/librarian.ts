@@ -1,0 +1,72 @@
+// Хранитель тем (ADR-0010): роль Hermes agents/librarian раз в день разбирает темы и раскладку событий — заводит
+// и выделяет темы, правит гиды, переносит события, снимает не-события, выключает размытые темы. Правит она сама,
+// инструментами admin_* со своим токеном (область librarian); здесь — что ей можно, её лимит и расписание.
+import { and, count, gt, sql } from 'drizzle-orm';
+import type { CollectedUpdateInput, TopicUpdateInput } from '@yaswami/core';
+import { DEFAULT_CITY_ID, LIBRARIAN_DAILY_CHANGES, cityNow } from '@yaswami/core';
+import type { Ctx } from './audit.ts';
+import type { Db } from './db/client.ts';
+import { adminActions } from './db/schema.ts';
+import { AppError, listCities } from './services.ts';
+import { settings } from './settings.ts';
+import { librarian } from './support.ts';
+
+export const isLibrarian = (ctx: Ctx) => ctx.scope === 'librarian';
+
+/** Не больше LIBRARIAN_DAILY_CHANGES правок за сутки — счёт по журналу, где у его правок область librarian. */
+export async function assertLibrarianBudget(db: Db): Promise<void> {
+  const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(adminActions)
+    .where(and(sql`${adminActions.input}->>'scope' = 'librarian'`, gt(adminActions.created_at, sql`now() - interval '1 day'`)));
+  if (n >= LIBRARIAN_DAILY_CHANGES) throw new AppError('too_many_changes', 409);
+}
+
+/**
+ * У события хранитель меняет только тему и снимает с публикации (`status: rejected`): тексты, даты и контакты
+ * написал организатор, решение «опубликовать» — за командой.
+ */
+export async function assertLibrarianMayEditEvent(db: Db, ctx: Ctx, input: CollectedUpdateInput): Promise<void> {
+  if (!isLibrarian(ctx)) return;
+  if (Object.keys(input).some((k) => k !== 'topic' && k !== 'status') || (input.status && input.status !== 'rejected')) throw new AppError('forbidden', 403);
+  await assertLibrarianBudget(db);
+}
+
+/** Тему хранитель заводит и правит, кроме иконки — её рисует иллюстратор. */
+export async function assertLibrarianMayEditTopic(db: Db, ctx: Ctx, input?: TopicUpdateInput): Promise<void> {
+  if (!isLibrarian(ctx)) return;
+  if (input?.icon_url !== undefined) throw new AppError('forbidden', 403);
+  await assertLibrarianBudget(db);
+}
+
+/** Задание роли на день: темы общие для всех городов, поэтому одно на сервис. */
+export const librarianTask = (day: string, cities: string[]) =>
+  `Разбери темы и раскладку событий на ${day}. Города: ${cities.join(', ')}. Начни с событий, собранных за последние сутки, затем кандидаты в темы.`;
+
+// День, за который разбор уже сделан в этом процессе; `running` — задание у роли. Не ответила — следующий проход
+// в тот же час спросит снова. ponytail: в памяти процесса, как у куратора (curator.ts).
+let done: string | null = null;
+let running = false;
+
+/** Раз в день, в settings.librarianHour по часам первого города, — за час до куратора: витрина собирается по готовым темам. */
+export async function requestLibrarian(db: Db, now = Date.now()): Promise<boolean> {
+  if (!settings.librarianUrl || running) return false;
+  const cities = await listCities(db);
+  const home = cities.find((c) => c.id === DEFAULT_CITY_ID) ?? cities[0];
+  if (!home) return false;
+  const { day, minutes } = cityNow(home.timezone, now);
+  if (Math.floor(minutes / 60) !== settings.librarianHour || done === day) return false;
+  running = true;
+  try {
+    const report = await librarian.ask(librarianTask(day, cities.map((c) => `${c.name} (${c.id})`)));
+    if (report !== null) done = day;
+    console.log(`[librarian] ${day}: ${report ?? 'роль недоступна, спросим на следующем проходе'}`);
+  } finally {
+    running = false;
+  }
+  return true;
+}
+
+export function startLibrarianLoop(db: Db, everyMs = 10 * 60_000): void {
+  const tick = () => requestLibrarian(db).catch(console.error);
+  setInterval(tick, everyMs);
+  void tick();
+}

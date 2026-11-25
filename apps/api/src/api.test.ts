@@ -27,9 +27,10 @@ import { refreshTopics, requestNextTopicIcon } from './topics.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
 
 import sharp from 'sharp';
-import { curator, host, hunter, illustrator, parseIllustration, parseSupportReply, support, verifyTicket } from './support.ts';
+import { curator, host, hunter, illustrator, librarian, parseIllustration, parseSupportReply, support, verifyTicket } from './support.ts';
 import { recordHostLead, recordLead } from './inbox.ts';
 import { requestCuration } from './curator.ts';
+import { requestLibrarian } from './librarian.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
 import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
 
@@ -2287,6 +2288,78 @@ test('куратор: задание раз в день в его час по в
   assert.deepEqual(await requestCuration(db, Date.parse('2026-12-03T00:15:00Z')), ['danang']);
   settings.curatorUrl = '';
   curator.ask = ask;
+});
+
+test('хранитель тем: переносит и снимает события, заводит темы — в своих границах и с отметкой в журнале', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  await call(admin, 'GET', '/me');
+  const keeper = `Bearer ${await issueToken(db, await uid(70), { scope: 'librarian' })}`;
+  const tool = async (name: string, args: object) => {
+    const res = await call(keeper, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+    return JSON.parse(((await res.json()) as { result: { content: { text: string }[] } }).result.content[0]!.text);
+  };
+  await db.execute(sql`delete from collected_events where channel = 'keepertest'`);
+  const starts = new Date(Date.now() + 2 * 86_400_000);
+  await db.insert(collectedEvents).values({
+    external_id: 'telegram:keepertest/1#0', channel: 'keepertest', status: 'published', city_id: 'danang', starts_at: starts, signup_url: '', announcement: { url: 'https://t.me/keepertest/1' },
+    event: { title: 'Мастер-класс по свечам', description: '', starts_at: starts.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null, topic: 'обучение' },
+  });
+  const id = 'keepertest-1-0';
+
+  // Видит темы и каталог; REST токену роли закрыт.
+  const listed = await call(keeper, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+  assert.deepEqual(((await listed.json()) as { result: { tools: { name: string }[] } }).result.tools.map((x) => x.name).sort(), [
+    'admin_actions_list', 'admin_collected_events_get', 'admin_collected_events_list', 'admin_collected_events_update', 'admin_topics_candidates', 'admin_topics_create', 'admin_topics_list', 'admin_topics_update',
+    'cities_list', 'collected_events_list', 'topics_list',
+  ]);
+  assert.equal((await call(keeper, 'GET', '/admin/topics')).status, 403);
+
+  // У события — только тема и снятие с публикации.
+  assert.equal((await tool('admin_collected_events_update', { collected_event_id: id, topic: 'творчество' })).topic, 'творчество');
+  assert.deepEqual(await tool('admin_collected_events_update', { collected_event_id: id, title: 'Свечи' }), { error: 'forbidden' });
+  assert.deepEqual(await tool('admin_collected_events_update', { collected_event_id: id, status: 'approved' }), { error: 'forbidden' });
+  const moved = (await db.select().from(adminActions).orderBy(desc(adminActions.created_at)).limit(1))[0]!;
+  assert.deepEqual([moved.action, moved.entity_id, moved.input], ['admin_collected_events_update', id, { topic: 'творчество', scope: 'librarian' }]);
+
+  // Тема: заводит и правит гид, иконку — нет.
+  const topic = { name: 'керамика', slug: 'ceramics', emoji: '🏺', color: '#b45309', what: 'Лепка и гончарный круг.', why: 'Сделать вещь руками.', first: 'Фартук.', not_for: 'Аллергия на глину.', tags: ['керамика'] };
+  assert.equal((await tool('admin_topics_create', topic)).name, 'керамика');
+  assert.equal((await tool('admin_topics_update', { name: 'керамика', what: 'Лепка из глины и гончарный круг.' })).what, 'Лепка из глины и гончарный круг.');
+  assert.deepEqual(await tool('admin_topics_update', { name: 'керамика', icon_url: 'https://example.com/i.png' }), { error: 'forbidden' });
+  assert.equal((await tool('admin_collected_events_update', { collected_event_id: id, status: 'rejected' })).status, 'rejected');
+
+  // Команда видит правки хранителя отдельно: фильтр журнала по области токена.
+  const log = (await (await call(admin, 'GET', '/admin/actions?scope=librarian')).json()) as AdminActionList;
+  assert.deepEqual(log.entries.map((e) => e.action), ['admin_collected_events_update', 'admin_topics_update', 'admin_topics_create', 'admin_collected_events_update']);
+
+  // Лимит: за сутки не больше LIBRARIAN_DAILY_CHANGES правок.
+  const actor_id = await uid(70);
+  await db.insert(adminActions).values(Array.from({ length: 60 }, () => ({ actor_id, via: 'mcp' as const, action: 'admin_topics_update', entity: 'topic' as const, entity_id: 'керамика', input: { scope: 'librarian' }, undoable: false })));
+  assert.deepEqual(await tool('admin_topics_update', { name: 'керамика', emoji: '🫖' }), { error: 'too_many_changes' });
+  assert.equal((await call(admin, 'PATCH', `/admin/topics/${encodeURIComponent('керамика')}`, { emoji: '🫖' })).status, 200, 'команду лимит хранителя не касается');
+
+  await db.execute(sql`delete from admin_actions where input->>'scope' = 'librarian'`);
+  await db.execute(sql`delete from collected_events where channel = 'keepertest'`);
+  await db.execute(sql`delete from topics where name = 'керамика'`);
+  await refreshTopics(db);
+});
+
+test('хранитель тем: задание раз в день в его час по времени первого города', async () => {
+  const tasks: string[] = [];
+  const ask = librarian.ask;
+  librarian.ask = async (task) => (tasks.push(task), null);
+  settings.librarianUrl = 'http://librarian.test';
+  // 23:30 UTC — 06:30 в Дананге (UTC+7): час хранителя. Роль не ответила — следующий проход спрашивает снова.
+  assert.equal(await requestLibrarian(db, Date.parse('2026-12-04T23:30:00Z')), true);
+  assert.equal(await requestLibrarian(db, Date.parse('2026-12-04T23:40:00Z')), true);
+  librarian.ask = async (task) => (tasks.push(task), 'Перенёс 3 события');
+  assert.equal(await requestLibrarian(db, Date.parse('2026-12-04T23:50:00Z')), true);
+  assert.equal(await requestLibrarian(db, Date.parse('2026-12-04T23:55:00Z')), false, 'за день — один раз');
+  assert.equal(await requestLibrarian(db, Date.parse('2026-12-05T03:00:00Z')), false, 'не его час');
+  assert.match(tasks[0]!, /^Разбери темы и раскладку событий на 2026-12-05\. Города: .*Дананг \(danang\)/);
+  settings.librarianUrl = '';
+  librarian.ask = ask;
 });
 
 // Операции команды: инструмент MCP ↔ маршрут REST. Изменяющие из них проверяет тест журнала ниже.

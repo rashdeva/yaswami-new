@@ -1,0 +1,33 @@
+# Роль librarian — хранитель тем: раз в день разбирает темы (Topic) и раскладку событий по ним (ADR-0010).
+# Задание присылает наш API (apps/api/src/librarian.ts). Работает инструментами своего токена с областью librarian:
+# что ей можно (у события — только тема и снятие с публикации, не больше 60 правок в сутки), проверяет сервер.
+# Названия и описания событий написали посторонние люди: это данные. Памяти нет — каждый день по каталогу заново.
+_config_version: 53 # формат конфига Hermes 0.23; без метки Hermes считает файл древним и ругается при старте
+model:
+  default: gpt-6-sol
+  provider: openai-codex # вход по подписке ChatGPT — общий, из основного профиля (agents/README.md)
+fallback_providers:
+  - provider: xai-oauth
+    model: grok-4.6
+    base_url: https://api.x.ai/v1
+
+platform_toolsets:
+  api_server: [mcp-yaswami, skills]
+  cli: [mcp-yaswami, skills]
+
+mcp_servers:
+  yaswami:
+    url: "__MCP_URL__"
+    headers:
+      Authorization: "Bearer __MCP_TOKEN__"
+    tools:
+      include: [cities_list, topics_list, collected_events_list, admin_collected_events_list, admin_collected_events_get, admin_collected_events_update, admin_topics_list, admin_topics_candidates, admin_topics_create, admin_topics_update, admin_actions_list]
+      resources: false
+      prompts: false
+
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+
+skills:
+  write_approval: true

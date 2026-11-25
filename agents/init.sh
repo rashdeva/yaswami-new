@@ -58,3 +58,9 @@ if [ -n "${CURATOR_API_KEY:-}" ]; then
   if [ -n "${YASWAMI_CURATOR_MCP_TOKEN:-}" ]; then install_profile curator "$CURATOR_API_KEY" "$YASWAMI_CURATOR_MCP_TOKEN"
   else echo "[yaswami] ВНИМАНИЕ: CURATOR_API_KEY задан без YASWAMI_CURATOR_MCP_TOKEN — роль curator не ставится"; fi
 fi
+# librarian — хранитель тем (ADR-0010). Как и curator — только со своим токеном области librarian: сервер держит его
+# в границах (у события — только тема и снятие) только по этой области.
+if [ -n "${LIBRARIAN_API_KEY:-}" ]; then
+  if [ -n "${YASWAMI_LIBRARIAN_MCP_TOKEN:-}" ]; then install_profile librarian "$LIBRARIAN_API_KEY" "$YASWAMI_LIBRARIAN_MCP_TOKEN"
+  else echo "[yaswami] ВНИМАНИЕ: LIBRARIAN_API_KEY задан без YASWAMI_LIBRARIAN_MCP_TOKEN — роль librarian не ставится"; fi
+fi

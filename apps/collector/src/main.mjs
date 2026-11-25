@@ -419,7 +419,9 @@ async function uploadMedia(prefix, files) {
 do {
   // Темы — из базы; новая тема из накопившихся меток — не больше одной за проход.
   await syncTopics({ store }).catch((e) => console.error('темы:', e.message));
-  if (env.TOPICS_AUTO !== '0') await curateTopics({ store, proposeTopic }).catch((e) => console.error('новая тема:', e.message));
+  // Темы заводит хранитель тем (роль agents/librarian, ADR-0010): он видит тех же кандидатов (admin_topics_candidates)
+  // и ещё переносит события и выключает лишнее. Старое поведение — сборщик сам делает тему из метки — TOPICS_AUTO=1.
+  if (env.TOPICS_AUTO === '1') await curateTopics({ store, proposeTopic }).catch((e) => console.error('новая тема:', e.message));
   // Сбой дозаполнения (ИИ перегружен, лимит) не должен останавливать сбор: остаток доберём следующим проходом.
   await backfillTopics({ store, extract, pause: () => sleep(llmPauseMs) }).catch((e) => console.error('дозаполнение:', e.message));
   const adopted = await store.adoptHostChannels(ADOPT_PER_PASS).catch((e) => console.error('источники:', e.message));

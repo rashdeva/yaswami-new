@@ -159,7 +159,10 @@ export async function audited<T>(db: Db, ctx: Ctx, a: Audit<T>, run: (tx: Db) =>
       const result = await run(tx);
       const entity_id = typeof a.id === 'string' ? a.id : a.id(result);
       const [row] = await tx.insert(adminActions).values({
-        actor_id: ctx.actor.id, via: ctx.via, action: a.action, entity: a.entity, entity_id, input: a.input ?? null,
+        // Роль Hermes со своим токеном (куратор, хранитель тем) — её область во входе: по ней считаются лимиты роли
+        // и админка показывает её правки (фильтр `scope` журнала).
+        actor_id: ctx.actor.id, via: ctx.via, action: a.action, entity: a.entity, entity_id,
+        input: ctx.scope ? { ...(a.input && typeof a.input === 'object' ? a.input : {}), scope: ctx.scope } : a.input ?? null,
         before, after: await snapshot(tx, a.entity, entity_id), undoable: a.undoable ?? true, undo_of: a.undo_of ?? null,
       }).returning({ id: adminActions.id });
       if (a.undo_of) await tx.update(adminActions).set({ undone_by: row!.id }).where(eq(adminActions.id, a.undo_of));
@@ -183,6 +186,7 @@ export async function listAdminActions(db: Db, input: AdminActionListInput): Pro
       input.entity_id ? eq(t.entity_id, input.entity_id) : undefined,
       input.actor_id ? eq(t.actor_id, input.actor_id) : undefined,
       input.action ? eq(t.action, input.action) : undefined,
+      input.scope ? sql`${t.input}->>'scope' = ${input.scope}` : undefined,
       input.pagination_cursor
         ? sql`(${t.created_at}, ${t.id}) < (select created_at, id from admin_actions where id = ${input.pagination_cursor})`
         : undefined,

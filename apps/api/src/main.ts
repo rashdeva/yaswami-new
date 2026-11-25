@@ -12,6 +12,7 @@ import { AppError, getCollectedEvent, listCities, listCollectedEvents, startVide
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 import { startCuratorLoop } from './curator.ts';
+import { startLibrarianLoop } from './librarian.ts';
 import { startFeedbackLoop } from './feedback.ts';
 import { startSubscriptionsLoop } from './subscriptions.ts';
 import { refreshTopics, startTopicsLoop } from './topics.ts';
@@ -54,6 +55,7 @@ await refreshTopics(db);
 startTopicsLoop(db);
 startVideoLoop(db); // без роли illustrator (ILLUSTRATOR_URL пуст) ничего не делает
 startCuratorLoop(db); // без роли curator (CURATOR_URL пуст) ничего не делает
+startLibrarianLoop(db); // без роли librarian (LIBRARIAN_URL пуст) ничего не делает
 
 // Один сервер на всё: REST под /api, MCP на /mcp, админка под /admin, остальное — собранное мини-приложение.
 // Заголовки безопасности на всё: HSTS, nosniff, Referrer-Policy. Запрет встраивания во фрейм — только админке:

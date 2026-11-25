@@ -286,6 +286,7 @@ export const AdminActionListInput = z.object({
   entity_id: z.string().max(200).optional(),
   actor_id: z.coerce.number().int().optional(),
   action: z.string().max(80).optional().describe('Tool name, e.g. admin_events_update'),
+  scope: z.string().max(40).optional().describe('Only actions made with an agent role token of this scope, e.g. librarian'),
   pagination_cursor: z.uuid().optional().describe('next_cursor from the previous page'),
   pagination_limit: z.coerce.number().int().min(1).max(100).optional().describe('Default 50'),
 });
@@ -298,7 +299,10 @@ export interface AdminActionList {
   next_cursor: string | null;
 }
 
-// --- Темы (Topic). Список в базе; правят команда и агенты, сборщик добавляет сам. В Luma такого нет.
+// --- Темы (Topic). Список в базе; правят команда и хранитель тем (роль agents/librarian, ADR-0010). В Luma такого нет.
+
+/** Сколько правок тем и раскладки событий хранитель может сделать за сутки: разбор не должен перетрясать каталог. */
+export const LIBRARIAN_DAILY_CHANGES = 60;
 
 /** Кто завёл тему: built_in — первые темы, team — команда или агент через MCP, collector — сборщик по накопившимся Tag. */
 export const TOPIC_ORIGINS = ['built_in', 'team', 'collector'] as const;

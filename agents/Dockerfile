@@ -9,5 +9,6 @@ COPY hunter /opt/yaswami-agents/hunter
 COPY host /opt/yaswami-agents/host
 COPY illustrator /opt/yaswami-agents/illustrator
 COPY curator /opt/yaswami-agents/curator
+COPY librarian /opt/yaswami-agents/librarian
 COPY --chmod=0755 init.sh /etc/cont-init.d/01-yaswami-agents
 CMD ["gateway", "run"]
