@@ -4,19 +4,26 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { AdminSource, SourceCreateInput, SourceSearch, SourceSearchCreateInput, SourceUpdateInput } from '@yaswami/core';
 import { instagramOf, sourceChannel } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
-import { audited } from '../audit.ts';
+import { afterCommit, audited } from '../audit.ts';
+import { telegramIdOf } from '../auth.ts';
 import type { Db } from '../db/client.ts';
-import { cities, collectorCursors, hosts, sourceSearches, sources } from '../db/schema.ts';
+import { cities, collectorCursors, hosts, sourceSearches, sources, users } from '../db/schema.ts';
+import { sendCard } from '../notifications.ts';
 import { AppError, assertCity, sameChannel } from '../services.ts';
 
 const selectSources = (db: Db) => db
   .select({
     channel: sources.channel, kind: sources.kind, enabled: sources.enabled, disabled_reason: sources.disabled_reason, empty_parses: sources.empty_parses, city_id: sources.city_id, created_at: sources.created_at, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,
+    approval_status: sources.approval_status, submitter_id: users.id, submitter_name: users.first_name, submitter_username: users.username,
     events_count: sql<number>`(select count(*) from collected_events e where lower(e.channel) = lower(${sources.channel}))::int`,
   })
-  .from(sources).leftJoin(hosts, eq(hosts.id, sources.host_id));
+  .from(sources).leftJoin(hosts, eq(hosts.id, sources.host_id)).leftJoin(users, eq(users.id, sources.submitted_by));
 type SourceRow = Awaited<ReturnType<typeof selectSources>>[number];
-const toSource = ({ host_id, host_name, host_username, ...r }: SourceRow): AdminSource => ({ ...r, host: host_id && host_name && host_username ? { id: host_id, name: host_name, username: host_username } : null });
+const toSource = ({ host_id, host_name, host_username, submitter_id, submitter_name, submitter_username, ...r }: SourceRow): AdminSource => ({
+  ...r,
+  host: host_id && host_name && host_username ? { id: host_id, name: host_name, username: host_username } : null,
+  submitted_by: submitter_id !== null && submitter_name !== null ? { id: submitter_id, first_name: submitter_name, username: submitter_username } : null,
+});
 
 async function getSource(db: Db, channel: string): Promise<AdminSource> {
   const [row] = await selectSources(db).where(sameChannel(channel));
@@ -24,7 +31,7 @@ async function getSource(db: Db, channel: string): Promise<AdminSource> {
   return toSource(row);
 }
 
-/** Все источники, новые сверху. ponytail: без страниц — каналов сотни, не тысячи. */
+/** Все источники, новые сверху, и предложенные людьми — с тем, кто предложил. ponytail: без страниц — каналов сотни, не тысячи. */
 export const listSources = async (db: Db): Promise<AdminSource[]> => (await selectSources(db).orderBy(desc(sources.created_at)).limit(1000)).map(toSource);
 
 /** Добавить источник командой: сборщик начнёт читать его со следующего прохода. */
@@ -45,16 +52,22 @@ export const createSource = (db: Db, ctx: Ctx, input: SourceCreateInput): Promis
  * контакта, которые он раньше пропустил, теперь получат контактом организатора. А если у организатора нет канала,
  * этот канал становится его каналом: из него берутся фото сообщества. Профиль Instagram так же становится его
  * Instagram, если тот не указан.
+ *
+ * Решение по предложенному источнику (`approval_status`): одобренный включается, и бот пишет тому, кто его предложил;
+ * отклонённый остаётся выключенным. Одобрение с сообщением человеку не отменяется: оно уже ушло в Telegram.
  */
 export async function updateSource(db: Db, ctx: Ctx, channel: string, input: SourceUpdateInput): Promise<AdminSource> {
   // Журнал и снимок — по каналу так, как он записан: команда может передать его в другом регистре.
-  const { channel: key } = await getSource(db, channel);
-  return audited(db, ctx, { action: 'admin_sources_update', entity: 'source', id: key, input }, async (tx) => {
+  const { channel: key, approval_status: was, submitted_by } = await getSource(db, channel);
+  const tell = input.approval_status === 'approved' && was !== 'approved' ? submitted_by : null; // кому написать об одобрении
+  return audited(db, ctx, { action: 'admin_sources_update', entity: 'source', id: key, input, undoable: !tell }, async (tx) => {
     if (input.host_id && !(await tx.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, input.host_id))).length) throw new AppError('host_not_found', 404);
     await assertCity(tx, input.city_id);
-    const values: Partial<typeof sources.$inferInsert> = Object.fromEntries(Object.entries({ enabled: input.enabled, kind: input.kind, host_id: input.host_id, city_id: input.city_id }).filter(([, v]) => v !== undefined));
-    if (input.enabled !== undefined) values.disabled_reason = null; // решение команды заменяет причину сборщика
-    if (input.enabled) values.empty_parses = 0; // включили — счёт пустых разборов заново, иначе первый же выключит снова
+    // Решение по предложенному включает или выключает его; явное `enabled` в том же вызове главнее.
+    const enabled = input.enabled ?? (input.approval_status ? input.approval_status === 'approved' : undefined);
+    const values: Partial<typeof sources.$inferInsert> = Object.fromEntries(Object.entries({ enabled, kind: input.kind, host_id: input.host_id, city_id: input.city_id, approval_status: input.approval_status }).filter(([, v]) => v !== undefined));
+    if (enabled !== undefined) values.disabled_reason = null; // решение команды заменяет причину сборщика
+    if (enabled) values.empty_parses = 0; // включили — счёт пустых разборов заново, иначе первый же выключит снова
     const before = await getSource(tx, key);
     if (Object.keys(values).length) await tx.update(sources).set(values).where(eq(sources.channel, key));
     // Включили выключенный источник товаров — сборщик перечитает его свежие посты: так команда возвращает пропущенное.
@@ -66,6 +79,12 @@ export async function updateSource(db: Db, ctx: Ctx, channel: string, input: Sou
       const instagram = instagramOf(key);
       if (instagram) await tx.update(hosts).set({ instagram_handle: instagram }).where(and(eq(hosts.id, input.host_id), isNull(hosts.instagram_handle)));
       else if (!key.startsWith('-')) await tx.update(hosts).set({ channel: key.toLowerCase() }).where(and(eq(hosts.id, input.host_id), isNull(hosts.channel)));
+    }
+    if (tell) {
+      afterCommit(tx, async (base) => {
+        const chatId = await telegramIdOf(base, tell.id); // users.id — не Telegram id (ADR-0008)
+        if (chatId !== null) await sendCard(chatId, 'source_approved', { channel: key });
+      });
     }
     return getSource(tx, key);
   });

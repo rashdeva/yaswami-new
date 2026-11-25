@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeFormat, PracticeStatus, Product, ProductStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, PRODUCT_CATEGORIES, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
+import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, PRODUCT_CATEGORIES, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -508,6 +508,11 @@ export const sources = pgTable(
     // Сколько публикаций подряд ИИ разобрал и не нашёл ни одного события: найдено — снова 0. Набралось
     // SOURCE_EMPTY_PARSES (20) — сборщик выключает источник: каждый разбор — запрос к ИИ. Команда включила — снова 0.
     empty_parses: integer('empty_parses').notNull().default(0),
+    // Источник, который предложил человек (sources_add), ждёт решения команды выключенным: pending_approval → approved
+    // или declined. Отклонённый остаётся строкой, чтобы его не предложили снова. Команда и сборщик пишут сразу approved.
+    approval_status: text({ enum: SOURCE_APPROVAL_STATUSES }).notNull().default('approved'),
+    // Кто предложил: по нему считается лимит SOURCES_PER_DAY, ему бот пишет, когда команда одобрила. null — команда или сборщик.
+    submitted_by: userId('submitted_by').references(() => users.id, { onDelete: 'set null', onUpdate: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
   // Username в Telegram не различает регистр: @Tea и @tea — один канал.

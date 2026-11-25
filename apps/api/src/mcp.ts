@@ -5,7 +5,7 @@ import * as z from 'zod';
 import type { CollectedEventItem, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, AdminGuestUpdateInput, CityCreateInput, CityUpdateInput,
-  CityFilterInput, CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminProductListInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TEMPLATES, cityId, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSelfUpdateInput,
+  CityFilterInput, CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminProductListInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceAddInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, SOURCES_PER_DAY, TEMPLATES, cityId, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSelfUpdateInput,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
@@ -19,6 +19,7 @@ import {
 import { collectedUrl, eventUrl } from './notifications.ts';
 import * as hs from './host-searches.ts';
 import * as s from './services.ts';
+import { addSource } from './sources.ts';
 import { createShelf, deleteShelf, getShowcase, listShelves, updateShelf } from './shelves.ts';
 import { listTopics } from './topics.ts';
 
@@ -29,7 +30,7 @@ const KINDS = `Event kind is a visual template: ${Object.entries(TEMPLATES).map(
 
 // Что доступно токену с областью действия (роли Hermes, с которыми говорят посторонние): только эти инструменты.
 // Ограничение живёт здесь, на сервере, а не в конфиге роли: украденный токен роли не открывает ни переписку, ни админку.
-const PERSON_TOOLS = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update'];
+const PERSON_TOOLS = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update', 'person_sources_add'];
 const SCOPE_TOOLS: Record<TokenScope, Set<string>> = {
   support: new Set(['collected_events_list', 'hosts_list', 'products_list', 'products_get', 'search', ...PERSON_TOOLS]),
   catalog: new Set(['collected_events_list', 'hosts_list', 'products_list', 'products_get', 'search']),
@@ -245,6 +246,11 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
     description: 'Set the topics the user is subscribed to, the city they live in and the bot notifications they turned off (`muted_notifications`: topic_digest, rsvp_confirmed, guest_registered, feedback_request, feedback_received); only passed fields change. Once a day the bot tells them about new catalogue events of these topics in their city. The topic list replaces the previous one; [] unsubscribes. Current values — `subscribed_topics` (null: never asked) and `city_id` in users_get_self. Call only when the user asked for it. Errors: invalid_input, city_not_found.',
   }, (a, me, db) => s.updateSelf(db, me, a));
 
+  const SOURCES_ADD = `Suggest a channel the collector should read announcements from: a public Telegram channel (@username or t.me link) or an Instagram profile (instagram.com/<handle>). It is not read until the team approves it; when approved, the bot tells the person. Call only when the person asks to add a channel. Errors: sources_limit — the person already suggested ${SOURCES_PER_DAY} sources in the last 24 hours, try tomorrow; source_exists — we already know this channel (it is read, waits for a decision or was declined); channel_not_found — no public Telegram chat with this username; not_a_channel — it is a group, chat or bot, only channels are accepted; invalid_input — neither a Telegram channel nor an Instagram profile; city_not_found.`;
+  tool('sources_add', {
+    title: 'Suggest an announcement source', asUser: true, shape: SourceAddInput.shape, description: SOURCES_ADD,
+  }, (a, me) => addSource(db, me, a));
+
   // Операции команды над всем сервисом — только тем, кому открыта админка: через них работают Hermes и оператор.
   // Каждое изменение пишется в журнал (admin_actions_list) и, если можно, отменяется admin_actions_undo.
   // Токен с областью действия проходит сюда ради person_*; остальное отсекает `allowed` в `tool`.
@@ -325,6 +331,11 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
       title: 'Update event of the person', shape: { ticket, event_id, ...EventUpdateInput.shape },
       description: 'Change an event the person hosts; only passed fields change. status "cancelled" cancels it. Error forbidden: the person is not the host.',
     }, async ({ ticket: t, event_id: id, ...input }) => s.updateEvent(db, await person(t), id, input));
+
+    tool('person_sources_add', {
+      title: 'Suggest a source for the person', shape: { ticket, ...SourceAddInput.shape },
+      description: `${SOURCES_ADD} The suggestion is recorded as the person's: the team sees who sent it, the daily limit is theirs.`,
+    }, async ({ ticket: t, ...input }) => addSource(db, await person(t), input));
 
     // --- События Ясвами (admin/events.ts): любое событие, от имени его организатора и по его правилам
     tool('admin_events_list', {
@@ -496,7 +507,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
     // --- Источники сборщика (admin/sources.ts)
     tool('admin_sources_list', {
       title: 'Announcement sources', readOnly: true, shape: {},
-      description: 'Telegram channels and groups the collector reads, newest first. `kind`: announcements — events are taken from it; leads — a big city chat: questions "where to go" and masters. Masters get the city of the chat. `host` — the organizer the source belongs to: set by the collector when it takes a channel from an organizer\'s profile, or by the team; null — none. Disabled sources are not read; `disabled_reason` — the collector disabled it itself (the channel is gone or private, or the AI parsed 20 of its posts in a row without finding an event — `empty_parses` counts them; enabling a source resets it), null — the team did.',
+      description: 'Telegram channels and groups the collector reads, newest first. `approval_status` pending_approval — a person suggested it (`submitted_by`) and it waits for the team: it is off until approved with admin_sources_update. `kind`: announcements — events are taken from it; leads — a big city chat: questions "where to go" and masters. Masters get the city of the chat. `host` — the organizer the source belongs to: set by the collector when it takes a channel from an organizer\'s profile, or by the team; null — none. Disabled sources are not read; `disabled_reason` — the collector disabled it itself (the channel is gone or private, or the AI parsed 20 of its posts in a row without finding an event — `empty_parses` counts them; enabling a source resets it), null — the team did.',
     }, () => admin.listSources(db));
 
     tool('admin_sources_create', {
@@ -506,7 +517,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
 
     tool('admin_sources_update', {
       title: 'Edit announcement source', shape: { channel: z.string().describe('Channel from admin_sources_list'), ...SourceUpdateInput.shape },
-      description: `Stop or resume reading a source (e.g. when an organizer's channel turns out to be someone else's or not about events), or set the organizer it belongs to: announcements without a contact then get this organizer as the contact. Only passed fields change. ${ONLY_TEAM} Errors: not_found, host_not_found, city_not_found.`,
+      description: `Stop or resume reading a source (e.g. when an organizer's channel turns out to be someone else's or not about events), or set the organizer it belongs to: announcements without a contact then get this organizer as the contact. approval_status decides a source a person suggested (approval_status pending_approval in admin_sources_list): approved starts reading it and the bot thanks the person (cannot be undone), declined keeps it off. Only passed fields change. ${ONLY_TEAM} Errors: not_found, host_not_found, city_not_found.`,
     }, ({ channel, ...input }) => admin.updateSource(db, ctx, channel, input));
 
     tool('admin_source_searches_list', {

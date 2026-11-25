@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import type { CollectedEventItem, Event, Notification, User } from '@yaswami/core';
-import { ADDRESS_MAX, collectedPath, collectedWhen, NAME_MAX, TOPIC_GUIDES } from '@yaswami/core';
+import { ADDRESS_MAX, collectedPath, collectedWhen, instagramOf, NAME_MAX, TOPIC_GUIDES } from '@yaswami/core';
 import { telegramIdOf } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { users } from './db/schema.ts';
@@ -119,6 +119,15 @@ export const templates = {
       { text: 'Все события и мои темы', url: feedUrl() },
     ],
   }),
+  /** Предложившему источник (sources_add): команда одобрила, сборщик начнёт его читать. Не выключается в профиле: ответ на его просьбу. */
+  source_approved: ({ channel }: { channel: string }): Card => {
+    const instagram = instagramOf(channel);
+    return {
+      emoji: '📡', colors: ['#16a34a', '#0891b2'], label: 'Источник добавлен', title: instagram ? `Instagram ${instagram}` : `@${channel}`,
+      rows: [['🙏', 'Спасибо! Теперь читаем его анонсы'], ['⏳', 'События из него появятся в афише после проверки']],
+      buttons: [{ text: 'Все события', url: feedUrl() }],
+    };
+  },
   /** Гостю: запись принята. */
   rsvp_confirmed: ({ event }: { event: Event }): Card => ({
     emoji: '✅', colors: ['#6366f1', '#a855f7'], label: 'Вы записаны', title: event.name,

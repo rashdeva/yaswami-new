@@ -511,3 +511,10 @@ h2.today { color: var(--btn); }
   .ev-body > :first-child { margin-top: 0; }
   .ev-page ~ .main { display: none; }
 }
+
+/* Внизу «Всех событий»: предложить канал с анонсами (SourceSuggest). */
+.suggest { margin: 32px 16px 8px; padding: 18px; border-radius: 26px; text-align: center; background: var(--mat); border: .5px solid var(--stroke); box-shadow: inset 0 1px 0 var(--shine), var(--shadow); }
+.suggest > b { display: block; font-size: 17px; font-weight: 700; }
+.suggest > p { margin: 6px 0 0; font-size: 14px; color: var(--hint); }
+.drawer .group { margin: 0; }
+.drawer .error, .drawer .note { margin: 8px 4px 0; }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Event, Guest, GuestWithName, TicketType } from './index.ts';
-import { collectedBadges, Event as EventSchema, nearbyCityIds, nearestCityId, popularIds, PUBLIC_STATE_MAX_BYTES, rsvp, ticketTypeRemovalError, toPublicState } from './index.ts';
+import { collectedBadges, Event as EventSchema, nearbyCityIds, nearestCityId, popularIds, PUBLIC_STATE_MAX_BYTES, rsvp, ticketTypeRemovalError, toPublicState, SourceAddInput, submittedChannel } from './index.ts';
 
 const now = new Date('2026-11-11T12:00:00Z');
 const event: Event = {
@@ -226,4 +226,16 @@ test('началось ли событие: со временем — с нач�
   assert.equal(collectedStarted({ starts_at: '2026-11-26T18:00:00+07:00' }, now), false);
   assert.equal(collectedStarted({ starts_at: '2026-11-26T00:00:00+07:00' }, now), false, 'время не указано — весь день в выдаче');
   assert.equal(collectedStarted({ starts_at: '2026-11-25T00:00:00+07:00' }, now), true);
+});
+
+test('предложенный источник: только канал Telegram по username или профиль Instagram', () => {
+  const ok = (channel: string) => SourceAddInput.safeParse({ channel }).success;
+  for (const channel of ['@Danang_Party', 'danang_party', 't.me/danang_party', 'https://t.me/danang_party/', 'https://telegram.me/danang_party', 'instagram.com/danang.yoga', 'https://www.instagram.com/Danang.Yoga/?igsh=abc'])
+    assert.ok(ok(channel), channel);
+  // Закрытый чат, приглашение, пост, сайт и пустое — нет: проверить их нельзя или это не канал.
+  for (const channel of ['-1001234567', 't.me/+AbCdEf123', 't.me/danang_party/15', 'https://example.com/x', '', '@ab', 'a b'])
+    assert.ok(!ok(channel), channel);
+  assert.equal(submittedChannel(' https://t.me/Danang_Party/ '), 'Danang_Party');
+  assert.equal(submittedChannel('@danang_party'), 'danang_party');
+  assert.equal(submittedChannel('https://www.instagram.com/Danang.Yoga/?igsh=abc'), 'instagram:danang.yoga');
 });
