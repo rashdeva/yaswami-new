@@ -3,6 +3,7 @@ import * as z from 'zod';
 import type { Event, Feature, Guest, TicketType, User } from './schema.ts';
 import { Event as EventSchema, Notification, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
 import { OTHER_TOPIC, isTopic } from './topics.ts';
+import type { ProductItem } from './products.ts';
 
 const isTimeZone = (tz: string) => {
   try {
@@ -194,14 +195,15 @@ export interface HostListItem extends Omit<CollectedHost, 'photos'> {
   upcoming_count: number; // предстоящих опубликованных событий
 }
 
-/** Страница организатора: то же, что в каталоге, плюс фото сообщества и предстоящие события. */
+/** Страница организатора: то же, что в каталоге, плюс фото сообщества, предстоящие события и товары. */
 export interface HostItem extends HostListItem {
   photos: CollectedHost['photos'];
   events: CollectedEventItem[];
+  products: ProductItem[]; // что мастер продаёт и что видит гость (как в products/list), свежие сверху
 }
 
 /**
- * Единый поиск по публичному каталогу: предстоящие события и услуги мастеров (Practice). В Luma общего поиска нет;
+ * Единый поиск по публичному каталогу: предстоящие события, услуги мастеров (Practice) и их товары (Product). В Luma общего поиска нет;
  * `query` — как у `places/search`, список — как у остальных (`entries`).
  */
 export const SearchInput = z.object({
@@ -221,7 +223,8 @@ export type CityFilterInput = z.infer<typeof CityFilterInput>;
  */
 export type SearchEntry =
   | { type: 'event'; event: CollectedEventItem }
-  | { type: 'practice'; practice: Practice; host: HostListItem };
+  | { type: 'practice'; practice: Practice; host: HostListItem }
+  | { type: 'product'; product: ProductItem };
 export interface SearchResult { entries: SearchEntry[] } // самые подходящие первыми
 
 /** Фото или видео из публикации-источника; лежит в нашем бакете (ADR-0006). В Luma такого нет. */

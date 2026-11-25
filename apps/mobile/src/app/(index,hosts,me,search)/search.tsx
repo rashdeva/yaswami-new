@@ -10,7 +10,8 @@ import { colors } from '@/theme';
 export default function Search() {
   const [query, setQuery] = useState('');
   const { data, error, isFetching } = useSearch(query);
-  const entries = query.trim().length >= 2 ? data?.entries ?? [] : [];
+  // Товары экран пока не рисует — их карточку делает #194.
+  const entries = query.trim().length >= 2 ? (data?.entries ?? []).flatMap((e) => (e.type === 'product' ? [] : [e])) : [];
   return (
     <>
       <Stack.Screen
