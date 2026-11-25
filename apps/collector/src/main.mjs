@@ -469,15 +469,16 @@ do {
   const known = await store.upcoming();
   cursors = await store.cursors();
   const trusted = new Set(AUTO_APPROVE_MIN > 0 ? await store.trustedChannels(AUTO_APPROVE_MIN) : []);
+  // Товары — до анонсов: источников мало, а анонсы с Instagram занимают десятки минут, и товары ждали бы их каждый проход.
+  for (const source of await store.productSources()) {
+    await pollProducts(source).catch((e) => failed(source.channel, `товары ${source.channel}`, e));
+    await sleep(2000);
+  }
   for (const source of await store.sources()) {
     await pollChannel(source, known, trusted).catch((e) => failed(source.channel, source.channel, e));
     await sleep(2000); // не частим с запросами к Telegram
   }
   await pollInstagram(known, trusted).catch((e) => console.error(`Instagram: ${e.message}`));
-  for (const source of await store.productSources()) {
-    await pollProducts(source).catch((e) => failed(source.channel, `товары ${source.channel}`, e));
-    await sleep(2000);
-  }
   await savePeers().catch((e) => console.error(`каналы: ${e.message}`));
   await sourceSearch().catch((e) => console.error(`поиск источников: ${e.message}`));
   // Вопросы уходят в API: без его адреса чаты города не читаем.
