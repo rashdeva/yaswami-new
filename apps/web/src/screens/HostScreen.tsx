@@ -7,7 +7,8 @@ import { EventRow } from '../components/EventRow.tsx';
 import { PracticeRow } from '../components/PracticeRow.tsx';
 import { ProductCard } from '../components/ProductCard.tsx';
 import { dayLabel } from '../format.ts';
-import { useHost, usePracticeSignup } from '../hooks/useHosts.ts';
+import { useHost, usePracticeSheet } from '../hooks/useHosts.ts';
+import { PracticeSheet } from '../components/PracticeSheet.tsx';
 import { useViewed } from '../hooks/useViewed.ts';
 import { openExternal } from '../tg.ts';
 
@@ -23,7 +24,7 @@ interface Props {
 export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack }: Props) {
   useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const { host, loaded, failed } = useHost(id);
-  const signUp = usePracticeSignup();
+  const sheet = usePracticeSheet();
   useViewed('host_viewed', id);
   useEffect(() => { if (host) document.title = `${host.name} — ${city}, Я с вами`; }, [host, city]);
 
@@ -57,7 +58,7 @@ export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack }: Pro
         <>
           <h2>Что ведёт</h2>
           <div className="group">
-            {host.practices.map((p) => <PracticeRow key={p.id} practice={p} onSignUp={() => signUp(host, p)} />)}
+            {host.practices.map((p) => <PracticeRow key={p.id} practice={p} onOpen={() => sheet.show({ practice: p, host })} />)}
           </div>
         </>
       )}
@@ -95,6 +96,9 @@ export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack }: Pro
         </div>
       )}
       <p className="note">Профиль собран из открытых каналов и чатов{host.instagram_handle ? ' и Instagram' : ''}{host.confirmed ? ' и подтверждён организатором' : ''}.</p>
+
+      {/* Мастер в шторке — этот же: нажатие на него просто закрывает шторку. */}
+      <PracticeSheet open={sheet.open} onClose={sheet.close} onPick={sheet.pick} onSignUp={sheet.signUp} onOpenHost={sheet.close} />
 
       <div className="main"><div>
         <button className="cta" onClick={() => { track('host_contacted', { host_id: id }); openExternal(host.contact_url); }}>Написать</button>

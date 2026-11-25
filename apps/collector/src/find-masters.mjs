@@ -23,7 +23,7 @@ const pause = () => sleep(Number(process.env.LLM_PAUSE_MS ?? 4500));
 const since = Date.now() / 1000 - days * 86400;
 
 let total = 0;
-for (const { chat, city_id } of chats) {
+for (const { chat, city_id, city } of chats) {
   const messages = [];
   try {
     for await (const m of client.iterMessages(chat, { limit: 5000, waitTime: 1 })) {
@@ -35,7 +35,7 @@ for (const { chat, city_id } of chats) {
     continue;
   }
   const offers = pickOffers(chat, messages.reverse());
-  const saved = await saveOffers({ store, extractOffer, resolve: (u) => resolveAuthor(client, u), pause, city_id }, offers);
+  const saved = await saveOffers({ store, extractOffer, resolve: (u) => resolveAuthor(client, u), pause, city_id, city }, offers);
   total += saved;
   console.log(`@${chat}: ${messages.length} сообщений, похоже на мастеров ${offers.length}, сохранено ${saved}`);
   await sleep(1500);

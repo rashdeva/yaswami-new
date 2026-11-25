@@ -470,6 +470,13 @@
       "when": 1795621562086,
       "tag": "20261125154602_source_empty_parses",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1795624902353,
+      "tag": "20261125164142_practice_details",
+      "breakpoints": true
     }
   ]
 }

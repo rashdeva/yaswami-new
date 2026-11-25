@@ -374,15 +374,20 @@ h2.today { color: var(--btn); }
 .service-text b { font-weight: 600; font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
 .service-text small { font-size: 13px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .service-chev { flex: none; font-size: 22px; color: var(--hint); }
+.service > img { flex: none; width: 36px; height: 36px; }
 
 /* Шторка услуги (PracticeSheet): иконка темы и название, описание, цена, мастер, другие его услуги, запись. */
 .practice-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
 .practice-head img { flex: none; width: 56px; height: 56px; padding: 6px; border-radius: 16px; background: color-mix(in srgb, var(--c) 14%, transparent); }
 .practice-head h2 { margin: 0; font-size: 24px; font-weight: 700; line-height: 1.15; }
 .practice-head .lead { margin: 0 0 2px; }
-.practice-price { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: .5px solid var(--line); border-bottom: .5px solid var(--line); }
-.practice-price span { color: var(--hint); }
-.practice-price b { text-align: right; }
+.practice-facts { margin: 0 0 12px; border-top: .5px solid var(--line); }
+.practice-facts > div { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: .5px solid var(--line); }
+.practice-facts dt { color: var(--hint); }
+.practice-facts dd { margin: 0; text-align: right; }
+.practice-facts dd small { display: block; margin-top: 2px; font-size: 13px; color: var(--hint); }
+/* Фильтры раздела услуг — под шапкой, с отступом от неё. */
+.hero + .chips.filters { margin-top: 14px; }
 .practice-sheet .group { margin: 0 0 12px; }
 .practice-more { margin-top: 4px; }
 .practice-sheet .note { margin: 8px 0 0; padding: 0; text-align: center; }
