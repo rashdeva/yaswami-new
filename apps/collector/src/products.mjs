@@ -95,8 +95,10 @@ export async function saveProducts({ store, extractProducts, resolve, photo, pau
       hosts.add(host.id);
       console.log(`товары ${post.url}: ${unique.map((p) => p.title).join(', ')} — записано ${saved.length}, новых ${saved.filter((r) => r.created).length}`);
     } catch (e) {
-      if (e.seconds) throw e; // FLOOD_WAIT — пусть повторится в следующий проход
-      console.error(`товары ${post.url}: ${e.status ?? ''} ${e.message.slice(0, 120)}`); // лимит ИИ и прочее: этот пост пропустим
+      // FLOOD_WAIT и отказ ИИ (лимит, перегрузка) — бросаем: отметка источника не сдвинется, и посты перечитаются
+      // в следующий проход; уже разобранные тогда не пойдут в ИИ — touchProducts узнает их по тексту.
+      if (e.seconds || e.status === 429 || e.status >= 500) throw e;
+      console.error(`товары ${post.url}: ${e.status ?? ''} ${e.message.slice(0, 120)}`); // прочее: этот пост пропустим
     }
   }
   return { products, hosts: hosts.size };

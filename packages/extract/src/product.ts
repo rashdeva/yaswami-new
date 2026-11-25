@@ -83,7 +83,7 @@ export function createProductExtractor({ model }: { model: string }) {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   /**
    * Товары поста `id` (<чат>/<номер>). `author` — кто написал: канал мастера или автор в группе. Ошибку модели
-   * (лимит после повтора, 503) бросает: пост пропустят.
+   * (лимит после повтора, 503) бросает: сборщик перечитает пост в следующий проход.
    */
   return async function extractProducts(id: string, author: string, text: string): Promise<ProductPost> {
     const request = () => ai.models.generateContent({
