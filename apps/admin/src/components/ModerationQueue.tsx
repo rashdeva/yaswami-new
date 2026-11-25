@@ -1,8 +1,9 @@
-// «Ждут решения» в «Ленте»: события каталога, услуги и мастера, которые ждут решения команды, —
+// «Ждут решения» в «Ленте»: события каталога, услуги, мастера и товары, которые ждут решения команды, —
 // одной очередью с решением по строке и пачкой. Что именно делает решение — lib/moderation.ts и hooks/useModeration.ts.
 import { useState } from 'react';
 import { Confirm } from '@/components/Confirm';
 import { EntityLink, ExternalLink } from '@/components/EntityLink';
+import { LoadMore } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -18,7 +19,7 @@ const Check = ({ label, checked, disabled, onChange }: { label: string; checked:
 );
 
 export function ModerationQueue() {
-  const { groups, busy, decide, decideMany } = useModeration();
+  const { groups, busy, moreProducts, decide, decideMany } = useModeration();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   // Считаем только то, что ещё в очереди: решённое в другом месте из выбора выпадает само.
   const chosen = groups.flatMap((g) => g.rows).filter((r) => selected.has(r.key)).length;
@@ -61,6 +62,7 @@ export function ModerationQueue() {
                 </ItemActions>
               </Item>
             ))}
+            {g.kind === 'product' && <LoadMore {...moreProducts} />}
           </ItemGroup>
         );
       })}

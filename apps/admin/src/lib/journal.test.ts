@@ -6,6 +6,7 @@ test('подпись действия: известное, от имени по�
   assert.equal(actionLabel('admin_events_update'), 'Изменено событие');
   assert.equal(actionLabel('admin_actions_undo'), 'Отмена действия');
   assert.equal(actionLabel('admin_practices_update'), 'Изменена услуга');
+  assert.equal(actionLabel('admin_products_update'), 'Изменён товар');
   assert.equal(actionLabel('events_update'), 'От имени пользователя: events_update');
   assert.equal(actionLabel('admin_new_thing'), 'admin_new_thing');
 });
@@ -14,6 +15,7 @@ test('куда ведёт сущность', () => {
   assert.deepEqual(entityLink('event', 'ab'), { to: '/events/$id', params: { id: 'ab' } });
   assert.deepEqual(entityLink('conversation', 'c1'), { to: '/', search: { c: 'c1' } });
   assert.deepEqual(entityLink('city', 'danang'), { to: '/cities' });
+  assert.deepEqual(entityLink('product', 'p1'), { to: '/catalog', search: { kind: 'products', status: 'all' } });
   assert.equal(entityLink('message', 'm1'), null);
 });
 

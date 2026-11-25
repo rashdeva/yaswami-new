@@ -2,7 +2,7 @@
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
   AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminShelf, AdminSource, AdminTopic, CollectedEventItem, ShelfCreateInput, ShelfUpdateInput, TopicCandidate, TopicCreateInput, TopicUpdateInput,
-  AdminUser, AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, HostUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceSearch, SourceSearchCreateInput, SourceUpdateInput,
+  AdminUser, AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, AdminProduct, AdminProductList, AdminProductListInput, HostUpdateInput, Practice, PracticeUpdateInput, ProductUpdateInput, InboxConversation, SourceSearch, SourceSearchCreateInput, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
 import { sseEvents } from '@yaswami/core';
@@ -44,6 +44,7 @@ const MESSAGES: Record<string, string> = {
   host_exists: 'Организатор с таким username уже есть',
   host_not_found: 'Такого организатора нет: возможно, его удалили',
   practice_not_found: 'Одной из услуг уже нет: обновите страницу',
+  product_exists: 'У этого мастера уже есть товар с таким названием',
   not_delivered: 'Telegram не доставил сообщение: человек не открывал бота или заблокировал его',
   changed_since: 'Отменить нельзя: с тех пор запись меняли, отмена затёрла бы ту правку',
   already_undone: 'Это действие уже отменено',
@@ -176,6 +177,10 @@ export const api = {
   hostUpdate: (host: string, input: HostUpdateInput) => request<Wire<AdminHost>>('PATCH', `/admin/hosts/${id(host)}`, input),
   practiceUpdate: (practice: string, input: PracticeUpdateInput) => request<Practice>('PATCH', `/admin/practices/${id(practice)}`, input),
   hostDelete: (host: string) => request<void>('DELETE', `/admin/hosts/${id(host)}`),
+
+  // Товары мастеров
+  products: (input: AdminProductListInput = {}) => request<Wire<AdminProductList>>('GET', `/admin/products${qs(input)}`),
+  productUpdate: (product: string, input: ProductUpdateInput) => request<Wire<AdminProduct>>('PATCH', `/admin/products/${id(product)}`, input),
 
   // Пользователи и контакты
   users: (query?: string) => request<AdminUser[]>('GET', `/admin/users${qs({ query })}`),

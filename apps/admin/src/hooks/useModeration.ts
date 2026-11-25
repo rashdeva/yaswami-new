@@ -1,4 +1,4 @@
-// Очередь модерации «Ленты»: три очереди «ждут решения» из тех же запросов, что у «Каталога» и «Мастеров» (кэш общий),
+// Очередь модерации «Ленты»: четыре очереди «ждут решения» из тех же запросов, что у «Каталога» и «Мастеров» (кэш общий),
 // и решения теми же действиями, что у кнопок родных экранов, — по одной строке и пачкой.
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -9,23 +9,27 @@ import { batchPlan, batchSummary, decisionCall, moderationQueue } from '../lib/m
 import { POLL_MS, useCatalogActions, useCollectedEvents } from './useCollectedEvents.ts';
 import { useHosts, useHostStatus, usePracticeStatus } from './useHosts.ts';
 import { useOverview } from './useOverview.ts';
+import { useProducts, useProductUpdate } from './useProducts.ts';
 
 /** Тот же вызов, что делает действие строки на родном экране. */
 const send = (call: DecisionCall): Promise<unknown> =>
   call.kind === 'event' ? api.collectedUpdate(call.input.id, call.input.input)
   : call.kind === 'service' ? api.practiceUpdate(call.input.practice_id, { status: call.input.status })
-  : api.hostUpdate(call.input.id, { status: call.input.status });
+  : call.kind === 'host' ? api.hostUpdate(call.input.id, { status: call.input.status })
+  : api.productUpdate(call.input.id, call.input.input);
 
 export function useModeration() {
   const client = useQueryClient();
   const events = useCollectedEvents().data;
   const hosts = useHosts(POLL_MS).data;
   const overview = useOverview();
-  const groups = moderationQueue({ events, hosts, hostEvents: new Map(overview?.hosts.map((h) => [h.username, h.events])) });
+  const products = useProducts({ status: 'pending' }, POLL_MS);
+  const groups = moderationQueue({ events, hosts, products: products.entries, hostEvents: new Map(overview?.hosts.map((h) => [h.username, h.events])) });
 
   const event = useCatalogActions().update;
   const service = usePracticeStatus();
   const host = useHostStatus();
+  const product = useProductUpdate();
   const [busy, setBusy] = useState(false);
 
   /** Один вызов; ошибку тостом показывает useAct, сюда — только исход. */
@@ -33,13 +37,16 @@ export function useModeration() {
     const on = { onSuccess: () => resolve(true), onError: () => resolve(false) };
     if (call.kind === 'event') event(call.input, on);
     else if (call.kind === 'service') service(call.input, on);
-    else host(call.input, on);
+    else if (call.kind === 'host') host(call.input, on);
+    else product(call.input, on);
   });
 
   return {
     groups,
     /** Идёт пачка: кнопки заперты — исход вызова узнаёт только последний вызов действия, второй сбил бы очередь. */
     busy,
+    /** Остальные страницы товаров: счётчик и «выбрать всё» знают только загруженные. */
+    moreProducts: products.more,
     decide: (row: ModerationRow, decision: Decision) => void run(decisionCall(row, decision)),
     /**
      * Пачка: вызовы по очереди, каждый — отдельная запись журнала (отменить — оттуда). Напрямую через api, а не через
