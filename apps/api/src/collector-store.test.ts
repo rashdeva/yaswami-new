@@ -327,13 +327,13 @@ test('сборщик: товары мастеров — источники, ма
 
   // Мастер из группы: ещё нет — новый Host с городом источника; входил в Ясвами — сразу привязан (users.id — не Telegram id, ADR-0008).
   assert.equal(await store.hostByUsername('olga_cook'), undefined);
-  await sql`insert into users (id, first_name, lang, timezone) values (901, 'Ольга', 'ru', 'UTC')`;
-  await sql`insert into user_identities (provider, subject, user_id) values ('telegram', '910', 901)`;
+  await sql`insert into users (id, first_name, lang, timezone) values (951, 'Ольга', 'ru', 'UTC')`;
+  await sql`insert into user_identities (provider, subject, user_id) values ('telegram', '910', 951)`;
   const olga = await store.saveMaker({ telegram_id: 910, username: 'olga_cook', name: 'Ольга', city_id: 'danang', offer_url: 'https://t.me/ads_danang/5' });
   assert.equal(olga.status, 'pending');
-  assert.deepEqual(await store.hostByUsername('olga_cook'), { id: olga.id, status: 'pending' });
+  assert.deepEqual({ ...await store.hostByUsername('olga_cook') }, { id: olga.id, status: 'pending' });
   const [row] = await sql`select user_id, city_id, offer_url from hosts where id = ${olga.id}`;
-  assert.deepEqual([Number(row!.user_id), row!.city_id, row!.offer_url], [901, 'danang', 'https://t.me/ads_danang/5']);
+  assert.deepEqual([Number(row!.user_id), row!.city_id, row!.offer_url], [951, 'danang', 'https://t.me/ads_danang/5']);
   assert.equal((await store.saveMaker({ telegram_id: 910, username: 'olga_bakes', name: 'Ольга', city_id: 'danang', offer_url: 'x' })).id, olga.id, 'тот же человек под новым username');
 
   // Один пост «наличие» — несколько товаров, новые ждут решения команды.
