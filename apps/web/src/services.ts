@@ -1,22 +1,23 @@
 // Вкладка «Услуги» без React: услуги мастеров по категориям услуг (ADR-0012), сквозные разделы, цена и порядок находок поиска.
 import type { DirectionSlug, HostListItem, Practice, PracticeFormat, SearchEntry, ServiceCategory, TopicItem, Wire } from '@yaswami/core';
 import { SERVICE_CATEGORIES, serviceCategoryBySlug } from '@yaswami/core';
+import { categoryIcon } from './icons.ts';
 
 /** Услуга (Practice без Session, CONTEXT.md) вместе с мастером — так её показывает вкладка. */
 export interface ServiceItem { practice: Practice; host: HostListItem }
 
 /**
- * Раздел вкладки: категория услуги или сквозной раздел. `key` — адрес раздела, `emoji` — его значок,
+ * Раздел вкладки: категория услуги или сквозной раздел. `key` — адрес раздела, `icon` — его иконка (`categoryIcon`),
  * `tint` — slug темы, в цвет которой шапка раздела (`[data-topic]` в tokens.css).
  */
-export interface ServiceGroup { key: string; name: string; emoji: string; tint: string; items: ServiceItem[] }
+export interface ServiceGroup { key: string; name: string; icon: string; tint: string; items: ServiceItem[] }
 
 /** Ключ раздела для услуг без категории, чью тему тоже не к чему отнести. */
 export const OTHER_GROUP = 'other';
 
 /** Пока услуга не размечена (сборщик доберётся за проход-другой) — категория по направлению её темы. */
 const FROM_DIRECTION: Record<DirectionSlug, ServiceCategory> = {
-  body: 'body', sport: 'sport', creative: 'classes', social: 'classes', growth: 'lessons', travel: 'classes', kids: 'kids',
+  body: 'body', sport: 'sport', creative: 'classes', shows: 'classes', social: 'classes', growth: 'lessons', travel: 'classes', kids: 'kids',
 };
 /** Цвет шапки раздела — цвет похожей темы. */
 const TINT: Record<ServiceCategory, string> = {
@@ -40,11 +41,11 @@ export function serviceGroups(hosts: HostListItem[], topics: TopicItem[]): Servi
     .sort((a, b) => a.rank - b.rank) // сортировка устойчивая: при равном rank остаётся порядок каталога
     .map(({ practice, host }) => ({ practice, host }));
   const groups = SERVICE_CATEGORIES.map((c) => ({
-    key: c.slug as string, name: c.name as string, emoji: c.emoji as string, tint: TINT[c.slug],
+    key: c.slug as string, name: c.name as string, icon: categoryIcon(c.slug), tint: TINT[c.slug],
     items: items.filter((i) => categoryOf(i.practice, topics) === c.slug),
   }));
   const rest = items.filter((i) => !categoryOf(i.practice, topics));
-  return [...groups, { key: OTHER_GROUP, name: 'Другое', emoji: '✨', tint: 'other', items: rest }].filter((g) => g.items.length);
+  return [...groups, { key: OTHER_GROUP, name: 'Другое', icon: categoryIcon(OTHER_GROUP), tint: 'other', items: rest }].filter((g) => g.items.length);
 }
 
 /** Ключи сквозных разделов: собраны не по категории, а по разбору услуги. Адрес раздела — как у категорий. */
@@ -54,7 +55,7 @@ export const CHEAP = 'cheap';
 /** «Детям»: категория «Детям» и всё, что размечено «для детей» в других категориях. Нет таких — раздела нет. */
 export function serviceShortcuts(items: ServiceItem[], topics: TopicItem[]): ServiceGroup[] {
   const kids = items.filter((i) => i.practice.for_kids || categoryOf(i.practice, topics) === 'kids');
-  return kids.length ? [{ key: KIDS, name: 'Детям', emoji: '🧸', tint: 'kids', items: kids }] : [];
+  return kids.length ? [{ key: KIDS, name: 'Детям', icon: categoryIcon(KIDS), tint: 'kids', items: kids }] : [];
 }
 
 /**

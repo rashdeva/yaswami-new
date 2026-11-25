@@ -4,6 +4,7 @@ import { collectedBadges, collectedDayKey, collectedPath, collectedTime, directi
 import { track } from '../analytics.ts';
 import { EventRow } from '../components/EventRow.tsx';
 import { dayLabel } from '../format.ts';
+import { directionIcon } from '../icons.ts';
 import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
 import { useCity } from '../hooks/useSession.ts';
 import { useTopicItems } from '../hooks/useTopics.ts';
@@ -50,13 +51,13 @@ export function DirectionScreen({ slug, onBack, onOpen, onGone }: Props) {
     <>
       <div className={`hero${onBack ? '' : ' nb'}`} data-topic={topicSlug(present[0] ?? inside[0] ?? null)}>
         {onBack && <button className="back" onClick={onBack}>← События</button>}
-        {(present[0] ?? inside[0]) && <img className="emo" src={topicIcon(present[0] ?? inside[0]!)} alt="" />}
+        <img className="emo" src={directionIcon(direction.slug)} alt="" />
         <small>{city.name}</small>
         <h1>{direction.name}</h1>
       </div>
       {present.length > 1 && (
         <div className="quick" role="group" aria-label="Темы направления">
-          <button className="tile" aria-pressed={!topic} onClick={() => pick(null)}><span className="tile-ico">{direction.emoji}</span>Все</button>
+          <button className="tile" aria-pressed={!topic} onClick={() => pick(null)}><img className="tile-ico" src={directionIcon(direction.slug)} alt="" />Все</button>
           {present.map((t) => (
             <button key={t} className="tile" aria-pressed={topic === t} onClick={() => pick(topic === t ? null : t)}>
               <img className="tile-ico" src={topicIcon(t)} alt="" />{title(t)}

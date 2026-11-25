@@ -4,6 +4,7 @@ import type { HostItem, HostListItem, Practice } from '@yaswami/core';
 import { practiceSignupUrl } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { api } from '../api.ts';
+import { categoryIcon } from '../icons.ts';
 import { CHEAP, cheapest, serviceGroups, serviceShortcuts, type ServiceGroup, type ServiceItem } from '../services.ts';
 import { openExternal } from '../tg.ts';
 import { keys } from './keys.ts';
@@ -36,7 +37,7 @@ export function useServices() {
   const sections = groups.map((g) => shortcuts.find((s) => s.key === g.key) ?? g);
   const tiles = [...shortcuts, ...groups.filter((g) => !shortcuts.some((s) => s.key === g.key))];
   const cheap = cheapest(items, CHEAP_ALL);
-  const all: ServiceGroup[] = [...tiles, ...(cheap.length ? [{ key: CHEAP, name: 'Недорого', emoji: '🪙', tint: 'other', items: cheap }] : [])];
+  const all: ServiceGroup[] = [...tiles, ...(cheap.length ? [{ key: CHEAP, name: 'Недорого', icon: categoryIcon(CHEAP), tint: 'other', items: cheap }] : [])];
   return { sections, tiles, cheap: cheap.slice(0, CHEAP_SHELF), find: (key: string) => all.find((g) => g.key === key), failed };
 }
 

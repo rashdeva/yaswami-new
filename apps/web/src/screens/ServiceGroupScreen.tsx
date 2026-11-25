@@ -45,7 +45,7 @@ export function ServiceGroupScreen({ groupKey, city, onBack, onOpenHost, onGone 
     <>
       <div className={`hero${onBack ? '' : ' nb'}`} data-topic={group.tint}>
         {onBack && <button className="back" onClick={onBack}>← Услуги</button>}
-        <span className="emo emo-glyph" aria-hidden="true">{group.emoji}</span>
+        <img className="emo" src={group.icon} alt="" />
         <small>{city} · {servicesCount(group.items.length)}</small>
         <h1>{group.name}</h1>
       </div>

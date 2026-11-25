@@ -38,7 +38,8 @@ export interface TopicItem extends TopicGuide {
 export const DIRECTIONS = [
   { slug: 'body', name: 'Тело и практики', emoji: '🧘' },
   { slug: 'sport', name: 'Спорт и движение', emoji: '🏃' },
-  { slug: 'creative', name: 'Творчество', emoji: '🎨' },
+  { slug: 'creative', name: 'Творчество', emoji: '🎨' }, // делают сами: рисуют, лепят, поют, играют
+  { slug: 'shows', name: 'Концерты и кино', emoji: '🎬' }, // смотрят и слушают: концерт, клуб, вечеринка, кино
   { slug: 'social', name: 'Игры и общение', emoji: '🎲' },
   { slug: 'growth', name: 'Развитие', emoji: '📚' },
   { slug: 'travel', name: 'Путешествия', emoji: '🧭' },
