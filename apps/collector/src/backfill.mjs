@@ -26,10 +26,16 @@ export async function backfillTopics({ store, extract, pause }) {
 /**
  * Услуги без разбора (`formats` или `category` null): собранные до полей разбора или категорий, или отправленные командой заново.
  * По `limit` за проход; сбой ИИ на одной услуге остальных не останавливает — она останется без разбора до следующего.
+ * Дневной лимит Gemini кончился у всех моделей (QuotaExhausted) — дальше в этом проходе не пробуем: каждая услуга упала бы так же.
  */
 export async function classifyPractices({ store, classifyPractice, limit, pause }) {
   for (const practice of await store.practicesToClassify(limit)) {
-    const details = await classifyPractice(practice, practice.city).catch((e) => console.error(`разбор услуги ${practice.id}: ${e.message}`));
+    let quota = false;
+    const details = await classifyPractice(practice, practice.city).catch((e) => {
+      quota = e.name === 'QuotaExhausted';
+      console.error(`разбор услуги ${practice.id}: ${e.message.slice(0, 200)}`);
+    });
+    if (quota) return;
     await pause();
     if (!details) continue;
     await store.setPracticeDetails(practice.id, details);
