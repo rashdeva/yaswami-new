@@ -402,7 +402,7 @@ h2.today { color: var(--btn); }
 /* Быстрый поиск по темам: плитки с иконкой в ряд, прокрутка вбок; выбранная — в цвет текста, как чип. */
 .quick { display: flex; gap: 8px; padding: 14px 16px 4px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
 .quick::-webkit-scrollbar { display: none; }
-.tile { flex: none; width: 84px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 9px; border-radius: 20px; font-size: 12px; font-weight: 500; line-height: 1.2; text-align: center; cursor: pointer; background: var(--mat); border: .5px solid var(--stroke); box-shadow: inset 0 1px 0 var(--shine), var(--shadow); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); transition: transform .2s var(--spring); overflow-wrap: anywhere; }
+.tile { flex: none; width: 92px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 9px; border-radius: 20px; font-size: 12px; font-weight: 500; line-height: 1.2; text-align: center; cursor: pointer; background: var(--mat); border: .5px solid var(--stroke); box-shadow: inset 0 1px 0 var(--shine), var(--shadow); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); transition: transform .2s var(--spring); overflow-wrap: normal; hyphens: auto; }
 .tile:active { transform: scale(.95); transition-delay: .12s; }
 .tile[aria-pressed='true'] { background: var(--text); color: var(--bg); border-color: transparent; }
 .tile-ico { width: 40px; height: 40px; display: grid; place-items: center; font-size: 28px; }
@@ -420,7 +420,6 @@ h2.today { color: var(--btn); }
 .all-text b { font-size: 19px; font-weight: 700; }
 .all-text small { font-size: 14px; color: var(--hint); }
 .all-chev { flex: none; font-size: 28px; line-height: 1; color: var(--btn); }
-.all-note { text-align: center; }
 
 /* «Все события»: дни переключателем, день — по частям, события плитками в две колонки. */
 .all-top .chip { margin-bottom: 14px; }
@@ -438,3 +437,21 @@ h2.today { color: var(--btn); }
 .ev-tile time { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--c, var(--text)); }
 .ev-tile b { font-size: 14px; font-weight: 600; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .ev-tile small { font-size: 11px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Ряды с прокруткой вбок обрезают всё, что выходит за их край, — и тень карточек снизу. Даём место под тень
+   отступом и забираем его обратно отрицательным полем, чтобы расстояния между блоками не выросли. */
+.rail { padding-bottom: 24px; margin-bottom: -20px; }
+.quick { padding-bottom: 26px; margin-bottom: -22px; }
+
+/* Широкое окно (сайт на компьютере, Telegram Desktop): витрина шире колонки, полки — сеткой в ряд по шесть без
+   прокрутки (дальше — «Все»), плитки направлений переносятся, «Все события» — в четыре колонки. */
+@media (min-width: 1024px) {
+  #app[data-wide] { max-width: 1040px; }
+  #app[data-wide] .rail { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); overflow: visible; scroll-snap-type: none; padding-bottom: 4px; margin-bottom: 0; }
+  #app[data-wide] .rail .cover { width: auto; }
+  #app[data-wide] .rail .cover:nth-child(n + 7) { display: none; }
+  #app[data-wide] .quick { flex-wrap: wrap; overflow: visible; padding-bottom: 4px; margin-bottom: 0; }
+  #app[data-wide] .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #app[data-wide] .feed { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #app[data-wide] .days { flex-wrap: wrap; overflow: visible; }
+}

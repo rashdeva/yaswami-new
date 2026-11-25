@@ -122,11 +122,11 @@ export type ShelfListInput = z.infer<typeof ShelfListInput>;
 
 /** Полки города, у которого своих полок ещё нет: витрина работает сразу, до команды и куратора. */
 export const DEFAULT_SHELVES: { title: string; topic: string | null; rule: ShelfRule }[] = [
-  { title: 'Сегодня вечером', topic: null, rule: { period: 'tonight' } },
+  { title: 'Популярное', topic: null, rule: { popular: true } },
   { title: 'На выходных', topic: null, rule: { period: 'weekend' } },
   { title: 'Можно без опыта', topic: null, rule: { period: 'week', beginner_friendly: true } },
+  { title: 'Сегодня вечером', topic: null, rule: { period: 'tonight' } },
   { title: 'Бесплатно', topic: null, rule: { period: 'week', free: true } },
-  { title: 'Популярное', topic: null, rule: { popular: true } },
 ];
 
 // --- Отбор событий по правилу
