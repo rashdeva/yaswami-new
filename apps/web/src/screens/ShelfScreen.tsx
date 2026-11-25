@@ -2,14 +2,8 @@ import { useEffect } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
 import { collectedBadges, collectedDayKey, collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
 import { EventRow } from '../components/EventRow.tsx';
-import { dayLabel } from '../format.ts';
+import { dayLabel, eventsCount } from '../format.ts';
 import { useShelf } from '../hooks/useShowcase.ts';
-
-/** «4 события», «5 событий», «21 событие». */
-const eventsCount = (n: number) => {
-  const d = n % 10, h = n % 100;
-  return `${n} ${d === 1 && h !== 11 ? 'событие' : d >= 2 && d <= 4 && (h < 12 || h > 14) ? 'события' : 'событий'}`;
-};
 
 interface Props {
   id: string;
