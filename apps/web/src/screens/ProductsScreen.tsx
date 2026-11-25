@@ -3,6 +3,7 @@ import type { ProductItem, Wire } from '@yaswami/core';
 import { ProfileButton } from '../components/Avatar.tsx';
 import { CityPick } from '../components/CityPick.tsx';
 import { ProductCard } from '../components/ProductCard.tsx';
+import { AddInvite } from '../components/AddInvite.tsx';
 import { useProducts } from '../hooks/useProducts.ts';
 import { useViewed } from '../hooks/useViewed.ts';
 import { productCategoryName, productChips, productPlaceholder } from '../product.ts';
@@ -10,10 +11,12 @@ import { productCategoryName, productChips, productPlaceholder } from '../produc
 interface Props {
   city: string;
   onOpen: (product: Wire<ProductItem>) => void;
+  /** Добавить свой товар — через бота. */
+  onAdd: () => void;
 }
 
 /** Вкладка «Товары»: что местные мастера делают сами, свежие сверху; плашки — категории, где в городе что-то есть. Открыта без входа. */
-export function ProductsScreen({ city, onOpen }: Props) {
+export function ProductsScreen({ city, onOpen, onAdd }: Props) {
   const { products, categories, category, setCategory, failed, more, loadingMore } = useProducts();
   const chips = productChips(categories);
   useViewed('products_viewed');
@@ -48,6 +51,7 @@ export function ProductsScreen({ city, onOpen }: Props) {
           <p className="note">Товары собраны из открытых каналов мастеров и групп объявлений. Наличие и цену уточняйте у мастера.</p>
         </>
       )}
+      <AddInvite title="Делаете что-то своими руками?" text="Выпечка, домашняя еда, сыр, хендмейд. Напишите боту, что продаёте, и мы добавим ваши товары сюда." onOpen={onAdd} />
     </>
   );
 }

@@ -34,6 +34,9 @@ export function setLinkConfig(config: AppConfig) {
   link.app = config.app_name;
 }
 
+/** Чат с ботом: в нём человек добавляет событие, товар или услугу — бот разбирает сообщение сам. null — имя бота неизвестно. */
+export const botChatLink = (): string | null => (link.bot ? `https://t.me/${link.bot}` : null);
+
 /** Ссылка, по которой событие открывается у гостя. `ref` — id того, кто делится: так видно, кто кого позвал. */
 export function eventLink(id: string, ref?: number): string {
   const start = id + (ref ? `-r${ref}` : '');

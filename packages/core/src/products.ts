@@ -142,3 +142,26 @@ export const ProductUpdateInput = z
   })
   .partial();
 export type ProductUpdateInput = z.infer<typeof ProductUpdateInput>;
+
+/** Сколько товаров мастер может добавить сам за сутки (products_create): защита от спама, команда смотрит каждый. */
+export const PRODUCTS_PER_DAY = 20;
+
+/**
+ * Мастер сам добавляет свой товар — в переписке с ботом (роль поддержки разбирает его сообщение) или из приложения.
+ * Товар ждёт решения команды (`pending`), как собранный; мастер — профиль Host самого человека, нет — заводится.
+ */
+export const ProductCreateInput = z.object({
+  title: text(200).min(1).describe('What it is, short: «Медовик порционно», «Пельмени с говядиной»'),
+  description: text(2000).nullable().optional().describe('Composition, taste, how to order, delivery — as the maker told it'),
+  price: ProductUpdateInput.shape.price.optional(),
+  unit: ProductUpdateInput.shape.unit.optional(),
+  category: z.enum(PRODUCT_CATEGORY_SLUGS).describe(PRODUCT_CATEGORY_HINT),
+  city_id: cityId.optional().describe('City where the maker sells; used only when the maker has no profile yet. Defaults to the user\'s city'),
+});
+export type ProductCreateInput = z.infer<typeof ProductCreateInput>;
+
+/** Добавленный товар: ждёт команду; `host_url` — страница мастера, где товар появится после одобрения. */
+export interface ProductSubmission extends Pick<Product, 'id' | 'title' | 'description' | 'price' | 'unit' | 'category' | 'status'> {
+  host_id: string;
+  host_url: string;
+}

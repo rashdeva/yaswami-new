@@ -209,6 +209,30 @@ export interface Practice {
 export const PracticeSignupInput = z.object({ practice_id: z.uuid().describe('Practice id from `practices` of the organizer') });
 export type PracticeSignupInput = z.infer<typeof PracticeSignupInput>;
 
+/** Сколько услуг мастер может добавить сам за сутки (practices_create): защита от спама, команда смотрит каждую. */
+export const PRACTICES_PER_DAY = 10;
+
+/**
+ * Мастер сам добавляет свою услугу — в переписке с ботом (роль поддержки разбирает его сообщение) или из приложения.
+ * Ждёт решения команды (`pending`); формат, категорию и цену числом, если их не передали, разметит сборщик. В Luma такого нет.
+ */
+export const PracticeCreateInput = z.object({
+  title: z.string().trim().min(1).max(200).describe('What the service is, short: «Массаж спины», «Английский для детей»'),
+  description: z.string().trim().max(500).nullable().optional().describe('How it goes, for whom, where, duration — as the master told it'),
+  price: z.string().trim().max(100).nullable().optional().describe('Price as the master states it, e.g. «500k за час»; null — on request'),
+  topic: z.string().refine(isTopic, 'unknown topic').optional().describe(`Topic name from topics_list; omit when none fits («${OTHER_TOPIC}»), the team picks one`),
+  category: z.enum(SERVICE_CATEGORY_SLUGS).optional().describe('Service category: beauty, body, sport, lessons, kids, psy, home, photo, pets, classes. Omit to let the collector classify it'),
+  formats: z.array(z.enum(PRACTICE_FORMATS)).max(PRACTICE_FORMATS.length).optional().describe('How it runs: personal, group, online, workshop. Omit to let the collector classify it'),
+  city_id: cityId.optional().describe('City where the master works; used only when the master has no profile yet. Defaults to the user\'s city'),
+});
+export type PracticeCreateInput = z.infer<typeof PracticeCreateInput>;
+
+/** Добавленная услуга: ждёт команду; `host_url` — страница мастера, где она появится после одобрения. */
+export interface PracticeSubmission extends Pick<Practice, 'id' | 'title' | 'description' | 'price' | 'topic' | 'status'> {
+  host_id: string;
+  host_url: string;
+}
+
 /** Ответ на запись: куда идти дальше — запись подтверждает сам мастер. */
 export interface PracticeSignup { signup_url: string }
 
