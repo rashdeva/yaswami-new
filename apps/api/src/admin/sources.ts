@@ -11,7 +11,7 @@ import { AppError, assertCity, sameChannel } from '../services.ts';
 
 const selectSources = (db: Db) => db
   .select({
-    channel: sources.channel, kind: sources.kind, enabled: sources.enabled, disabled_reason: sources.disabled_reason, city_id: sources.city_id, created_at: sources.created_at, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,
+    channel: sources.channel, kind: sources.kind, enabled: sources.enabled, disabled_reason: sources.disabled_reason, empty_parses: sources.empty_parses, city_id: sources.city_id, created_at: sources.created_at, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,
     events_count: sql<number>`(select count(*) from collected_events e where lower(e.channel) = lower(${sources.channel}))::int`,
   })
   .from(sources).leftJoin(hosts, eq(hosts.id, sources.host_id));
@@ -52,8 +52,9 @@ export async function updateSource(db: Db, ctx: Ctx, channel: string, input: Sou
   return audited(db, ctx, { action: 'admin_sources_update', entity: 'source', id: key, input }, async (tx) => {
     if (input.host_id && !(await tx.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, input.host_id))).length) throw new AppError('host_not_found', 404);
     await assertCity(tx, input.city_id);
-    const values = Object.fromEntries(Object.entries({ enabled: input.enabled, kind: input.kind, host_id: input.host_id, city_id: input.city_id }).filter(([, v]) => v !== undefined));
+    const values: Partial<typeof sources.$inferInsert> = Object.fromEntries(Object.entries({ enabled: input.enabled, kind: input.kind, host_id: input.host_id, city_id: input.city_id }).filter(([, v]) => v !== undefined));
     if (input.enabled !== undefined) values.disabled_reason = null; // решение команды заменяет причину сборщика
+    if (input.enabled) values.empty_parses = 0; // включили — счёт пустых разборов заново, иначе первый же выключит снова
     const before = await getSource(tx, key);
     if (Object.keys(values).length) await tx.update(sources).set(values).where(eq(sources.channel, key));
     if (input.host_id && input.host_id !== before.host?.id) {

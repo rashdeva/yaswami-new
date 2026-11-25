@@ -2682,6 +2682,36 @@ test('города: всё прежнее — Дананг; новый горо�
   settings.featuresOn = featuresOn;
 });
 
+test('источник, где ИИ 20 публикаций подряд не нашёл событий, сборщик выключает с причиной; команда включила — счёт заново', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  await db.delete(sources).where(eq(sources.channel, 'danang_shop'));
+  await call(admin, 'POST', '/admin/sources', { channel: 'danang_shop' });
+  const { createStore } = await import(new URL('../../collector/src/store.mjs', import.meta.url).href);
+  const store = createStore(url.href);
+  const source = async () => ((await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[]).find((s) => s.channel === 'danang_shop')!;
+  try {
+    // Найденное событие сбрасывает счёт: пустые разборы считаются подряд.
+    for (let i = 0; i < 19; i++) assert.equal(await store.countParse('danang_shop', false, 20), false);
+    assert.equal(await store.countParse('Danang_Shop', true, 20), false);
+    assert.equal((await source()).empty_parses, 0);
+    for (let i = 0; i < 19; i++) await store.countParse('danang_shop', false, 20);
+    assert.equal((await source()).enabled, true);
+    assert.equal(await store.countParse('danang_shop', false, 20), true);
+    const off = await source();
+    assert.deepEqual([off.enabled, off.disabled_reason, off.empty_parses], [false, '20 разборов подряд без событий', 20]);
+    // Выключенный больше не считается; max 0 — не выключать никогда.
+    assert.equal(await store.countParse('danang_shop', false, 20), false);
+    const on = (await (await call(admin, 'PATCH', '/admin/sources/danang_shop', { enabled: true })).json()) as AdminSource;
+    assert.deepEqual([on.enabled, on.disabled_reason, on.empty_parses], [true, null, 0]);
+    for (let i = 0; i < 30; i++) assert.equal(await store.countParse('danang_shop', false, 0), false);
+    assert.equal((await source()).enabled, true);
+  } finally {
+    await store.end();
+    await db.delete(sources).where(eq(sources.channel, 'danang_shop'));
+  }
+});
+
 test('город в архиве: гость его не видит, сборщик не читает и не ищет ему источники; вернуть — и всё как было', async () => {
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
