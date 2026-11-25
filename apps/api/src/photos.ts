@@ -1,7 +1,11 @@
-// Фото, которые храним у себя, — в Postgres (ADR-0003). Сюда попадают только готовые превью Telegram, оригиналов нет.
-import { and, eq, gt, sql } from 'drizzle-orm';
+// Аватары и фото сообщества — в Postgres (ADR-0003): готовые превью Telegram, оригиналов нет.
+// Обложки событий — в бакете R2 (ADR-0011), в базе только их адрес; без бакета — тоже в Postgres.
+import { createHash } from 'node:crypto';
+import { and, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import sharp from 'sharp';
-import type { Db } from './db/client.ts';
+import { collectedCoverKey } from '@yaswami/core';
+import { bucket, type Bucket } from './bucket.ts';
+import type { Db, Tx } from './db/client.ts';
 import { photos } from './db/schema.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
@@ -9,10 +13,56 @@ import { bot } from './telegram.ts';
 /** Адрес фото для фронта. Строка фото не меняется, поэтому адрес кэшируется навсегда. */
 export const photoUrl = (id: string) => `${settings.publicUrl}/api/photos/${id}`;
 
-export async function getPhoto(db: Db, id: string): Promise<Buffer | null> {
+/** Адрес фото по строке `photos`: файл в бакете — его открытый адрес, иначе — наш `/api/photos/<id>`. */
+export const storedPhotoUrl = (id: string | null, url: string | null): string | null => url ?? (id ? photoUrl(id) : null);
+
+/** Байты фото из базы или адрес в бакете, куда оно переехало (старые ссылки `/api/photos/<id>` ведут туда). */
+export async function getPhoto(db: Db, id: string): Promise<{ data: Buffer | null; url: string | null } | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [row] = await db.select({ data: photos.data }).from(photos).where(eq(photos.id, id));
-  return row?.data ?? null;
+  const [row] = await db.select({ data: photos.data, url: photos.url }).from(photos).where(eq(photos.id, id));
+  return row ?? null;
+}
+
+type CoverOwner = { collected_external_id: string } | { event_id: string };
+
+/** Ключ обложки в бакете: covers/<collected|event>/<id>-<хэш>.jpg. Хэш содержимого — новый файл на каждую новую картинку. */
+function coverKey(owner: CoverOwner, data: Buffer): string {
+  const hash = createHash('sha256').update(data).digest('hex').slice(0, 16);
+  return 'event_id' in owner ? `covers/event/${owner.event_id}-${hash}.jpg` : collectedCoverKey(owner.collected_external_id, hash);
+}
+
+/**
+ * Сохранить обложку события вместо прежней. Есть бакет — файл ложится туда, в строке `photos` только адрес; нет — байты
+ * в базе, как раньше. Прежний файл в бакете не удаляем: на него может сослаться отмена в журнале команды.
+ */
+export async function saveCover(tx: Db | Tx, owner: CoverOwner, source: string, data: Buffer): Promise<void> {
+  const b = bucket();
+  const place = b ? { url: await b.put(coverKey(owner, data), data, 'image/jpeg') } : { data };
+  const where = 'event_id' in owner ? eq(photos.event_id, owner.event_id) : eq(photos.collected_external_id, owner.collected_external_id);
+  const ref = 'event_id' in owner ? { event_id: owner.event_id } : { collected_external_id: owner.collected_external_id };
+  await tx.delete(photos).where(where);
+  await tx.insert(photos).values({ ...ref, source, ...place });
+}
+
+/**
+ * Разовый перенос обложек из базы в бакет (скрипт `move-covers.ts`): кладёт байты в бакет, в строке оставляет адрес
+ * и стирает байты. Аватары и фото сообщества не трогает. По одной строке: прервётся — запуск заново продолжит с того же места.
+ */
+export async function moveCoversToBucket(db: Db, b: Bucket): Promise<{ count: number; bytes: number }> {
+  const rows = await db.select({ id: photos.id }).from(photos)
+    .where(and(isNotNull(photos.data), isNull(photos.url), or(isNotNull(photos.collected_external_id), isNotNull(photos.event_id))));
+  const total = { count: 0, bytes: 0 };
+  for (const { id } of rows) {
+    const [row] = await db.select().from(photos).where(and(eq(photos.id, id), isNotNull(photos.data)));
+    if (!row?.data) continue;
+    // Старые необработанные PNG сжимаем по пути: в бакете все обложки — JPEG.
+    const data = row.data[0] === 0x89 ? await optimizeImage(row.data) : row.data;
+    const owner: CoverOwner = row.event_id ? { event_id: row.event_id } : { collected_external_id: row.collected_external_id! };
+    const url = await b.put(coverKey(owner, data), data, 'image/jpeg');
+    await db.update(photos).set({ url, data: null }).where(eq(photos.id, id));
+    total.count++; total.bytes += row.data.length;
+  }
+  return total;
 }
 
 const COVER_SIDE = 1000; // обложка показывается на всю ширину шапки; больше телефону не нужно
@@ -32,7 +82,7 @@ export async function optimizeStoredPhotos(db: Db, minBytes = 200_000): Promise<
   const total = { count: 0, before: 0, after: 0 };
   for (const { id } of heavy) {
     const [row] = await db.select({ data: photos.data }).from(photos).where(eq(photos.id, id));
-    if (!row) continue;
+    if (!row?.data) continue;
     const data = await optimizeImage(row.data).catch(() => null);
     if (!data || data.length >= row.data.length) continue;
     await db.update(photos).set({ data }).where(eq(photos.id, id));

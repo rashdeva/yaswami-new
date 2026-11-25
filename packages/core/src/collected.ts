@@ -127,3 +127,15 @@ export function collectedDaypart(iso: string): Daypart {
 export function byDaypart<T extends Pick<CollectedEventItem, 'starts_at'>>(events: T[]): { part: (typeof DAYPARTS)[number]; events: T[] }[] {
   return DAYPARTS.map((part) => ({ part, events: events.filter((e) => collectedDaypart(e.starts_at) === part.key) })).filter((g) => g.events.length);
 }
+
+/**
+ * Идентификатор собранного события в адресах: telegram:<канал>/<публикация>#<номер> ↔ <канал>-<публикация>-<номер>,
+ * instagram:<код публикации>#<номер> ↔ ig.<код>-<номер>. В username Telegram точки нет — ig. с каналом не спутать.
+ * Обратное — collectedExternalId в apps/api/src/services.ts. Здесь, а не в API: тем же id сборщик называет обложку в бакете.
+ */
+export const collectedSlug = (externalId: string): string => externalId.startsWith('instagram:')
+  ? externalId.replace(/^instagram:(.+)#(\d+)$/, 'ig.$1-$2')
+  : externalId.replace(/^telegram:/, '').replace(/\/(\d+)#(\d+)$/, '-$1-$2');
+
+/** Ключ обложки собранного события в бакете (ADR-0011). Хэш содержимого — у каждой новой картинки свой файл. */
+export const collectedCoverKey = (externalId: string, hash: string): string => `covers/collected/${collectedSlug(externalId)}-${hash}.jpg`;

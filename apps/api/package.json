@@ -7,6 +7,7 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@yaswami/core": "workspace:*",
     "@yaswami/extract": "workspace:*",
+    "aws4fetch": "^1.0.20",
     "drizzle-orm": "^0.45",
     "hono": "^4.13.17",
     "postgres": "^3.4",

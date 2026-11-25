@@ -456,6 +456,13 @@
       "when": 1795620226680,
       "tag": "20261125153000_journal_no_images",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1795620935502,
+      "tag": "20261125153535_covers_in_r2",
+      "breakpoints": true
     }
   ]
 }

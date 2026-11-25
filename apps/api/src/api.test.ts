@@ -18,7 +18,8 @@ import { adminActions, collectedEvents, collectorCursors, contacts, conversation
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { notify } from './notifications.ts';
-import { saveUserPhoto } from './photos.ts';
+import { moveCoversToBucket, saveUserPhoto } from './photos.ts';
+import { bucket, setBucket } from './bucket.ts';
 import { listCollectedForAdmin, requestNextCover, requestNextVideo } from './services.ts';
 import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
@@ -3132,6 +3133,39 @@ test('журнал: картинку обложки не хранит, толь�
   assert.equal((await call(tma(ADMIN, 'Админ'), 'POST', `/admin/covers/${w.slug}`, { image_url: png })).status, 200);
   const row = (await lastAction())!;
   assert.deepEqual([row.action, row.input], ['admin_covers_set', { image_url: `data:… (${png.length} символов)` }]);
+});
+
+test('обложки — в бакете R2: в базе только адрес, старые ссылки ведут в бакет, перенос забирает лежащие в базе', async () => {
+  settings.adminIds = [ADMIN];
+  const puts: { key: string; data: Buffer; type: string }[] = [];
+  setBucket({ put: async (key, data, type) => (puts.push({ key, data, type }), `https://media.test/${key}`) });
+  try {
+    const w = await world();
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    const res = await call(tma(ADMIN, 'Админ'), 'POST', `/admin/covers/${w.slug}`, { image_url: png });
+    const { cover_url } = (await res.json()) as { cover_url: string };
+    assert.equal(res.status, 200);
+    assert.match(cover_url, new RegExp(`^https://media\\.test/covers/collected/${w.slug}-[0-9a-f]{16}\\.jpg$`));
+    assert.deepEqual([puts.length, puts[0]!.type, puts[0]!.data[0], puts[0]!.data[1]], [1, 'image/jpeg', 0xff, 0xd8], 'в бакет ушёл пережатый JPEG');
+    const [row] = await db.select().from(photos).where(eq(photos.collected_external_id, `telegram:auditchan/${w.n}#0`));
+    assert.deepEqual([row!.data, row!.url], [null, cover_url], 'байтов в базе нет');
+    const old = await app.request(`/photos/${row!.id}`);
+    assert.deepEqual([old.status, old.headers.get('location')], [301, cover_url], 'ссылка /api/photos/<id> ведёт в бакет');
+
+    // Перенос: обложка своего события из базы уезжает в бакет, аватар остаётся в базе.
+    const jpeg = await sharp({ create: { width: 4, height: 4, channels: 3, background: '#f00' } }).jpeg().toBuffer();
+    const [cover] = await db.insert(photos).values({ event_id: w.eventId, source: 'x', data: jpeg }).returning();
+    await db.delete(photos).where(eq(photos.user_id, w.otherId));
+    const [avatar] = await db.insert(photos).values({ user_id: w.otherId, source: 'telegram:userpic/x', data: jpeg }).returning();
+    const moved = await moveCoversToBucket(db, bucket()!);
+    assert.ok(moved.count >= 1);
+    const [after] = await db.select().from(photos).where(eq(photos.id, cover!.id));
+    assert.deepEqual([after!.data, after!.url], [null, `https://media.test/covers/event/${w.eventId}-${createHash('sha256').update(jpeg).digest('hex').slice(0, 16)}.jpg`]);
+    assert.deepEqual((await db.select().from(photos).where(eq(photos.id, avatar!.id)))[0]!.data, jpeg, 'аватар не переносится');
+    assert.equal((await moveCoversToBucket(db, bucket()!)).count, 0, 'повторный запуск ничего не делает');
+  } finally {
+    setBucket(null);
+  }
 });
 
 test('журнал: упавшее действие не оставляет ни изменения, ни записи, ни побочных действий', async () => {
