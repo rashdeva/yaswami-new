@@ -36,7 +36,7 @@ export function useServices() {
   const sections = groups.map((g) => shortcuts.find((s) => s.key === g.key) ?? g);
   const tiles = [...shortcuts, ...groups.filter((g) => !shortcuts.some((s) => s.key === g.key))];
   const cheap = cheapest(items, CHEAP_ALL);
-  const all: ServiceGroup[] = [...tiles, ...(cheap.length ? [{ key: CHEAP, name: 'Недорого', topic: null, items: cheap }] : [])];
+  const all: ServiceGroup[] = [...tiles, ...(cheap.length ? [{ key: CHEAP, name: 'Недорого', emoji: '🪙', tint: 'other', items: cheap }] : [])];
   return { sections, tiles, cheap: cheap.slice(0, CHEAP_SHELF), find: (key: string) => all.find((g) => g.key === key), failed };
 }
 

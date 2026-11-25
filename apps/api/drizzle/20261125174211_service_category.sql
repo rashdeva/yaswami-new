@@ -1,0 +1,1 @@
+ALTER TABLE "practices" ADD COLUMN "category" text;

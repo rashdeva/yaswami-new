@@ -132,14 +132,18 @@ test('сборщик: организаторы, их услуги и фото', 
   assert.equal((await sql`select city_id from hosts where telegram_id = 501`)[0]!.city_id, 'hanoi', 'мастер получает город чата');
   // Разбор услуги: из объявления — сразу; без него — classifyPractices (опубликованные первыми, отклонённые не трогаем).
   await store.saveOffer({ telegram_id: 502, username: 'vera', name: 'Вера', summary: null, offer_url: 'https://t.me/chat/3', city_id: 'hanoi',
-    practices: [{ title: 'Скрипка', topic: 'обучение', description: null, price: '200k', formats: ['personal', 'online'], for_kids: true, price_amount: 200000, price_currency: 'VND' }] });
-  assert.deepEqual({ ...(await sql`select formats, for_kids, price_amount, price_currency from practices where title = 'Скрипка'`)[0] }, { formats: ['personal', 'online'], for_kids: true, price_amount: '200000', price_currency: 'VND' });
+    practices: [{ title: 'Скрипка', topic: 'обучение', description: null, price: '200k', category: 'lessons', formats: ['personal', 'online'], for_kids: true, price_amount: 200000, price_currency: 'VND' }] });
+  assert.deepEqual({ ...(await sql`select category, formats, for_kids, price_amount, price_currency from practices where title = 'Скрипка'`)[0] }, { category: 'lessons', formats: ['personal', 'online'], for_kids: true, price_amount: '200000', price_currency: 'VND' });
   await sql`update practices set status = 'rejected' where title = 'Массаж'`;
   const unclassified = await store.practicesToClassify(10);
   assert.deepEqual(unclassified.map((p: any) => [p.title, p.city]), [['Йога', 'Дананг'], ['Бокс', 'Ханой']]);
-  await store.setPracticeDetails(unclassified[0].id, { formats: [], for_kids: false, price_amount: 300000, price_currency: 'VND' });
+  await store.setPracticeDetails(unclassified[0].id, { category: 'sport', formats: [], for_kids: false, price_amount: 300000, price_currency: 'VND' });
   assert.deepEqual((await store.practicesToClassify(10)).map((p: any) => p.title), ['Бокс']);
-  assert.deepEqual({ ...(await sql`select formats, price_amount from practices where title = 'Йога'`)[0] }, { formats: [], price_amount: '300000' });
+  assert.deepEqual({ ...(await sql`select category, formats, price_amount from practices where title = 'Йога'`)[0] }, { category: 'sport', formats: [], price_amount: '300000' });
+  // Разобрана до категорий (ADR-0012) — снова в очереди, чтобы получить категорию.
+  await sql`update practices set category = null where title = 'Скрипка'`;
+  assert.deepEqual((await store.practicesToClassify(10)).map((p: any) => [p.title, p.topic]), [['Бокс', 'спорт'], ['Скрипка', 'обучение']]);
+  await sql`update practices set category = 'lessons' where title = 'Скрипка'`;
   await sql`update hosts set profiled_at = now() where telegram_id = 502`; // Вера нужна только здесь: профили ниже проверяются на Анне и Борисе
 
   assert.deepEqual((await store.stalePhotos(7, 5)).map((h: any) => h.channel), ['anna_channel']);

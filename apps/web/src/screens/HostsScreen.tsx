@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import type { HostListItem, SearchEntry, Wire } from '@yaswami/core';
-import { topicIcon } from '@yaswami/core';
 import { useTopics } from '../hooks/useTopics.ts';
 import { track } from '../analytics.ts';
 import { ProfileButton } from '../components/Avatar.tsx';
@@ -34,7 +33,7 @@ const PREVIEW = 3;
  * услуги и «Все». Услуга открывает шторку с записью. Набран запрос — вместо витрины находки, услуги первыми. Открыта без входа.
  */
 export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onOpenEntry }: Props) {
-  useTopics(); // иконки тем — из базы: перерисоваться, когда пришли
+  useTopics(); // иконки тем у событий в находках поиска — из базы: перерисоваться, когда пришли
   const { sections, tiles, cheap, find, failed } = useServices();
   const search = useSearch(query, 'services');
   const sheet = usePracticeSheet();
@@ -71,7 +70,7 @@ export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onO
             <div className="quick" role="group" aria-label="Направления">
               {tiles.map((g) => (
                 <button key={g.key} className="tile" onClick={() => openGroup(g.key)}>
-                  <img className="tile-ico" src={topicIcon(g.topic)} alt="" />{g.name}
+                  <span className="tile-ico" aria-hidden="true">{g.emoji}</span>{g.name}
                 </button>
               ))}
             </div>
@@ -90,7 +89,7 @@ export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onO
           {sections?.map((g) => (
             <section key={g.key} className="shelf">
               <div className="shelf-head">
-                <img src={topicIcon(g.topic)} alt="" />
+                <span className="shelf-emoji" aria-hidden="true">{g.emoji}</span>
                 <h2>{g.name}</h2>
                 {g.items.length > PREVIEW && <button className="quiet" onClick={() => openGroup(g.key)}>Все {g.items.length}</button>}
               </div>

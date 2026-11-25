@@ -1,56 +1,60 @@
-// Вкладка «Услуги» без React: услуги мастеров одним списком, разложенные по направлениям, и порядок находок поиска.
-import type { HostListItem, Practice, PracticeFormat, SearchEntry, TopicItem, Wire } from '@yaswami/core';
-import { topicsByDirection } from '@yaswami/core';
+// Вкладка «Услуги» без React: услуги мастеров по категориям услуг (ADR-0012), сквозные разделы, цена и порядок находок поиска.
+import type { DirectionSlug, HostListItem, Practice, PracticeFormat, SearchEntry, ServiceCategory, TopicItem, Wire } from '@yaswami/core';
+import { SERVICE_CATEGORIES, serviceCategoryBySlug } from '@yaswami/core';
 
 /** Услуга (Practice без Session, CONTEXT.md) вместе с мастером — так её показывает вкладка. */
 export interface ServiceItem { practice: Practice; host: HostListItem }
 
-/** Раздел вкладки: направление или тема без направления. `topic` — по нему иконка раздела; `key` — адрес раздела. */
-export interface ServiceGroup { key: string; name: string; topic: string | null; items: ServiceItem[] }
+/**
+ * Раздел вкладки: категория услуги или сквозной раздел. `key` — адрес раздела, `emoji` — его значок,
+ * `tint` — slug темы, в цвет которой шапка раздела (`[data-topic]` в tokens.css).
+ */
+export interface ServiceGroup { key: string; name: string; emoji: string; tint: string; items: ServiceItem[] }
 
-/** Ключ раздела для темы, которой нет в списке тем (ещё не пришёл или тему убрали): всё такое — в «Другом». */
+/** Ключ раздела для услуг без категории, чью тему тоже не к чему отнести. */
 export const OTHER_GROUP = 'other';
 
-const capital = (s: string) => s[0]!.toUpperCase() + s.slice(1);
+/** Пока услуга не размечена (сборщик доберётся за проход-другой) — категория по направлению её темы. */
+const FROM_DIRECTION: Record<DirectionSlug, ServiceCategory> = {
+  body: 'body', sport: 'sport', creative: 'classes', social: 'classes', growth: 'lessons', travel: 'classes', kids: 'kids',
+};
+/** Цвет шапки раздела — цвет похожей темы. */
+const TINT: Record<ServiceCategory, string> = {
+  beauty: 'dance', body: 'body', sport: 'sport', lessons: 'learn', kids: 'kids', psy: 'psy', home: 'meet', photo: 'cinema', pets: 'yoga', classes: 'art',
+};
+
+/** Категория услуги: размеченная сборщиком или командой, иначе — по направлению темы; null — не к чему отнести. */
+export function categoryOf(p: Pick<Practice, 'category' | 'topic'>, topics: TopicItem[]): ServiceCategory | null {
+  if (serviceCategoryBySlug(p.category)) return p.category;
+  const direction = topics.find((t) => t.name === p.topic)?.direction;
+  return direction ? FROM_DIRECTION[direction] : null;
+}
 
 /**
- * Услуги, разложенные по направлениям в порядке DIRECTIONS — как плитки на витрине событий. Тема без направления —
- * своим разделом; услуга с неизвестной темой — в «Другом» в конце. Пустых разделов нет. Внутри — сначала первая
- * услуга каждого мастера в порядке каталога, потом вторые и дальше: первые строки раздела — разные мастера.
+ * Услуги по категориям в порядке SERVICE_CATEGORIES; не к чему отнести — «Другое» в конце. Пустых разделов нет.
+ * Внутри — сначала первая услуга каждого мастера в порядке каталога, потом вторые и дальше: первые строки — разные мастера.
  */
 export function serviceGroups(hosts: HostListItem[], topics: TopicItem[]): ServiceGroup[] {
   const items = hosts
     .flatMap((host) => host.practices.map((practice, rank) => ({ practice, host, rank })))
     .sort((a, b) => a.rank - b.rank) // сортировка устойчивая: при равном rank остаётся порядок каталога
     .map(({ practice, host }) => ({ practice, host }));
-  const used = topics.filter((t) => items.some((i) => i.practice.topic === t.name));
-  const groups = topicsByDirection(used).map(({ direction, topics: inside }) => ({
-    key: direction?.slug ?? inside[0]!.slug,
-    name: direction?.name ?? capital(inside[0]!.name),
-    topic: inside[0]!.name,
-    items: items.filter((i) => inside.some((t) => t.name === i.practice.topic)),
+  const groups = SERVICE_CATEGORIES.map((c) => ({
+    key: c.slug as string, name: c.name as string, emoji: c.emoji as string, tint: TINT[c.slug],
+    items: items.filter((i) => categoryOf(i.practice, topics) === c.slug),
   }));
-  const rest = items.filter((i) => !used.some((t) => t.name === i.practice.topic));
-  return rest.length ? [...groups, { key: OTHER_GROUP, name: 'Другое', topic: null, items: rest }] : groups;
+  const rest = items.filter((i) => !categoryOf(i.practice, topics));
+  return [...groups, { key: OTHER_GROUP, name: 'Другое', emoji: '✨', tint: 'other', items: rest }].filter((g) => g.items.length);
 }
 
-/** Ключи сквозных разделов: собраны не по теме, а по разбору услуги. Адрес раздела — как у направлений. */
-export const WORKSHOPS = 'workshops';
-export const KIDS = 'kids'; // совпадает со slug направления «Детям»: сквозной раздел шире и заменяет его
+/** Ключи сквозных разделов: собраны не по категории, а по разбору услуги. Адрес раздела — как у категорий. */
+export const KIDS = 'kids'; // совпадает с категорией «Детям»: сквозной раздел шире и заменяет её
 export const CHEAP = 'cheap';
 
-const isKids = (item: ServiceItem, topics: TopicItem[]) =>
-  !!item.practice.for_kids || topics.some((t) => t.direction === 'kids' && t.name === item.practice.topic);
-
-/**
- * Сквозные разделы для плиток: «Мастер-классы» (формат workshop) и «Детям» (для детей или тема направления «Детям»).
- * Пустых нет. `topic` — тема для иконки.
- */
+/** «Детям»: категория «Детям» и всё, что размечено «для детей» в других категориях. Нет таких — раздела нет. */
 export function serviceShortcuts(items: ServiceItem[], topics: TopicItem[]): ServiceGroup[] {
-  return [
-    { key: WORKSHOPS, name: 'Мастер-классы', topic: 'творчество', items: items.filter((i) => i.practice.formats?.includes('workshop')) },
-    { key: KIDS, name: 'Детям', topic: 'детям', items: items.filter((i) => isKids(i, topics)) },
-  ].filter((g) => g.items.length);
+  const kids = items.filter((i) => i.practice.for_kids || categoryOf(i.practice, topics) === 'kids');
+  return kids.length ? [{ key: KIDS, name: 'Детям', emoji: '🧸', tint: 'kids', items: kids }] : [];
 }
 
 /**
