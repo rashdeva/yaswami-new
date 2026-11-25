@@ -4,6 +4,7 @@ import { useTopics } from '../hooks/useTopics.ts';
 import { track } from '../analytics.ts';
 import { ProfileButton } from '../components/Avatar.tsx';
 import { CityPick } from '../components/CityPick.tsx';
+import { MoreButton } from '../components/MoreButton.tsx';
 import { PracticeSheet } from '../components/PracticeSheet.tsx';
 import { SearchField } from '../components/SearchField.tsx';
 import { SearchResults } from '../components/SearchResults.tsx';
@@ -79,7 +80,7 @@ export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onO
             <section className="shelf">
               <div className="shelf-head">
                 <h2>Недорого</h2>
-                {cheapAll > cheap.length && <button className="quiet" onClick={() => openGroup(CHEAP)}>Все {cheapAll}</button>}
+                {cheapAll > cheap.length && <MoreButton count={cheapAll} onClick={() => openGroup(CHEAP)} />}
               </div>
               <div className="group">
                 {cheap.map((item) => <ServiceRow key={item.practice.id} {...item} onOpen={() => sheet.show(item)} />)}
@@ -91,7 +92,7 @@ export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onO
               <div className="shelf-head">
                 <span className="shelf-emoji" aria-hidden="true">{g.emoji}</span>
                 <h2>{g.name}</h2>
-                {g.items.length > PREVIEW && <button className="quiet" onClick={() => openGroup(g.key)}>Все {g.items.length}</button>}
+                {g.items.length > PREVIEW && <MoreButton count={g.items.length} onClick={() => openGroup(g.key)} />}
               </div>
               <div className="group">
                 {g.items.slice(0, PREVIEW).map((item) => <ServiceRow key={item.practice.id} {...item} onOpen={() => sheet.show(item)} />)}
