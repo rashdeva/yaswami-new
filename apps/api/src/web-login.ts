@@ -116,12 +116,15 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
         code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256',
       });
       // state и PKCE-verifier ждут возврата в подписанной cookie: серверу не нужно хранить незавершённые входы.
-      const pending = { state, verifier, back: safeReturn(c.req.query('return')), app, exp: Date.now() / 1000 + PENDING_MAX_AGE_S };
+      // `start` — ссылка, с которой человек пришёл на сайт (?startapp=…, метка -s<…>): станет его приходом, если он новый.
+      // Только знаки, которые Telegram пускает в startapp; остальное — не наша ссылка, отбрасываем.
+      const start = /^[\w-]{1,64}$/.test(c.req.query('start') ?? '') ? c.req.query('start') : undefined;
+      const pending = { state, verifier, back: safeReturn(c.req.query('return')), app, start, exp: Date.now() / 1000 + PENDING_MAX_AGE_S };
       setCookie(c, PENDING_COOKIE, seal(pending, key), { ...cookie, maxAge: PENDING_MAX_AGE_S });
       return c.redirect(`${ISSUER}/auth?${String(query).replace(/\+/g, '%20')}`);
     })
     .get('/telegram/callback', async (c) => {
-      const pending = unseal<{ state: string; verifier: string; back: string; app?: boolean; exp: number }>(getCookie(c, PENDING_COOKIE), key);
+      const pending = unseal<{ state: string; verifier: string; back: string; app?: boolean; start?: string; exp: number }>(getCookie(c, PENDING_COOKIE), key);
       deleteCookie(c, PENDING_COOKIE, cookie);
       const app = !!pending?.app;
       if (c.req.query('error')) return fail(c, 400, 'cancelled', 'вы отменили вход или Telegram его отклонил', app);
@@ -151,7 +154,7 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
       const id = Number(claims.id ?? claims.sub);
       if (!Number.isSafeInteger(id) || id <= 0) return fail(c, 401, 'invalid_token', 'Telegram не сообщил, кто вы', app);
       const username = typeof claims.preferred_username === 'string' ? claims.preferred_username : undefined;
-      const user = await upsertUser(db, { id, first_name: String(claims.name || username || 'Гость').slice(0, 60), username }, { joined_via: app ? 'mobile_app' : 'site' });
+      const user = await upsertUser(db, { id, first_name: String(claims.name || username || 'Гость').slice(0, 60), username }, { joined_via: app ? 'mobile_app' : 'site', start_param: pending.start });
       if (app) return c.redirect(`${APP_RETURN}?token=${await issueToken(db, user.id, { ttlS: APP_SESSION_MAX_AGE_S })}`);
       await startSession(c, user.id);
       return c.redirect(pending.back);
