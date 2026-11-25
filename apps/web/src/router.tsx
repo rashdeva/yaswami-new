@@ -141,7 +141,7 @@ function SearchPage() {
       onQuery={(next) => void navigate({ to: '/search', search: { q: next || undefined }, replace: true })}
       onOpen={(entry) => void (entry.type === 'event'
         ? navigate({ to: '/e/$id', params: { id: entry.event.id } })
-        : navigate({ to: '/hosts/$id', params: { id: entry.host.id } }))}
+        : navigate({ to: '/hosts/$id', params: { id: entry.type === 'practice' ? entry.host.id : entry.product.host.id } }))}
     />
   );
 }
