@@ -1,19 +1,21 @@
-// Карточка пользователя: поля, его события и ответы, записи в каталоге, аудитория, токены, удаление, история.
+// Карточка пользователя: откуда пришёл, поля, его активность, события и ответы, записи в каталоге, аудитория, токены, удаление, история.
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { User, UserUpdateInput as Input } from '@yaswami/core';
 import { UserUpdateInput } from '@yaswami/core';
 import { KeyRoundIcon, Trash2Icon } from 'lucide-react';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
+import { ActivityFeed, Ago, Arrival } from '@/components/ActivityFeed';
 import { Confirm, UNDO_HINT } from '@/components/Confirm';
 import { EntityLink, PostHogLink, TelegramLink } from '@/components/EntityLink';
 import { SaveBar, saveDirty, SwitchListField, TextField } from '@/components/Fields';
 import { History } from '@/components/History';
-import { Failed, Hint, Loading, Page, Section } from '@/components/Page';
+import { Failed, Hint, Loading, LoadMore, Page, Section } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item';
+import { useActivity } from '@/hooks/useActivity';
 import { useContacts, useUser, useUserActions } from '@/hooks/useUsers';
 import { APPROVAL_LABELS, EVENT_STATUS_LABELS, FEATURE_LABELS, IDENTITY_LABELS } from '@/lib/catalog';
 import { wallParts } from '@/lib/form';
@@ -53,6 +55,15 @@ export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => voi
         </>
       }
     >
+      <Section title="Приход">
+        <Hint>
+          Пришёл {u.created_at ? <Ago at={u.created_at} /> : 'неизвестно когда'}: <Arrival via={u.joined_via} start={u.start_param} />
+          {' · '}последний заход: {u.last_seen_at ? <Ago at={u.last_seen_at} /> : 'неизвестно'}
+        </Hint>
+      </Section>
+
+      <Activity id={id} />
+
       <Section title="Поля">
         <form onSubmit={saveDirty(form, act.update)} className="flex flex-col gap-4">
           <FieldGroup>
@@ -111,6 +122,18 @@ export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => voi
       <Audience id={id} remove={act.removeContact} />
       <History entity="user" id={id} />
     </Page>
+  );
+}
+
+/** Что человек делал: пришёл, записывался, открывал события — новое сверху. */
+function Activity({ id }: { id: number }) {
+  const { entries, hasNextPage, isFetchingNextPage, fetchNextPage } = useActivity({ user_id: id, pagination_limit: 20 });
+  if (!entries?.length) return null;
+  return (
+    <Section title="Активность">
+      <ActivityFeed entries={entries} showUser={false} />
+      <LoadMore more={!!hasNextPage} loading={isFetchingNextPage} onMore={() => void fetchNextPage()} />
+    </Section>
   );
 }
 

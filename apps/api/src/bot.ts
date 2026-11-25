@@ -3,7 +3,7 @@
 import type { User } from '@yaswami/core';
 import { collectedWhen } from '@yaswami/core';
 import type { Db } from './db/client.ts';
-import { upsertUser } from './auth.ts';
+import { touchUser, upsertUser } from './auth.ts';
 import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { writing } from './live.ts';
@@ -153,7 +153,9 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   const m = parseIncoming(update);
   if (!m) return;
   // Любое сообщение боту, в том числе /start, заводит пользователя: вместе с ним сохраняется его аватар.
-  const actor = await upsertUser(db, m.from);
+  // Новый человек пришёл через бота; хвост `/start <параметр>` — ссылка t.me/<бот>?start=…, с которой он пришёл.
+  const actor = await upsertUser(db, m.from, { joined_via: 'bot', start_param: /^\/start\s+(\S+)/.exec(m.text)?.[1] ?? null });
+  await touchUser(db, actor.id);
   const conversation = await recordIncoming(db, m);
   // Бот не смог ответить — повод нам заглянуть в диалог.
   const say = async (text: string) => {

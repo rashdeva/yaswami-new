@@ -151,7 +151,7 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
       const id = Number(claims.id ?? claims.sub);
       if (!Number.isSafeInteger(id) || id <= 0) return fail(c, 401, 'invalid_token', 'Telegram не сообщил, кто вы', app);
       const username = typeof claims.preferred_username === 'string' ? claims.preferred_username : undefined;
-      const user = await upsertUser(db, { id, first_name: String(claims.name || username || 'Гость').slice(0, 60), username });
+      const user = await upsertUser(db, { id, first_name: String(claims.name || username || 'Гость').slice(0, 60), username }, { joined_via: app ? 'mobile_app' : 'site' });
       if (app) return c.redirect(`${APP_RETURN}?token=${await issueToken(db, user.id, { ttlS: APP_SESSION_MAX_AGE_S })}`);
       await startSession(c, user.id);
       return c.redirect(pending.back);
@@ -171,7 +171,7 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
         return c.json({ error: 'invalid_token' }, 401);
       }
       if (typeof sub !== 'string' || !sub) return c.json({ error: 'invalid_token' }, 401);
-      const user = await signInWith(db, 'apple', sub, { first_name });
+      const user = await signInWith(db, 'apple', sub, { first_name }, { joined_via: 'mobile_app' });
       return c.json({ token: await issueToken(db, user.id, { ttlS: APP_SESSION_MAX_AGE_S }) });
     })
     // Вход через Google в приложении на Android — так же, как через Apple: приложение меняет id_token Google на наш токен.
@@ -188,7 +188,7 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
       }
       if (typeof claims.sub !== 'string' || !claims.sub) return c.json({ error: 'invalid_token' }, 401);
       const name = String(claims.given_name || claims.name || '').trim().slice(0, 60) || undefined;
-      const user = await signInWith(db, 'google', claims.sub, { first_name: name });
+      const user = await signInWith(db, 'google', claims.sub, { first_name: name }, { joined_via: 'mobile_app' });
       return c.json({ token: await issueToken(db, user.id, { ttlS: APP_SESSION_MAX_AGE_S }) });
     })
     .post('/logout', async (c) => {

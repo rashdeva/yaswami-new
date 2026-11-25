@@ -230,10 +230,67 @@ export type UserUpdateInput = z.infer<typeof UserUpdateInput>;
 export const IDENTITY_PROVIDERS = ['telegram', 'apple', 'google'] as const;
 export type IdentityProvider = (typeof IDENTITY_PROVIDERS)[number];
 
-/** Пользователь для команды: `id` — наш, `telegram_id` — куда ему пишет бот (null — вошёл без Telegram), `identities` — как он входит. */
+/**
+ * Откуда человек пришёл в первый раз (CONTEXT.md, «Приход»): мини-приложение, бот, сайт или приложение для телефона.
+ * В Luma такого нет: там у гостя есть только `utm_source`.
+ */
+export const JOINED_VIA = ['mini_app', 'bot', 'site', 'mobile_app'] as const;
+export type JoinedVia = (typeof JOINED_VIA)[number];
+
+/**
+ * Пользователь для команды: `id` — наш, `telegram_id` — куда ему пишет бот (null — вошёл без Telegram), `identities` — как он входит.
+ * Приход и заходы (в Luma такого нет): `created_at` — первый вход (null — неизвестен); `joined_via` и `start_param` — откуда и по какой ссылке
+ * пришёл (null — пришёл раньше, чем мы стали это записывать, 2026-11-26); `last_seen_at` — последний заход с точностью
+ * до получаса; `registrations` — сколько раз записывался: ответы на события Ясвами, собранные события и услуги.
+ */
 export interface AdminUser extends User {
   telegram_id: number | null;
   identities: IdentityProvider[];
+  created_at: Date | null;
+  joined_via: JoinedVia | null;
+  start_param: string | null;
+  last_seen_at: Date | null;
+  registrations: number;
+}
+
+// --- Активность: кто пришёл, куда записался и что открывал. В Luma такого нет.
+
+/** Что произошло: человек пришёл, ответил на событие Ясвами, записался на собранное событие или услугу, открыл событие. */
+export const ACTIVITY_TYPES = ['user_joined', 'guest_registered', 'collected_signup', 'practice_signup', 'visit'] as const;
+export type ActivityType = (typeof ACTIVITY_TYPES)[number];
+
+/** Отбор ленты: `signup` — все три вида записи разом. */
+export const ACTIVITY_FILTERS = ['user_joined', 'signup', 'visit'] as const;
+export type ActivityFilter = (typeof ACTIVITY_FILTERS)[number];
+
+export const AdminActivityListInput = z.object({
+  type: z.enum(ACTIVITY_FILTERS).optional().describe('user_joined — new people; signup — answers to Yaswami events and sign-ups to catalogue events and services; visit — event pages opened. Omit for everything'),
+  user_id: z.coerce.number().int().optional().describe('Only this user (our user id, not a Telegram id)'),
+  pagination_cursor: z.iso.datetime({ offset: true }).optional().describe('next_cursor from the previous page'),
+  pagination_limit: z.coerce.number().int().min(1).max(100).optional().describe('Default 50'),
+});
+export type AdminActivityListInput = z.infer<typeof AdminActivityListInput>;
+
+/**
+ * Строка ленты. `target` — куда записался или что открыл: событие Ясвами, собранное событие (id — как в адресе каталога)
+ * или мастер услуги (`name` — название услуги). У `user_joined` — `joined_via` и `start_param`; у `visit` — `referrer`,
+ * если пришёл по чужой ссылке «Позвать друзей».
+ */
+export interface AdminActivityEntry {
+  type: ActivityType;
+  created_at: Date;
+  user: { id: User['id']; first_name: string; username: string | null };
+  target: { entity: 'event' | 'collected_event' | 'host'; id: string; name: string } | null;
+  joined_via: JoinedVia | null;
+  start_param: string | null;
+  referrer: { id: User['id']; first_name: string } | null;
+}
+
+/** Страница ленты, новые сверху — форма списков Luma. */
+export interface AdminActivityList {
+  entries: AdminActivityEntry[];
+  has_more: boolean;
+  next_cursor: string | null;
 }
 
 /** Пользователь, его события и ответы на чужие, собранные события, на которые он записался (их id для адреса). */

@@ -1,5 +1,5 @@
 // Тонкая обёртка над Telegram.WebApp: только то, чем пользуемся. В обычном браузере объекта нет — всё молча пропускается.
-import { parseStart } from './start.ts';
+import { parseStart } from '@yaswami/core';
 
 interface Inset { top: number; bottom: number; left: number; right: number }
 interface WebApp {

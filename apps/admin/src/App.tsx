@@ -2,7 +2,7 @@
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router';
 import {
   ActivityIcon, BotIcon, CalendarCheckIcon, ChevronsUpDownIcon, HistoryIcon, LayoutGridIcon, LayoutListIcon, LogOutIcon, MapPinIcon, MegaphoneIcon, MessagesSquareIcon, RadioTowerIcon, TagsIcon,
-  SmartphoneIcon, UserIcon,
+  FootprintsIcon, SmartphoneIcon, UserIcon,
 } from 'lucide-react';
 import { loginUrl } from '@/api';
 import { Hint } from '@/components/Page';
@@ -41,6 +41,7 @@ const NAV = [
   { group: 'Сервис', items: [
     { to: '/showcase', label: 'Витрина', icon: LayoutGridIcon },
     { to: '/events', label: 'События Ясвами', icon: CalendarCheckIcon },
+    { to: '/activity', label: 'Активность', icon: FootprintsIcon },
     { to: '/users', label: 'Пользователи', icon: UserIcon },
   ] },
   { group: 'Команда', items: [

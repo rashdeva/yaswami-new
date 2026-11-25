@@ -2,11 +2,11 @@
 // или в cookie сайта (её ставит вход через Telegram в web-login.ts).
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
-import type { IdentityProvider as Provider, User } from '@yaswami/core';
+import type { IdentityProvider as Provider, JoinedVia, User } from '@yaswami/core';
 import { dropHostPitch } from './inbox.ts';
 import type { Db } from './db/client.ts';
 import type { TokenScope } from './db/schema.ts';
-import { apiTokens, hosts, userIdentities, users } from './db/schema.ts';
+import { apiTokens, hosts, userActivity, userIdentities, users } from './db/schema.ts';
 import { saveUserPhoto } from './photos.ts';
 
 const INIT_DATA_MAX_AGE_S = 24 * 60 * 60;
@@ -45,9 +45,9 @@ export function verifyInitData(initData: string, botToken: string, now = Date.no
  * Вход через Telegram (initData мини-приложения, сайт, приложение, сообщение боту): находит пользователя по способу
  * входа telegram или заводит нового и обновляет имя и username. id пользователя — не Telegram id (ADR-0008).
  */
-export async function upsertUser(db: Db, tg: TelegramUser): Promise<User> {
+export async function upsertUser(db: Db, tg: TelegramUser, arrival?: Arrival): Promise<User> {
   const profile = { first_name: tg.first_name, username: tg.username ?? null };
-  const found = await signInWith(db, 'telegram', String(tg.id), { ...profile, lang: tg.language_code ?? 'ru' });
+  const found = await signInWith(db, 'telegram', String(tg.id), { ...profile, lang: tg.language_code ?? 'ru' }, arrival);
   const [user] = found.first_name === profile.first_name && found.username === profile.username
     ? [found]
     : await db.update(users).set(profile).where(eq(users.id, found.id)).returning();
@@ -61,13 +61,20 @@ export async function upsertUser(db: Db, tg: TelegramUser): Promise<User> {
   return user!;
 }
 
+/** Откуда человек пришёл (CONTEXT.md, «Приход»): пишется, только когда вход заводит нового пользователя. */
+export interface Arrival {
+  joined_via: JoinedVia;
+  /** startapp мини-приложения или хвост `/start` у бота: событие, кто позвал, метка (`parseStart` в core). */
+  start_param?: string | null;
+}
+
 /**
  * Любой вход (способ входа, CONTEXT.md): находит пользователя по паре «поставщик, id у поставщика» или заводит нового
  * со случайным id (ADR-0008). Профиль — только при создании: Apple сообщает имя один раз, а Telegram
  * обновляет его сам (upsertUser).
  */
 export async function signInWith(
-  db: Db, provider: Provider, subject: string, profile: { first_name?: string; username?: string | null; lang?: string } = {},
+  db: Db, provider: Provider, subject: string, profile: { first_name?: string; username?: string | null; lang?: string } = {}, arrival?: Arrival,
 ): Promise<User> {
   const find = async () => (await db.select({ user: users }).from(userIdentities).innerJoin(users, eq(users.id, userIdentities.user_id))
     .where(and(eq(userIdentities.provider, provider), eq(userIdentities.subject, subject))))[0]?.user;
@@ -79,13 +86,15 @@ export async function signInWith(
         first_name: profile.first_name || 'Гость', username: profile.username ?? null, lang: profile.lang ?? 'ru', timezone: 'UTC',
       }).returning();
       await tx.insert(userIdentities).values({ provider, subject, user_id: user!.id });
+      const start_param = arrival?.start_param?.slice(0, 128) || null; // Telegram пускает до 64 знаков; длиннее — не от него
+      await tx.insert(userActivity).values({ user_id: user!.id, joined_via: arrival?.joined_via ?? null, start_param, last_seen_at: new Date() });
       return user!;
     });
   } catch (e) {
     // Два первых входа одновременно (initData на каждый запрос): второй упирается в уникальность способа входа
     // и берёт пользователя, которого завёл первый. Способа входа нет — значит, случайный id совпал с занятым: ещё раз.
     const raced = (e as { cause?: { code?: string }; code?: string }).cause?.code ?? (e as { code?: string }).code;
-    if (raced === '23505') return (await find()) ?? signInWith(db, provider, subject, profile);
+    if (raced === '23505') return (await find()) ?? signInWith(db, provider, subject, profile, arrival);
     throw e;
   }
 }
@@ -146,6 +155,24 @@ async function userByToken(db: Db, token: string): Promise<{ user: User; scope: 
   return row;
 }
 
+/** Когда этот процесс последний раз записал заход человека: чаще раза в полчаса базу не трогаем. */
+const seen = new Map<number, number>();
+const SEEN_EVERY_MS = 30 * 60 * 1000;
+
+/**
+ * Отметить заход (`user_activity.last_seen_at`): каждый вход в мини-приложении, на сайте и в приложении и каждое сообщение
+ * боту. Не чаще раза в полчаса на процесс; ошибка записи вход не ломает. Строки может не быть — заведётся без прихода.
+ */
+export async function touchUser(db: Db, userId: number, now = Date.now()): Promise<void> {
+  if (now - (seen.get(userId) ?? 0) < SEEN_EVERY_MS) return;
+  seen.set(userId, now);
+  // ponytail: Map без чистки — по записи на человека, заходившего с запуска процесса; при сотнях тысяч — LRU.
+  const at = new Date(now);
+  await db.insert(userActivity).values({ user_id: userId, last_seen_at: at })
+    .onConflictDoUpdate({ target: userActivity.user_id, set: { last_seen_at: at } })
+    .catch((e: unknown) => console.error('touchUser:', (e as Error).message));
+}
+
 export type AuthMethod = 'telegram' | 'token';
 
 /** Заголовок `Authorization: tma <initData>` или `Authorization: Bearer <токен>`; без заголовка — токен из cookie сайта. */
@@ -157,11 +184,18 @@ export async function authenticate(
   if (scheme === 'tma') {
     // Без токена бота подпись проверить нечем: вход через Telegram закрыт, а не открыт для всех.
     const tg = botToken ? verifyInitData(value, botToken) : null;
-    return tg ? { user: await upsertUser(db, tg), method: 'telegram', scope: null } : null;
+    if (!tg) return null;
+    // Подпись проверена — start_param тоже от Telegram: с ним человек открыл мини-приложение.
+    const user = await upsertUser(db, tg, { joined_via: 'mini_app', start_param: new URLSearchParams(value).get('start_param') });
+    await touchUser(db, user.id);
+    return { user, method: 'telegram', scope: null };
   }
   if (scheme?.toLowerCase() === 'bearer' && value.startsWith(TOKEN_PREFIX)) {
     const found = await userByToken(db, value);
-    return found ? { ...found, method: 'token' } : null;
+    if (!found) return null;
+    // Токен роли Hermes (со областью действия) — это агент, а не человек: его запросы заходом не считаем.
+    if (!found.scope) await touchUser(db, found.user.id);
+    return { ...found, method: 'token' };
   }
   return null;
 }

@@ -62,7 +62,9 @@ const KINDS: Record<AdminEntity, Kind> = {
     children: { cover: photos.collected_external_id, signups: collectedEventSignups.external_id },
   },
   host: { root: hosts, key: hosts.id, children: { photos: photos.host_id, practices: practices.host_id, practice_signups: practiceSignups.host_id, host_searches: hostSearches.host_id, products: products.host_id } },
-  // Аватар не входит: он подтянется из Telegram при следующем входе. Токены не входят никогда.
+  // Аватар не входит: он подтянется из Telegram при следующем входе. Токены не входят никогда. Приход (user_activity)
+  // не входит: last_seen_at меняется на каждом заходе, и любая отмена отвечала бы «изменено с тех пор»; после отмены
+  // удаления приход неизвестен, последний заход появится со следующим входом.
   user: {
     root: users, key: users.id, toKey: Number,
     children: { guests: guests.user_id, collected_signups: collectedEventSignups.user_id, contacts: contacts.user_id, audience: contacts.host_user_id, feedback: eventFeedback.user_id },

@@ -1,13 +1,14 @@
 // Все маршруты админки. Страница здесь — тонкая связка: берёт адрес и раздаёт экрану props; экраны про адреса не знают.
 // Ссылки на карточки сущностей рисует components/EntityLink.tsx — второе и последнее место, где известны адреса.
 import { createRootRoute, createRoute, createRouter, useNavigate } from '@tanstack/react-router';
-import type { AdminEntity, AgentKey, CollectedStatus, PracticeStatus, ProductStatus } from '@yaswami/core';
-import { ADMIN_ENTITIES, AGENTS, COLLECTED_STATUSES, DEFAULT_CITY_ID, HOST_STATUSES, PRACTICE_STATUSES, PRODUCT_STATUSES } from '@yaswami/core';
+import type { ActivityFilter, AdminEntity, AgentKey, CollectedStatus, PracticeStatus, ProductStatus } from '@yaswami/core';
+import { ACTIVITY_FILTERS, ADMIN_ENTITIES, AGENTS, COLLECTED_STATUSES, DEFAULT_CITY_ID, HOST_STATUSES, PRACTICE_STATUSES, PRODUCT_STATUSES } from '@yaswami/core';
 import { App } from '@/App';
 import type { EventsWhen } from '@/hooks/useEvents';
 import { AccountsScreen } from '@/screens/AccountsScreen';
 import { ActionScreen } from '@/screens/ActionScreen';
 import { ActionsScreen } from '@/screens/ActionsScreen';
+import { ActivityScreen } from '@/screens/ActivityScreen';
 import { AgentsScreen } from '@/screens/AgentsScreen';
 import type { CatalogFilter } from '@/screens/CatalogScreen';
 import { CatalogItemScreen } from '@/screens/CatalogItemScreen';
@@ -175,6 +176,16 @@ function UserPage() {
 }
 const user = createRoute({ getParentRoute: () => root, path: '/users/$id', component: UserPage });
 
+function ActivityPage() {
+  const { type } = activity.useSearch();
+  const navigate = useNavigate();
+  return <ActivityScreen type={type} onType={(next) => void navigate({ to: '/activity', search: { type: next }, replace: true })} />;
+}
+const activity = createRoute({
+  getParentRoute: () => root, path: '/activity', component: ActivityPage,
+  validateSearch: (s: Record<string, unknown>): { type?: ActivityFilter } => ({ type: oneOf(s.type, ACTIVITY_FILTERS) }),
+});
+
 // --- Журнал
 
 interface ActionsSearch { entity?: AdminEntity; action?: string; actor?: number }
@@ -218,7 +229,7 @@ const showcase = createRoute({
 
 // Сервер отдаёт админку по /admin (apps/api/src/main.ts), Vite — с base: '/admin/'.
 export const router = createRouter({
-  routeTree: root.addChildren([people, feed, agents, hosts, host, events, eventNew, event, catalog, catalogItem, users, user, sources, topics, cities, showcase, actions, action, accounts]),
+  routeTree: root.addChildren([people, feed, agents, hosts, host, events, eventNew, event, catalog, catalogItem, users, user, activity, sources, topics, cities, showcase, actions, action, accounts]),
   basepath: '/admin',
 });
 

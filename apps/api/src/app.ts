@@ -7,7 +7,7 @@ import { validator } from 'hono/validator';
 import * as z from 'zod';
 import type { AppConfig, User } from '@yaswami/core';
 import {
-  AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
+  AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminActivityListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
   CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, AdminProductListInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceAddInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
@@ -105,6 +105,9 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
   const adminSourceSearches: Hono<Env> = new Hono<Env>()
     .get('/', async (c) => c.json(await admin.listSourceSearches(db, c.req.query('city_id'))))
     .post('/', json(SourceSearchCreateInput), async (c) => c.json(await admin.requestSourceSearch(db, ctx(c), c.req.valid('json')), 202));
+  // Лента активности (admin/users.ts): кто пришёл, куда записался, что открывал — по той же причине отдельно.
+  const adminActivity: Hono<Env> = new Hono<Env>()
+    .get('/', async (c) => c.json(await admin.listActivity(db, AdminActivityListInput.parse(c.req.query()))));
 
   const open = new Hono<Env>()
     .use(bodyLimit({ maxSize: BODY_MAX, onError: (c) => c.json({ error: 'too_large' }, 413) }))
@@ -379,6 +382,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
   app.route('/admin/topics', adminTopics); // после `.use('/admin/*')`: только команде
   app.route('/admin/source-searches', adminSourceSearches);
   app.route('/admin/shelves', adminShelves);
+  app.route('/admin/activity', adminActivity);
   return app;
 }
 
