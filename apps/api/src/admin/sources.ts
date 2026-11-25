@@ -58,7 +58,8 @@ export async function updateSource(db: Db, ctx: Ctx, channel: string, input: Sou
     const before = await getSource(tx, key);
     if (Object.keys(values).length) await tx.update(sources).set(values).where(eq(sources.channel, key));
     if (input.host_id && input.host_id !== before.host?.id) {
-      await tx.delete(collectorCursors).where(eq(collectorCursors.channel, key));
+      // У товаров своя отметка — product:<канал> (pollProducts в сборщике): перечитать нужно и их.
+      await tx.delete(collectorCursors).where(inArray(collectorCursors.channel, [key, `product:${key}`]));
       // ponytail: канал организатора — не часть снимка источника, отмена действия его не вернёт; поправить — в карточке организатора.
       const instagram = instagramOf(key);
       if (instagram) await tx.update(hosts).set({ instagram_handle: instagram }).where(and(eq(hosts.id, input.host_id), isNull(hosts.instagram_handle)));

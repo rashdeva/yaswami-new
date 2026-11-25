@@ -2525,7 +2525,7 @@ test('источники: команда добавляет и выключае�
   assert.deepEqual([stub.username, stub.telegram_id, stub.status], ['dato_banya', null, 'pending']);
   assert.deepEqual(await tool('admin_hosts_create', { username: '@dato_banya' }), { error: 'host_exists' });
   assert.equal((await call(admin, 'POST', '/admin/hosts', { username: 'нет' })).status, 400);
-  await db.insert(collectorCursors).values([{ channel: 'Danang_Yoga', last_number: 500 }, { channel: 'lena_tea_club', last_number: 7 }]);
+  await db.insert(collectorCursors).values([{ channel: 'Danang_Yoga', last_number: 500 }, { channel: 'product:Danang_Yoga', last_number: 40 }, { channel: 'lena_tea_club', last_number: 7 }]);
   const bound = (await tool('admin_sources_update', { channel: 'danang_yoga', host_id: stub.id })) as AdminSource;
   assert.deepEqual([bound.host?.id, bound.host?.username, bound.enabled], [stub.id, 'dato_banya', true], 'организатор указан, включённость не тронута');
   // Сборщик перечитает свежие публикации канала, а канал стал каналом организатора — оттуда фото.

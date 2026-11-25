@@ -651,6 +651,12 @@ console.log('cover ok');
   console.log = log;
   assert.deepEqual(calls, [], 'отклонённый мастер');
 
+  // ИИ перегружен (503) или упёрся в лимит (429) — saveProducts бросает: отметка не сдвинется, пост перечитают.
+  for (const status of [503, 429]) {
+    const busy = async () => { throw Object.assign(new Error('high demand'), { status }); };
+    await assert.rejects(saveProducts({ store, extractProducts: busy, resolve, photo: async () => null, pause: async () => {} }, channel, [posts[1]]), { status });
+  }
+
   // Первое фото поста — в бакет; без бакета или без фото — null.
   const bucket = { put: async (key) => `https://media/${key}` };
   const downloadPhotos = async ([m]) => [{ number: m.id, data: Buffer.from([0xff, 0xd8]), width: 1280, height: 960 }];
