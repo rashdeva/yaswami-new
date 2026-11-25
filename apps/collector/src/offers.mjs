@@ -60,16 +60,17 @@ export async function resolveAuthor(client, username) {
 
 /**
  * Разобрать самопредставления ИИ и сохранить мастеров. `resolve(username)` — кто это в Telegram (resolveAuthor).
- * Новый мастер получает город чата `city_id` (без него — первый город); у известного город не меняется.
+ * Новый мастер получает город чата `city_id` (без него — первый город); у известного город не меняется. `city` — название
+ * города чата: по нему ИИ угадывает валюту, если в объявлении её нет.
  * У кого Practice уже есть, пропускаем: мастера повторяют
  * рекламу каждый день, а запросы к ИИ ограничены. ponytail: Practice не обновляются; обновлять, если мастера жалуются.
  */
-export async function saveOffers({ store, extractOffer, resolve, pause, city_id }, offers) {
+export async function saveOffers({ store, extractOffer, resolve, pause, city_id, city }, offers) {
   let saved = 0;
   for (const { url, author, text } of offers) {
     if (await store.hasPractices(author.id ?? author.username)) continue;
     try {
-      const offer = await extractOffer(author.name ?? `@${author.username}`, text);
+      const offer = await extractOffer(author.name ?? `@${author.username}`, text, city);
       // Автор неизвестен (реклама через бота) — ищем мастера по username только для настоящих предложений: поиск флудоопасен.
       const who = offer && (author.id ? author : await resolve(author.username).then((r) => r && { ...author, ...r }));
       if (who) {

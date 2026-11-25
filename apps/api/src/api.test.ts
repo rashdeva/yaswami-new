@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Me, Message, PracticeSignup, AdminProduct, AdminProductList, ProductItem, ProductList, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
+import type { AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Me, Message, Practice, PracticeSignup, AdminProduct, AdminProductList, ProductItem, ProductList, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -398,11 +398,14 @@ test('каталог организаторов: с событиями или Pr
   const admin = tma(70, 'Админ');
   // команда правит список Practice целиком: с id — правка на месте (запись на неё остаётся даже после переименования),
   // без id — новая, чего в списке нет — удалено; заявки видны в списке админки по id
-  const fixed = [{ id: yoga.id, title: 'Йога на рассвете', topic: 'йога', description: 'Группа у моря.', price: '200k', status: 'published' }];
+  // Разбор услуги команда тоже может поправить: формат, «для детей», цену числом.
+  const fixed = [{ id: yoga.id, title: 'Йога на рассвете', topic: 'йога', description: 'Группа у моря.', price: '200k', status: 'published', formats: ['group'], for_kids: false, price_amount: 200000, price_currency: 'VND' }];
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: fixed })).status, 200);
   assert.deepEqual(((await (await app.request(`/hosts/${dasha.id}`)).json()) as HostItem).practices, fixed);
   assert.equal((await db.select().from(practicesTable).where(eq(practicesTable.host_id, dasha.id))).length, 1, '«Ремонт телефонов» в список не вошёл — удалён');
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: [{ ...fixed[0], topic: 'нет такой' }] })).status, 400);
+  assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: [{ ...fixed[0], formats: ['massage'] }] })).status, 400);
+  assert.equal((await call(admin, 'PATCH', `/admin/hosts/${dasha.id}`, { practices: [{ ...fixed[0], price_currency: 'донги' }] })).status, 400);
   assert.deepEqual(await (await call(admin, 'PATCH', `/admin/hosts/${list[0]!.id}`, { practices: fixed })).json(), { error: 'practice_not_found' }); // чужой id
   const listed = (await (await call(admin, 'GET', '/admin/hosts')).json()) as AdminHostListItem[];
   assert.deepEqual(listed.find((h) => h.id === dasha.id)!.practice_signup_counts, { [yoga.id]: 1 });
@@ -412,6 +415,10 @@ test('каталог организаторов: с событиями или Pr
   const decide = (status: string) => call(admin, 'PATCH', `/admin/practices/${massage!.id}`, { status });
   assert.equal((await call(admin, 'PATCH', '/admin/practices/not-an-id', { status: 'published' })).status, 404);
   assert.equal((await call(admin, 'PATCH', `/admin/practices/${massage!.id}`, {})).status, 200);
+  // Новая услуга не разобрана (null); команда может разметить её сама — остальные поля остаются как были.
+  assert.equal(massage!.formats, null);
+  const marked = (await (await call(admin, 'PATCH', `/admin/practices/${massage!.id}`, { formats: ['personal'], for_kids: false })).json()) as Practice;
+  assert.deepEqual([marked.formats, marked.for_kids, marked.title, marked.price_amount], [['personal'], false, 'Массаж', null]);
   const catalog = async () => ((await (await app.request('/hosts')).json()) as HostListItem[]).map((h) => h.username);
   assert.equal((await decide('published')).status, 200);
   assert.deepEqual(await catalog(), ['club', 'dasha_yoga', 'new_master']);

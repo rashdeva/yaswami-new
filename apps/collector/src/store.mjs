@@ -323,10 +323,25 @@ export function createStore(url) {
         on conflict (telegram_id) do update set username = excluded.username, offer_url = excluded.offer_url, summary = coalesce(hosts.summary, excluded.summary)
         returning id`;
       if (practices.length && !(await tx`select 1 from practices where host_id = ${id} limit 1`).length) {
-        await tx`insert into practices ${tx(practices.map(({ title, topic, description, price }, position) => ({ host_id: id, title, topic, description, price, position })))}`;
+        await tx`insert into practices ${tx(practices.map(({ title, topic, description, price, formats, for_kids, price_amount, price_currency }, position) =>
+          // Разбора нет (старый извлекатель, тест) — null: услугу разберёт classifyPractices.
+          ({ host_id: id, title, topic, description, price, formats: formats ?? null, for_kids: for_kids ?? null, price_amount: price_amount ?? null, price_currency: price_currency ?? null, position })))}`;
       }
       await linkUser(tx, host.telegram_id);
     }),
+    /**
+     * Услуги без разбора (`formats` is null), кроме отклонённых: сначала опубликованные, затем ждущие решения, старые первыми.
+     * `city` — город мастера: по нему ИИ угадывает валюту, если в цене её нет.
+     */
+    practicesToClassify: (limit) => sql`
+      select p.id, p.title, p.description, p.price, c.name as city
+      from practices p join hosts h on h.id = p.host_id join cities c on c.id = h.city_id
+      where p.formats is null and p.status <> 'rejected'
+      order by (p.status = 'published') desc, p.created_at limit ${limit}`,
+    /** Разбор услуги (packages/extract, PracticeDetails). Остальное в услуге — текст мастера и решение команды — не трогаем. */
+    setPracticeDetails: (id, { formats, for_kids, price_amount, price_currency }) => sql`
+      update practices set formats = ${formats}, for_kids = ${for_kids}, price_amount = ${price_amount}, price_currency = ${price_currency}
+      where id = ${id}`,
     /**
      * Организаторы с каналом, у которых фото сообщества не смотрели дольше `days` дней, кроме отклонённых. Не только
      * с предстоящими событиями: добавленному командой фото нужны и до первого события.

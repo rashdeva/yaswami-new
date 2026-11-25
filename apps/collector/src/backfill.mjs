@@ -22,3 +22,17 @@ export async function backfillTopics({ store, extract, pause }) {
     }
   }
 }
+
+/**
+ * Услуги без разбора (`formats` null): собранные до полей разбора или отправленные командой на разбор заново.
+ * По `limit` за проход; сбой ИИ на одной услуге остальных не останавливает — она останется без разбора до следующего.
+ */
+export async function classifyPractices({ store, classifyPractice, limit, pause }) {
+  for (const practice of await store.practicesToClassify(limit)) {
+    const details = await classifyPractice(practice, practice.city).catch((e) => console.error(`разбор услуги ${practice.id}: ${e.message}`));
+    await pause();
+    if (!details) continue;
+    await store.setPracticeDetails(practice.id, details);
+    console.log(`услуга «${practice.title}»: ${details.formats.join(', ') || 'формат не понять'}${details.for_kids ? ', для детей' : ''}, ${details.price_amount ?? '—'} ${details.price_currency ?? ''}`);
+  }
+}

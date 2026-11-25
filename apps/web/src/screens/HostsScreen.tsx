@@ -9,6 +9,7 @@ import { SearchField } from '../components/SearchField.tsx';
 import { SearchResults } from '../components/SearchResults.tsx';
 import { ServiceRow } from '../components/ServiceRow.tsx';
 import { servicesCount } from '../format.ts';
+import { CHEAP } from '../services.ts';
 import { usePracticeSheet, useServices } from '../hooks/useHosts.ts';
 import { useSearch } from '../hooks/useSearch.ts';
 import { useViewed } from '../hooks/useViewed.ts';
@@ -29,18 +30,18 @@ interface Props {
 const PREVIEW = 3;
 
 /**
- * Вкладка «Услуги»: строка поиска, плитки направлений, где есть услуги, и под ними разделы по направлениям — по три
+ * Вкладка «Услуги»: строка поиска, плитки (сквозные разделы и направления), полка «Попробовать недорого» и разделы по направлениям — по три
  * услуги и «Все». Услуга открывает шторку с записью. Набран запрос — вместо витрины находки, услуги первыми. Открыта без входа.
  */
 export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onOpenEntry }: Props) {
   useTopics(); // иконки тем — из базы: перерисоваться, когда пришли
-  const { groups, failed } = useServices();
+  const { sections, tiles, cheap, total, find, failed } = useServices();
   const search = useSearch(query, 'services');
   const sheet = usePracticeSheet();
   useViewed('hosts_viewed');
   useEffect(() => { document.title = `Услуги и мастера в городе ${city} — Я с вами`; }, [city]);
 
-  const total = groups?.reduce((n, g) => n + g.items.length, 0) ?? 0;
+  const cheapAll = find(CHEAP)?.items.length ?? 0;
   const openGroup = (key: string) => {
     track('hosts_filtered', { direction: key });
     onOpenGroup(key);
@@ -64,18 +65,29 @@ export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onO
       {query ? <SearchResults {...search} first="practice" onOpen={openEntry} /> : (
         <>
           {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}
-          {!groups && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
-          {groups?.length === 0 && <div className="state"><b>🌿</b><p>Пока никого нет. Загляните позже.</p></div>}
-          {groups && groups.length > 1 && (
+          {!sections && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
+          {sections?.length === 0 && <div className="state"><b>🌿</b><p>Пока никого нет. Загляните позже.</p></div>}
+          {tiles.length > 1 && (
             <div className="quick" role="group" aria-label="Направления">
-              {groups.map((g) => (
+              {tiles.map((g) => (
                 <button key={g.key} className="tile" onClick={() => openGroup(g.key)}>
                   <img className="tile-ico" src={topicIcon(g.topic)} alt="" />{g.name}
                 </button>
               ))}
             </div>
           )}
-          {groups?.map((g) => (
+          {cheap.length > 0 && (
+            <section className="shelf">
+              <div className="shelf-head">
+                <h2>Недорого</h2>
+                {cheapAll > cheap.length && <button className="quiet" onClick={() => openGroup(CHEAP)}>Все {cheapAll}</button>}
+              </div>
+              <div className="group">
+                {cheap.map((item) => <ServiceRow key={item.practice.id} {...item} onOpen={() => sheet.show(item)} />)}
+              </div>
+            </section>
+          )}
+          {sections?.map((g) => (
             <section key={g.key} className="shelf">
               <div className="shelf-head">
                 <img src={topicIcon(g.topic)} alt="" />

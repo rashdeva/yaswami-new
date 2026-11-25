@@ -1,8 +1,9 @@
 import type { HostListItem, Practice } from '@yaswami/core';
 import { hue } from '../format.ts';
+import { formatLabel, practicePrice } from '../services.ts';
 
 /**
- * Строка услуги в списке: мастер кружком, название, под ним мастер и цена. Кнопки записи нет —
+ * Строка услуги в списке: мастер кружком, название, под ним мастер, формат и цена. Кнопки записи нет —
  * нажатие открывает шторку услуги (PracticeSheet), запись там.
  */
 export function ServiceRow({ practice, host, onOpen }: { practice: Practice; host: Pick<HostListItem, 'name' | 'photo_url'>; onOpen: () => void }) {
@@ -15,7 +16,7 @@ export function ServiceRow({ practice, host, onOpen }: { practice: Practice; hos
       </span>
       <span className="service-text">
         <b>{practice.title}</b>
-        <small>{host.name} · {practice.price ?? 'цена по запросу'}</small>
+        <small>{[host.name, formatLabel(practice), practicePrice(practice)].filter(Boolean).join(' · ')}</small>
       </span>
       <span className="service-chev" aria-hidden="true">›</span>
     </button>

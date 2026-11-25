@@ -1,13 +1,20 @@
 import type { Practice } from '@yaswami/core';
 import { topicIcon } from '@yaswami/core';
+import { formatLabel, practicePrice } from '../services.ts';
 
-/** Строка услуги мастера (Practice): иконка темы, название, цена и описание; справа — «Записаться». */
-export function PracticeRow({ practice: p, onSignUp }: { practice: Practice; onSignUp: () => void }) {
+/**
+ * Строка услуги на странице мастера (Practice): иконка темы, название, формат и цена. Кнопки записи нет —
+ * нажатие открывает шторку услуги (PracticeSheet), как на вкладке «Услуги».
+ */
+export function PracticeRow({ practice: p, onOpen }: { practice: Practice; onOpen: () => void }) {
   return (
-    <div className="guest">
+    <button className="service" onClick={onOpen}>
       <img src={topicIcon(p.topic)} alt="" width={36} height={36} />
-      <div>{p.title}<small>{[p.price ?? 'цена по запросу', p.description].filter(Boolean).join(' · ')}</small></div>
-      <button className="signup" onClick={onSignUp}>Записаться</button>
-    </div>
+      <span className="service-text">
+        <b>{p.title}</b>
+        <small>{[formatLabel(p), practicePrice(p)].filter(Boolean).join(' · ')}</small>
+      </span>
+      <span className="service-chev" aria-hidden="true">›</span>
+    </button>
   );
 }

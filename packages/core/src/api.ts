@@ -161,6 +161,13 @@ export interface CollectedHost {
 export const PRACTICE_STATUSES = ['pending', 'published', 'rejected'] as const;
 export type PracticeStatus = (typeof PRACTICE_STATUSES)[number];
 
+/**
+ * Как проходит услуга: лично, в группе, онлайн или разовый мастер-класс. У одной Practice может быть несколько.
+ * По ним вкладка «Услуги» собирает «Мастер-классы» и фильтры. В Luma такого нет.
+ */
+export const PRACTICE_FORMATS = ['personal', 'group', 'online', 'workshop'] as const;
+export type PracticeFormat = (typeof PRACTICE_FORMATS)[number];
+
 export interface Practice {
   id: string; // по нему на Practice записываются и команда принимает решение: название можно править
   title: string;
@@ -168,6 +175,13 @@ export interface Practice {
   description: string | null;
   price: string | null; // как написал сам организатор
   status: PracticeStatus; // модерация: в каталоге видна только published
+  // Разбор услуги (сборщик, packages/extract): null — ещё не разобрана, `formats` пустой — формат не понять.
+  formats: PracticeFormat[] | null;
+  for_kids: boolean | null; // занятия для детей или подростков (родители ищут их отдельно)
+  // Цена числом — чтобы сравнивать и писать одинаково: обычная цена одного занятия (нижняя, если диапазон), 0 — бесплатно.
+  // В целых единицах валюты, как пишут мастера («150k» → 150000): в Luma цена — `cents` + `currency` у типа билета.
+  price_amount: number | null;
+  price_currency: string | null; // ISO 4217: VND, USD, LKR…
 }
 
 /** Запись на Practice — по её id. В Luma такого нет. */

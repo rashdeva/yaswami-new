@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createExtractor, createOfferExtractor, createProductExtractor, createSearchMatcher, createSummarizer, createTopicProposer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
+import { createExtractor, createOfferExtractor, createPracticeClassifier, createProductExtractor, createSearchMatcher, createSummarizer, createTopicProposer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
 import { connect, goneReason, loadPeers, newPeers, downloadCover, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { refreshOld } from './refresh.mjs';
@@ -9,7 +9,7 @@ import { createBucket } from './bucket.mjs';
 import { curateTopics, syncTopics } from './topics.mjs';
 import { createStore } from './store.mjs';
 import { contactFor, fetchChannelPhotos, fetchProfile } from './host.mjs';
-import { backfillTopics } from './backfill.mjs';
+import { backfillTopics, classifyPractices } from './backfill.mjs';
 import { createSender } from './sender.mjs';
 import { fetchLeads } from './lead.mjs';
 import { resolveAuthor, saveOffers } from './offers.mjs';
@@ -46,6 +46,7 @@ const extract = (announcement, place) => extractFor(place)(announcement);
 const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const extractOffer = createOfferExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const extractProducts = createProductExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
+const classifyPractice = createPracticeClassifier({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 // Новая тема из меток: TOPIC_MODEL — модель для неё (гид читают все, можно взять посильнее), TOPICS_AUTO=0 — не добавлять темы самому.
 const proposeTopic = createTopicProposer({ model: env.TOPIC_MODEL ?? env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const matcher = createSearchMatcher({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
@@ -163,7 +164,7 @@ async function activeSearches() {
 }
 
 /** Один чат города: вопросы — в API, Находки и мастера — в базу. */
-async function pollLeads({ chat, city_id }, searches) {
+async function pollLeads({ chat, city_id, city }, searches) {
   const key = `lead:${chat}`; // отметка в той же таблице, что у каналов с анонсами
   const { last, read, leads, offers, candidates } = await fetchLeads(userbot, chat, cursors[key] ?? 0, { searches });
   for (const lead of leads) await toApi('lead', lead);
@@ -177,7 +178,7 @@ async function pollLeads({ chat, city_id }, searches) {
     await sleep(llmPauseMs);
   }
   if (last !== cursors[key]) await store.saveCursor(key, (cursors[key] = last));
-  const masters = await saveOffers({ store, extractOffer, resolve: (u) => resolveAuthor(userbot, u), pause: () => sleep(llmPauseMs), city_id }, offers);
+  const masters = await saveOffers({ store, extractOffer, resolve: (u) => resolveAuthor(userbot, u), pause: () => sleep(llmPauseMs), city_id, city }, offers);
   // Каждый проход — в журнал: иначе не отличить «вопросов нет» от «чат не читается».
   console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}, мастеров ${masters} из ${offers.length}, находок ${found} из ${candidates.length}`);
 }
@@ -462,6 +463,8 @@ do {
   if (env.TOPICS_AUTO === '1') await curateTopics({ store, proposeTopic }).catch((e) => console.error('новая тема:', e.message));
   // Сбой дозаполнения (ИИ перегружен, лимит) не должен останавливать сбор: остаток доберём следующим проходом.
   await backfillTopics({ store, extract, pause: () => sleep(llmPauseMs) }).catch((e) => console.error('дозаполнение:', e.message));
+  await classifyPractices({ store, classifyPractice, limit: Number(env.PRACTICES_PER_PASS ?? 20), pause: () => sleep(llmPauseMs) })
+    .catch((e) => console.error('разбор услуг:', e.message));
   const adopted = await store.adoptHostChannels(ADOPT_PER_PASS).catch((e) => console.error('источники:', e.message));
   if (adopted?.length) console.log(`новые источники от организаторов: ${adopted.map((c) => `@${c}`).join(', ')}`);
   const adoptedIg = instagram ? await store.adoptHostInstagram(ADOPT_PER_PASS).catch((e) => console.error('Instagram организаторов:', e.message)) : null;

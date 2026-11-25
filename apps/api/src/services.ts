@@ -491,7 +491,10 @@ async function hostPhotos(db: Db, hostId: string): Promise<CollectedHost['photos
   return shots.map((p) => ({ url: photoUrl(p.id), source_url: p.source.replace(/^telegram:/, 'https://t.me/') }));
 }
 
-const practiceFields = { id: practices.id, title: practices.title, topic: practices.topic, description: practices.description, price: practices.price, status: practices.status };
+const practiceFields = {
+  id: practices.id, title: practices.title, topic: practices.topic, description: practices.description, price: practices.price, status: practices.status,
+  formats: practices.formats, for_kids: practices.for_kids, price_amount: practices.price_amount, price_currency: practices.price_currency,
+};
 
 /** Practice организаторов по порядку, как у каждого: всех (`hostId` не задан) или одного. Любого статуса — что показать, решает зовущий. */
 export async function practicesByHost(db: Db | Tx, hostId?: string): Promise<Map<string, Practice[]>> {
