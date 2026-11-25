@@ -160,14 +160,11 @@ export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection, onOpenA
 function AllEventsCard({ items, onOpen }: { items: CollectedEventItem[]; onOpen: () => void }) {
   const icons = [...new Set(items.flatMap((e) => (e.topic ? [e.topic] : [])))].slice(0, 4);
   return (
-    <>
-      <button className="all-card" onClick={() => { track('all_events_opened'); onOpen(); }}>
-        <span className="all-icons">{icons.map((t) => <img key={t} src={topicIcon(t)} alt="" />)}</span>
-        <span className="all-text"><b>Все события</b><small>{eventsCount(items.length)} — по дням, утро, день и вечер</small></span>
-        <span className="all-chev" aria-hidden="true">›</span>
-      </button>
-      <p className="note all-note">Полки выше — подборки. Здесь — всё подряд.</p>
-    </>
+    <button className="all-card" onClick={() => { track('all_events_opened'); onOpen(); }}>
+      <span className="all-icons">{icons.map((t) => <img key={t} src={topicIcon(t)} alt="" />)}</span>
+      <span className="all-text"><b>Все события</b><small>{eventsCount(items.length)} — по дням, утро, день и вечер</small></span>
+      <span className="all-chev" aria-hidden="true">›</span>
+    </button>
   );
 }
 
