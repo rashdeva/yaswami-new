@@ -10,6 +10,7 @@ import { SearchField } from '../components/SearchField.tsx';
 import { SearchResults } from '../components/SearchResults.tsx';
 import { ServiceRow } from '../components/ServiceRow.tsx';
 import { AddInvite } from '../components/AddInvite.tsx';
+import { categoryIcon } from '../icons.ts';
 import { CHEAP } from '../services.ts';
 import { usePracticeSheet, useServices } from '../hooks/useHosts.ts';
 import { useSearch } from '../hooks/useSearch.ts';
@@ -74,7 +75,7 @@ export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onO
             <div className="quick" role="group" aria-label="Направления">
               {tiles.map((g) => (
                 <button key={g.key} className="tile" onClick={() => openGroup(g.key)}>
-                  <span className="tile-ico" aria-hidden="true">{g.emoji}</span>{g.name}
+                  <img className="tile-ico" src={g.icon} alt="" />{g.name}
                 </button>
               ))}
             </div>
@@ -82,6 +83,7 @@ export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onO
           {cheap.length > 0 && (
             <section className="shelf">
               <div className="shelf-head">
+                <img src={categoryIcon(CHEAP)} alt="" />
                 <h2>Недорого</h2>
                 {cheapAll > cheap.length && <MoreButton count={cheapAll} onClick={() => openGroup(CHEAP)} />}
               </div>
@@ -93,7 +95,7 @@ export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onO
           {sections?.map((g) => (
             <section key={g.key} className="shelf">
               <div className="shelf-head">
-                <span className="shelf-emoji" aria-hidden="true">{g.emoji}</span>
+                <img src={g.icon} alt="" />
                 <h2>{g.name}</h2>
                 {g.items.length > PREVIEW && <MoreButton count={g.items.length} onClick={() => openGroup(g.key)} />}
               </div>

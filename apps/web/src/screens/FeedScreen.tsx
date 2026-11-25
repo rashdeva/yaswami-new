@@ -17,6 +17,7 @@ import { useSearch } from '../hooks/useSearch.ts';
 import { ShelfRail } from '../components/ShelfRail.tsx';
 import { useShowcase } from '../hooks/useShowcase.ts';
 import { dayLabel, eventsCount } from '../format.ts';
+import { directionIcon } from '../icons.ts';
 
 interface Props {
   /** Блок над списком: предложение организатору подтвердить свои события. */
@@ -109,11 +110,11 @@ export function FeedScreen({ lead, tail, onOpen, onOpenShelf, onOpenDirection, o
       {(topics.length > 1 || items?.some((e) => e.popular)) && (
         <div className="quick" role="group" aria-label="Темы">
           {items?.some((e) => e.popular) && (
-            <button className="tile" aria-pressed={topic === POPULAR} onClick={() => setTopic(topic === POPULAR ? null : POPULAR)}><span className="tile-ico hot" />Популярное</button>
+            <button className="tile" aria-pressed={topic === POPULAR} onClick={() => setTopic(topic === POPULAR ? null : POPULAR)}><img className="tile-ico" src={directionIcon('popular')} alt="" />Популярное</button>
           )}
           {groups.map(({ direction, topics: inside }) => direction ? (
             <button key={direction.slug} className="tile" onClick={() => { track('direction_opened', { direction: direction.slug }); onOpenDirection(direction.slug); }}>
-              <img className="tile-ico" src={topicIcon(inside[0]!.name)} alt="" />{direction.name}
+              <img className="tile-ico" src={directionIcon(direction.slug)} alt="" />{direction.name}
             </button>
           ) : (
             <button key={inside[0]!.name} className="tile" aria-pressed={topic === inside[0]!.name} onClick={() => setTopic(topic === inside[0]!.name ? null : inside[0]!.name)}>
@@ -205,7 +206,7 @@ function TopicPicker({ groups, saving, error, onSave }: PickerProps) {
       <div className="chips">
         {groups.map((g) => (
           <button key={key(g)} className="chip" aria-pressed={picked.includes(key(g))} onClick={() => toggle(key(g))}>
-            <img src={topicIcon(g.topics[0]!.name)} alt="" />{g.direction?.name ?? g.topics[0]!.name[0]!.toUpperCase() + g.topics[0]!.name.slice(1)}
+            <img src={g.direction ? directionIcon(g.direction.slug) : topicIcon(g.topics[0]!.name)} alt="" />{g.direction?.name ?? g.topics[0]!.name[0]!.toUpperCase() + g.topics[0]!.name.slice(1)}
           </button>
         ))}
       </div>
