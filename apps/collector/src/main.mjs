@@ -156,13 +156,30 @@ const toApi = async (path, body, timeoutMs = 15_000) => {
 // чатами управляет команда в админке («Источники»).
 const chatList = (value) => (value ?? '').split(',').map((c) => c.trim().replace(/^@/, '')).filter(Boolean);
 
+// Запрос, для которого ИИ не вывел слова, не спрашиваем каждый проход: час, потом вдвое дольше, до суток.
+// Иначе один неудобный Запрос съедал бы дневной лимит ИИ. Только в памяти: перезапуск начинает заново.
+const KEYWORDS_RETRY_MS = 3600e3;
+const KEYWORDS_RETRY_MAX_MS = 24 * 3600e3;
+const keywordsRetry = new Map(); // id и текст Запроса → { at, delay }: переписанный Запрос пробуем сразу
+const retryKey = (s) => `${s.id}\n${s.query}`;
+
 /** Включённые Запросы организаторов; тем, у кого ещё нет ключевых слов (новый или переписанный), их выводит ИИ. */
 async function activeSearches() {
   const searches = await store.activeSearches();
+  // Запрос получил слова, выключен или переписан — его отметка больше не нужна.
+  for (const key of keywordsRetry.keys()) if (!searches.some((s) => !s.keywords && retryKey(s) === key)) keywordsRetry.delete(key);
   for (const search of searches.filter((s) => !s.keywords)) {
+    const retry = keywordsRetry.get(retryKey(search));
+    if (retry && Date.now() < retry.at) continue;
     // Не вышло (лимит ИИ) — этот Запрос пропускает проход, остальные ищутся.
     search.keywords = await matcher.keywords(search.query).catch((e) => (console.error(`слова запроса ${search.id}: ${e.message}`), null));
-    if (search.keywords) await store.saveSearchKeywords(search.id, search.query, search.keywords);
+    if (search.keywords) {
+      keywordsRetry.delete(retryKey(search));
+      await store.saveSearchKeywords(search.id, search.query, search.keywords);
+    } else {
+      const delay = retry ? Math.min(retry.delay * 2, KEYWORDS_RETRY_MAX_MS) : KEYWORDS_RETRY_MS;
+      keywordsRetry.set(retryKey(search), { at: Date.now() + delay, delay });
+    }
     await sleep(llmPauseMs);
   }
   return searches;
@@ -361,12 +378,15 @@ async function saveEvents(source, announcement, photos, upload, known, trusted, 
     const external_id = same?.external_id ?? `${ig ? 'instagram' : 'telegram'}:${announcement.id}#${i}`;
     if (!same && bucket) media ??= await upload();
     const status = trusted.has(channel) ? 'approved' : 'pending'; // у известного события upsert статус не меняет
-    await store.upsert({
+    const loaded_at = await store.upsert({
       external_id, channel, city_id, announcement: media ? { ...announcement, media } : announcement, event: merged,
-      signup_url: signupUrl(merged, announcement, signupMessage), status,
+      signup_url: signupUrl(merged, announcement, signupMessage), status, loaded_at: same?.loaded_at ?? null,
     });
+    // `known` снят в начале прохода; команда могла поправить событие или решить его судьбу — её правку не затираем.
+    // Повтор анонса после прохода склеится уже со свежей версией.
+    if (!loaded_at) { console.log(`${external_id}: изменено командой во время прохода — дополнение пропущено`); continue; }
     if (!same && cover) await saveCover(external_id, `instagram:${announcement.id}`, cover);
-    if (same) same.event = merged; else known.push({ external_id, city_id, event, status });
+    if (same) Object.assign(same, { event: merged, loaded_at }); else known.push({ external_id, city_id, event, status, loaded_at });
     if (!same && status === 'approved') console.log(`${external_id}: одобрено само — доверенный источник`);
   }
   return events.length;

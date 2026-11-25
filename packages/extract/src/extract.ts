@@ -113,7 +113,7 @@ ${topicHints()}
  * публикация считается разобранной без событий — иначе она навсегда остановила бы свой источник (отметка канала
  * не сдвигается, пока разбор бросает). Событие, не прошедшее схему (дата, которую не примет база), отбрасывается одно.
  */
-export function parseExtracted(id: string, finish: string | undefined, text: string | undefined): CollectedEvent[] {
+export function parseExtracted(id: string, finish: string | undefined, text: string | undefined, timezone?: string): CollectedEvent[] {
   let events: unknown;
   try {
     events = finish === 'STOP' ? (JSON.parse(text ?? '') as { events?: unknown }).events : null;
@@ -127,8 +127,23 @@ export function parseExtracted(id: string, finish: string | undefined, text: str
   return events.flatMap((e) => {
     const parsed = CollectedEvent.safeParse(e);
     if (!parsed.success) console.error(`extract ${id}: событие отброшено: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
-    return parsed.success ? [parsed.data] : [];
+    if (!parsed.success) return [];
+    // ИИ иногда теряет offset («2026-11-28T19:00:00»): база прочла бы такое время как UTC и сдвинула событие на часы.
+    const e2 = parsed.data;
+    return timezone ? [{ ...e2, starts_at: withOffset(e2.starts_at, timezone), ends_at: e2.ends_at && withOffset(e2.ends_at, timezone) }] : [e2];
   });
+}
+
+/** Время без часового пояса — как местное время `timeZone`: дописывает его offset. С поясом или `Z` — не трогает. */
+export function withOffset(iso: string, timeZone: string): string {
+  if (/(Z|[+-]\d\d:?\d\d)$/i.test(iso)) return iso;
+  const local = /T/.test(iso) ? iso : `${iso}T00:00:00`;
+  const at = new Date(`${local}Z`);
+  if (Number.isNaN(at.getTime())) return iso;
+  // Offset на этот момент: для городов без перехода на летнее время точен, на переходе может ошибиться на час.
+  const name = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'longOffset' }).formatToParts(at).find((p) => p.type === 'timeZoneName')?.value ?? 'GMT';
+  const offset = name === 'GMT' ? '+00:00' : name.slice(3);
+  return `${local.length === 16 ? `${local}:00` : local}${offset}`;
 }
 
 // Публикация из Instagram: автор — ник в Instagram, записаться можно в его директ. Без этого ИИ ставил бы ник в
@@ -152,6 +167,6 @@ export function createExtractor({ model, city, timezone }: { model: string; city
         responseJsonSchema: schema(),
       },
     });
-    return parseExtracted(announcement.id, res.candidates?.[0]?.finishReason, res.text);
+    return parseExtracted(announcement.id, res.candidates?.[0]?.finishReason, res.text, timezone);
   };
 }

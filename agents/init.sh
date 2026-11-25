@@ -11,9 +11,8 @@ DATA="${HERMES_HOME:-/opt/data}"
 : "${HUNTER_API_KEY:?ключ HTTP-входа роли hunter, не короче 16 символов}"
 
 # Ролям, с которыми говорят посторонние, — свой токен с областью действия (pnpm api:token <id> <имя> support|catalog):
-# сервер отдаёт такому токену только его инструменты. Не задан — роль работает на общем токене, как раньше.
-[ -n "${YASWAMI_SUPPORT_MCP_TOKEN:-}" ] || echo "[yaswami] ВНИМАНИЕ: YASWAMI_SUPPORT_MCP_TOKEN не задан — роль support работает на токене админа"
-[ -n "${YASWAMI_CATALOG_MCP_TOKEN:-}" ] || echo "[yaswami] ВНИМАНИЕ: YASWAMI_CATALOG_MCP_TOKEN не задан — роль hunter работает на токене админа"
+# сервер отдаёт такому токену только его инструменты. Не задан — роль не ставится: на токене админа чужой человек
+# мог бы уговорить её на любые действия команды. Ниже, у install_profile.
 
 # Кладёт роль $1 в домашнюю папку профиля $2: характер, скиллы и конфиг с адресом нашего MCP и токеном $3
 # (без него — общий токен оператора).
@@ -45,8 +44,10 @@ install_profile() {
    if [ -n "${GEMINI_API_KEY:-}" ]; then printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY" >> "$home/.env"; fi)
   chown hermes:hermes "$home/.env"
 }
-install_profile support "$SUPPORT_API_KEY" "${YASWAMI_SUPPORT_MCP_TOKEN:-}"
-install_profile hunter "$HUNTER_API_KEY" "${YASWAMI_CATALOG_MCP_TOKEN:-}"
+if [ -n "${YASWAMI_SUPPORT_MCP_TOKEN:-}" ]; then install_profile support "$SUPPORT_API_KEY" "$YASWAMI_SUPPORT_MCP_TOKEN"
+else echo "[yaswami] ВНИМАНИЕ: YASWAMI_SUPPORT_MCP_TOKEN не задан — роль support не ставится"; fi
+if [ -n "${YASWAMI_CATALOG_MCP_TOKEN:-}" ]; then install_profile hunter "$HUNTER_API_KEY" "$YASWAMI_CATALOG_MCP_TOKEN"
+else echo "[yaswami] ВНИМАНИЕ: YASWAMI_CATALOG_MCP_TOKEN не задан — роль hunter не ставится"; fi
 # host — пишет организаторам. Как и illustrator, без ключа не ставится.
 if [ -n "${HOST_API_KEY:-}" ]; then install_profile host "$HOST_API_KEY"; fi
 # illustrator — рисует ролики о событиях. Ключ не задан — профиль не ставим: роль необязательная,

@@ -20,6 +20,8 @@ export interface RsvpArgs {
   now: Date;
 }
 
+/** У события без конца считаем, что оно длится до 12 часов. */
+const ENDS_AFTER_MS = 12 * 3_600_000;
 const seats = (g: Guest) => 1 + g.plus_ones;
 const sum = (gs: Guest[]) => gs.reduce((n, g) => n + seats(g), 0);
 
@@ -30,6 +32,9 @@ const sum = (gs: Guest[]) => gs.reduce((n, g) => n + seats(g), 0);
 export function rsvp(a: RsvpArgs): RsvpResult {
   const { event, ticketTypes, guests, user_id, approval_status, now } = a;
   if (event.status !== 'published') return { ok: false, error: 'closed' };
+  // Прошедшее событие гость уже не меняет: «пойду» на вчерашнее испортило бы счётчики и отзывы. Организатор — может.
+  const endsAt = event.end_at ? new Date(event.end_at).getTime() : new Date(event.start_at).getTime() + ENDS_AFTER_MS;
+  if (!a.by_host && endsAt < now.getTime()) return { ok: false, error: 'closed' };
 
   const prev = guests.find((g) => g.user_id === user_id);
   const others = guests.filter((g) => g.user_id !== user_id);
@@ -56,7 +61,8 @@ export function rsvp(a: RsvpArgs): RsvpResult {
   if (prev && prev.approval_status === approval_status && prev.event_ticket_type_id === event_ticket_type_id && prev.plus_ones === plus_ones) {
     return { ok: true, event, guests, guest: prev, changed: false };
   }
-  const guest: Guest = { event_id: event.id, user_id, approval_status, event_ticket_type_id, plus_ones, registered_at: now };
+  // registered_at — когда гость впервые ответил (как в Luma): смена ответа не переносит его в конец списка.
+  const guest: Guest = { event_id: event.id, user_id, approval_status, event_ticket_type_id, plus_ones, registered_at: prev?.registered_at ?? now };
   return { ok: true, event: { ...event, rev: event.rev + 1 }, guests: [...others, guest], guest, changed: true };
 }
 

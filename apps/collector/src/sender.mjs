@@ -6,6 +6,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:
 import telegram from 'telegram';
 import { NewMessage, Raw } from 'telegram/events/index.js';
 import { COLD_PAUSE_DAYS, inboxMediaKey, mediaExt } from '@yaswami/core';
+import { chatAddress } from './address.mjs';
 import { pickThumb } from './host.mjs';
 import { connect } from './mtproto.mjs';
 
@@ -35,6 +36,35 @@ const RECONNECT_MS = 60_000;
 // Вложение в переписке тяжелее — не качаем: в админке будет «не сохранили», расшифровки не будет.
 const MEDIA_MAX_BYTES = 50_000_000;
 const PHOTO_SIDE = 1280;
+// Помним столько последних своих отправленных сообщений на аккаунт: больше для отсева эха не нужно, а память не растёт.
+const SENT_IDS_MAX = 1000;
+// Каждое входящее — запись в бакет и вызов API, а там расшифровка, уведомление команде и черновик ИИ.
+// Поток сообщений от одного человека режем здесь, до всех этих трат: сверх лимита сообщение отбрасывается целиком.
+const MESSAGES_PER_MINUTE = 10;
+const ATTACHMENTS_PER_DAY = 20;
+
+/**
+ * Лимит в фиксированном окне по ключу: `hit(key)` → 'ok', 'over' (первое превышение в окне — пишем в лог) или 'quiet'.
+ * Ключей не больше `maxKeys`: при переполнении сначала выкидываем истёкшие, потом самые старые — не всё разом.
+ */
+export function createLimiter({ limit, windowMs, maxKeys = 10_000 }) {
+  const hits = new Map(); // ключ → { start, count, warned }
+  return function hit(key, now = Date.now()) {
+    let h = hits.get(key);
+    if (!h || now - h.start >= windowMs) {
+      hits.delete(key);
+      if (hits.size >= maxKeys) for (const [k, v] of hits) if (now - v.start >= windowMs) hits.delete(k);
+      if (hits.size >= maxKeys) hits.delete(hits.keys().next().value);
+      h = { start: now, count: 0, warned: false };
+      hits.set(key, h);
+    }
+    h.count += 1;
+    if (h.count <= limit) return 'ok';
+    if (h.warned) return 'quiet';
+    h.warned = true;
+    return 'over';
+  };
+}
 
 /**
  * Вложение сообщения MTProto: что это, без скачивания. null — вложения нет или оно не наше (стикер, ссылка, опрос).
@@ -65,7 +95,31 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
   const logins = new Map(); // id аккаунта → { client, phoneCodeHash }: вход между шагами живёт только в памяти
   const retryAt = new Map(); // id аккаунта → когда снова пробовать подключиться после сбоя
   let started = false;
-  const sentIds = new Map(); // id аккаунта → номера сообщений, отправленных нами: о них в API не сообщаем
+  const sentIds = new Map(); // id аккаунта → последние номера сообщений, отправленных нами: о них в API не сообщаем
+  const messageLimit = createLimiter({ limit: MESSAGES_PER_MINUTE, windowMs: 60_000 });
+  const attachmentLimit = createLimiter({ limit: ATTACHMENTS_PER_DAY, windowMs: 86_400_000 });
+
+  function rememberSent(accountId, id) {
+    const ids = sentIds.get(accountId);
+    if (!ids) return;
+    ids.add(id);
+    // Set помнит порядок добавления: первый — самый старый.
+    if (ids.size > SENT_IDS_MAX) ids.delete(ids.values().next().value);
+  }
+
+  /** Не слишком ли часто пишет этот человек этому аккаунту. Сверх лимита — отбрасываем, в лог раз за окно. */
+  function withinLimits(account, peerId, withAttachment) {
+    const key = `${account.id}:${peerId}`;
+    const checks = [[messageLimit, 'сообщений в минуту']];
+    if (withAttachment) checks.push([attachmentLimit, 'вложений в сутки']);
+    for (const [limit, what] of checks) {
+      const verdict = limit(key);
+      if (verdict === 'ok') continue;
+      if (verdict === 'over') log(`аккаунт ${account.label}: от ${peerId} слишком много ${what} — отбрасываем до конца окна`);
+      return false;
+    }
+    return true;
+  }
 
   /**
    * Вложение — в бакет, в папку собеседника (inboxMediaKey); расшифровывает речь API. Без бакета или не скачалось —
@@ -94,10 +148,13 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
         // Это продолжение разговора, начатого ответом на вопрос «куда сходить»; чей это собеседник, решает API.
         const inChat = !event.isPrivate;
         if (inChat && (msg.out || !msg.mentioned || !msg.replyTo)) return;
+        // `mentioned` стоит и на ответе чужому сообщению с @упоминанием нашего аккаунта: проверяем, что ответили именно нам.
+        if (inChat && !(await msg.getReplyMessage())?.out) return;
         const chat = await msg.getChat();
         const peer = inChat ? await msg.getSender() : chat;
         if (!chat || !peer || peer.bot || peer.className !== 'User') return;
         const info = attachmentOf(msg);
+        if (!msg.out && !withinLimits(account, Number(peer.id), Boolean(info))) return;
         const media = info ? [await saveAttachment(client, msg, Number(peer.id), info)] : [];
         await report({
           account_id: account.id,
@@ -107,7 +164,7 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
           text: msg.message || (media.length ? '' : NO_TEXT),
           ...(media.length ? { media } : {}),
           // Адрес чата — как в lead.mjs: username или полный id; по нему же уйдёт наш ответ.
-          ...(inChat ? { reply_to: { chat: chat.username ?? `-100${chat.id}`, message_id: msg.id } } : {}),
+          ...(inChat ? { reply_to: { chat: chatAddress(chat), message_id: msg.id } } : {}),
         });
       } catch (e) {
         log(`аккаунт ${account.label}: сообщение не передано в API: ${code(e)}`);
@@ -203,7 +260,7 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
         // По id — без запроса к Telegram; по username — запасной путь: поиск по нему флудоопасен.
         : await client.sendMessage(Number(row.peer_id), { message: row.text })
           .catch((e) => (row.peer_username ? client.sendMessage(row.peer_username, { message: row.text }) : Promise.reject(e)));
-      sentIds.get(row.account_id).add(sent.id);
+      rememberSent(row.account_id, sent.id);
       await store.messageStatus(row.id, 'sent');
     } catch (e) {
       // PEER_FLOOD — Telegram ограничил аккаунт за сообщения незнакомым. Сообщение не теряем: возвращаем в черновики,
@@ -235,6 +292,7 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
       for (const [id, client] of clients) {
         if (!accounts.some((a) => a.id === id)) {
           clients.delete(id);
+          sentIds.delete(id);
           await client.disconnect().catch(() => {});
         }
       }

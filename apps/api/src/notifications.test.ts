@@ -160,7 +160,7 @@ test('карточка: виджет, при отказе — обычное с�
   }
 });
 
-test('очередь отправки: пауза между сообщениями в один чат, на 429 — ожидание и один повтор', async () => {
+test('очередь отправки: пауза между сообщениями в один чат, другой чат не ждёт, на 429 — ожидание и один повтор', async () => {
   const pace = { ...bot.pace };
   try {
     Object.assign(bot.pace, { globalMs: 0, chatMs: 60 });
@@ -168,8 +168,11 @@ test('очередь отправки: пауза между сообщения�
     const start = Date.now();
     bot.call = async (_method, body) => (at.push([(body as { chat_id: number }).chat_id, Date.now() - start]), { ok: true });
     await Promise.all([bot.send('sendMessage', { chat_id: 901 }), bot.send('sendMessage', { chat_id: 901 }), bot.send('sendMessage', { chat_id: 902 })]);
-    assert.deepEqual(at.map(([chat]) => chat), [901, 901, 902], 'порядок сохраняется');
-    assert.ok(at[1]![1] - at[0]![1] >= 55, `второе сообщение в тот же чат через ${at[1]![1] - at[0]![1]} мс`);
+    assert.deepEqual(at.map(([chat]) => chat), [901, 902, 901], 'другой чат не ждёт паузы первого');
+    const [first, second] = at.filter(([chat]) => chat === 901).map(([, ms]) => ms);
+    assert.ok(second! - first! >= 55, `второе сообщение в тот же чат через ${second! - first!} мс`);
+    const flood = await Promise.all(Array.from({ length: 25 }, () => bot.send('sendMessage', { chat_id: 904 })));
+    assert.ok(flood.some((r) => r.description === 'send queue is full'), 'один чат не занимает всю очередь');
 
     Object.assign(bot.pace, { chatMs: 0, retryAfterMaxS: 0.05 });
     let attempts = 0;

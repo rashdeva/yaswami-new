@@ -1,5 +1,5 @@
 // Разовый вход юзербота: npm run login. Запасной аккаунт для разведки: npm run login SCOUT_SESSION. Запускает человек — код и пароль вводятся только в его терминале.
-import { readFile, writeFile } from 'node:fs/promises';
+import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
 import { connect } from './mtproto.mjs';
 
@@ -19,7 +19,10 @@ rl.close();
 const name = process.argv.slice(2).find((a) => a !== '--') ?? 'TG_SESSION';
 const line = `${name}=${client.session.save()}`;
 const env = await readFile('.env', 'utf8').catch(() => '');
-await writeFile('.env', new RegExp(`^${name}=.*$`, 'm').test(env) ? env.replace(new RegExp(`^${name}=.*$`, 'm'), line) : `${env.trimEnd()}\n${line}\n`);
+// Сессия — полный доступ к аккаунту: файл читает только владелец. mode действует лишь на новый файл,
+// у старого права правим сами, до записи — чтобы сессия ни мгновения не лежала в файле, открытом всем.
+await chmod('.env', 0o600).catch(() => {});
+await writeFile('.env', new RegExp(`^${name}=.*$`, 'm').test(env) ? env.replace(new RegExp(`^${name}=.*$`, 'm'), line) : `${env.trimEnd()}\n${line}\n`, { mode: 0o600 });
 console.log(`Готово: ${name} записан в .env. Эта строка даёт полный доступ к аккаунту — не показывай её никому.`);
 await client.disconnect();
 process.exit(0);

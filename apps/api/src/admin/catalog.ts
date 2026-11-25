@@ -25,7 +25,7 @@ export async function getCollectedEventSignups(db: Db, slug: string): Promise<Ad
 
 /** Правка и решение модератора. Хранителю тем (ADR-0010) — только тема и снятие с публикации. */
 export async function updateCollectedEvent(db: Db, ctx: Ctx, slug: string, input: CollectedUpdateInput): Promise<AdminCollectedEvent> {
-  await assertLibrarianMayEditEvent(db, ctx, input);
+  await assertLibrarianMayEditEvent(db, ctx, slug, input);
   return audited(db, ctx, { action: 'admin_collected_events_update', entity: 'collected_event', id: slug, input }, (tx) => s.updateCollectedEvent(tx, slug, input));
 }
 

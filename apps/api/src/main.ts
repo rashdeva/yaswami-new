@@ -9,6 +9,7 @@ import { DEFAULT_CITY_ID } from '@yaswami/core';
 import { eventPage, feedPage, inject, notFoundPage, sitemap } from './pages.ts';
 import type { Page } from './pages.ts';
 import { AppError, getCollectedEvent, listAllCities, listCities, listCollectedEvents, startVideoLoop } from './services.ts';
+import { cached } from './limits.ts';
 import { settings } from './settings.ts';
 import { bot } from './telegram.ts';
 import { startCuratorLoop } from './curator.ts';
@@ -89,9 +90,13 @@ if (existsSync(WEB)) {
     return new Response(inject(template, withCities), { status: page.status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } });
   };
   const cityName = async (id: string) => (await listAllCities(db)).find((c) => c.id === id)?.name ?? '';
+  // Витрина и sitemap открыты всем и стоят запроса по каждому городу: минута устаревания поисковикам и людям не мешает.
+  const firstFeed = cached(60_000, async () => feedPage(await listCollectedEvents(db), PUBLIC_URL, await cityName(DEFAULT_CITY_ID)));
+  const siteMap = cached(10 * 60_000, async () =>
+    sitemap((await Promise.all((await listCities(db)).map((city) => listCollectedEvents(db, { city_id: city.id })))).flat(), PUBLIC_URL));
   server
     // Витрина для поисковиков — первого города: её же приложение берёт как ленту первого города (served.feed).
-    .get('/', async () => html(feedPage(await listCollectedEvents(db), PUBLIC_URL, await cityName(DEFAULT_CITY_ID))))
+    .get('/', async () => html(await firstFeed(null)))
     .get('/e/:id', async (c) => {
       try {
         const event = await getCollectedEvent(db, c.req.param('id'));
@@ -102,10 +107,7 @@ if (existsSync(WEB)) {
       }
     })
     // События всех городов: страница события есть у каждого.
-    .get('/sitemap.xml', async (c) => {
-      const events = (await Promise.all((await listCities(db)).map((city) => listCollectedEvents(db, { city_id: city.id })))).flat();
-      return c.body(sitemap(events, PUBLIC_URL), 200, { 'content-type': 'application/xml' });
-    })
+    .get('/sitemap.xml', async (c) => c.body(await siteMap(null), 200, { 'content-type': 'application/xml' }))
     .get('/robots.txt', (c) => c.text(`User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: ${PUBLIC_URL}/sitemap.xml\n`))
     .use('*', serveStatic({ root: WEB, onFound: (path, c) => c.header('Cache-Control', cache(path)) }))
     .get('*', serveStatic({ root: WEB, path: 'index.html', onFound: (_path, c) => c.header('Cache-Control', 'no-cache') }));

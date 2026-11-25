@@ -13,6 +13,7 @@ import type { Ctx } from './audit.ts';
 import { audited } from './audit.ts';
 import type { Db } from './db/client.ts';
 import { cities, collectedEvents, collectedEventSignups, conversations, hosts, messages, sources, tgAccounts, users } from './db/schema.ts';
+import { windowCounter } from './limits.ts';
 import { live, USER_TYPING_MS, writing } from './live.ts';
 import { transcribeMedia } from './media.ts';
 import { AppError, collectedSlug, sameChannel } from './services.ts';
@@ -98,7 +99,10 @@ export async function recordAccountMessage(db: Db, input: AccountMessageInput): 
     .where(and(eq(messages.conversation_id, conversation.id), inArray(messages.author, ['agent:host', 'agent:hunter'])))
     .orderBy(desc(messages.created_at)).limit(1);
   const role = last?.author === 'agent:host' ? 'host' : last ? 'hunter' : null;
-  if (role && settings[`${role}Url`]) void draftReply(db, conversation, role, inChat).catch(console.error);
+  // Черновик уже пишется — второй не заказываем: человек, присылающий сообщение за сообщением, не умножает запросы к ИИ.
+  if (!role || !settings[`${role}Url`] || drafting.has(conversation.id)) return;
+  drafting.add(conversation.id);
+  void draftReply(db, conversation, role, inChat).catch(console.error).finally(() => drafting.delete(conversation.id));
 }
 
 /**
@@ -110,6 +114,8 @@ export async function recordAccountTyping(db: Db, input: AccountTypingInput): Pr
     .where(and(eq(conversations.channel, 'account'), eq(conversations.peer_id, input.peer_id)));
   if (conversation) live.start({ conversation_id: conversation.id, who: 'user', agent: null, text: null }, USER_TYPING_MS);
 }
+
+const drafting = new Set<string>(); // диалоги, по которым роль прямо сейчас пишет черновик ответа
 
 const CONTACT_AGAIN_DAYS = 7;
 const pitching = new Set<number>(); // организаторы, которым роль host прямо сейчас пишет первое сообщение
@@ -280,7 +286,8 @@ async function sendingAccount(db: Db, conversation: Conversation, requested?: st
 }
 
 async function draftById(db: Db, id: string): Promise<Message> {
-  const [message] = await db.select().from(messages).where(eq(messages.id, id));
+  // Под замком: два одновременных «отправить» иначе оба увидели бы черновик и поставили его в очередь дважды.
+  const [message] = await db.select().from(messages).where(eq(messages.id, id)).for('update');
   if (!message) throw new AppError('not_found', 404);
   if (message.status !== 'draft') throw new AppError('not_draft', 409);
   return message;
@@ -292,7 +299,9 @@ export const sendDraft = (db: Db, ctx: Ctx, id: string, input: DraftSendInput = 
     const draft = await draftById(db, id);
     const conversation = await conversationById(db, draft.conversation_id);
     const meta = conversation.channel === 'account' ? { ...draft.meta, account_id: await sendingAccount(db, conversation, input.account_id) } : draft.meta;
-    await db.update(messages).set({ status: 'queued', created_at: dbNow, meta, ...(input.text ? { text: input.text } : {}) }).where(eq(messages.id, id));
+    const queued = await db.update(messages).set({ status: 'queued', created_at: dbNow, meta, ...(input.text ? { text: input.text } : {}) })
+      .where(and(eq(messages.id, id), eq(messages.status, 'draft'))).returning({ id: messages.id });
+    if (!queued.length) throw new AppError('not_draft', 409);
     await db.update(conversations).set({ attention: null, last_message_at: dbNow }).where(eq(conversations.id, draft.conversation_id));
   });
 
@@ -328,11 +337,18 @@ export const logSent = (db: Db) => async (method: string, body: { chat_id: numbe
   await record(db, { id: body.chat_id, name: user?.first_name, username: user?.username }, { direction: 'out', author, text, status: result.ok ? 'sent' : 'failed' });
 };
 
+const ALERT_EVERY_MS = 10 * 60_000;
+const alerted = windowCounter<string>(ALERT_EVERY_MS);
+/** Для тестов: забыть, о каких диалогах уже сообщали. */
+export const resetAlerts = () => alerted.clear();
+
 /**
  * Сообщает нам в Telegram, что диалог ждёт человека. Пишет командный бот (там же оператор Hermes, ему можно сразу
  * сказать, что ответить), без его токена — бот «Я с вами». Кто не открывал этого бота — не получит.
  */
 export async function alertAdmins(conversation: Conversation, reason: string): Promise<void> {
+  // Один диалог — не чаще раза в ALERT_EVERY_MS: иначе человек, который шлёт сообщение за сообщением, пишет каждому из нас.
+  if (alerted.hit(conversation.id) > 1) return;
   const text = `${conversation.peer_name}${conversation.peer_username ? ` (@${conversation.peer_username})` : ''} ждёт человека: ${reason}\n${settings.publicUrl}/admin/?c=${conversation.id}`; // сразу открывает этот диалог в «Людях»
   // Админу, который сам и есть собеседник (проверяет бота), не пишем: оповещение упало бы в тот же чат.
   await alertTeam(text, conversation.peer_id);
@@ -547,24 +563,27 @@ export async function conversationById(db: Db, id: string): Promise<Conversation
  * Мы пишем человеку сами: сообщение уходит через бота, а диалог переходит к нам — бот в нём замолкает.
  * Автор — `admin:<id пользователя>` из админки или `agent`, когда пишет агент через MCP. Не отменяется: ушло в Telegram.
  */
-export const inboxSend = (db: Db, ctx: Ctx, id: string, input: InboxSendInput) =>
-  audited(db, ctx, { action: 'admin_messages_send', entity: 'conversation', id, input, undoable: false }, async (db) => {
-    const { text } = input;
-    const author = ctx.via === 'admin' ? `admin:${ctx.actor.id}` : 'agent';
+export async function inboxSend(db: Db, ctx: Ctx, id: string, input: InboxSendInput): Promise<void> {
+  const { text } = input;
+  const author = ctx.via === 'admin' ? `admin:${ctx.actor.id}` : 'agent';
+  const conversation = await audited(db, ctx, { action: 'admin_messages_send', entity: 'conversation', id, input, undoable: false }, async (db) => {
     const conversation = await conversationById(db, id);
     if (conversation.channel === 'account') {
       // С аккаунта отправляет сборщик: кладём сообщение в очередь, он заберёт его в течение нескольких секунд.
       const account_id = await sendingAccount(db, conversation, input.account_id);
       await db.insert(messages).values({ conversation_id: id, direction: 'out', author, text, status: 'queued', meta: { account_id } });
       await db.update(conversations).set({ mode: 'human', attention: null, last_message_at: dbNow }).where(eq(conversations.id, id));
-      return;
+      return conversation;
     }
-    const result = await bot.send('sendMessage', { chat_id: conversation.peer_id, text }, author);
     await db.update(conversations).set({ mode: 'human', attention: null }).where(eq(conversations.id, id));
-    // Сообщение уже в ленте с пометкой «не доставлено» (его пишет bot.log мимо этой транзакции); ошибка — чтобы
-    // админка сказала об этом сразу.
-    if (!result.ok) throw new AppError('not_delivered', 409);
+    return conversation;
   });
+  if (conversation.channel === 'account') return;
+  // В Telegram — после фиксации (правило afterCommit в docs/agents/api.md), но дожидаясь ответа: админка должна сразу
+  // узнать, что сообщение не дошло. Оно уже в ленте с пометкой «не доставлено» (его пишет bot.log).
+  const result = await bot.send('sendMessage', { chat_id: conversation.peer_id, text }, author);
+  if (!result.ok) throw new AppError('not_delivered', 409);
+}
 
 /** Режим, «готово» и скрытие диалога. Скрытый больше не ждёт нас: отвечать ему мы не собираемся. */
 export const inboxUpdate = (db: Db, ctx: Ctx, id: string, input: ConversationUpdateInput): Promise<Conversation> =>

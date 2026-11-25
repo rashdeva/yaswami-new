@@ -62,6 +62,14 @@ export const settings = {
   adminIds: (process.env.ADMIN_IDS ?? '').split(',').map(Number).filter(Boolean),
   /** Сколько сообщений в минуту один человек может прислать боту: каждый ответ роли поддержки — запрос к ИИ. */
   botMessagesPerMinute: Number(process.env.BOT_MESSAGES_PER_MINUTE ?? 5),
+  /** Сколько сообщений в минуту бот вообще принимает от одного человека: сверх — не записываются и не обрабатываются. */
+  botInboundPerMinute: Number(process.env.BOT_INBOUND_PER_MINUTE ?? 20),
+  /** Сколько вложений в сутки от одного человека бот сохраняет в бакет и расшифровывает. */
+  botMediaPerDay: Number(process.env.BOT_MEDIA_PER_DAY ?? 30),
+  /** Сколько запросов к API в минуту с одного адреса, до входа; сверх — 429. Щедро: за адресом оператора много людей. */
+  ipRequestsPerMinute: Number(process.env.IP_REQUESTS_PER_MINUTE ?? 600),
+  /** Сколько дорогих запросов (поиск, вход) в минуту с одного адреса. */
+  ipCostlyPerMinute: Number(process.env.IP_COSTLY_PER_MINUTE ?? 60),
   /** Сколько запросов к API в минуту делает один вошедший человек или токен; сверх — 429. */
   requestsPerMinute: Number(process.env.REQUESTS_PER_MINUTE ?? 300),
   /** Ключ шифрования сборщика (тот же ACCOUNTS_KEY): им API шифрует код и пароль входа в наш аккаунт Telegram. Пусто — шаг входа отклоняется (accounts_key_missing): открытым текстом секреты в базу не кладём. */

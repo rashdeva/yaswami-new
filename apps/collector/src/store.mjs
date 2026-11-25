@@ -231,9 +231,13 @@ export function createStore(url) {
     saveCursor: (channel, number) => sql`
       insert into collector_cursors (channel, last_number) values (${channel}, ${number})
       on conflict (channel) do update set last_number = excluded.last_number`,
-    /** Предстоящие события — с ними склеиваются повторные анонсы. */
+    /**
+     * Предстоящие события — с ними склеиваются повторные анонсы. `loaded_at` — версия строки (updated_at текстом, без
+     * потери микросекунд): по ней upsert узнаёт, что строку успели поменять, пока шёл проход.
+     */
     upcoming: () => sql`
-      select external_id, city_id, event, status, exists(select 1 from photos p where p.collected_external_id = e.external_id) as has_cover
+      select external_id, city_id, event, status, updated_at::text as loaded_at,
+        exists(select 1 from photos p where p.collected_external_id = e.external_id) as has_cover
       from collected_events e where coalesce(ends_at, starts_at) >= now()`,
     /**
      * Доверенные источники: за 90 дней команда одобрила из них не меньше `min` событий и ни одного не отклонила.
@@ -244,19 +248,29 @@ export function createStore(url) {
       group by channel
       having count(*) filter (where status in ('approved', 'published')) >= ${min} and count(*) filter (where status = 'rejected') = 0`)
       .map((r) => r.channel),
-    /** Новое событие или дополнение уже известного. Публикация и решение модерации остаются от первого анонса. */
-    upsert: ({ external_id, channel, city_id, announcement, event, signup_url, status = 'pending' }) => sql`
-      insert into collected_events ${sql({
-        external_id, channel, city_id, signup_url, status,
-        announcement: sql.json(announcement),
-        event: sql.json(event),
-        starts_at: event.starts_at,
-        ends_at: event.ends_at,
-        telegram_username: event.telegram_username?.replace(/^@/, '').toLowerCase() ?? null,
-      })}
-      on conflict (external_id) do update set
-        event = excluded.event, starts_at = excluded.starts_at, ends_at = excluded.ends_at,
-        telegram_username = excluded.telegram_username, signup_url = excluded.signup_url, updated_at = now()`,
+    /**
+     * Новое событие или дополнение уже известного. Публикация и решение модерации остаются от первого анонса.
+     * `loaded_at` — версия строки из upcoming(), с которой склеивали: если команда за это время поправила событие или
+     * решила его судьбу (updated_at сдвинулся), дополнение не пишем — склейка шла по устаревшим данным.
+     * Возвращает новую версию строки или null, если пропустили.
+     */
+    upsert: async ({ external_id, channel, city_id, announcement, event, signup_url, status = 'pending', loaded_at = null }) => {
+      const [row] = await sql`
+        insert into collected_events ${sql({
+          external_id, channel, city_id, signup_url, status,
+          announcement: sql.json(announcement),
+          event: sql.json(event),
+          starts_at: event.starts_at,
+          ends_at: event.ends_at,
+          telegram_username: event.telegram_username?.replace(/^@/, '').toLowerCase() ?? null,
+        })}
+        on conflict (external_id) do update set
+          event = excluded.event, starts_at = excluded.starts_at, ends_at = excluded.ends_at,
+          telegram_username = excluded.telegram_username, signup_url = excluded.signup_url, updated_at = now()
+        ${loaded_at ? sql`where collected_events.updated_at = ${loaded_at}::timestamptz` : sql``}
+        returning updated_at::text as loaded_at`;
+      return row?.loaded_at ?? null;
+    },
     /**
      * Контакты предстоящих событий, по которым профиль ещё не собран. Только одобренные командой события: профиль даёт
      * каналу организатора место в источниках, а контакт в непроверенном анонсе мог подставить кто угодно.

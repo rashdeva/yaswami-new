@@ -75,7 +75,7 @@ export type MessageMediaType = (typeof MESSAGE_MEDIA_TYPES)[number];
 /** Вложение, как его передаёт сборщик: файл уже в бакете, расшифровку делает API. */
 export const MessageMediaInput = z.object({
   type: z.enum(MESSAGE_MEDIA_TYPES),
-  url: z.url().nullable(),
+  url: z.url({ protocol: /^https?$/ }).nullable(), // только http(s): ссылка попадает в админку
   mime_type: z.string().max(200).nullable(),
   duration: z.number().nonnegative().nullable(),
   file_name: z.string().max(500).nullable(),

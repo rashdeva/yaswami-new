@@ -8,6 +8,9 @@ import { bucket, type Bucket } from './bucket.ts';
 import type { Db, Tx } from './db/client.ts';
 import { photos } from './db/schema.ts';
 import { settings } from './settings.ts';
+
+/** Сколько пикселей картинки sharp готов разжать: маленький PNG на сотни мегапикселей иначе съел бы гигабайт памяти. */
+export const MAX_INPUT_PIXELS = 40_000_000;
 import { bot } from './telegram.ts';
 
 /** Адрес фото для фронта. Строка фото не меняется, поэтому адрес кэшируется навсегда. */
@@ -70,7 +73,7 @@ const COVER_QUALITY = 78;
 
 /** Перекодирует картинку в JPEG не шире COVER_SIDE: нарисованные обложки приходят PNG на 1–3 МБ, после — 60–150 КБ. */
 export const optimizeImage = (data: Buffer): Promise<Buffer> =>
-  sharp(data).rotate().resize({ width: COVER_SIDE, height: COVER_SIDE, fit: 'inside', withoutEnlargement: true })
+  sharp(data, { limitInputPixels: MAX_INPUT_PIXELS }).rotate().resize({ width: COVER_SIDE, height: COVER_SIDE, fit: 'inside', withoutEnlargement: true })
     .flatten({ background: '#ffffff' }).jpeg({ quality: COVER_QUALITY, mozjpeg: true }).toBuffer();
 
 /**

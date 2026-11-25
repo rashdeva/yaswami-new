@@ -86,11 +86,17 @@ export async function saveBotMedia(file: BotFile, chatId: number): Promise<Messa
   return { ...base, url, transcript: await speech({ ...base, url }, data) };
 }
 
+const fromOurBucket = (url: string) => {
+  const base = process.env.MEDIA_PUBLIC_URL?.replace(/\/$/, '');
+  return !!base && url.startsWith(`${base}/`);
+};
+
 /** Вложения с нашего аккаунта: сборщик уже положил файлы в бакет, расшифровываем по открытому адресу. Не бросает. */
 export async function transcribeMedia(media: MessageMediaInput[]): Promise<MessageMedia[]> {
   return Promise.all(media.map(async (m) => {
     let data: Buffer | null = null;
-    if (m.url && hasSpeech(m.type)) {
+    // Качаем только из своего бакета: адрес приходит от сборщика, и чужой адрес сделал бы API прокси во внутреннюю сеть.
+    if (m.url && hasSpeech(m.type) && fromOurBucket(m.url)) {
       data = await fetch(m.url, { signal: AbortSignal.timeout(60_000) })
         .then(async (r) => (r.ok ? Buffer.from(await r.arrayBuffer()) : null))
         .catch((e) => (console.error('вложение из бакета:', e), null));

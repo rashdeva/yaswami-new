@@ -21,6 +21,15 @@ const guestSent = new Map<string, number>(); // когда гостю ушло �
 const hostBatches = new Map<string, Map<number, User>>(); // событие → записавшиеся с прошлой сводки
 const hostSent = new Map<string, number>(); // сколько сводок по событию уже ушло
 
+// Сколько отметок держим: сбросить их все разом нельзя — каждому гостю снова ушло бы подтверждение.
+const MAX_KEYS = 10_000;
+/** Убирает отметки старше `before`, а если их всё ещё слишком много — самые старые. */
+function forgetOlder(sent: Map<string, number>, before: number) {
+  if (sent.size < MAX_KEYS) return;
+  for (const [k, at] of sent) if (at < before) sent.delete(k);
+  for (const k of sent.keys()) { if (sent.size < MAX_KEYS) break; sent.delete(k); }
+}
+
 const later = (ms: number, job: () => Promise<void>) => void setTimeout(() => void job().catch(console.error), ms).unref();
 
 /** Событие и те, кто записан на него прямо сейчас. */
@@ -43,7 +52,7 @@ export function guestRegistered(db: Db, event: { id: string; user_id: number }, 
       guestTimers.delete(key);
       const now = await goingNow(db, event.id);
       if (!now.event || !now.ids.has(guest.id)) return; // передумал, пока мы ждали
-      if (guestSent.size > 10_000) guestSent.clear();
+      forgetOlder(guestSent, Date.now() - DAY);
       guestSent.set(key, Date.now());
       await notify(db, guest.id, 'rsvp_confirmed', { event: now.event });
     });
@@ -60,7 +69,7 @@ export function guestRegistered(db: Db, event: { id: string; user_id: number }, 
     const now = await goingNow(db, event.id);
     const stayed = batch.filter((g) => now.ids.has(g.id));
     if (!now.event || !stayed.length) return;
-    if (hostSent.size > 10_000) hostSent.clear();
+    if (hostSent.size >= MAX_KEYS) hostSent.delete(hostSent.keys().next().value!); // самое старое событие
     hostSent.set(event.id, sentBefore + 1);
     await notify(db, now.event.user_id, 'guest_registered', { event: now.event, guests: stayed, going: now.going });
   });

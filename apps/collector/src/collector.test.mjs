@@ -86,6 +86,11 @@ console.log('mtproto ok');
 }
 console.log('peers ok');
 assert.equal(toAnnouncement('-1001234567890', msg)[0].url, 'https://t.me/c/1234567890/7', 'ссылка закрытого канала');
+{
+  const { chatAddress, messageUrl } = await import('./address.mjs');
+  assert.deepEqual([chatAddress({ className: 'Channel', id: 5n, username: 'x' }), chatAddress({ className: 'Channel', id: 5n }), chatAddress({ className: 'Chat', id: 5n })], ['x', '-1005', '-5']);
+  assert.deepEqual([messageUrl('x', 7), messageUrl('-1005', 7), messageUrl('-5', 7)], ['https://t.me/x/7', 'https://t.me/c/5/7', ''], 'у обычной группы ссылок на сообщения нет');
+}
 
 const ev = (title, starts_at, telegram_username = null, extra = {}) =>
   ({ title, description: '', starts_at, ends_at: null, place: null, price: null, telegram_username, whatsapp_phone: null, ...extra });
@@ -214,7 +219,12 @@ assert.equal(await downloadCover({ downloadMedia: async () => Buffer.from('png?'
 console.log('cover ok');
 // Аккаунты для переписки: вход по шагам, приём и отправка — на поддельном клиенте Telegram и хранилище в памяти.
 {
-  const { attachmentOf, createSender, seal, unseal } = await import('./sender.mjs');
+  const { attachmentOf, createLimiter, createSender, seal, unseal } = await import('./sender.mjs');
+  const hit = createLimiter({ limit: 2, windowMs: 1000, maxKeys: 2 });
+  assert.deepEqual([hit('a', 0), hit('a', 1), hit('a', 2), hit('a', 3)], ['ok', 'ok', 'over', 'quiet'], 'в лог — раз за окно');
+  assert.equal(hit('a', 1000), 'ok', 'новое окно');
+  hit('b', 1000);
+  assert.equal(hit('c', 1000), 'ok', 'переполнение вытесняет старый ключ, а не ломает лимит');
   const doc = (attributes, extra = {}) => ({ media: { className: 'MessageMediaDocument', document: { mimeType: 'audio/ogg', size: 900, attributes, ...extra } } });
   assert.equal(attachmentOf(doc([{ className: 'DocumentAttributeAudio', voice: true, duration: 7 }])).type, 'voice');
   assert.equal(attachmentOf(doc([{ className: 'DocumentAttributeVideo', roundMessage: true, duration: 5 }], { mimeType: 'video/mp4' })).type, 'video_note');
@@ -310,13 +320,23 @@ console.log('cover ok');
   assert.deepEqual(sentTo.at(-1), ['danang_chat', { message: 'Сегодня бачата в 19:00', replyTo: 3 }]);
   // На наш ответ в чате ответили — это уходит в API с адресом, куда отвечать; чужие разговоры в чате — нет.
   const group = { className: 'Channel', id: 500n, username: 'danang_chat' };
-  const inGroup = (message) => handler({ isPrivate: false, message: { out: false, getChat: async () => group, getSender: async () => user, ...message } });
+  const inGroup = (message) => handler({ isPrivate: false, message: { out: false, getChat: async () => group, getSender: async () => user, getReplyMessage: async () => ({ id: 902, out: true }), ...message } });
   await inGroup({ id: 10, message: 'А сколько стоит?', mentioned: true, replyTo: { replyToMsgId: 902 } });
   await inGroup({ id: 11, message: 'не нам', mentioned: false, replyTo: { replyToMsgId: 5 } });
+  // Ответ чужому сообщению с @упоминанием нашего аккаунта: Telegram тоже ставит `mentioned`, но это не ответ нам.
+  await inGroup({ id: 13, message: '@anya глянь', mentioned: true, replyTo: { replyToMsgId: 5 }, getReplyMessage: async () => ({ id: 5, out: false }) });
   await inGroup({ id: 12, message: 'закрытый чат', mentioned: true, replyTo: { replyToMsgId: 902 }, getChat: async () => ({ ...group, username: null }) });
+  // Обычная группа (`Chat`) адресуется -id, а не -100id.
+  await inGroup({ id: 14, message: 'маленькая группа', mentioned: true, replyTo: { replyToMsgId: 902 }, getChat: async () => ({ className: 'Chat', id: 600n }) });
   assert.deepEqual(reported.slice(2).map((m) => [m.direction, m.text, m.reply_to]), [
     ['in', 'А сколько стоит?', { chat: 'danang_chat', message_id: 10 }], ['in', 'закрытый чат', { chat: '-100500', message_id: 12 }],
+    ['in', 'маленькая группа', { chat: '-600', message_id: 14 }],
   ]);
+  // Поток от одного человека режется до бакета и API: сверх лимита в минуту сообщения отбрасываются.
+  const flooder = { ...user, id: 99n, username: 'flood' };
+  const before = reported.length;
+  for (let i = 0; i < 15; i += 1) await handler({ isPrivate: true, message: { id: 1000 + i, out: false, message: `спам ${i}`, getChat: async () => flooder } });
+  assert.equal(reported.length - before, 10, 'не больше 10 сообщений в минуту от одного человека');
   // PEER_FLOOD: Telegram ограничил аккаунт — сообщение возвращается в черновики, первые сообщения на паузе.
   client.sendMessage = async () => { throw fail('PEER_FLOOD'); };
   queue.push({ id: 'm4', text: 'Привет! Видел в чате…', account_id: 'a1', peer_id: '77', peer_username: 'anya', status: 'queued' });

@@ -41,6 +41,29 @@ const ALGS: Record<string, (data: Buffer, key: KeyObject, sig: Buffer) => boolea
 };
 
 /** Проверяет id_token и возвращает его содержимое; бросает ошибку, если токен чужой, просрочен или подделан. */
+// Ключи подписи Telegram, Apple и Google меняются редко: держим час, а не скачиваем на каждый вход. Подпись не сошлась —
+// ключи могли смениться: скачиваем заново, но не чаще раза в минуту, иначе поддельные токены превращались бы в запросы к ним.
+const KEYS_TTL_MS = 3_600_000;
+const KEYS_REFETCH_MS = 60_000;
+const keyCache = new Map<string, { at: number; keys: Jwk[] }>();
+/** Для тестов: забыть скачанные ключи. */
+export const forgetKeys = () => keyCache.clear();
+async function fetchKeys(url: string): Promise<Jwk[]> {
+  const { keys } = (await (await fetch(url, { signal: AbortSignal.timeout(10_000) })).json()) as { keys: Jwk[] };
+  keyCache.set(url, { at: Date.now(), keys });
+  return keys;
+}
+async function withKeys<T>(url: string, verify: (keys: Jwk[]) => T): Promise<T> {
+  const hit = keyCache.get(url);
+  if (!hit || Date.now() - hit.at > KEYS_TTL_MS) return verify(await fetchKeys(url));
+  try {
+    return verify(hit.keys);
+  } catch (e) {
+    if (Date.now() - hit.at < KEYS_REFETCH_MS) throw e;
+    return verify(await fetchKeys(url));
+  }
+}
+
 export function verifyIdToken(token: string, jwks: Jwk[], clientId: string | string[], now = Date.now() / 1000, issuer: string | string[] = ISSUER): Record<string, unknown> {
   const [h, p, s] = token.split('.');
   if (!h || !p || !s) throw new Error('id_token is not a JWT');
@@ -145,8 +168,7 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
       }
       let claims: Record<string, unknown>;
       try {
-        const { keys } = (await (await fetch(`${ISSUER}/.well-known/jwks.json`, { signal: AbortSignal.timeout(10_000) })).json()) as { keys: Jwk[] };
-        claims = verifyIdToken(body.id_token, keys, clientId);
+        claims = await withKeys(`${ISSUER}/.well-known/jwks.json`, (keys) => verifyIdToken(body.id_token!, keys, clientId));
       } catch (e) {
         console.error('web login: id_token rejected:', (e as Error).message);
         return fail(c, 401, 'invalid_token', 'ответ Telegram не прошёл проверку', app);
@@ -167,8 +189,7 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
       const { id_token, first_name } = AppleLoginInput.parse(await c.req.json());
       let sub: unknown;
       try {
-        const { keys } = (await (await fetch(`${APPLE_ISSUER}/auth/keys`, { signal: AbortSignal.timeout(10_000) })).json()) as { keys: Jwk[] };
-        sub = verifyIdToken(id_token, keys, settings.appleBundleId, undefined, APPLE_ISSUER).sub;
+        sub = (await withKeys(`${APPLE_ISSUER}/auth/keys`, (keys) => verifyIdToken(id_token, keys, settings.appleBundleId, undefined, APPLE_ISSUER))).sub;
       } catch (e) {
         console.error('apple login: id_token rejected:', (e as Error).message);
         return c.json({ error: 'invalid_token' }, 401);
@@ -183,8 +204,7 @@ export function webLogin({ db, botToken, clientSecret, publicUrl }: Options) {
       if (!settings.googleClientIds.length) return c.json({ error: 'not_configured' }, 503);
       let claims: Record<string, unknown>;
       try {
-        const { keys } = (await (await fetch('https://www.googleapis.com/oauth2/v3/certs', { signal: AbortSignal.timeout(10_000) })).json()) as { keys: Jwk[] };
-        claims = verifyIdToken(id_token, keys, settings.googleClientIds, undefined, GOOGLE_ISSUERS);
+        claims = await withKeys('https://www.googleapis.com/oauth2/v3/certs', (keys) => verifyIdToken(id_token, keys, settings.googleClientIds, undefined, GOOGLE_ISSUERS));
       } catch (e) {
         console.error('google login: id_token rejected:', (e as Error).message);
         return c.json({ error: 'invalid_token' }, 401);
