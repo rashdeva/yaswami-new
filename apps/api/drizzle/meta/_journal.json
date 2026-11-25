@@ -449,6 +449,13 @@
       "when": 1795618994986,
       "tag": "20261125150314_products",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1795620226680,
+      "tag": "20261125153000_journal_no_images",
+      "breakpoints": true
     }
   ]
 }

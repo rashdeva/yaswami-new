@@ -3116,6 +3116,15 @@ test('журнал: секреты входа в аккаунт не попад�
   assert.ok(!text.includes('73519') && !text.includes('secret-session'), 'ни кода, ни сессии');
 });
 
+test('журнал: картинку обложки не хранит, только пометку о ней', async () => {
+  settings.adminIds = [ADMIN];
+  const w = await world();
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  assert.equal((await call(tma(ADMIN, 'Админ'), 'POST', `/admin/covers/${w.slug}`, { image_url: png })).status, 200);
+  const row = (await lastAction())!;
+  assert.deepEqual([row.action, row.input], ['admin_covers_set', { image_url: `data:… (${png.length} символов)` }]);
+});
+
 test('журнал: упавшее действие не оставляет ни изменения, ни записи, ни побочных действий', async () => {
   const w = await world();
   const [host] = await db.select().from(users).where(eq(users.id, w.hostId));

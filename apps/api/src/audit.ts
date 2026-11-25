@@ -146,6 +146,17 @@ interface Audit<T> {
 }
 
 /**
+ * Что из входа попадает в журнал. Картинка data URL (обложка через admin_covers_set) весит до мегабайта: в журнале
+ * вместо неё пометка с длиной — сама картинка уже лежит в photos. 25.11.2026 такие строки помогли переполнить диск базы.
+ */
+export function journalInput(v: unknown): unknown {
+  if (typeof v === 'string') return v.startsWith('data:') ? `data:… (${v.length} символов)` : v;
+  if (Array.isArray(v)) return v.map(journalInput);
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, journalInput(x)]));
+  return v;
+}
+
+/**
  * Действие команды с записью в журнал. `run` получает транзакцию вместо базы: сервисы, открывающие свои транзакции,
  * работают внутри неё точками сохранения. Упало действие — нет ни изменения, ни строки журнала, ни побочных
  * действий из `afterCommit`.
@@ -162,7 +173,7 @@ export async function audited<T>(db: Db, ctx: Ctx, a: Audit<T>, run: (tx: Db) =>
         // Роль Hermes со своим токеном (куратор, хранитель тем) — её область во входе: по ней считаются лимиты роли
         // и админка показывает её правки (фильтр `scope` журнала).
         actor_id: ctx.actor.id, via: ctx.via, action: a.action, entity: a.entity, entity_id,
-        input: ctx.scope ? { ...(a.input && typeof a.input === 'object' ? a.input : {}), scope: ctx.scope } : a.input ?? null,
+        input: journalInput(ctx.scope ? { ...(a.input && typeof a.input === 'object' ? a.input : {}), scope: ctx.scope } : a.input ?? null),
         before, after: await snapshot(tx, a.entity, entity_id), undoable: a.undoable ?? true, undo_of: a.undo_of ?? null,
       }).returning({ id: adminActions.id });
       if (a.undo_of) await tx.update(adminActions).set({ undone_by: row!.id }).where(eq(adminActions.id, a.undo_of));
