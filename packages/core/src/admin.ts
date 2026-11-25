@@ -202,7 +202,7 @@ export const CityCreateInput = City.pick({ id: true, name: true }).extend({
 export type CityCreateInput = z.infer<typeof CityCreateInput>;
 
 /** `id` не меняется: он стоит в `city_id` у источников, событий и организаторов. */
-export const CityUpdateInput = CityCreateInput.omit({ id: true }).extend({ showcase_mode: City.shape.showcase_mode }).partial();
+export const CityUpdateInput = CityCreateInput.omit({ id: true }).extend({ showcase_mode: City.shape.showcase_mode, launch_status: City.shape.launch_status }).partial();
 export type CityUpdateInput = z.infer<typeof CityUpdateInput>;
 
 // --- Пользователи

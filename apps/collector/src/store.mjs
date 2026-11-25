@@ -38,11 +38,12 @@ export function createStore(url) {
     queueSourceSearches: (days) => sql`
       insert into source_searches (city_id, names)
       select c.id, jsonb_build_array(c.name) || c.aliases from cities c
-      where not exists (select 1 from source_searches s where s.city_id = c.id and s.created_at > now() - make_interval(days => ${days}))`,
+      where c.launch_status = 'launched' and not exists (select 1 from source_searches s where s.city_id = c.id and s.created_at > now() - make_interval(days => ${days}))`,
     /** Взять следующий поиск из очереди; null — очередь пуста. */
     takeSourceSearch: async () => (await sql`
       update source_searches set status = 'running'
-      where id = (select id from source_searches where status = 'queued' order by created_at limit 1)
+      where id = (select s.id from source_searches s join cities c on c.id = s.city_id
+        where s.status = 'queued' and c.launch_status = 'launched' order by s.created_at limit 1)
       returning id, city_id, names`)[0] ?? null,
     /** Поиск, оборванный перезапуском сборщика, — снова в очередь. */
     requeueSourceSearches: () => sql`update source_searches set status = 'queued' where status = 'running'`,
@@ -65,7 +66,7 @@ export function createStore(url) {
     adoptHostChannels: async (limit) => (await sql`
       insert into sources (channel, host_id, city_id)
       select channel, id, city_id from hosts h
-      where channel is not null and not exists (select 1 from sources s where lower(s.channel) = lower(h.channel))
+      where channel is not null and h.city_id in (select id from cities where launch_status = 'launched') and not exists (select 1 from sources s where lower(s.channel) = lower(h.channel))
       order by created_at limit ${limit}
       on conflict do nothing
       returning channel`).map((r) => r.channel),
@@ -74,14 +75,10 @@ export function createStore(url) {
       insert into sources (channel, host_id, city_id)
       select 'instagram:' || instagram_handle, id, city_id from hosts h
       where instagram_handle is not null and status <> 'rejected'
-        and not exists (select 1 from sources s where lower(s.channel) = 'instagram:' || lower(h.instagram_handle))
+        and h.city_id in (select id from cities where launch_status = 'launched') and not exists (select 1 from sources s where lower(s.channel) = 'instagram:' || lower(h.instagram_handle))
       order by created_at limit ${limit}
       on conflict do nothing
       returning channel`).map((r) => r.channel),
-    /**
-     * Включённые источники; у канала организатора — его username: контакт для анонсов без контакта.
-     * Город источника (id, название, часовой пояс) получают события из него; в этом поясе ИИ читает время анонса.
-     */
     /** Включённые темы в порядке фильтров — как `GET /topics`: ими сборщик заменяет реестр ядра каждый проход. */
     topics: () => sql`
       select name, slug, emoji, color, what, why, first, not_for from topics where enabled order by position, created_at`,
@@ -128,11 +125,16 @@ export function createStore(url) {
       return true;
     }),
     /** Города, первый — старейший: разовые скрипты (find-sources, scout, backfill-jobs) берут из них название города. */
-    cities: () => sql`select id, name, aliases from cities order by created_at, id`, // порядок — как у listCities в API
+    cities: () => sql`select id, name, aliases from cities order by created_at, id`, // и в архиве; порядок — как у listAllCities в API
+    /**
+     * Включённые источники работающих городов: город в архиве (`launch_status`) сборщик не читает вовсе — ни анонсы,
+     * ни чаты, ни Instagram, — и не ищет ему новых каналов. У канала организатора — его username: контакт для анонсов
+     * без контакта. Город источника (id, название, часовой пояс) получают события из него; в этом поясе ИИ читает время.
+     */
     sources: () => sql`
       select s.channel, h.username as host_username, s.city_id, c.name as city, c.timezone
       from sources s join cities c on c.id = s.city_id left join hosts h on h.id = s.host_id
-      where s.enabled and s.kind = 'announcements' and s.channel not like 'instagram:%' order by s.created_at, s.channel`,
+      where s.enabled and c.launch_status = 'launched' and s.kind = 'announcements' and s.channel not like 'instagram:%' order by s.created_at, s.channel`,
     /**
      * Включённые профили Instagram (instagram:<ник>) — в той же форме, что sources(); читаются через Apify, а не юзерботом.
      * Организатор не указан у источника — берём того, у кого этот Instagram в профиле: его Telegram станет контактом.
@@ -145,7 +147,7 @@ export function createStore(url) {
         where id = s.host_id or (s.host_id is null and status <> 'rejected' and 'instagram:' || lower(instagram_handle) = lower(s.channel))
         order by id = s.host_id desc, created_at limit 1
       ) h on true
-      where s.enabled and s.channel like 'instagram:%' order by s.created_at, s.channel`,
+      where s.enabled and c.launch_status = 'launched' and s.channel like 'instagram:%' order by s.created_at, s.channel`,
     /**
      * Включённые чаты, где ищем не анонсы: `leads` — вопросы, мастера и вакансии (бывший LEAD_CHATS), иначе только
      * вакансии (JOB_CHATS). Мастера и вакансии получают город чата (`city_id`, `city` — его название для ИИ).
@@ -153,7 +155,7 @@ export function createStore(url) {
     chats: () => sql`
       select s.channel as chat, s.kind = 'leads' as leads, s.city_id, c.name as city
       from sources s join cities c on c.id = s.city_id
-      where s.enabled and s.kind in ('leads', 'jobs') and s.channel not like 'instagram:%' order by s.created_at`,
+      where s.enabled and c.launch_status = 'launched' and s.kind in ('leads', 'jobs') and s.channel not like 'instagram:%' order by s.created_at`,
     /** Номер последней разобранной публикации по каждому источнику. */
     async cursors() {
       const rows = await sql`select channel, last_number from collector_cursors`;
