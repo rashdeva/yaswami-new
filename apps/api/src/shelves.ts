@@ -1,6 +1,6 @@
 // Витрина города из полок (core/shelves.ts, ADR-0009). Гостю — опубликованные полки с событиями; команде и куратору —
 // все полки и их правка через журнал. Куратор — токен с областью `curator` (роль agents/curator).
-import { and, asc, count, eq, gt, isNull, like, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gt, isNull, like, lte, max, or, sql } from 'drizzle-orm';
 import type { AdminShelf, CollectedEventItem, Shelf, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, Showcase, ShowcaseShelf } from '@yaswami/core';
 import { CURATOR_DAILY_CHANGES, DEFAULT_CITY_ID, DEFAULT_SHELVES, MIN_SHELF_EVENTS, cityNow, shelfEvents } from '@yaswami/core';
 import type { Ctx } from './audit.ts';
@@ -28,23 +28,21 @@ async function cityEvents(db: Db | Tx, city_id: string) {
 const live = (now = new Date()) => or(isNull(shelves.ends_at), gt(shelves.ends_at, now));
 
 /**
- * Витрина города для гостя: опубликованные полки, на которых сейчас не меньше MIN_SHELF_EVENTS событий. У города без
- * своих полок — полки по умолчанию (DEFAULT_SHELVES): витрина работает до первой правки команды и куратора.
+ * Витрина города для гостя: опубликованные действующие полки, на которых сейчас не меньше MIN_SHELF_EVENTS событий.
+ * Не набралось ни одной (своих полок нет, все предложены, сняты, истекли или полупустые) — полки по умолчанию
+ * (DEFAULT_SHELVES): главная не должна оставаться пустой, пока команда не опубликует своё.
  */
 export async function getShowcase(db: Db, { city_id = DEFAULT_CITY_ID }: ShelfListInput = {}): Promise<Showcase> {
   const { upcoming, today } = await cityEvents(db, city_id);
-  const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(shelves).where(eq(shelves.city_id, city_id));
-  const source: Pick<Shelf, 'id' | 'title' | 'topic' | 'author' | 'rule' | 'event_ids'>[] = n
-    ? await db.select().from(shelves)
-      .where(and(eq(shelves.city_id, city_id), eq(shelves.status, 'published'), live()))
-      .orderBy(asc(shelves.position), asc(shelves.created_at))
-    : DEFAULT_SHELVES.map((s, i) => ({ ...s, id: `default-${i}`, author: 'team' as const, event_ids: [] }));
-  const result: ShowcaseShelf[] = [];
-  for (const s of source) {
+  const own = await db.select().from(shelves)
+    .where(and(eq(shelves.city_id, city_id), eq(shelves.status, 'published'), live()))
+    .orderBy(asc(shelves.position), asc(shelves.created_at));
+  const filled = (list: Pick<Shelf, 'id' | 'title' | 'topic' | 'author' | 'rule' | 'event_ids'>[]): ShowcaseShelf[] => list.flatMap((s) => {
     const events = shelfEvents(s, upcoming, today);
-    if (events.length >= MIN_SHELF_EVENTS) result.push({ id: s.id, title: s.title, topic: s.topic, author: s.author, events });
-  }
-  return { city_id, shelves: result };
+    return events.length >= MIN_SHELF_EVENTS ? [{ id: s.id, title: s.title, topic: s.topic, author: s.author, events }] : [];
+  });
+  const shown = filled(own);
+  return { city_id, shelves: shown.length ? shown : filled(DEFAULT_SHELVES.map((s, i) => ({ ...s, id: `default-${i}`, author: 'team' as const, event_ids: [] }))) };
 }
 
 const brief = (e: CollectedEventItem) => ({ id: e.id, title: e.title, starts_at: e.starts_at, topic: e.topic });
@@ -85,12 +83,30 @@ function assertCuratorMay(shelf: Shelf, mode: 'draft' | 'auto') {
   if (mode === 'draft' && shelf.status !== 'proposed') throw new AppError('showcase_draft', 409);
 }
 
-/** Ручная полка — только из предстоящих опубликованных событий города и соседей: витрина не покажет выдуманного. */
-async function assertEvents(db: Db | Tx, city_id: string, ids: string[] | undefined) {
+/**
+ * Ручная полка — только из предстоящих опубликованных событий города и соседей: витрина не покажет выдуманного.
+ * `kept` — события, которые уже стоят на полке: прошедшее среди них не мешает сохранить правку (витрина его и так не
+ * покажет), отказ — только за новое неизвестное.
+ */
+async function assertEvents(db: Db | Tx, city_id: string, ids: string[] | undefined, kept: string[] = []) {
   if (!ids?.length) return;
-  const known = new Set((await listCollectedEvents(db, { city_id })).map((e) => e.id));
+  const known = new Set([...(await listCollectedEvents(db, { city_id })).map((e) => e.id), ...kept]);
   if (ids.some((id) => !known.has(id))) throw new AppError('event_not_found', 404);
 }
+
+/**
+ * Выше какого места куратору нельзя: полки команды и закреплённые, что стоят на месте `from` или выше (новая полка —
+ * все такие), остаются над его полкой. Возвращает наименьшую позицию, которую куратор может занять.
+ */
+async function curatorFloor(db: Db | Tx, city_id: string, from: number | null): Promise<number> {
+  const [{ top } = { top: null }] = await db.select({ top: max(shelves.position) }).from(shelves).where(and(
+    eq(shelves.city_id, city_id), or(eq(shelves.author, 'team'), eq(shelves.pinned, true)), from === null ? undefined : lte(shelves.position, from),
+  ));
+  return top === null ? 0 : top + 1;
+}
+
+/** Правка содержимого полки (а не места или статуса): после неё правка человека закрепляет полку. */
+const CONTENT = ['title', 'topic', 'rule', 'event_ids', 'note', 'ends_at'] as const;
 
 /** Новая полка. Куратор в городе с режимом draft получает предложенную (proposed) — гости её не видят до решения команды. */
 export async function createShelf(db: Db, ctx: Ctx, input: ShelfCreateInput): Promise<AdminShelf> {
@@ -101,14 +117,16 @@ export async function createShelf(db: Db, ctx: Ctx, input: ShelfCreateInput): Pr
     if (!input.rule && !input.event_ids?.length) throw new AppError('shelf_empty', 400);
     await assertEvents(tx, city.id, input.rule ? undefined : input.event_ids);
     let status = input.status ?? 'published';
+    let position = input.position;
     if (curator) {
       if (input.pinned) throw new AppError('forbidden', 403);
       await assertCuratorBudget(tx);
       if (city.showcase_mode === 'draft') status = 'proposed';
+      if (position !== undefined) position = Math.max(position, await curatorFloor(tx, city.id, null));
     }
     const [created] = await tx.insert(shelves).values({
       city_id: city.id, title: input.title, topic: input.topic ?? null, rule: input.rule ?? null, event_ids: input.rule ? [] : input.event_ids ?? [],
-      position: input.position ?? sql`(select coalesce(max(position), -1) + 1 from shelves where city_id = ${city.id})`,
+      position: position ?? sql`(select coalesce(max(position), -1) + 1 from shelves where city_id = ${city.id})`,
       status, pinned: !curator && !!input.pinned, author, note: input.note ?? null, ends_at: input.ends_at ? new Date(input.ends_at) : null,
     }).returning();
     return created!;
@@ -118,8 +136,8 @@ export async function createShelf(db: Db, ctx: Ctx, input: ShelfCreateInput): Pr
 }
 
 /**
- * Правка полки, только переданные поля. Правка человека закрепляет полку (куратор её больше не тронет), если он
- * сам не передал `pinned: false`.
+ * Правка полки, только переданные поля. Правка человеком содержимого (CONTENT) закрепляет полку — куратор её больше
+ * не тронет, если человек сам не передал `pinned: false`; место и статус закрепление не меняют.
  */
 export async function updateShelf(db: Db, ctx: Ctx, id: string, input: ShelfUpdateInput): Promise<AdminShelf> {
   const curator = isCurator(ctx);
@@ -133,15 +151,17 @@ export async function updateShelf(db: Db, ctx: Ctx, id: string, input: ShelfUpda
       if (city.showcase_mode === 'draft' && input.status === 'published') throw new AppError('showcase_draft', 409);
       await assertCuratorBudget(tx);
     }
+    const position = curator && input.position !== undefined ? Math.max(input.position, await curatorFloor(tx, city.id, current.position)) : input.position;
     const rule = input.rule === undefined ? current.rule : input.rule;
     const event_ids = rule ? [] : input.event_ids ?? current.event_ids;
     if (!rule && !event_ids.length) throw new AppError('shelf_empty', 400);
-    if (!rule && input.event_ids) await assertEvents(tx, city.id, input.event_ids);
+    if (!rule && input.event_ids) await assertEvents(tx, city.id, input.event_ids, current.event_ids);
+    const edited = CONTENT.some((key) => input[key] !== undefined);
     const { ends_at, ...rest } = input;
     const [updated] = await tx.update(shelves).set({
-      ...rest, rule, event_ids,
+      ...rest, rule, event_ids, position,
       ...(ends_at !== undefined ? { ends_at: ends_at ? new Date(ends_at) : null } : {}),
-      pinned: curator ? current.pinned : input.pinned ?? true,
+      pinned: curator ? current.pinned : input.pinned ?? (edited || current.pinned),
       updated_at: new Date(),
     }).where(eq(shelves.id, id)).returning();
     return updated!;

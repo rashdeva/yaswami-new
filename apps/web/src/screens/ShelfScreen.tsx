@@ -4,7 +4,6 @@ import { collectedBadges, collectedDayKey, collectedPath, collectedTime, topicIc
 import { EventRow } from '../components/EventRow.tsx';
 import { dayLabel } from '../format.ts';
 import { useShelf } from '../hooks/useShowcase.ts';
-import { useViewed } from '../hooks/useViewed.ts';
 
 interface Props {
   id: string;
@@ -17,7 +16,7 @@ interface Props {
 /** Полка витрины целиком: её события по дням. Шапка — в цвет темы полки, как у события. */
 export function ShelfScreen({ id, onBack, onOpen, onGone }: Props) {
   const { shelf, loading, failed } = useShelf(id);
-  useViewed('shelf_opened', id);
+  // shelf_opened шлёт кнопка «Все» на витрине (с местом и автором полки): второй раз здесь не считаем.
   useEffect(() => { if (shelf) document.title = `${shelf.title} — Я с вами`; }, [shelf]);
   useEffect(() => { if (!loading && !failed && !shelf) onGone(); }, [loading, failed, shelf, onGone]);
 

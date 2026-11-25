@@ -2182,6 +2182,13 @@ test('витрина: полки по умолчанию, полки коман�
   assert.ok(shelvesNow.every((sh) => sh.id.startsWith('default-')));
   assert.deepEqual(shelvesNow.find((sh) => sh.title === 'Можно без опыта')?.events.map((e) => e.title), ['Бачата', 'Сальса', 'Кизомба']);
   assert.ok(!shelvesNow.some((sh) => sh.title === 'Популярное'));
+  // Полки есть, но гостю показывать нечего (снята, предложена) — витрина всё равно из полок по умолчанию.
+  const [hiddenShelf] = await db.insert(shelves).values([
+    { city_id: 'danang', title: 'Снятая', rule: { topic: 'танцы' }, author: 'team', status: 'hidden' },
+    { city_id: 'danang', title: 'Предложенная', rule: { topic: 'танцы' }, author: 'curator', status: 'proposed' },
+  ]).returning();
+  assert.ok((await showcase()).some((sh) => sh.title === 'Можно без опыта') && !(await showcase()).some((sh) => sh.id === hiddenShelf!.id));
+  await db.delete(shelves);
 
   // Команда: полка по правилу и ручная; гостю закрыто, пустая и с чужим событием — отказ.
   assert.equal((await call(guest, 'POST', '/admin/shelves', { city_id: 'danang', title: 'Х', rule: {} })).status, 403);
@@ -2215,18 +2222,28 @@ test('витрина: полки по умолчанию, полки коман�
 
   // Режим auto: куратор публикует свою полку сам.
   assert.equal((await call(admin, 'PATCH', '/admin/cities/danang', { showcase_mode: 'auto' })).status, 200);
-  assert.equal((await mcpTool(curator, 'admin_shelves_update', { shelf_id: proposed.id, status: 'published', position: 0 })).status, 'published');
-  assert.deepEqual((await showcase()).map((sh) => sh.title), ['Где потанцевать', 'Танцуем всю неделю', 'Выбор команды']);
-  assert.deepEqual((await mcpTool(curator, 'showcase_get', { city_id: 'danang' })).shelves.map((sh: { title: string }) => sh.title), ['Где потанцевать', 'Танцуем всю неделю', 'Выбор команды']);
+  // Выше полок команды, что стоят над его полкой, куратору не встать: просил первое место — остаётся после них.
+  const published = await mcpTool(curator, 'admin_shelves_update', { shelf_id: proposed.id, status: 'published', position: 0 });
+  assert.deepEqual([published.status, published.position], ['published', 3]);
+  assert.deepEqual((await showcase()).map((sh) => sh.title), ['Где потанцевать', 'Выбор команды', 'Танцуем всю неделю']);
+  assert.deepEqual((await mcpTool(curator, 'showcase_get', { city_id: 'danang' })).shelves.map((sh: { title: string }) => sh.title), ['Где потанцевать', 'Выбор команды', 'Танцуем всю неделю']);
 
-  // Правка человека закрепляет полку куратора — дальше куратор её не трогает.
+  // Место и статус от команды полку не закрепляют: куратор по-прежнему ведёт её сам.
+  const moved = (await (await call(admin, 'PATCH', `/admin/shelves/${proposed.id}`, { status: 'hidden', position: 4 })).json()) as AdminShelf;
+  assert.deepEqual([moved.status, moved.position, moved.pinned], ['hidden', 4, false]);
+  assert.equal((await mcpTool(curator, 'admin_shelves_update', { shelf_id: proposed.id, status: 'published' })).status, 'published');
+
+  // Правка содержимого человеком закрепляет полку куратора — дальше куратор её не трогает.
   const edited = (await (await call(admin, 'PATCH', `/admin/shelves/${proposed.id}`, { title: 'Танцы на неделе' })).json()) as AdminShelf;
   assert.deepEqual([edited.title, edited.pinned, edited.author], ['Танцы на неделе', true, 'curator']);
   assert.deepEqual(await mcpTool(curator, 'admin_shelves_update', { shelf_id: proposed.id, title: 'Снова моё' }), { error: 'shelf_locked' });
 
   // Список команды: все полки со статусами и числом событий; удаление отменяется из журнала.
   const all = (await (await call(admin, 'GET', '/admin/shelves?city_id=danang')).json()) as AdminShelf[];
-  assert.deepEqual(all.map((sh) => [sh.title, sh.events_count]), [['Где потанцевать', 3], ['Танцы на неделе', 3], ['Выбор команды', 3], ['Почти пусто', 2]]);
+  assert.deepEqual(all.map((sh) => [sh.title, sh.events_count]), [['Где потанцевать', 3], ['Выбор команды', 3], ['Почти пусто', 2], ['Танцы на неделе', 3]]);
+  const extra = await mcpTool(curator, 'admin_shelves_create', { city_id: 'danang', title: 'Наверх', rule: { topic: 'танцы' }, position: 0 });
+  assert.equal(extra.position, 5, 'новая полка куратора — ниже всех полок команды и закреплённых');
+  assert.equal((await mcpTool(curator, 'admin_shelves_delete', { shelf_id: extra.id })).ok, true);
   assert.equal((await call(admin, 'DELETE', `/admin/shelves/${picked.id}`)).status, 204);
   const removal = (await db.select().from(adminActions).orderBy(desc(adminActions.created_at)).limit(1))[0]!;
   assert.deepEqual([removal.action, removal.entity, removal.entity_id], ['admin_shelves_delete', 'shelf', picked.id]);
@@ -2234,6 +2251,13 @@ test('витрина: полки по умолчанию, полки коман�
   assert.ok((await showcase()).some((sh) => sh.id === picked.id));
   assert.equal((await call(admin, 'PATCH', `/admin/shelves/${randomUUID()}`, { title: 'Х' })).status, 404);
   assert.equal((await call(admin, 'PATCH', '/admin/shelves/nope', { title: 'Х' })).status, 404);
+
+  // Событие ручной полки прошло — полку всё равно можно править тем же списком; новое неизвестное — отказ.
+  await db.execute(sql`update collected_events set starts_at = now() - interval '2 days' where external_id = 'telegram:shelftest/1#0'`);
+  const kept = await call(admin, 'PATCH', `/admin/shelves/${picked.id}`, { title: 'Выбор недели', event_ids: [ids[2], ids[0], ids[3]] });
+  assert.equal(kept.status, 200);
+  assert.deepEqual(((await kept.json()) as AdminShelf).events.map((e) => e.title), ['Кизомба', 'Покер']);
+  assert.deepEqual(await (await call(admin, 'PATCH', `/admin/shelves/${picked.id}`, { event_ids: [ids[2], 'nope-1-0'] })).json(), { error: 'event_not_found' });
 
   // Лимит куратора: за сутки не больше CURATOR_DAILY_CHANGES изменений.
   const actor_id = await uid(70);
@@ -2257,6 +2281,10 @@ test('куратор: задание раз в день в его час по в
   assert.deepEqual(await requestCuration(db, Date.parse('2026-12-01T00:50:00Z')), [], 'за день — один раз');
   assert.deepEqual(await requestCuration(db, Date.parse('2026-12-01T03:00:00Z')), [], 'не его час');
   assert.deepEqual(await requestCuration(db, Date.parse('2026-12-02T00:10:00Z')), ['danang'], 'на следующий день — снова');
+  // Роль не ответила — день не засчитан: следующий проход в тот же час спрашивает снова.
+  curator.ask = async (task) => (tasks.push(task), null);
+  assert.deepEqual(await requestCuration(db, Date.parse('2026-12-03T00:05:00Z')), ['danang']);
+  assert.deepEqual(await requestCuration(db, Date.parse('2026-12-03T00:15:00Z')), ['danang']);
   settings.curatorUrl = '';
   curator.ask = ask;
 });
