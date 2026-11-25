@@ -104,6 +104,7 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
 
   return (
     <>
+      <div className="ev-page">
       {/* Обложка та же, что у событий каталога (CollectedScreen): картинка фоном, знак сервиса, текст поверх. */}
       <div className={`hero${onBack ? '' : ' nb'}${view.cover_url ? ' cov' : ''}${view.cover_pending ? ' drawing' : ''}`}>
         {view.cover_url && <img className="bg" src={view.cover_url} alt="" />}
@@ -119,6 +120,7 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
         </div>
         <div className="acts" ref={watch}>{actions}</div>
       </div>
+      <div className="ev-body">
 
       {(event.meeting_url || price) && <div className="group"><div className="meta">
         {event.meeting_url && <div><span>🔗</span><a href={event.meeting_url} target="_blank" rel="noreferrer">{event.meeting_url.replace(/^https?:\/\//, '')}</a></div>}
@@ -185,6 +187,8 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
           )}
         </>
       )}
+      </div>
+      </div>
 
       <div className="main" data-off={!barShown || undefined} inert={!barShown}><div>{actions}</div></div>
     </>

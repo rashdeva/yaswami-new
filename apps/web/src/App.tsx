@@ -56,12 +56,6 @@ export function App() {
             ? () => void navigate({ to: hasEvents ? '/my' : '/' })
             : null;
   useTelegramBack(back);
-  // Витрина и её экраны на широком окне — шире обычной колонки, полки сеткой (app.css, #app[data-wide]).
-  const wide = pathname === '/' || pathname === '/all' || pathname.startsWith('/d/') || pathname.startsWith('/s/');
-  useEffect(() => {
-    const root = document.getElementById('app');
-    if (root) root.toggleAttribute('data-wide', wide);
-  }, [wide]);
   const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/products' || pathname === '/search';
 
   return (
