@@ -1,4 +1,4 @@
-// Выбор организатора из уже загруженного списка поиском по имени, @username или каналу: организатор источника.
+// Выбор организатора из уже загруженного списка поиском по имени, @username или каналу: организатор календаря источников.
 import type { Host, Wire } from '@yaswami/core';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';

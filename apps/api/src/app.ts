@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
+  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminJobListInput, JobListInput, JobUpdateInput, LeadInput, PracticeSignupInput, PracticeUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, CalendarUpdateInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -98,6 +98,10 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       return c.body(null, 204);
     });
   // Поиск источников для города (admin/sources.ts) — по той же причине отдельно.
+  // Календари источников (admin/calendars.ts) — по той же причине отдельно.
+  const adminCalendars: Hono<Env> = new Hono<Env>()
+    .get('/', async (c) => c.json(await admin.listCalendars(db)))
+    .patch('/:id', json(CalendarUpdateInput), async (c) => c.json(await admin.updateCalendar(db, ctx(c), c.req.param('id'), c.req.valid('json'))));
   const adminSourceSearches: Hono<Env> = new Hono<Env>()
     .get('/', async (c) => c.json(await admin.listSourceSearches(db, c.req.query('city_id'))))
     .post('/', json(SourceSearchCreateInput), async (c) => c.json(await admin.requestSourceSearch(db, ctx(c), c.req.valid('json')), 202));
@@ -370,6 +374,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     });
   app.route('/admin/topics', adminTopics); // после `.use('/admin/*')`: только команде
   app.route('/admin/source-searches', adminSourceSearches);
+  app.route('/admin/calendars', adminCalendars);
   app.route('/admin/shelves', adminShelves);
   return app;
 }

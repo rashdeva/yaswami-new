@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, Job, JobStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
+import { APPROVAL_STATUSES, CALENDAR_KINDS, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -482,12 +482,25 @@ export const topics = pgTable('topics', {
 
 // Source: канал или группа, откуда сборщик берёт анонсы. Пишут сюда сборщик (CHANNELS при старте, каналы организаторов
 // каждый проход) и команда из админки. В Luma такого нет.
+// Календарь (Calendar, как в Luma; AdminCalendar в @yaswami/core): вывеска, в которую входят источники одной площадки,
+// сообщества или организатора — его Telegram-канал и Instagram-профиль. У каждого источника есть календарь: новый
+// источник получает свой, команда переносит его в чужой (склеивает). Пустой календарь остаётся: на него ссылается
+// журнал, и отмена переноса вернёт источник обратно. ponytail: пустые календари не чистим — их единицы.
+export const calendars = pgTable('calendars', {
+  id: uuid().primaryKey().defaultRandom(),
+  name: text().notNull(), // имя вывески; у нового — имя организатора или канал
+  kind: text({ enum: CALENDAR_KINDS }), // CALENDAR_KINDS; null — не указан. Подсказку API считает при чтении
+  // Организатор, чей это календарь: сборщик ставит его, когда берёт канал из профиля, команда — в админке; null — не указан.
+  // У организатора календарь один: в него сборщик кладёт и Telegram, и Instagram из его профиля.
+  host_id: uuid().unique().references(() => hosts.id, { onDelete: 'set null' }),
+  created_at: at('created_at').notNull().defaultNow(),
+});
+
 export const sources = pgTable(
   'sources',
   {
     channel: text().primaryKey(), // как в collected_events.channel и collector_cursors: username без @ или id закрытого чата (-100…)
-    // Организатор источника: сборщик ставит его, когда берёт канал из профиля, команда — в админке; null — не указан.
-    host_id: uuid().references(() => hosts.id, { onDelete: 'set null' }),
+    calendar_id: uuid().notNull().references(() => calendars.id),
     // Выключенный источник сборщик не читает. Строку не удаляем: иначе канал организатора добавился бы снова.
     enabled: boolean().notNull().default(true),
     city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),

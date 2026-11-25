@@ -24,7 +24,7 @@ export const keys = {
   contacts: (hostUser: number) => ['contacts', hostUser],
   actions: (filter: Omit<AdminActionListInput, 'pagination_cursor'>) => ['actions', filter],
   action: (id: string) => ['action', id],
-  sources: ['sources'],
+  calendars: ['calendars'],
   sourceSearches: (city: string) => ['source-searches', city],
   topics: ['topics'],
   topicCandidates: ['topics', 'candidates'],

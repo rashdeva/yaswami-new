@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Job, JobItem, JobList, AdminJobList, Me, Message, PracticeSignup, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
+import type { AdminCalendar, AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Job, JobItem, JobList, AdminJobList, Me, Message, PracticeSignup, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -14,7 +14,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, signInWith, telegramIdOf, userIdByTelegram, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, jobs, messages, photos, practices as practicesTable, practiceSignups, shelves, sources, sourceSearches, ticketTypes, topics as topicsTable, users, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, calendars, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, jobs, messages, photos, practices as practicesTable, practiceSignups, shelves, sources, sourceSearches, ticketTypes, topics as topicsTable, users, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { notify } from './notifications.ts';
@@ -2417,6 +2417,8 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_sources_list: 'GET /admin/sources',
   admin_sources_create: 'POST /admin/sources',
   admin_sources_update: 'PATCH /admin/sources/:channel',
+  admin_calendars_list: 'GET /admin/calendars',
+  admin_calendars_update: 'PATCH /admin/calendars/:id',
   admin_cities_list: 'GET /admin/cities',
   admin_cities_create: 'POST /admin/cities',
   admin_cities_update: 'PATCH /admin/cities/:id',
@@ -2466,7 +2468,8 @@ test('источники: команда добавляет и выключае�
   assert.equal((await call(admin, 'POST', '/admin/sources', { channel: 'not a channel' })).status, 400);
   // Канал организатора добавляет сборщик (apps/collector): здесь — строкой, как он.
   const [h] = await db.insert(hosts).values({ telegram_id: 9400, username: 'lena_tea', name: 'Лена', channel: 'lena_tea_club' }).returning();
-  await db.insert(sources).values({ channel: 'lena_tea_club', host_id: h!.id });
+  const [lenaCalendar] = await db.insert(calendars).values({ name: 'Лена', host_id: h!.id }).returning();
+  await db.insert(sources).values({ channel: 'lena_tea_club', calendar_id: lenaCalendar!.id });
   const at = new Date(Date.now() + 86_400_000);
   await db.insert(collectedEvents).values({
     external_id: 'telegram:lena_tea_club/1#0', channel: 'lena_tea_club', starts_at: at, signup_url: '', announcement: { url: 'https://t.me/lena_tea_club/1' },
@@ -2490,7 +2493,7 @@ test('источники: команда добавляет и выключае�
   const back = (await (await call(admin, 'PATCH', '/admin/sources/danang_yoga', { enabled: true })).json()) as AdminSource;
   assert.deepEqual([back.enabled, back.disabled_reason], [true, null]);
 
-  // Организатор по username: заготовка без telegram_id, её сразу можно указать у источника.
+  // Организатор по username: заготовка без telegram_id, её сразу можно указать у календаря источника.
   const made = await call(admin, 'POST', '/admin/hosts', { username: 'https://t.me/Dato_Banya' });
   assert.equal(made.status, 201);
   const stub = (await made.json()) as Host;
@@ -2498,18 +2501,37 @@ test('источники: команда добавляет и выключае�
   assert.deepEqual(await tool('admin_hosts_create', { username: '@dato_banya' }), { error: 'host_exists' });
   assert.equal((await call(admin, 'POST', '/admin/hosts', { username: 'нет' })).status, 400);
   await db.insert(collectorCursors).values([{ channel: 'Danang_Yoga', last_number: 500 }, { channel: 'lena_tea_club', last_number: 7 }]);
-  const bound = (await tool('admin_sources_update', { channel: 'danang_yoga', host_id: stub.id })) as AdminSource;
-  assert.deepEqual([bound.host?.id, bound.host?.username, bound.enabled], [stub.id, 'dato_banya', true], 'организатор указан, включённость не тронута');
+  const yogaCalendar = ((await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[]).find((x) => x.channel === 'Danang_Yoga')!.calendar.id;
+  const bound = (await tool('admin_calendars_update', { calendar_id: yogaCalendar, host_id: stub.id })) as AdminCalendar;
+  assert.deepEqual([bound.host?.id, bound.host?.username, bound.sources.map((x) => [x.channel, x.enabled])], [stub.id, 'dato_banya', [['Danang_Yoga', true]]], 'организатор указан, включённость не тронута');
   // Сборщик перечитает свежие публикации канала, а канал стал каналом организатора — оттуда фото.
   assert.deepEqual((await db.select().from(collectorCursors)).map((c) => c.channel), ['lena_tea_club']);
   assert.equal((await db.select().from(hosts).where(eq(hosts.id, stub.id)))[0]!.channel, 'danang_yoga');
-  // Тот же организатор ещё раз — отметку не сбрасываем; свой канал у организатора не перезаписываем.
+  // Тот же организатор ещё раз — отметку не сбрасываем. Канал Лены перенесли в календарь Дато (склеили) — он стал его
+  // источником и перечитывается; свой канал у организатора не перезаписываем.
   await db.insert(collectorCursors).values({ channel: 'Danang_Yoga', last_number: 501 });
-  await tool('admin_sources_update', { channel: 'danang_yoga', host_id: stub.id });
-  await tool('admin_sources_update', { channel: 'lena_tea_club', host_id: stub.id });
+  await tool('admin_calendars_update', { calendar_id: yogaCalendar, host_id: stub.id });
+  const moved = (await tool('admin_sources_update', { channel: 'lena_tea_club', calendar_id: yogaCalendar })) as AdminSource;
+  assert.deepEqual([moved.calendar.id, moved.host?.id], [yogaCalendar, stub.id]);
   assert.deepEqual((await db.select().from(collectorCursors)).map((c) => c.channel), ['Danang_Yoga']);
   assert.equal((await db.select().from(hosts).where(eq(hosts.id, stub.id)))[0]!.channel, 'danang_yoga');
-  assert.deepEqual(await (await call(admin, 'PATCH', '/admin/sources/danang_yoga', { host_id: randomUUID() })).json(), { error: 'host_not_found' });
+  // В календаре теперь оба канала; опустевший календарь Лены в списке не виден.
+  const listed = (await (await call(admin, 'GET', '/admin/calendars')).json()) as AdminCalendar[];
+  assert.deepEqual(listed.map((k) => [k.id, k.sources.map((x) => x.channel).sort()]), [[yogaCalendar, ['Danang_Yoga', 'lena_tea_club']]]);
+  // Отмена переноса возвращает канал в его календарь.
+  const move = (await lastAction())!;
+  assert.equal((await call(admin, 'POST', `/admin/actions/${move.id}/undo`)).status, 201);
+  assert.equal((await db.select().from(sources).where(eq(sources.channel, 'lena_tea_club')))[0]!.calendar_id, lenaCalendar!.id);
+  // Отделить в свой календарь — новый, с именем канала и без организатора.
+  const split = (await tool('admin_sources_update', { channel: 'lena_tea_club', calendar_id: null })) as AdminSource;
+  assert.deepEqual([split.calendar.name, split.host], ['lena_tea_club', null]);
+  assert.notEqual(split.calendar.id, lenaCalendar!.id);
+  // Вид календаря и имя правит команда; у организатора календарь один.
+  const named = (await (await call(admin, 'PATCH', `/admin/calendars/${split.calendar.id}`, { name: 'Чайный клуб', kind: 'community' })).json()) as AdminCalendar;
+  assert.deepEqual([named.name, named.kind, named.suggested_kind], ['Чайный клуб', 'community', null]);
+  assert.deepEqual(await (await call(admin, 'PATCH', `/admin/calendars/${split.calendar.id}`, { host_id: stub.id })).json(), { error: 'host_has_calendar' });
+  assert.deepEqual(await (await call(admin, 'PATCH', `/admin/calendars/${split.calendar.id}`, { host_id: randomUUID() })).json(), { error: 'host_not_found' });
+  assert.deepEqual(await (await call(admin, 'PATCH', '/admin/sources/danang_yoga', { calendar_id: randomUUID() })).json(), { error: 'calendar_not_found' });
 
   // Сборщик (apps/collector/src/store.mjs) находит человека в Telegram: заготовка заполняется на месте, источник остаётся за ней.
   const { createStore } = await import(new URL('../../collector/src/store.mjs', import.meta.url).href);
@@ -2519,13 +2541,19 @@ test('источники: команда добавляет и выключае�
     await store.saveHost({ telegram_id: 9401, username: 'dato_banya', name: 'Дато', bio: null, channel: null, summary: 'Баня.' });
     const [filled] = await db.select().from(hosts).where(eq(hosts.id, stub.id));
     assert.deepEqual([filled!.telegram_id, filled!.name, filled!.summary], [9401, 'Дато', 'Баня.']);
-    // Человек уже есть под другим username: источник заготовки переходит к его строке, заготовка удаляется.
+    // Человек уже есть под другим username: календарь заготовки переходит к его строке, заготовка удаляется.
     const again = (await (await call(admin, 'POST', '/admin/hosts', { username: 'dato_new' })).json()) as Host;
-    await call(admin, 'PATCH', '/admin/sources/danang_yoga', { host_id: again.id });
+    await call(admin, 'PATCH', `/admin/calendars/${yogaCalendar}`, { host_id: again.id });
     await store.saveHost({ telegram_id: 9401, username: 'dato_new', name: 'Дато', bio: null, channel: null, summary: null });
     assert.deepEqual((await db.select().from(hosts).where(eq(hosts.telegram_id, 9401))).map((x) => [x.id, x.username]), [[stub.id, 'dato_new']]);
     assert.equal((await db.select().from(hosts).where(eq(hosts.id, again.id))).length, 0);
-    assert.equal((await db.select().from(sources).where(eq(sources.channel, 'Danang_Yoga')))[0]!.host_id, stub.id);
+    assert.equal((await db.select().from(calendars).where(eq(calendars.id, yogaCalendar)))[0]!.host_id, stub.id);
+    // А если календарь есть и у него — источники заготовки переносятся в его календарь.
+    const third = (await (await call(admin, 'POST', '/admin/hosts', { username: 'dato_third' })).json()) as Host;
+    await call(admin, 'PATCH', `/admin/calendars/${split.calendar.id}`, { host_id: third.id });
+    await store.saveHost({ telegram_id: 9401, username: 'dato_third', name: 'Дато', bio: null, channel: null, summary: null });
+    assert.deepEqual((await db.select().from(sources).where(eq(sources.channel, 'lena_tea_club')))[0]!.calendar_id, yogaCalendar);
+    assert.equal((await db.select().from(calendars).where(eq(calendars.id, split.calendar.id)))[0]!.host_id, null);
     // Под username никого нет: заготовка отклонена с пояснением и больше не в очереди.
     await call(admin, 'POST', '/admin/hosts', { username: 'nobody_such' });
     await store.rejectRequestedHost('nobody_such');
@@ -2547,7 +2575,9 @@ test('источники: профиль Instagram — по ссылке, у о�
   assert.equal((await call(admin, 'POST', '/admin/sources', { channel: 'instagram:anna.yoga' })).status, 409);
   assert.equal((await call(admin, 'POST', '/admin/sources', { channel: 'anna.yoga' })).status, 400, 'ник с точкой без ссылки — не Telegram и не Instagram');
   const [h] = await db.insert(hosts).values({ telegram_id: 9450, username: 'anna_tg', name: 'Анна' }).returning();
-  const bound = (await (await call(admin, 'PATCH', `/admin/sources/${encodeURIComponent('instagram:anna.yoga')}`, { host_id: h!.id })).json()) as AdminSource;
+  const ig = ((await (await call(admin, 'GET', '/admin/sources')).json()) as AdminSource[]).find((x) => x.channel === 'instagram:anna.yoga')!;
+  assert.equal(ig.calendar.name, 'anna.yoga');
+  const bound = (await (await call(admin, 'PATCH', `/admin/calendars/${ig.calendar.id}`, { host_id: h!.id })).json()) as AdminCalendar;
   assert.equal(bound.host?.username, 'anna_tg');
   const [after] = await db.select().from(hosts).where(eq(hosts.id, h!.id));
   assert.deepEqual([after!.instagram_handle, after!.channel], ['anna.yoga', null], 'профиль — Instagram организатора, а не его Telegram-канал');
@@ -2872,12 +2902,13 @@ async function world() {
   const [account] = await db.insert(tgAccounts).values({ label: 'Основной', phone: `+7900${base}` }).returning();
   const [shelf] = await db.insert(shelves).values({ city_id: 'danang', title: `Полка ${n}`, rule: { period: 'week' }, author: 'team', position: 1000 + n }).returning();
   const source = `auditsrc${n}`;
-  await db.insert(sources).values({ channel: source });
+  const [calendar] = await db.insert(calendars).values({ name: source }).returning();
+  await db.insert(sources).values({ channel: source, calendar_id: calendar!.id });
   const [conversation] = await db.insert(conversations).values({ channel: 'bot', peer_id: guestId, peer_name: 'Гость' }).returning();
   const [draft] = await db.insert(messages).values({ conversation_id: conversation!.id, direction: 'out', author: 'agent:host', text: 'Привет', status: 'draft' }).returning();
   return {
     n, hostId, guestId, otherId, eventId, t1: t1!.id, t2: t2!.id, slug: `auditchan-${n}-0`, profileId: profile!.id, practiceId: practice!.id, jobId: job!.id, accountId: account!.id,
-    conversationId: conversation!.id, draftId: draft!.id, contactId: contact!.id, source, shelfId: shelf!.id,
+    conversationId: conversation!.id, draftId: draft!.id, contactId: contact!.id, source, calendarId: calendar!.id, shelfId: shelf!.id,
   };
 }
 type World = Awaited<ReturnType<typeof world>>;
@@ -2926,6 +2957,7 @@ const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
   admin_topics_update: () => ({ args: { name: 'кино', emoji: '🎞' }, params: { name: 'кино' }, body: { emoji: '🎞' }, entity_id: 'кино' }),
   admin_sources_create: (w) => ({ args: { channel: `@newsrc${w.n}` }, body: { channel: `t.me/newsrc${w.n}` }, entity_id: (r) => r.channel }),
   admin_sources_update: (w) => ({ args: { channel: w.source.toUpperCase(), enabled: false }, params: { channel: w.source }, body: { enabled: false }, entity_id: w.source }),
+  admin_calendars_update: (w) => ({ args: { calendar_id: w.calendarId, name: 'Площадка', kind: 'venue' }, params: { id: w.calendarId }, body: { name: 'Площадка', kind: 'venue' }, entity_id: w.calendarId }),
   admin_cities_create: (w) => {
     const input = { id: `city${w.n}`, name: 'Город', timezone: 'Asia/Tbilisi' };
     return { args: input, body: input, entity_id: input.id };

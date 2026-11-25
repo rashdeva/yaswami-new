@@ -1,20 +1,22 @@
 // Источники сборщика (Source): каналы и группы, откуда он берёт анонсы, вопросы, мастеров и вакансии (kind). Пишут сюда сборщик (CHANNELS при старте,
 // каналы организаторов каждый проход) и команда — через журнал.
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { AdminSource, SourceCreateInput, SourceSearch, SourceSearchCreateInput, SourceUpdateInput } from '@yaswami/core';
-import { instagramOf, sourceChannel } from '@yaswami/core';
+import { sourceChannel } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
 import type { Db } from '../db/client.ts';
-import { cities, collectorCursors, hosts, sourceSearches, sources } from '../db/schema.ts';
+import { calendars, cities, hosts, sourceSearches, sources } from '../db/schema.ts';
 import { AppError, assertCity, sameChannel } from '../services.ts';
+import { adoptForHost, calendarHost, newCalendar } from './calendars.ts';
 
 const selectSources = (db: Db) => db
   .select({
-    channel: sources.channel, kind: sources.kind, enabled: sources.enabled, disabled_reason: sources.disabled_reason, city_id: sources.city_id, created_at: sources.created_at, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,
+    channel: sources.channel, kind: sources.kind, enabled: sources.enabled, disabled_reason: sources.disabled_reason, city_id: sources.city_id, created_at: sources.created_at,
+    calendar: { id: calendars.id, name: calendars.name }, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,
     events_count: sql<number>`(select count(*) from collected_events e where lower(e.channel) = lower(${sources.channel}))::int`,
   })
-  .from(sources).leftJoin(hosts, eq(hosts.id, sources.host_id));
+  .from(sources).innerJoin(calendars, eq(calendars.id, sources.calendar_id)).leftJoin(hosts, eq(hosts.id, calendars.host_id));
 type SourceRow = Awaited<ReturnType<typeof selectSources>>[number];
 const toSource = ({ host_id, host_name, host_username, ...r }: SourceRow): AdminSource => ({ ...r, host: host_id && host_name && host_username ? { id: host_id, name: host_name, username: host_username } : null });
 
@@ -27,42 +29,40 @@ async function getSource(db: Db, channel: string): Promise<AdminSource> {
 /** Все источники, новые сверху. ponytail: без страниц — каналов сотни, не тысячи. */
 export const listSources = async (db: Db): Promise<AdminSource[]> => (await selectSources(db).orderBy(desc(sources.created_at)).limit(1000)).map(toSource);
 
-/** Добавить источник командой: сборщик начнёт читать его со следующего прохода. */
+/**
+ * Добавить источник командой: сборщик начнёт читать его со следующего прохода. С `calendar_id` — в этот календарь
+ * (например, Instagram уже добавленного канала), без него — в новый свой.
+ */
 export const createSource = (db: Db, ctx: Ctx, input: SourceCreateInput): Promise<AdminSource> =>
   audited(db, ctx, { action: 'admin_sources_create', entity: 'source', id: (r) => r.channel, input }, async (tx) => {
     const channel = sourceChannel(input.channel);
     await assertCity(tx, input.city_id);
-    const added = await tx.insert(sources).values({ channel, city_id: input.city_id, kind: input.kind }).onConflictDoNothing().returning();
-    if (!added.length) throw new AppError('source_exists', 409);
+    const host = input.calendar_id ? await calendarHost(tx, input.calendar_id) : null;
+    const calendar_id = input.calendar_id ?? await newCalendar(tx, channel);
+    const added = await tx.insert(sources).values({ channel, calendar_id, city_id: input.city_id, kind: input.kind }).onConflictDoNothing().returning();
+    if (!added.length) throw new AppError('source_exists', 409); // новый календарь откатится вместе с действием
+    if (host) await adoptForHost(tx, channel, host);
     return getSource(tx, channel);
   });
 
 /**
- * Включить или выключить источник, указать или убрать его организатора. Выключенный остаётся в таблице: иначе канал
- * организатора добавился бы снова.
- *
- * Указали нового организатора — сборщик перечитает свежие публикации канала (не старше MAX_AGE_DAYS): анонсы без
- * контакта, которые он раньше пропустил, теперь получат контактом организатора. А если у организатора нет канала,
- * этот канал становится его каналом: из него берутся фото сообщества. Профиль Instagram так же становится его
- * Instagram, если тот не указан.
+ * Включить или выключить источник, перенести его в другой календарь или отделить в свой. Выключенный остаётся в
+ * таблице: иначе канал организатора добавился бы снова. Перенесли в календарь организатора — источник становится
+ * его источником (adoptForHost): сборщик перечитает свежие публикации, анонсы без контакта получат контактом этого
+ * организатора.
  */
 export async function updateSource(db: Db, ctx: Ctx, channel: string, input: SourceUpdateInput): Promise<AdminSource> {
   // Журнал и снимок — по каналу так, как он записан: команда может передать его в другом регистре.
   const { channel: key } = await getSource(db, channel);
   return audited(db, ctx, { action: 'admin_sources_update', entity: 'source', id: key, input }, async (tx) => {
-    if (input.host_id && !(await tx.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, input.host_id))).length) throw new AppError('host_not_found', 404);
     await assertCity(tx, input.city_id);
-    const values = Object.fromEntries(Object.entries({ enabled: input.enabled, kind: input.kind, host_id: input.host_id, city_id: input.city_id }).filter(([, v]) => v !== undefined));
-    if (input.enabled !== undefined) values.disabled_reason = null; // решение команды заменяет причину сборщика
     const before = await getSource(tx, key);
+    const host = input.calendar_id ? await calendarHost(tx, input.calendar_id) : null;
+    const calendar_id = input.calendar_id === null ? await newCalendar(tx, key) : input.calendar_id;
+    const values: Record<string, unknown> = Object.fromEntries(Object.entries({ enabled: input.enabled, kind: input.kind, calendar_id, city_id: input.city_id }).filter(([, v]) => v !== undefined));
+    if (input.enabled !== undefined) values.disabled_reason = null; // решение команды заменяет причину сборщика
     if (Object.keys(values).length) await tx.update(sources).set(values).where(eq(sources.channel, key));
-    if (input.host_id && input.host_id !== before.host?.id) {
-      await tx.delete(collectorCursors).where(eq(collectorCursors.channel, key));
-      // ponytail: канал организатора — не часть снимка источника, отмена действия его не вернёт; поправить — в карточке организатора.
-      const instagram = instagramOf(key);
-      if (instagram) await tx.update(hosts).set({ instagram_handle: instagram }).where(and(eq(hosts.id, input.host_id), isNull(hosts.instagram_handle)));
-      else if (!key.startsWith('-')) await tx.update(hosts).set({ channel: key.toLowerCase() }).where(and(eq(hosts.id, input.host_id), isNull(hosts.channel)));
-    }
+    if (host && host !== before.host?.id) await adoptForHost(tx, key, host);
     return getSource(tx, key);
   });
 }

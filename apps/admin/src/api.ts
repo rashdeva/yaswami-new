@@ -1,7 +1,7 @@
 // Клиент API админки: единственное место, где есть fetch. Формы запросов и ответов — из @yaswami/core.
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
-  AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminShelf, AdminSource, AdminTopic, CollectedEventItem, ShelfCreateInput, ShelfUpdateInput, TopicCandidate, TopicCreateInput, TopicUpdateInput,
+  AdminCalendar, CalendarUpdateInput, AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminShelf, AdminSource, AdminTopic, CollectedEventItem, ShelfCreateInput, ShelfUpdateInput, TopicCandidate, TopicCreateInput, TopicUpdateInput,
   AdminUser, AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, AdminJobList, AdminJobListInput, HostUpdateInput, Job, JobUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceSearch, SourceSearchCreateInput, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
@@ -31,6 +31,8 @@ const MESSAGES: Record<string, string> = {
   account_limited: 'Telegram ограничил этот аккаунт за сообщения незнакомым (PEER_FLOOD): первые сообщения на паузе. Ответы тем, кто написал сам, уходят',
   not_draft: 'Черновик уже отправлен или отклонён',
   source_exists: 'Этот канал уже есть в источниках',
+  calendar_not_found: 'Такого календаря нет: обновите страницу',
+  host_has_calendar: 'У этого организатора уже есть календарь: перенесите источники в него',
   topic_exists: 'Тема с таким именем или slug уже есть',
   topic_not_found: 'Нет темы, из которой выделяем',
   city_exists: 'Город с таким id уже есть',
@@ -212,9 +214,10 @@ export const api = {
   topicCandidates: () => request<TopicCandidate[]>('GET', '/admin/topics/candidates'),
   topicCreate: (input: TopicCreateInput) => request<Wire<AdminTopic>>('POST', '/admin/topics', input),
   topicUpdate: (name: string, input: TopicUpdateInput) => request<Wire<AdminTopic>>('PATCH', `/admin/topics/${id(name)}`, input),
-  sources: () => request<Wire<AdminSource>[]>('GET', '/admin/sources'),
   sourceCreate: (input: SourceCreateInput) => request<Wire<AdminSource>>('POST', '/admin/sources', input),
   sourceUpdate: (channel: string, input: SourceUpdateInput) => request<Wire<AdminSource>>('PATCH', `/admin/sources/${id(channel)}`, input),
+  calendars: () => request<Wire<AdminCalendar>[]>('GET', '/admin/calendars'),
+  calendarUpdate: (calendarId: string, input: CalendarUpdateInput) => request<Wire<AdminCalendar>>('PATCH', `/admin/calendars/${id(calendarId)}`, input),
   sourceSearches: (city: string) => request<Wire<SourceSearch>[]>('GET', `/admin/source-searches${qs({ city_id: city })}`),
   sourceSearchCreate: (input: SourceSearchCreateInput) => request<Wire<SourceSearch>>('POST', '/admin/source-searches', input),
 };

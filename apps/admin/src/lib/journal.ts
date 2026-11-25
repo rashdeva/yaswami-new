@@ -28,6 +28,7 @@ export const ACTIONS: Record<string, string> = {
   admin_contacts_remove: 'Убран контакт',
   admin_sources_create: 'Добавлен источник',
   admin_sources_update: 'Изменён источник',
+  admin_calendars_update: 'Изменён календарь',
   admin_topics_create: 'Добавлена тема',
   admin_topics_update: 'Изменена тема',
   admin_cities_create: 'Добавлен город',
@@ -60,6 +61,7 @@ export const ENTITIES: Record<AdminEntity, string> = {
   message: 'Сообщение',
   contact: 'Контакт',
   source: 'Источник',
+  calendar: 'Календарь',
   city: 'Город',
   job: 'Вакансия',
   topic: 'Тема',
@@ -82,7 +84,8 @@ export function entityLink(entity: AdminEntity, id: string): EntityLink {
     case 'user': return { to: '/users/$id', params: { id } };
     case 'conversation': return { to: '/', search: { c: id } };
     case 'account': return { to: '/accounts' };
-    case 'source': return { to: '/sources' };
+    case 'source':
+    case 'calendar': return { to: '/sources' };
     case 'city': return { to: '/cities' };
     case 'topic': return { to: '/topics' };
     case 'shelf': return { to: '/showcase' };
