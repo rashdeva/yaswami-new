@@ -1,6 +1,6 @@
 // Корневой layout приложения: цвет шаблона, тост, кнопка «назад» и то, что нужно нескольким страницам сразу.
 import { Outlet, useLocation, useMatchRoute, useNavigate } from '@tanstack/react-router';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 import type { CollectedEventItem, Event } from '@yaswami/core';
 import { tint } from './format.ts';
 import { useFeature } from './hooks/useFeature.ts';
@@ -56,12 +56,6 @@ export function App() {
             ? () => void navigate({ to: hasEvents ? '/my' : '/' })
             : null;
   useTelegramBack(back);
-  // Витрина и её экраны на широком окне — шире обычной колонки, полки сеткой (app.css, #app[data-wide]).
-  const wide = pathname === '/' || pathname === '/all' || pathname.startsWith('/d/') || pathname.startsWith('/s/');
-  useEffect(() => {
-    const root = document.getElementById('app');
-    if (root) root.toggleAttribute('data-wide', wide);
-  }, [wide]);
   const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/products';
 
   return (

@@ -100,6 +100,7 @@ export function CollectedScreen({ id, authed, canLogin, signedUp, onClaim, onOpe
 
   return (
     <>
+      <div className="ev-page">
       <div className={`hero${onBack ? '' : ' nb'}${cover ? ' cov' : ''}`} data-topic={topicSlug(event.topic)}>
         {/* Ролик без звука и по кругу: название и время поверх пишет сама шапка. Вертикальный ролик из анонса важнее
             нарисованного: его снял организатор. */}
@@ -125,6 +126,7 @@ export function CollectedScreen({ id, authed, canLogin, signedUp, onClaim, onOpe
         </div>
         {actions && <div className="acts" ref={watch}>{actions}</div>}
       </div>
+      <div className="ev-body">
 
       {event.price && <div className="group"><div className="meta"><div><span>🎟</span><span>{event.price}</span></div></div></div>}
       {gallery.length > 0 && (
@@ -169,6 +171,8 @@ export function CollectedScreen({ id, authed, canLogin, signedUp, onClaim, onOpe
       {!event.claimed_event_id && !authed && canLogin && (
         <button className="quiet" onClick={() => { startLogin(collectedPath(id)); }}>Вы организатор? Войдите, чтобы принимать записи здесь</button>
       )}
+      </div>
+      </div>
 
       {actions && <div className="main" data-off={!barShown || undefined} inert={!barShown}><div>{actions}</div></div>}
       <Drawer.Root open={!!hostOpen} onOpenChange={(o) => { if (!o) setHostOpen(null); }}>

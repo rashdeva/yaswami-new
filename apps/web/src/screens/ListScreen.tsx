@@ -86,7 +86,7 @@ export function ListScreen({ events, collected, lead, onOpen, onOpenCollected, o
       })}
       {past.length > 0 && <section><h2>Прошедшие</h2>{grid(past)}</section>}
       {rows.length === 0 && <div className="state"><b>🗓</b><p>Здесь появятся события, на которые вы записались.</p></div>}
-      {onLogout && <button className="quiet" onClick={onLogout}>Выйти</button>}
+      {onLogout && <div className="group logout"><button className="row del" onClick={onLogout}>Выйти</button></div>}
       {onNew && <div className="main"><div><button className="cta" onClick={onNew}>Новое событие</button></div></div>}
     </>
   );
