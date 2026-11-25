@@ -1,21 +1,21 @@
 import { useEffect } from 'react';
 import type { ProductItem, Wire } from '@yaswami/core';
-import { PRODUCT_CATEGORIES } from '@yaswami/core';
 import { ProfileButton } from '../components/Avatar.tsx';
 import { CityPick } from '../components/CityPick.tsx';
 import { ProductCard } from '../components/ProductCard.tsx';
 import { useProducts } from '../hooks/useProducts.ts';
 import { useViewed } from '../hooks/useViewed.ts';
-import { PRODUCT_CATEGORY_LABELS } from '../product.ts';
+import { productCategoryName, productChips, productPlaceholder } from '../product.ts';
 
 interface Props {
   city: string;
   onOpen: (product: Wire<ProductItem>) => void;
 }
 
-/** Вкладка «Товары»: что местные мастера делают сами — еда и хендмейд, свежие сверху. Открыта без входа. */
+/** Вкладка «Товары»: что местные мастера делают сами, свежие сверху; плашки — категории, где в городе что-то есть. Открыта без входа. */
 export function ProductsScreen({ city, onOpen }: Props) {
-  const { products, category, setCategory, failed, more, loadingMore } = useProducts();
+  const { products, categories, category, setCategory, failed, more, loadingMore } = useProducts();
+  const chips = productChips(categories);
   useViewed('products_viewed');
   useEffect(() => { document.title = `Товары мастеров в городе ${city} — Я с вами`; }, [city]);
 
@@ -28,12 +28,14 @@ export function ProductsScreen({ city, onOpen }: Props) {
           <CityPick />
         </div>
       </div>
-      <div className="chips">
-        <button className="chip" aria-pressed={!category} onClick={() => setCategory(null)}>Все</button>
-        {PRODUCT_CATEGORIES.map((c) => (
-          <button key={c} className="chip" aria-pressed={category === c} onClick={() => setCategory(category === c ? null : c)}>{PRODUCT_CATEGORY_LABELS[c]}</button>
-        ))}
-      </div>
+      {chips.length > 0 && (
+        <div className="chips">
+          <button className="chip" aria-pressed={!category} onClick={() => setCategory(null)}>Все</button>
+          {chips.map((c) => (
+            <button key={c} className="chip" aria-pressed={category === c} onClick={() => setCategory(category === c ? null : c)}>{productPlaceholder(c)} {productCategoryName(c)}</button>
+          ))}
+        </div>
+      )}
       {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}
       {!products && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
       {products?.length === 0 && <div className="state"><b>🌿</b><p>Товаров пока нет. Загляните позже.</p></div>}

@@ -1,6 +1,6 @@
 // Чистые функции каталога: подписи статусов, контакт для записи из ссылки «Записаться», события организатора.
 import type { AdminCollectedEvent, AdminProduct, CollectedStatus, Feature, Guest, HostStatus, IdentityProvider, PracticeStatus, ProductCategory, ProductStatus, Wire } from '@yaswami/core';
-import { instagramOf, OTHER_TOPIC, PRODUCT_TTL_DAYS, TOPIC_GUIDES } from '@yaswami/core';
+import { instagramOf, OTHER_TOPIC, PRODUCT_CATEGORIES, PRODUCT_TTL_DAYS, TOPIC_GUIDES } from '@yaswami/core';
 
 /** Ссылка на источник: профиль Instagram или канал в Telegram; у закрытого чата (-100…) ссылки нет. */
 export function sourceLink(channel: string): string | null {
@@ -32,7 +32,8 @@ export const hostKind = (events: number, practices: number): HostKind => (events
 export const PRACTICE_LABELS: Record<PracticeStatus, string> = { pending: 'Ждёт решения', published: 'Опубликована', rejected: 'Отклонена' };
 
 export const PRODUCT_LABELS: Record<ProductStatus, string> = { pending: 'Ждёт решения', published: 'Опубликован', rejected: 'Отклонён' };
-export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = { food: 'Еда', handmade: 'Хендмейд' };
+/** Подписи категорий товара — названия из core (PRODUCT_CATEGORIES, ADR-0013). */
+export const PRODUCT_CATEGORY_LABELS = Object.fromEntries(PRODUCT_CATEGORIES.map((c) => [c.slug, c.name])) as Record<ProductCategory, string>;
 
 /** Товар не упоминали PRODUCT_TTL_DAYS дней: гостям он уже не показывается, даже одобренный. */
 export const productExpired = (posted_at: string, now = Date.now()) => now - Date.parse(posted_at) >= PRODUCT_TTL_DAYS * 86_400_000;

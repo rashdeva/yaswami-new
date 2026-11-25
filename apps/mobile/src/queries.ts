@@ -85,7 +85,7 @@ export function useHosts() {
 }
 export const useHost = (id: string) => useQuery({ queryKey: keys.host(id), queryFn: () => api.host(id) });
 
-/** Товары мастеров города страницами, свежие сверху; `category` null — еда и хендмейд вместе. */
+/** Товары мастеров города страницами, свежие сверху; `category` null — все; `categories` — где в городе есть товары. */
 export function useProducts(category: ProductCategory | null) {
   const city = useCityId();
   const q = useInfiniteQuery({
@@ -94,7 +94,7 @@ export function useProducts(category: ProductCategory | null) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.has_more ? last.next_cursor ?? undefined : undefined),
   });
-  return { ...q, products: q.data?.pages.flatMap((p) => p.entries) ?? [] };
+  return { ...q, products: q.data?.pages.flatMap((p) => p.entries) ?? [], categories: q.data?.pages[0]?.categories ?? [] };
 }
 
 export function useProduct(id: string) {

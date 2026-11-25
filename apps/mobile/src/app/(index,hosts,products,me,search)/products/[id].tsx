@@ -6,7 +6,7 @@ import { Button } from '@/components/button';
 import { ProductPhoto } from '@/components/product-card';
 import { Row, Section } from '@/components/section';
 import { State } from '@/components/state';
-import { PRODUCT_CATEGORY_LABELS, productPrice } from '@/format';
+import { productCategoryName, productPrice } from '@/format';
 import { useProduct } from '@/queries';
 import { colors } from '@/theme';
 
@@ -20,7 +20,7 @@ export default function Product() {
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: 48 }}>
         <ProductPhoto product={p} size="100%" radius={20} emoji={72} />
         <View style={{ gap: 6 }}>
-          <Text style={{ color: colors.secondaryLabel, fontSize: 13, textTransform: 'uppercase' }}>{PRODUCT_CATEGORY_LABELS[p.category]}</Text>
+          <Text style={{ color: colors.secondaryLabel, fontSize: 13, textTransform: 'uppercase' }}>{productCategoryName(p.category)}</Text>
           <Text selectable style={{ color: colors.label, fontSize: 28, fontWeight: '700' }}>{p.title}</Text>
           <Text selectable style={{ color: colors.tint, fontSize: 19, fontWeight: '600' }}>{productPrice(p)}</Text>
         </View>

@@ -1,4 +1,5 @@
 import type { ProductCategory } from '@yaswami/core';
+import { productCategoryBySlug } from '@yaswami/core';
 import { collectedDay, collectedDayKey, topicIcon } from '@yaswami/core';
 import { SITE } from './api';
 
@@ -28,7 +29,8 @@ export function when(startAt: string, timeZone: string): string {
 /** Цена товара с весом или количеством: «55k · 100 г»; цены нет — «цена по запросу». Как в мини-приложении. */
 export const productPrice = (p: { price: string | null; unit: string | null }) => [p.price ?? 'цена по запросу', p.unit].filter(Boolean).join(' · ');
 
-/** Заглушка вместо фото товара — знак категории. */
-export const productPlaceholder = (category: ProductCategory) => (category === 'food' ? '🥧' : '🧶');
+/** Заглушка вместо фото товара — знак категории (PRODUCT_CATEGORIES). Как в мини-приложении. */
+export const productPlaceholder = (category: ProductCategory) => productCategoryBySlug(category)?.emoji ?? '🛍️';
 
-export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = { food: 'Еда', handmade: 'Хендмейд' };
+/** Подпись категории товара — название из core. */
+export const productCategoryName = (category: ProductCategory) => productCategoryBySlug(category)?.name ?? category;

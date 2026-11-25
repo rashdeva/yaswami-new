@@ -41,7 +41,7 @@ const HINTS: Record<ProductsFilter, string> = {
 };
 const TABS: [ProductsFilter, string][] = [...PRODUCT_STATUSES.map((s) => [s, PRODUCT_LABELS[s]] as [ProductsFilter, string]), ['all', 'Все']];
 const STATUS_OPTIONS = PRODUCT_STATUSES.map((s) => [s, PRODUCT_LABELS[s]] as const);
-const CATEGORY_OPTIONS = PRODUCT_CATEGORIES.map((c) => [c, PRODUCT_CATEGORY_LABELS[c]] as const);
+const CATEGORY_OPTIONS = PRODUCT_CATEGORIES.map((c) => [c.slug, c.name] as const);
 
 type Update = ReturnType<typeof useProductUpdate>;
 

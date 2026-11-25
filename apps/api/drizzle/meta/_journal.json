@@ -491,6 +491,13 @@
       "when": 1795628531810,
       "tag": "20261125174211_service_category",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1795628591810,
+      "tag": "20261126090000_product_categories",
+      "breakpoints": true
     }
   ]
 }

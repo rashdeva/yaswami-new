@@ -15,8 +15,8 @@ const sources = {
   ],
   hostEvents: new Map([['vera', 2]]),
   products: [
-    { id: 'g1', title: 'Медовик', price: '55k', unit: '100 г', category: 'food' as const, announcement: { url: 'https://t.me/anya_bakes/9', text: 'медовик' }, status: 'pending' as const, host: { id: 'h1', name: 'Аня', username: 'anya', city_id: 'danang' } },
-    { id: 'g2', title: 'Серьги', price: null, unit: null, category: 'handmade' as const, announcement: { url: 'https://t.me/c/2', text: 'серьги' }, status: 'published' as const, host: { id: 'h3', name: 'Вера', username: 'vera', city_id: 'danang' } },
+    { id: 'g1', title: 'Медовик', price: '55k', unit: '100 г', category: 'bakery' as const, announcement: { url: 'https://t.me/anya_bakes/9', text: 'медовик' }, status: 'pending' as const, host: { id: 'h1', name: 'Аня', username: 'anya', city_id: 'danang' } },
+    { id: 'g2', title: 'Серьги', price: null, unit: null, category: 'wear' as const, announcement: { url: 'https://t.me/c/2', text: 'серьги' }, status: 'published' as const, host: { id: 'h3', name: 'Вера', username: 'vera', city_id: 'danang' } },
   ],
 };
 
@@ -43,7 +43,7 @@ test('строки: подпись и ссылка каждого вида', () 
   assert.deepEqual(services![0]!.link, { entity: 'host', id: 'h1' });
   assert.equal(hosts![0]!.subtitle, '@vera · услуг: 1 · событий: 2');
   assert.equal(hosts![1]!.subtitle, '@borya · услуг: 0 · событий: 0');
-  assert.equal(products![0]!.subtitle, 'Аня · 55k · 100 г · Еда');
+  assert.equal(products![0]!.subtitle, 'Аня · 55k · 100 г · Выпечка и десерты');
   assert.deepEqual(products![0]!.link, { entity: 'product', id: 'g1' });
   assert.equal(products![0]!.url, 'https://t.me/anya_bakes/9');
 });

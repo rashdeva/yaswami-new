@@ -900,18 +900,18 @@ test('товары: гость видит одобренные и свежие �
   ];
   // n — сколько дней назад товар упоминали.
   const row = (host_id: string, n: number, title: string, more: Partial<typeof products.$inferInsert> = {}) => ({
-    host_id, title, title_key: title.toLowerCase(), description: 'Печём каждый день.', price: '55k', unit: '100 г', category: 'food' as const,
+    host_id, title, title_key: title.toLowerCase(), description: 'Печём каждый день.', price: '55k', unit: '100 г', category: 'bakery' as const,
     announcement: { url: `https://t.me/producttest/${n}`, text: `${title} — 55k` }, status: 'published' as const,
     posted_at: new Date(Date.now() - n * 86_400_000), ...more,
   });
   const [honey, , waiting, , expired, , , , bannedProduct] = await db.insert(products).values([
     row(cakes.id, 1, 'Медовик порционно'),
-    row(dumplings.id, 2, 'Пельмени с говядиной', { unit: '1 кг', price: '250k' }),
+    row(dumplings.id, 2, 'Пельмени с говядиной', { unit: '1 кг', price: '250k', category: 'frozen' }),
     row(cakes.id, 3, 'Наполеон', { status: 'pending' }),
     row(cakes.id, 4, 'Чизкейк', { status: 'rejected' }),
     row(cakes.id, 31, 'Эклеры'), // не упоминали дольше PRODUCT_TTL_DAYS
-    row(dumplings.id, 5, 'Вязаная сумка', { category: 'handmade', price: null, unit: null }),
-    row(far.id, 1, 'Сыр бри'), // дальше 25 км
+    row(dumplings.id, 5, 'Вязаная сумка', { category: 'wear', price: null, unit: null }),
+    row(far.id, 1, 'Сыр бри', { category: 'dairy' }), // дальше 25 км
     row(archived.id, 1, 'Хлеб на закваске'), // город в архиве
     row(banned.id, 1, 'Медовый торт'), // мастер отклонён
   ]).returning({ id: products.id });
@@ -921,6 +921,8 @@ test('товары: гость видит одобренные и свежие �
   // Без входа: одобренные, свежие, своего города и соседей; свежие сверху. Контакт — ссылкой, исходного поста нет.
   const all = await list('?city_id=weligama');
   assert.deepEqual([titles(all.entries), all.has_more, all.next_cursor, all.hosts_count], [['Медовик порционно', 'Пельмени с говядиной', 'Вязаная сумка'], false, null, 2]);
+  // Плашки — категории, где в городе что-то видно гостю, в порядке PRODUCT_CATEGORIES: сыр бри — в другом городе, не считается.
+  assert.deepEqual(all.categories, ['bakery', 'frozen', 'wear']);
   const first = all.entries[0]!;
   assert.deepEqual(Object.keys(first).sort(), ['category', 'city_id', 'contact_url', 'description', 'host', 'id', 'photo_url', 'posted_at', 'price', 'source_url', 'title', 'unit', 'url']);
   assert.deepEqual([first.city_id, first.host.username, first.host.url, first.url], ['weligama', 'weli_cakes', `${settings.publicUrl}/hosts/${cakes.id}`, `${settings.publicUrl}/products/${honey!.id}`]);
@@ -928,12 +930,13 @@ test('товары: гость видит одобренные и свежие �
   assert.ok(decodeURIComponent(first.contact_url).endsWith(`Хочу заказать «Медовик порционно». Нашёл на Ясвами: ${first.url}`));
   assert.equal(first.source_url, 'https://t.me/producttest/1');
   assert.equal(all.entries[1]!.city_id, 'mirissa');
-  // Категория отбирает записи, но не меняет число мастеров: вход в раздел — по всем товарам города.
-  const handmade = await list('?city_id=weligama&category=handmade');
-  assert.deepEqual([titles(handmade.entries), handmade.hosts_count], [['Вязаная сумка'], 2]);
+  // Категория отбирает записи, но не меняет ни число мастеров, ни плашки: вход в раздел — по всем товарам города.
+  const wear = await list('?city_id=weligama&category=wear');
+  assert.deepEqual([titles(wear.entries), wear.hosts_count, wear.categories], [['Вязаная сумка'], 2, ['bakery', 'frozen', 'wear']]);
+  assert.equal((await app.request('/products?city_id=weligama&category=handmade')).status, 400, 'старой категории нет');
   assert.deepEqual(titles((await list('?city_id=hiriketiya')).entries), ['Сыр бри']);
   const home = await list();
-  assert.deepEqual([titles(home.entries), home.hosts_count], [[], 0], 'без города — первый город, там товаров нет');
+  assert.deepEqual([titles(home.entries), home.hosts_count, home.categories], [[], 0, []], 'без города — первый город, там товаров нет');
   // Страницы: курсор ведёт дальше; кривой курсор — ошибка входа.
   const page1 = await list('?city_id=weligama&pagination_limit=2');
   assert.deepEqual([titles(page1.entries), page1.has_more], [['Медовик порционно', 'Пельмени с говядиной'], true]);
@@ -3006,7 +3009,7 @@ async function world() {
   });
   const [profile] = await db.insert(hosts).values({ telegram_id: base + 5, username: `host${n}`, name: 'Орг' }).returning();
   const [practice] = await db.insert(practicesTable).values({ host_id: profile!.id, title: 'Массаж', topic: 'телесные практики' }).returning();
-  const [product] = await db.insert(products).values({ host_id: profile!.id, title: 'Медовик', title_key: 'медовик', category: 'food', announcement: { url: `https://t.me/auditfood/${n}`, text: 'Медовик 55k' } }).returning();
+  const [product] = await db.insert(products).values({ host_id: profile!.id, title: 'Медовик', title_key: 'медовик', category: 'bakery', announcement: { url: `https://t.me/auditfood/${n}`, text: 'Медовик 55k' } }).returning();
   const [account] = await db.insert(tgAccounts).values({ label: 'Основной', phone: `+7900${base}` }).returning();
   const [shelf] = await db.insert(shelves).values({ city_id: 'danang', title: `Полка ${n}`, rule: { period: 'week' }, author: 'team', position: 1000 + n }).returning();
   const source = `auditsrc${n}`;
