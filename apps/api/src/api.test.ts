@@ -1825,6 +1825,15 @@ test('охотник: старое сообщение из чата — черн
     assert.match(asked, /^Чат: danang_chat[\s\S]*Ищет мастера или услугу \(Оля\):/);
     const serviceFeed = (await (await call(tma(70, 'Админ'), 'GET', '/admin/inbox')).json()) as InboxFeed;
     assert.equal(serviceFeed.messages.find((m) => m.status === 'draft')!.meta?.reason, 'Услуга. Вопрос в чате danang_chat');
+    // Ищет, где купить, — ответ в чат, с пометкой «Товар».
+    await db.execute(sql`truncate conversations cascade`);
+    await recordLead(db, {
+      chat: 'danang_chat', message_id: 12, url: 'https://t.me/danang_chat/12', author: { id: 603, name: 'Катя', username: null },
+      text: 'Где купить творог?', context: [], sent_at: new Date().toISOString(), signal: 'product',
+    });
+    assert.match(asked, /^Чат: danang_chat[\s\S]*Ищет, где купить \(Катя\):/);
+    const productFeed = (await (await call(tma(70, 'Админ'), 'GET', '/admin/inbox')).json()) as InboxFeed;
+    assert.equal(productFeed.messages.find((m) => m.status === 'draft')!.meta?.reason, 'Товар. Вопрос в чате danang_chat');
   } finally {
     hunter.ask = ask;
     settings.hunterUrl = '';
