@@ -58,4 +58,6 @@ npx eas-cli@latest submit --platform android --latest  # во внутренни
 
 Для ревью Apple в App Review Information нужен демо-доступ. Ревьюер войдёт через Apple на своём устройстве, поэтому логин и пароль не нужны. Но стоит написать, что приложение — каталог событий Дананга и что вход через Telegram — второй способ.
 
-Перед первой отправкой: заменить иконки-заглушки Expo в `assets/` (`icon.png`, `expo.icon`, `android-icon-*.png`, `splash-icon.png`) на знак «Я с вами».
+Иконки в `assets/` (`icon.png` без прозрачности, `expo.icon` для iOS 26, `android-icon-*.png`, `splash-icon.png`) отрисованы из `apps/web/public/mark.svg` на белом фоне.
+
+В карточках обоих магазинов: Privacy Policy — `https://yaswami.com/privacy.html` (`apps/web/public/privacy.html`; меняешь, какие данные собираем, — правь и её), Support URL — `https://yaswami.com`.
