@@ -45,7 +45,9 @@ async function topicColors(): Promise<Record<string, string>> {
 const dataUri = (mime: string, bytes: Buffer | ArrayBuffer) => `data:${mime};base64,${Buffer.from(bytes as ArrayBuffer).toString('base64')}`;
 
 async function topicIcon(slug: string): Promise<string> {
-  const icon = await file(`apps/web/public/topics/${slug}.png`).catch(() => file('apps/web/public/topics/other.png'));
+  // slug приходит из API и становится частью пути к файлу: «../» вывел бы чтение за папку иконок. Чужой вид — как неизвестная тема.
+  const safe = /^[a-z0-9-]+$/.test(slug) ? slug : 'other';
+  const icon = await file(`apps/web/public/topics/${safe}.png`).catch(() => file('apps/web/public/topics/other.png'));
   return dataUri('image/png', icon);
 }
 

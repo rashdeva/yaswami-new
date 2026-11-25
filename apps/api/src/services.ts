@@ -10,8 +10,10 @@ import type {
 import type { CollectedEvent } from '@yaswami/core';
 import { ADDRESS_MAX, collectedSlug, DEFAULT_CITY_ID, Feature, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, PRODUCT_CATEGORY_SLUGS, PRODUCT_TTL_DAYS, productContactUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, serviceCategoryBySlug, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
+// Цикл с auth.ts безопасен: обе стороны берут только функции и зовут их после загрузки.
+import { telegramIdOf } from './auth.ts';
 import type { Db, Tx } from './db/client.ts';
-import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, photos, practices, practiceSignups, products, sources, subscriptions, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
+import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, photos, practices, practiceSignups, products, sources, subscriptions, ticketTypes, userActivity, userIdentities, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl, saveCover, storedPhotoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
@@ -688,9 +690,10 @@ export async function signUpForPractice(db: Db, actor: User, hostId: string, inp
 export async function signUpForCollectedEvent(db: Db, actor: User, slug: string): Promise<CollectedEventItem> {
   const item = await getCollectedEvent(db, slug);
   const external_id = collectedExternalId(slug);
-  await db.insert(collectedEventSignups).values({ external_id, user_id: actor.id }).onConflictDoNothing();
+  const added = await db.insert(collectedEventSignups).values({ external_id, user_id: actor.id }).onConflictDoNothing().returning({ user_id: collectedEventSignups.user_id });
   // Запись — повод написать организатору: роль host готовит черновик, человек его отправляет. Ответа роли не ждём.
-  afterCommit(db, (db) => recordHostLead(db, external_id));
+  // Повторное нажатие ничего не добавило — и повода нет.
+  if (added.length) afterCommit(db, (db) => recordHostLead(db, external_id));
   return item;
 }
 
@@ -727,6 +730,8 @@ function assertFeature(actor: User, feature: Feature) {
 // Считаются все события организатора за всё время, включая подтверждённые из собранных.
 async function assertCanCreate(tx: Tx, actor: User) {
   assertFeature(actor, 'event_create');
+  // Строка пользователя под замком: два параллельных создания на границе лимита иначе оба насчитали бы «ещё можно».
+  await tx.select({ id: users.id }).from(users).where(eq(users.id, actor.id)).for('update');
   const [mine] = await tx.select({ n: count() }).from(events).where(eq(events.user_id, actor.id));
   if (mine!.n >= settings.freeEventsLimit) throw new AppError('events_limit', 403);
 }
@@ -741,6 +746,11 @@ export async function claimCollectedEvent(db: Db, actor: User, slug: string): Pr
     if (!row || !CLAIMABLE.includes(row.status)) throw new AppError('not_found', 404);
     if (row.claimed_event_id) throw new AppError('already_claimed', 409);
     if (!actor.username || row.telegram_username !== actor.username.toLowerCase()) throw new AppError('forbidden', 403);
+    // Username в Telegram освобождается и достаётся другому: если сборщик уже знает организатора по числовому id или
+    // профиль подтвердил другой пользователь, одного совпадения имени мало.
+    const [host] = await tx.select({ telegram_id: hosts.telegram_id, user_id: hosts.user_id }).from(hosts).where(eq(hosts.username, row.telegram_username));
+    if (host?.user_id && host.user_id !== actor.id) throw new AppError('forbidden', 403);
+    if (host?.telegram_id && host.telegram_id !== (await telegramIdOf(tx as unknown as Db, actor.id))) throw new AppError('forbidden', 403);
 
     // Лимит бесплатных событий здесь не проверяется: подтверждение — вход организатора в Ясвами, а не новое событие.
     // По той же причине не нужна и возможность создавать события: подтвердивший её получает — дальше он создаёт сам.
@@ -881,11 +891,11 @@ export const deleteSelf = (db: Db, actor: User): Promise<void> =>
     if (gone.length) await tx.update(events).set({ rev: sql`${events.rev} + 1` }).where(inArray(events.id, gone.map((g) => g.event_id)));
     const [hosted] = await tx.select({ n: count() }).from(events).where(eq(events.user_id, id));
     if (!hosted!.n) return void (await tx.delete(users).where(eq(users.id, id))); // остальное уходит каскадом
-    await tx.update(users).set({ first_name: DELETED_USER_NAME, username: null, features: [] }).where(eq(users.id, id));
+    await tx.update(users).set({ first_name: DELETED_USER_NAME, username: null, features: [], city_id: null, muted_notifications: [] }).where(eq(users.id, id));
     await tx.update(hosts).set({ user_id: null }).where(eq(hosts.user_id, id));
     await tx.delete(contacts).where(or(eq(contacts.user_id, id), eq(contacts.host_user_id, id)));
     // То же, что сделал бы каскад при удалении строки.
-    for (const t of [apiTokens, userIdentities, photos, collectedEventSignups, practiceSignups, visits, eventFeedback]) await tx.delete(t).where(eq(t.user_id, id));
+    for (const t of [apiTokens, userIdentities, photos, collectedEventSignups, practiceSignups, visits, eventFeedback, subscriptions, userActivity]) await tx.delete(t).where(eq(t.user_id, id));
   });
 
 /** `city_id` передаёт только команда (admin/events.ts): в схемах организатора его нет, его событие получает город по умолчанию. */
@@ -893,6 +903,7 @@ export async function createEvent(db: Db, actor: User, input: EventCreateInput &
   const view = await db.transaction(async (tx) => {
     await assertCanCreate(tx, actor);
     await assertCity(tx, input.city_id);
+    assertEndsAfterStart(input.start_at, input.end_at);
     const id = newEventId();
     const { ticket_types, ...fields } = input;
     await tx.insert(events).values({
@@ -907,11 +918,17 @@ export async function createEvent(db: Db, actor: User, input: EventCreateInput &
   return { ...view, cover_pending: requestEventCover(db, view.event) };
 }
 
+/** Конец события не раньше начала: иначе событие «закончилось» до того, как началось, и пропадает из ленты. */
+function assertEndsAfterStart(start: string | Date, end: string | Date | null | undefined) {
+  if (end && new Date(end).getTime() < new Date(start).getTime()) throw new AppError('ends_before_start', 400);
+}
+
 export async function updateEvent(db: Db, actor: User, id: string, input: EventUpdateInput & { city_id?: string }): Promise<EventView> {
   return db.transaction(async (tx) => {
-    await findHostedEvent(tx, actor, id);
+    const current = await findHostedEvent(tx, actor, id);
     await assertCity(tx, input.city_id);
     const { start_at, end_at, ...rest } = input;
+    assertEndsAfterStart(start_at ?? current.start_at, end_at === undefined ? current.end_at : end_at);
     await tx
       .update(events)
       .set({

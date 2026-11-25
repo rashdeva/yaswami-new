@@ -65,6 +65,14 @@ test('сборщик: события, источники и отметки', asy
   const [known] = await store.upcoming();
   assert.deepEqual([known.external_id, known.event.price, known.status, known.has_cover], [external_id, '100k', 'pending', false]);
   assert.equal((await sql`select telegram_username from collected_events`)[0]!.telegram_username, 'anna_yoga', 'контакт — без @ и в нижнем регистре');
+  // Команда поправила событие посреди прохода: дополнение по снятой в начале версии её правку не затирает.
+  assert.ok(await store.upsert({ ...row, event: { ...event, price: '100k', place: 'Пляж' }, loaded_at: known.loaded_at }), 'версия та же — пишем');
+  const [fresh] = await store.upcoming();
+  await sql`update collected_events set event = event || '{"title":"Йога (правка)"}', updated_at = now() where external_id = ${external_id}`;
+  assert.equal(await store.upsert({ ...row, event: { ...event, price: '200k' }, loaded_at: fresh.loaded_at }), null, 'строку поменяли — пропуск');
+  const [edited] = await store.upcoming();
+  assert.deepEqual([edited.event.title, edited.event.price, edited.event.place], ['Йога (правка)', '100k', 'Пляж']);
+  await store.upsert({ ...row, event: { ...event, price: '100k' }, loaded_at: edited.loaded_at }); // остальной тест — на прежнем событии
 
   await store.setStats('telegram:danang/42#', { views: 100, reactions: 5 });
   await store.saveCover(external_id, 'telegram:danang/42', { url: 'https://media.test/covers/collected/danang-42-0-ab.jpg' });

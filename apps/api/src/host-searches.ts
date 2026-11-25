@@ -1,6 +1,6 @@
 // Запросы организатора и Находки по ним (CONTEXT.md). Ищет сборщик (apps/collector, lead.mjs и search.ts в extract):
 // здесь только то, что делает сам организатор. Писать найденным людям он будет сам — мы им не пишем.
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchMatchListInput, HostSearchUpdateInput, User } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import { hostSearches, hostSearchMatches, hosts, practices } from './db/schema.ts';
@@ -15,6 +15,9 @@ async function ownHost(db: Db, actor: User): Promise<string> {
 
 async function ownSearch(db: Db, actor: User, id: string): Promise<HostSearch> {
   const hostId = await ownHost(db, actor);
+  // Каждый Запрос — вызов ИИ у сборщика (ключевые слова) и проверка каждого нового анонса: число ограничено.
+  const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(hostSearches).where(eq(hostSearches.host_id, hostId));
+  if (n >= HOST_SEARCHES_MAX) throw new AppError('too_many_searches', 409);
   const [search] = await db.select().from(hostSearches).where(and(eq(hostSearches.id, id), eq(hostSearches.host_id, hostId)));
   if (!search) throw new AppError('not_found', 404);
   return search;
@@ -43,8 +46,14 @@ export async function listHostSearches(db: Db, actor: User): Promise<HostSearchL
   return { entries };
 }
 
+/** Сколько Запросов может быть у одного организатора. В Luma такого нет. */
+export const HOST_SEARCHES_MAX = 20;
+
 export async function createHostSearch(db: Db, actor: User, input: HostSearchCreateInput): Promise<HostSearch> {
   const hostId = await ownHost(db, actor);
+  // Каждый Запрос — вызов ИИ у сборщика (ключевые слова) и проверка каждого нового анонса: число ограничено.
+  const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(hostSearches).where(eq(hostSearches.host_id, hostId));
+  if (n >= HOST_SEARCHES_MAX) throw new AppError('too_many_searches', 409);
   const [search] = await db.insert(hostSearches).values({ host_id: hostId, query: input.query }).returning();
   return search!;
 }

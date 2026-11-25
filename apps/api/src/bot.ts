@@ -7,6 +7,7 @@ import { touchUser, upsertUser } from './auth.ts';
 import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { writing } from './live.ts';
+import { windowCounter } from './limits.ts';
 import { saveBotMedia } from './media.ts';
 import { collectedUrl } from './notifications.ts';
 import { cityOf, getCollectedEvent, getEvent, listEvents, myCollectedEvents } from './services.ts';
@@ -42,16 +43,15 @@ async function sendWelcome(chatId: number): Promise<void> {
   if (!photo.ok) await bot.send('sendMessage', { ...body, text: REPLIES.welcome });
 }
 
+// Лимиты на одного человека. Флуд отсекается до любой работы: каждое сообщение — запись в базу, а вложение ещё и
+// загрузка в бакет и расшифровка (Groq, общий ключ). Сверх лимита — одно «подождите» на окно, остальное молча:
+// ответ на каждое лишнее сообщение сам занимал бы очередь отправки.
+const inbound = windowCounter<number>(60_000);
+const mediaToday = windowCounter<number>(86_400_000);
 // Ответ роли стоит запроса к ИИ: один человек не должен выбрать все.
-// ponytail: счётчик в памяти процесса; второй экземпляр API — считать в базе.
-const recent = new Map<number, number[]>();
-function tooOften(userId: number): boolean {
-  const times = (recent.get(userId) ?? []).filter((t) => Date.now() - t < 60_000);
-  if (times.length >= settings.botMessagesPerMinute) return true;
-  if (recent.size > 10_000) recent.clear();
-  recent.set(userId, [...times, Date.now()]);
-  return false;
-}
+const asked = windowCounter<number>(60_000);
+/** Для тестов: обнулить счётчики. */
+export const resetBotLimits = () => { inbound.clear(); mediaToday.clear(); asked.clear(); };
 
 const RSVP_WORDS = { approved: 'идёт', maybe: 'думает', declined: 'не идёт', waitlist: 'в листе ожидания' } as const;
 
@@ -153,13 +153,19 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   if (await handleFeedbackCallback(db, update)) return; // оценка события кнопкой под карточкой
   const m = parseIncoming(update);
   if (!m) return;
+  const n = inbound.hit(m.from.id);
+  if (n > settings.botInboundPerMinute) {
+    if (n === settings.botInboundPerMinute + 1) await bot.send('sendMessage', { chat_id: m.chatId, text: REPLIES.too_often });
+    return;
+  }
   // Любое сообщение боту, в том числе /start, заводит пользователя: вместе с ним сохраняется его аватар.
   // Новый человек пришёл через бота; хвост `/start <параметр>` — ссылка t.me/<бот>?start=…, с которой он пришёл.
   const actor = await upsertUser(db, m.from, { joined_via: 'bot', start_param: /^\/start\s+(\S+)/.exec(m.text)?.[1] ?? null });
   await touchUser(db, actor.id);
   // Голосовое, видео, фото — в бакет, речь в расшифровку: роль читает переписку текстом. Занимает секунды, поэтому до записи
   // в переписку: иначе админка покажет голосовое без плеера, а роль спросят раньше, чем готова расшифровка.
-  const media = m.file ? [await saveBotMedia(m.file, m.chatId)] : undefined;
+  // Вложений сверх дневного лимита не сохраняем: сообщение останется в переписке без них.
+  const media = m.file && mediaToday.hit(m.from.id) <= settings.botMediaPerDay ? [await saveBotMedia(m.file, m.chatId)] : undefined;
   const conversation = await recordIncoming(db, m, media);
   const said = m.text || (media ?? []).map((f) => f.transcript).filter(Boolean).join('\n'); // голосовое — его расшифровка
   // Бот не смог ответить — повод нам заглянуть в диалог.
@@ -184,7 +190,8 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   // Всё остальное ведёт роль поддержки. Её нет, она недоступна — отвечаем, что вернёмся, и диалог ждёт нас.
   const allowed = !settings.supportUserIds.length || settings.supportUserIds.includes(m.from.id);
   if (!settings.supportUrl || !allowed) return say(REPLIES.unavailable);
-  if (tooOften(m.from.id)) return say(REPLIES.too_often);
+  const k = asked.hit(m.from.id);
+  if (k > settings.botMessagesPerMinute) return k === settings.botMessagesPerMinute + 1 ? say(REPLIES.too_often) : undefined;
   const history = [await supportContext(db, actor), ...(await supportHistory(db, conversation.id))];
   // Ответ пишется у человека на глазах (живой ответ) и у нас в админке (live.ts).
   const reply = await writing(conversation.id, 'support', (live) =>

@@ -56,7 +56,8 @@ export function rsvp(a: RsvpArgs): RsvpResult {
   if (prev && prev.approval_status === approval_status && prev.event_ticket_type_id === event_ticket_type_id && prev.plus_ones === plus_ones) {
     return { ok: true, event, guests, guest: prev, changed: false };
   }
-  const guest: Guest = { event_id: event.id, user_id, approval_status, event_ticket_type_id, plus_ones, registered_at: now };
+  // registered_at — когда гость впервые ответил (как в Luma): смена ответа не переносит его в конец списка.
+  const guest: Guest = { event_id: event.id, user_id, approval_status, event_ticket_type_id, plus_ones, registered_at: prev?.registered_at ?? now };
   return { ok: true, event: { ...event, rev: event.rev + 1 }, guests: [...others, guest], guest, changed: true };
 }
 

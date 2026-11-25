@@ -12,10 +12,17 @@ export interface BotResult {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const QUEUE_MAX = 1000;
-let tail: Promise<unknown> = Promise.resolve();
+const CHAT_QUEUE_MAX = 20; // один чат не может занять всю очередь
 let queued = 0;
-let lastSent = 0;
-const lastSentTo = new Map<number, number>();
+let nextGlobal = 0; // когда можно отправлять следующее сообщение с бота, в любой чат
+const tails = new Map<number, { tail: Promise<unknown>; queued: number; lastSent: number }>();
+
+/** Ждёт своей очереди в общем лимите бота: каждое сообщение бронирует следующий свободный момент. */
+async function globalSlot(): Promise<void> {
+  const at = Math.max(Date.now(), nextGlobal);
+  nextGlobal = at + bot.pace.globalMs;
+  if (at > Date.now()) await sleep(at - Date.now());
+}
 
 /** Настройки бота. Заполняет main.ts; тесты подменяют `call`. Без токена ничего не отправляется. */
 export const bot = {
@@ -44,26 +51,35 @@ export const bot = {
    * и повторяет один раз. Всё, что бот пишет людям, идёт отсюда, а не через `call`, и попадает в переписку;
    * `author` — от чьего имени сообщение: `bot` или `admin:<id>`. `chat_id` — Telegram id, а не users.id: пользователю
    * его даёт `telegramIdOf` (auth.ts), у кого его нет — тому бот не пишет (ADR-0008).
-   * ponytail: очередь одна и в памяти — сообщение в «занятый» чат задерживает остальных на секунду, перезапуск
-   * теряет неотправленное. Очереди по чатам или pgmq — когда уведомлений станет много.
+   * Очередь у каждого чата своя: флуд или 429 в одном чате не задерживают сообщения другим людям. Общий лимит бота
+   * держит `globalSlot`.
+   * ponytail: очереди в памяти — перезапуск теряет неотправленное; pgmq — когда уведомлений станет много.
    */
   send(method: string, body: { chat_id: number; [field: string]: unknown }, author = 'bot'): Promise<BotResult> {
-    if (queued >= QUEUE_MAX) return Promise.resolve({ ok: false, description: 'send queue is full' });
+    const chat = tails.get(body.chat_id) ?? { tail: Promise.resolve(), queued: 0, lastSent: 0 };
+    if (queued >= QUEUE_MAX || chat.queued >= CHAT_QUEUE_MAX) return Promise.resolve({ ok: false, description: 'send queue is full' });
     queued++;
-    const delivered = tail.then(async () => {
-      const wait = Math.max(lastSent + bot.pace.globalMs, (lastSentTo.get(body.chat_id) ?? 0) + bot.pace.chatMs) - Date.now();
+    chat.queued++;
+    tails.set(body.chat_id, chat);
+    const delivered = chat.tail.then(async () => {
+      const wait = chat.lastSent + bot.pace.chatMs - Date.now();
       if (wait > 0) await sleep(wait);
+      await globalSlot();
       let result = await bot.call(method, body);
       if (result.error_code === 429) {
         await sleep(Math.min(result.parameters?.retry_after ?? 1, bot.pace.retryAfterMaxS) * 1000);
+        await globalSlot();
         result = await bot.call(method, body);
       }
-      lastSent = Date.now();
-      if (lastSentTo.size > 10_000) lastSentTo.clear();
-      lastSentTo.set(body.chat_id, lastSent);
+      chat.lastSent = Date.now();
       return result;
     });
-    tail = delivered.catch(() => {});
+    chat.tail = delivered.catch(() => {});
+    const done = () => {
+      queued--;
+      // Чат без очереди и давно без сообщений — забываем, чтобы карта не росла.
+      if (--chat.queued === 0) setTimeout(() => { if (!chat.queued && tails.get(body.chat_id) === chat) tails.delete(body.chat_id); }, bot.pace.chatMs).unref();
+    };
     // Запись в переписку очередь не задерживает: следующее сообщение уходит, не дожидаясь базы.
     // Сбой записи не должен ронять отправку.
     const run = delivered
@@ -71,7 +87,7 @@ export const bot = {
         await bot.log?.(method, body, result, author).catch(console.error);
         return result;
       })
-      .finally(() => queued--);
+      .finally(done);
     return run;
   },
 };

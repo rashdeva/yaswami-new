@@ -1,13 +1,13 @@
 // Тесты на настоящем Postgres (нужен `pnpm db:up`). Работают в отдельной базе yaswami_test_<checkout>, рабочую не трогают.
 import assert from 'node:assert/strict';
 import { createDecipheriv, createHash, createHmac, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
-import { after, before, mock, test } from 'node:test';
+import { after, before, beforeEach, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import type { AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Me, Message, Practice, PracticeSignup, PracticeSubmission, AdminProduct, AdminProductList, ProductSubmission, ProductItem, ProductList, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
-import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
+import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, resetBotLimits, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
 import { bot } from './telegram.ts';
 import type { CollectedEvent } from '@yaswami/core';
@@ -31,11 +31,11 @@ import sharp from 'sharp';
 import { transcriber } from './media.ts';
 import type { SupportTurn } from './support.ts';
 import { curator, host, hunter, illustrator, librarian, parseIllustration, parseSupportReply, support, verifyTicket } from './support.ts';
-import { recordHostLead, recordLead } from './inbox.ts';
+import { recordHostLead, recordLead, resetAlerts } from './inbox.ts';
 import { requestCuration } from './curator.ts';
 import { requestLibrarian } from './librarian.ts';
 import { eventPage, feedPage, inject, sitemap } from './pages.ts';
-import { ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
+import { forgetKeys, ISSUER, safeReturn, verifyIdToken } from './web-login.ts';
 
 const BOT_TOKEN = '123456:test-token';
 const url = new URL(process.env.DATABASE_URL ?? 'postgres://yaswami:yaswami@localhost:5432/yaswami');
@@ -75,6 +75,11 @@ Object.assign(bot.pace, { globalMs: 0, chatMs: 0 });
 settings.featuresOn = ['event_create'];
 // Лимит запросов в минуту тестам мешал бы: один «пользователь» делает их сотни. Сам лимит проверяет тест «безопасность».
 settings.requestsPerMinute = Infinity;
+// Адрес тестового бакета (setBucket ниже): расшифровка качает вложения только оттуда.
+process.env.MEDIA_PUBLIC_URL = 'https://media.test';
+Object.assign(settings, { ipRequestsPerMinute: Infinity, ipCostlyPerMinute: Infinity, botInboundPerMinute: Infinity, botMediaPerDay: Infinity });
+// Каждый тест начинает с чистых счётчиков: оповещение о диалоге и ключи подписи не переходят из теста в тест.
+beforeEach(() => { resetAlerts(); forgetKeys(); resetBotLimits(); });
 // Ключ шифрования шагов входа в наши аккаунты Telegram: без него API код и пароль не принимает.
 settings.accountsKey = 'ab'.repeat(32);
 
@@ -1469,8 +1474,13 @@ test('переписка: бот пишет всё в базу, админ от�
   support.ask = async () => null;
   assert.deepEqual(await write('Алло?'), [REPLIES.unavailable]);
   // Не больше нескольких сообщений роли в минуту от одного человека: каждый ответ — запрос к ИИ.
+  // Сверх лимита — одно «подождите» на окно, дальше молча: ответ на каждое лишнее сообщение занимал бы очередь.
   settings.botMessagesPerMinute = 1;
+  resetBotLimits();
+  support.ask = async () => ({ text: 'Ответ', events: [], human: null });
+  assert.deepEqual(await write('Первый вопрос'), ['Ответ']);
   assert.deepEqual(await write('Ещё вопрос'), [REPLIES.too_often]);
+  assert.deepEqual(await write('И ещё'), []);
   settings.botMessagesPerMinute = perMinute;
   support.ask = ask;
   settings.supportUrl = '';

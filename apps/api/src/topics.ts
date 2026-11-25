@@ -8,6 +8,7 @@ import { topics } from './db/schema.ts';
 import { AppError, imageBytes } from './services.ts';
 import { settings } from './settings.ts';
 import { illustrator } from './support.ts';
+import { MAX_INPUT_PIXELS } from './photos.ts';
 
 /** Колонки темы без самой иконки: она тяжёлая и нужна только своему маршруту. */
 export const topicFields = {
@@ -48,7 +49,7 @@ const WHITE = 238; // светлее — считаем фоном
  * просить у генератора прозрачный фон или убирать фон моделью.
  */
 export async function toTopicIcon(image: Buffer): Promise<Buffer> {
-  const { data, info } = await sharp(image).rotate()
+  const { data, info } = await sharp(image, { limitInputPixels: MAX_INPUT_PIXELS }).rotate()
     .resize(ICON_SIDE, ICON_SIDE, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } }).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
     .catch(() => { throw new AppError('bad_image', 400); });
   const { width: w, height: h } = info;

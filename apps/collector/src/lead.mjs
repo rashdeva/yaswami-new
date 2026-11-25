@@ -22,6 +22,7 @@ const ACTIVITY = /(?<![а-яёa-z])(мероприят|вечеринк|тусо
 export const looksLikeLead = (text) =>
   text.length >= 8 && text.length <= 300 && (ASKS.test(text) || (text.includes('?') && ACTIVITY.test(text)));
 
+import { messageUrl } from './address.mjs';
 import { pickOffers } from './offers.mjs';
 
 // Чем занимается человек: первое совпавшее слово — тема (по корню).
@@ -84,7 +85,7 @@ function aboutMessage(chat, msg) {
     sent_at: new Date(msg.date * 1000).toISOString(),
     chat,
     message_id: msg.id,
-    url: /^-?\d+$/.test(chat) ? `https://t.me/c/${chat.replace(/^-100/, '')}/${msg.id}` : `https://t.me/${chat}/${msg.id}`,
+    url: messageUrl(chat, msg.id),
     author: { id: Number(sender.id), name: [sender.firstName, sender.lastName].filter(Boolean).join(' ') || String(sender.id), username: sender.username ?? null },
     text: msg.message.slice(0, 1000),
   };

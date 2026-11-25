@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
     branches: [main]
+# Проверке нужно только читать код: токен GITHUB_TOKEN без прав на запись, даже если шаг или зависимость окажутся чужими.
+permissions:
+  contents: read
 jobs:
   check:
     runs-on: ubuntu-latest

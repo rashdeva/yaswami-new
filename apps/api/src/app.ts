@@ -19,11 +19,12 @@ import { handleUpdate } from './bot.ts';
 import type { Db } from './db/client.ts';
 import type { TokenScope } from './db/schema.ts';
 import {
-  adminOverview, createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, listAccounts, logSent, recordAccountMessage, recordAccountTyping, recordLead, rejectDraft,
+  adminOverview, createAccount, isAdmin, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, listAccounts, logSent, recordAccountMessage, recordAccountTyping, recordLead, rejectDraft,
   requireAdmin, sendDraft, submitAccountLogin, updateAccount, updateDraft,
 } from './inbox.ts';
 import type { LiveEvent } from './live.ts';
 import { live } from './live.ts';
+import { clientIp, windowCounter } from './limits.ts';
 import { createPractice, createProduct } from './maker.ts';
 import { handleMcp } from './mcp.ts';
 import { getPhoto } from './photos.ts';
@@ -54,18 +55,21 @@ interface Options {
 const BODY_MAX = 8 * 1024 * 1024;
 
 // Сколько запросов в минуту делает один вошедший человек или токен: защита от перебора и от раздувания базы.
-// ponytail: счётчик в памяти процесса и только для вошедших; второй экземпляр API или наплыв анонимных запросов
-// к витрине — считать на прокси (Cloudflare) или в базе.
-const hits = new Map<number, { since: number; n: number }>();
-function tooMany(userId: number, now = Date.now()): boolean {
-  const hit = hits.get(userId);
-  if (hit && now - hit.since < 60_000) return ++hit.n > settings.requestsPerMinute;
-  if (hits.size > 10_000) hits.clear();
-  hits.set(userId, { since: now, n: 1 });
-  return false;
-}
+const hits = windowCounter<number>(60_000);
+// До входа человека не знаем — считаем по адресу. Лимит щедрый: за одним адресом мобильного оператора сидит много людей.
+// Поиск и вход дороже остальных (полный перебор каталога, ключи Telegram, Apple и Google) — у них лимит свой, строже.
+const ipHits = windowCounter<string>(60_000);
+const ipCostly = windowCounter<string>(60_000);
+const COSTLY = /^\/(search|auth)(\/|$)/;
+/** Для тестов: обнулить счётчики запросов. */
+export const resetRequestLimits = () => { hits.clear(); ipHits.clear(); ipCostly.clear(); };
 
-interface Env { Variables: { actor: User; method: AuthMethod; scope: TokenScope | null } }
+interface Env { Variables: { actor: User; method: AuthMethod; scope: TokenScope | null; signedAt: number | null } }
+
+// Токен из POST /tokens: живёт полгода, и выпускается только по initData не старше десяти минут — утёкший заголовок
+// мини-приложения (он действует сутки) не превращается в вечный токен.
+const USER_TOKEN_TTL_S = 180 * 24 * 60 * 60;
+const TOKEN_LOGIN_MAX_AGE_MS = 10 * 60_000;
 
 /** Кто действует в админке — для журнала (audit.ts). */
 const ctx = (c: { var: { actor: User } }): Ctx => ({ actor: c.var.actor, via: 'admin' });
@@ -123,6 +127,16 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       if (e instanceof SyntaxError) return c.json({ error: 'invalid_json' }, 400);
       console.error(e);
       return c.json({ error: 'internal' }, 500);
+    })
+    .use(async (c, next) => {
+      // Вебхук и сборщик приходят со своих адресов и закрыты секретом; фото — дешёвые и кэшируются навсегда.
+      const path = c.req.path.replace(/^\/api(?=\/)/, ''); // main.ts вешает API под /api
+      if (/^\/(health|telegram\/webhook|internal\/|photos\/)/.test(path)) return next();
+      const ip = clientIp((name) => c.req.header(name));
+      const tooMuch = ipHits.hit(ip) > settings.ipRequestsPerMinute
+        || (COSTLY.test(path) && ipCostly.hit(ip) > settings.ipCostlyPerMinute);
+      if (tooMuch) return c.json({ error: 'too_many_requests' }, 429, { 'Retry-After': '60' });
+      await next();
     })
     .get('/health', (c) => c.text('ok'))
     .get('/config', (c) => c.json({ bot_username: null, app_name: 'app', ...config, web_login, free_events_limit: settings.freeEventsLimit } satisfies AppConfig))
@@ -182,13 +196,21 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .use(async (c, next) => {
       const auth = await authenticate(db, botToken, c.req.header('authorization'), getCookie(c, SESSION_COOKIE));
       if (!auth) return c.json({ error: 'unauthorized' }, 401, { 'WWW-Authenticate': 'Bearer' });
-      if (tooMany(auth.user.id)) return c.json({ error: 'too_many_requests' }, 429, { 'Retry-After': '60' });
+      if (hits.hit(auth.user.id) > settings.requestsPerMinute) return c.json({ error: 'too_many_requests' }, 429, { 'Retry-After': '60' });
       c.set('actor', auth.user);
       c.set('method', auth.method);
       c.set('scope', auth.scope);
+      c.set('signedAt', auth.signedAt ?? null);
       await next();
     })
-    .all('/mcp', (c) => handleMcp(db, c.var.actor, c.req.raw, c.var.scope))
+    .all('/mcp', async (c) => {
+      // Пакет JSON-RPC — до сотни вызовов за один запрос мимо лимита запросов. Пакеты убраны из MCP (2025-06-18),
+      // нашим клиентам они не нужны.
+      if (c.req.method === 'POST' && Array.isArray(await c.req.raw.clone().json().catch(() => null))) {
+        return c.json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'batch requests are not supported' } }, 400);
+      }
+      return handleMcp(db, c.var.actor, c.req.raw, c.var.scope);
+    })
     // Токен с областью действия (роль Hermes) — только для MCP: в REST ему нечего делать.
     .use(async (c, next) => {
       if (c.var.scope) throw new s.AppError('forbidden', 403);
@@ -253,7 +275,11 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       send({ event: 'typing', data: live.typing() });
       const off = live.subscribe(send);
       // Прокси Railway рвёт соединение, по которому долго ничего не идёт, — шлём пустой комментарий.
-      const ping = setInterval(() => void stream.write(': ping\n\n').catch(() => {}), LIVE_PING_MS);
+      // Заодно проверяем, что человек ещё в команде: соединение живёт часами, а право на него могли снять.
+      const ping = setInterval(() => {
+        void stream.write(': ping\n\n').catch(() => {});
+        void isAdmin(db, c.var.actor).then((ok) => ok || stream.abort(), () => {});
+      }, LIVE_PING_MS);
       await new Promise<void>((resolve) => stream.onAbort(() => {
         clearInterval(ping);
         off();
@@ -378,7 +404,8 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     // Выпустить токен можно только из мини-приложения: утёкший токен не должен плодить новые.
     .post('/tokens', async (c) => {
       if (c.var.method !== 'telegram') throw new s.AppError('forbidden', 403);
-      return c.json({ token: await issueToken(db, c.var.actor.id) }, 201);
+      if (Date.now() - (c.var.signedAt ?? 0) > TOKEN_LOGIN_MAX_AGE_MS) throw new s.AppError('login_too_old', 401);
+      return c.json({ token: await issueToken(db, c.var.actor.id, { ttlS: USER_TOKEN_TTL_S }) }, 201);
     })
     .delete('/tokens', async (c) => {
       await revokeTokens(db, c.var.actor.id);

@@ -58,10 +58,12 @@ const KINDS: Record<AdminEntity, Kind> = {
   collected_event: {
     root: collectedEvents, key: collectedEvents.external_id, toKey: (id) => collectedExternalId(id),
     // Отклик на публикацию сборщик обновляет каждый проход: в снимке он делал бы любую отмену «изменено с тех пор».
-    omit: ['views', 'reactions', 'published_at'], // published_at ставит сводка подписчикам
+    // published_at ставит сводка подписчикам; updated_at сдвигает каждое обновление сборщиком.
+    omit: ['views', 'reactions', 'published_at', 'updated_at'],
     children: { cover: photos.collected_external_id, signups: collectedEventSignups.external_id },
   },
-  host: { root: hosts, key: hosts.id, children: { photos: photos.host_id, practices: practices.host_id, practice_signups: practiceSignups.host_id, host_searches: hostSearches.host_id, products: products.host_id } },
+  // Когда сборщик смотрел профиль и фото — его отметки, они меняются сами по себе и отмену не касаются.
+  host: { root: hosts, key: hosts.id, omit: ['profiled_at', 'photos_checked_at'], children: { photos: photos.host_id, practices: practices.host_id, practice_signups: practiceSignups.host_id, host_searches: hostSearches.host_id, products: products.host_id } },
   // Аватар не входит: он подтянется из Telegram при следующем входе. Токены не входят никогда. Приход (user_activity)
   // не входит: last_seen_at меняется на каждом заходе, и любая отмена отвечала бы «изменено с тех пор»; после отмены
   // удаления приход неизвестен, последний заход появится со следующим входом.
@@ -73,7 +75,8 @@ const KINDS: Record<AdminEntity, Kind> = {
   conversation: { root: conversations, key: conversations.id },
   message: { root: messages, key: messages.id },
   contact: { root: contacts, key: contacts.id },
-  source: { root: sources, key: sources.channel },
+  // Счётчик пустых разборов ведёт сборщик каждый проход.
+  source: { root: sources, key: sources.channel, omit: ['empty_parses'] },
   // Иконку рисует иллюстратор сам по себе, и она тяжёлая: в снимок не входит, отмена её не трогает.
   topic: { root: topics, key: topics.name, omit: ['icon', 'icon_at', 'icon_tries'] },
   city: { root: cities, key: cities.id },

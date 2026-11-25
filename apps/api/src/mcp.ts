@@ -76,8 +76,10 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
             : await admin.actAsUser(db, ctx, name, as_user_id, a, (tx, me) => run(a, me, tx));
           return { content: [{ type: 'text' as const, text: JSON.stringify(result ?? { ok: true }) }] };
         } catch (e) {
-          if (!(e instanceof s.AppError)) throw e;
-          return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: e.code }) }] };
+          // Чужая ошибка (база, сеть) — в лог, наружу только `internal`: текст ошибки Drizzle несёт SQL и его параметры.
+          if (!(e instanceof s.AppError) && !(e instanceof z.ZodError)) console.error(`mcp ${name}:`, e);
+          const body = e instanceof s.AppError ? { error: e.code } : e instanceof z.ZodError ? { error: 'invalid_input', issues: e.issues } : { error: 'internal' };
+          return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(body) }] };
         }
       }) as never,
     );
@@ -260,7 +262,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
   const SOURCES_ADD = `Suggest a channel the collector should read announcements from: a public Telegram channel (@username or t.me link) or an Instagram profile (instagram.com/<handle>). It is not read until the team approves it; when approved, the bot tells the person. Call only when the person asks to add a channel. Errors: sources_limit — the person already suggested ${SOURCES_PER_DAY} sources in the last 24 hours, try tomorrow; source_exists — we already know this channel (it is read, waits for a decision or was declined); channel_not_found — no public Telegram chat with this username; not_a_channel — it is a group, chat or bot, only channels are accepted; invalid_input — neither a Telegram channel nor an Instagram profile; city_not_found.`;
   tool('sources_add', {
     title: 'Suggest an announcement source', asUser: true, shape: SourceAddInput.shape, description: SOURCES_ADD,
-  }, (a, me) => addSource(db, me, a));
+  }, (a, me, db) => addSource(db, me, a)); // db — транзакция журнала, когда команда предлагает от имени человека
 
   // Операции команды над всем сервисом — только тем, кому открыта админка: через них работают Hermes и оператор.
   // Каждое изменение пишется в журнал (admin_actions_list) и, если можно, отменяется admin_actions_undo.

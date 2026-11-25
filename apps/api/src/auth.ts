@@ -178,7 +178,7 @@ export type AuthMethod = 'telegram' | 'token';
 /** Заголовок `Authorization: tma <initData>` или `Authorization: Bearer <токен>`; без заголовка — токен из cookie сайта. */
 export async function authenticate(
   db: Db, botToken: string, header: string | undefined, cookieToken?: string,
-): Promise<{ user: User; method: AuthMethod; scope: TokenScope | null } | null> {
+): Promise<{ user: User; method: AuthMethod; scope: TokenScope | null; signedAt?: number } | null> {
   const [scheme, value] = (header ?? (cookieToken ? `Bearer ${cookieToken}` : '')).split(/\s+(.*)/s);
   if (!value) return null;
   if (scheme === 'tma') {
@@ -188,7 +188,8 @@ export async function authenticate(
     // Подпись проверена — start_param тоже от Telegram: с ним человек открыл мини-приложение.
     const user = await upsertUser(db, tg, { joined_via: 'mini_app', start_param: new URLSearchParams(value).get('start_param') });
     await touchUser(db, user.id);
-    return { user, method: 'telegram', scope: null };
+    // Когда Telegram подписал initData: для выпуска токена нужна свежая подпись (app.ts, POST /tokens).
+    return { user, method: 'telegram', scope: null, signedAt: Number(new URLSearchParams(value).get('auth_date')) * 1000 };
   }
   if (scheme?.toLowerCase() === 'bearer' && value.startsWith(TOKEN_PREFIX)) {
     const found = await userByToken(db, value);
