@@ -62,12 +62,17 @@ const safely = (fn: () => void) => {
     // старый клиент или десктоп без вибрации
   }
 };
+let lastHaptic = 0;
+const buzz = (fn: () => void) => {
+  lastHaptic = Date.now();
+  safely(fn);
+};
 // нажатие — лёгкий удар, результат — «успех» или «ошибка»
 export const haptic = {
-  tap: () => safely(() => tg?.HapticFeedback.impactOccurred('light')),
-  select: () => safely(() => tg?.HapticFeedback.selectionChanged()), // переключение вкладки, выбор из списка
-  success: () => safely(() => tg?.HapticFeedback.notificationOccurred('success')),
-  error: () => safely(() => tg?.HapticFeedback.notificationOccurred('error')),
+  tap: () => buzz(() => tg?.HapticFeedback.impactOccurred('light')),
+  select: () => buzz(() => tg?.HapticFeedback.selectionChanged()), // переключение вкладки, выбор из списка
+  success: () => buzz(() => tg?.HapticFeedback.notificationOccurred('success')),
+  error: () => buzz(() => tg?.HapticFeedback.notificationOccurred('error')),
 };
 
 /** Тема: внутри Telegram — его собственная (может не совпадать с системной), в браузере — системная. */
@@ -108,10 +113,11 @@ export function syncFullscreen() {
   for (const e of ['safeAreaChanged', 'contentSafeAreaChanged', 'fullscreenChanged'] as const) safely(() => tg?.onEvent(e, apply));
 }
 
-// Хаптик на любое нажатие кнопки, ссылки или раскрывающегося блока — один раз, при касании. Успех/ошибка вызываются отдельно.
-document.addEventListener('pointerdown', (e) => {
+// Хаптик на любое нажатие кнопки, ссылки или раскрывающегося блока. Именно на click, не на pointerdown:
+// касание, которое оказалось скроллом или свайпом, click не даёт — и не вибрирует. Если обработчик уже дал свой хаптик, второй не нужен.
+document.addEventListener('click', (e) => {
   const el = (e.target as Element).closest('button, a[href], summary');
-  if (el && !(el as HTMLButtonElement).disabled) haptic.tap();
+  if (el && !(el as HTMLButtonElement).disabled && Date.now() - lastHaptic > 80) haptic.tap();
 });
 
 type Coords = { latitude: number; longitude: number };
