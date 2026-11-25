@@ -1,4 +1,5 @@
 // Все маршруты приложения. Страница здесь — тонкая связка: берёт адрес, вход и общие вещи layout и раздаёт экрану.
+import { useCallback } from 'react';
 import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect, useNavigate } from '@tanstack/react-router';
 import { App, Claims, useClaim, useLogout, useShell } from './App.tsx';
 import { startLogin } from './api.ts';
@@ -20,6 +21,7 @@ import { ListScreen } from './screens/ListScreen.tsx';
 import { ProfileScreen } from './screens/ProfileScreen.tsx';
 import { PeopleScreen } from './screens/PeopleScreen.tsx';
 import { SearchScreen } from './screens/SearchScreen.tsx';
+import { ShelfScreen } from './screens/ShelfScreen.tsx';
 import { startParam } from './tg.ts';
 
 const Spinner = () => <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>;
@@ -48,9 +50,25 @@ const app = createRoute({ getParentRoute: () => root, id: 'app', component: App 
 /** Витрина — главная и в Telegram, и на сайте; свои события — за аватаркой. */
 function FeedPage() {
   const navigate = useNavigate();
-  return <FeedScreen lead={<Claims />} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
+  return (
+    <FeedScreen
+      lead={<Claims />}
+      onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })}
+      onOpenShelf={(id) => void navigate({ to: '/s/$id', params: { id } })}
+    />
+  );
 }
 const feed = createRoute({ getParentRoute: () => app, path: '/', component: FeedPage });
+
+/** Полка витрины целиком (ADR-0009). Данные — из уже загруженной витрины. */
+function ShelfPage() {
+  const { id } = shelfRoute.useParams();
+  const navigate = useNavigate();
+  const { onBack } = useShell();
+  const gone = useCallback(() => void navigate({ to: '/', replace: true }), [navigate]);
+  return <ShelfScreen key={id} id={id} onBack={onBack} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} onGone={gone} />;
+}
+const shelfRoute = createRoute({ getParentRoute: () => app, path: '/s/$id', component: ShelfPage });
 
 function CollectedPage() {
   const { id } = collected.useParams();
@@ -248,7 +266,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, collected, hostsRoute, oldHostsRoute, hostRoute, jobsRoute, jobRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, collected, hostsRoute, oldHostsRoute, hostRoute, jobsRoute, jobRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 

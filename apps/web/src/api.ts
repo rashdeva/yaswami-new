@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, City, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, JobItem, JobList, JobListInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, RsvpInput, SearchResult, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
+import type { AppConfig, City, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, JobItem, JobList, JobListInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, RsvpInput, SearchResult, Showcase, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
 import { track } from './analytics.ts';
 import { inTelegram, tg } from './tg.ts';
 
@@ -68,6 +68,7 @@ export const api = {
   updateSelf: (input: UserSelfUpdateInput) => request<Me>('PATCH', '/me', input),
   logout: () => request<void>('POST', '/auth/logout'),
   collected: (city_id: string) => request<CollectedEventItem[]>('GET', `/collected-events?city_id=${encodeURIComponent(city_id)}`),
+  showcase: (city_id: string) => request<Showcase>('GET', `/showcase?city_id=${encodeURIComponent(city_id)}`),
   collectedEvent: (id: string) => request<CollectedEventItem>('GET', `/collected-events/${encodeURIComponent(id)}`),
   listHosts: (city_id: string) => request<HostListItem[]>('GET', `/hosts?city_id=${encodeURIComponent(city_id)}`),
   getHost: (id: string) => request<HostItem>('GET', `/hosts/${encodeURIComponent(id)}`),

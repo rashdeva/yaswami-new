@@ -39,6 +39,11 @@ export const settings = {
    */
   hostUrl: (process.env.HOST_URL ?? '').replace(/\/$/, ''),
   hostKey: process.env.HOST_KEY ?? '',
+  /** Роль curator в Hermes: раз в день собирает витрину города из полок (curator.ts, ADR-0009). Пусто — выключено. */
+  curatorUrl: (process.env.CURATOR_URL ?? '').replace(/\/$/, ''),
+  curatorKey: process.env.CURATOR_KEY ?? '',
+  /** Час по времени города, когда куратор собирает витрину на день. */
+  curatorHour: Number(process.env.CURATOR_HOUR ?? 7),
   /** Общий со сборщиком секрет: им он подписывает сообщения с аккаунтов Telegram. Пусто — приём закрыт. */
   collectorSecret: process.env.COLLECTOR_SECRET ?? '',
   /** Bundle id приложения для iOS: им Apple подписывает id_token (поле aud) при входе через Apple. */

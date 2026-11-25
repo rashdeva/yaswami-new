@@ -1,6 +1,6 @@
 // Выпуск токена из консоли, пока в мини-приложении и боте нет своей кнопки:
 //   pnpm api:token <telegram id> [имя] [область]
-// Область — для роли Hermes: support или catalog (TOKEN_SCOPES в db/schema.ts). Без неё токен может всё, что его владелец.
+// Область — для роли Hermes: support, catalog или curator (TOKEN_SCOPES в db/schema.ts). Без неё токен может всё, что его владелец.
 import { issueToken, upsertUser, userIdByTelegram } from './auth.ts';
 import { createDb } from './db/client.ts';
 import type { TokenScope } from './db/schema.ts';

@@ -124,6 +124,12 @@ export const host = {
   },
 };
 
+/** Роль curator (agents/curator): по заданию правит полки витрины через наш MCP и отвечает отчётом. Тесты подменяют `ask`. */
+export const curator = {
+  /** Отчёт роли о правках; null — роль недоступна. Сборка витрины — несколько вызовов инструментов, поэтому ждём дольше. */
+  ask: (task: string): Promise<string | null> => askRole(settings.curatorUrl, settings.curatorKey, [{ role: 'user', content: task }], 10 * 60_000),
+};
+
 /** Роль hunter (agents/hunter): по вопросу из чата пишет короткий ответ с событием. Тесты подменяют `ask`. */
 export const hunter = {
   /** Текст ответа; null — роль недоступна или решила не отвечать. */

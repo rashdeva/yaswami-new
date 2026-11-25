@@ -1,7 +1,7 @@
 // Клиент API админки: единственное место, где есть fetch. Формы запросов и ответов — из @yaswami/core.
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
-  AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminSource, AdminTopic, TopicCandidate, TopicCreateInput, TopicUpdateInput,
+  AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminShelf, AdminSource, AdminTopic, CollectedEventItem, ShelfCreateInput, ShelfUpdateInput, TopicCandidate, TopicCreateInput, TopicUpdateInput,
   AdminUser, AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, AdminJobList, AdminJobListInput, HostUpdateInput, Job, JobUpdateInput, Practice, PracticeUpdateInput, InboxConversation, SourceSearch, SourceSearchCreateInput, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
@@ -35,6 +35,11 @@ const MESSAGES: Record<string, string> = {
   topic_not_found: 'Нет темы, из которой выделяем',
   city_exists: 'Город с таким id уже есть',
   city_not_found: 'Такого города нет: добавьте его в «Городах»',
+  shelf_empty: 'У полки нет ни правила, ни событий',
+  shelf_locked: 'Полка закреплена командой: куратор её не меняет',
+  showcase_draft: 'Витрина города в режиме черновика: куратор только предлагает полки',
+  too_many_changes: 'Куратор исчерпал изменения витрины на сегодня',
+  event_not_found: 'Такого предстоящего события в городе нет',
   host_exists: 'Организатор с таким username уже есть',
   host_not_found: 'Такого организатора нет: возможно, его удалили',
   practice_not_found: 'Одной из услуг уже нет: обновите страницу',
@@ -193,6 +198,13 @@ export const api = {
   cities: () => request<Wire<City>[]>('GET', '/admin/cities'),
   cityCreate: (input: CityCreateInput) => request<Wire<City>>('POST', '/admin/cities', input),
   cityUpdate: (city: string, input: CityUpdateInput) => request<Wire<City>>('PATCH', `/admin/cities/${id(city)}`, input),
+
+  // Витрина из полок (ADR-0009). События города для ручной полки — тот же список, что видит гость.
+  shelves: (city: string) => request<Wire<AdminShelf>[]>('GET', `/admin/shelves${qs({ city_id: city })}`),
+  shelfCreate: (input: ShelfCreateInput) => request<Wire<AdminShelf>>('POST', '/admin/shelves', input),
+  shelfUpdate: (shelf: string, input: ShelfUpdateInput) => request<Wire<AdminShelf>>('PATCH', `/admin/shelves/${id(shelf)}`, input),
+  shelfDelete: (shelf: string) => request<void>('DELETE', `/admin/shelves/${id(shelf)}`),
+  cityEvents: (city: string) => request<Wire<CollectedEventItem>[]>('GET', `/collected-events${qs({ city_id: city })}`),
 
   // Источники сборщика
   topics: () => request<Wire<AdminTopic>[]>('GET', '/admin/topics'),

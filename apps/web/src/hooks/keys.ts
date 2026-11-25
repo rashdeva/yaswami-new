@@ -11,6 +11,8 @@ export const keys = {
   allCollected: ['collected'],
   collected: (city: string) => ['collected', city],
   collectedEvent: (id: string) => ['collected-event', id],
+  /** Витрина из полок (ADR-0009): полки города с их событиями. */
+  showcase: (city: string) => ['showcase', city],
   /** Каталог организаторов и страница одного. */
   allHosts: ['hosts'],
   hosts: (city: string) => ['hosts', city],

@@ -10,21 +10,30 @@ import { useTopicSubscription } from '../hooks/useTopicSubscription.ts';
 import { useTopics } from '../hooks/useTopics.ts';
 import { ProfileButton } from '../components/Avatar.tsx';
 import { EventRow } from '../components/EventRow.tsx';
+import { ShelfRail } from '../components/ShelfRail.tsx';
+import { useShowcase } from '../hooks/useShowcase.ts';
 import { dayLabel } from '../format.ts';
 
 interface Props {
   /** Блок над списком: предложение организатору подтвердить свои события. */
   lead?: ReactNode;
   onOpen: (event: CollectedEventItem) => void;
+  /** «Все» у полки — экран полки целиком. */
+  onOpenShelf: (id: string) => void;
 }
 
 /** Значение фильтра «Популярное»: стоит в одном ряду с темами, но темой не является. */
 const POPULAR = '🔥';
 
-/** Витрина: все предстоящие события города и соседних городов. Открыта без входа; кто ещё не выбрал город — сначала выбирает. */
-export function FeedScreen({ lead, onOpen }: Props) {
+/**
+ * Витрина: сверху полки (ADR-0009) — подборки, которые собирают команда и куратор, ниже все предстоящие события города
+ * и соседних городов по дням. Открыта без входа; кто ещё не выбрал город — сначала выбирает. Выбрал тему в фильтре —
+ * полки прячутся: человек ищет сам.
+ */
+export function FeedScreen({ lead, onOpen, onOpenShelf }: Props) {
   const city = useCity();
   const { items, failed } = useCollectedFeed();
+  const { shelves } = useShowcase();
   const [topic, pickTopic] = useState<string | null>(null);
   const setTopic = (next: string | null) => {
     if (next) track('feed_filtered', { topic: next });
@@ -97,6 +106,8 @@ export function FeedScreen({ lead, onOpen }: Props) {
       {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}
       {!items && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
       {items?.length === 0 && <div className="state"><b>🌿</b><p>Пока ничего не запланировано. Загляните позже.</p></div>}
+      {!topic && shelves?.map((shelf, i) => <ShelfRail key={shelf.id} shelf={shelf} index={i} onOpen={onOpen} onMore={() => onOpenShelf(shelf.id)} />)}
+      {!topic && !!shelves?.length && !!days.length && <h2 className="all-events">Все события</h2>}
       {days.map((list) => {
         const label = dayLabel(list[0]!.starts_at);
         return (

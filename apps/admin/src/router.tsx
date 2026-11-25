@@ -2,7 +2,7 @@
 // Ссылки на карточки сущностей рисует components/EntityLink.tsx — второе и последнее место, где известны адреса.
 import { createRootRoute, createRoute, createRouter, useNavigate } from '@tanstack/react-router';
 import type { AdminEntity, AgentKey, CollectedStatus, JobStatus, PracticeStatus } from '@yaswami/core';
-import { ADMIN_ENTITIES, AGENTS, COLLECTED_STATUSES, HOST_STATUSES, JOB_STATUSES, PRACTICE_STATUSES } from '@yaswami/core';
+import { ADMIN_ENTITIES, AGENTS, COLLECTED_STATUSES, DEFAULT_CITY_ID, HOST_STATUSES, JOB_STATUSES, PRACTICE_STATUSES } from '@yaswami/core';
 import { App } from '@/App';
 import type { EventsWhen } from '@/hooks/useEvents';
 import { AccountsScreen } from '@/screens/AccountsScreen';
@@ -29,6 +29,7 @@ import { UsersScreen } from '@/screens/UsersScreen';
 import { CitiesScreen } from '@/screens/CitiesScreen';
 import { SourcesScreen } from '@/screens/SourcesScreen';
 import { TopicsScreen } from '@/screens/TopicsScreen';
+import { ShowcaseScreen } from '@/screens/ShowcaseScreen';
 
 const root = createRootRoute({ component: App });
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
@@ -203,9 +204,20 @@ const sources = createRoute({ getParentRoute: () => root, path: '/sources', comp
 const topics = createRoute({ getParentRoute: () => root, path: '/topics', component: TopicsScreen });
 const cities = createRoute({ getParentRoute: () => root, path: '/cities', component: CitiesScreen });
 
+/** Витрина города (ADR-0009); город — в адресе (?city=), без него — первый город. */
+function ShowcasePage() {
+  const { city = DEFAULT_CITY_ID } = showcase.useSearch();
+  const navigate = showcase.useNavigate();
+  return <ShowcaseScreen city={city} onCity={(next) => void navigate({ search: { city: next } })} />;
+}
+const showcase = createRoute({
+  getParentRoute: () => root, path: '/showcase', component: ShowcasePage,
+  validateSearch: (s: Record<string, unknown>): { city?: string } => ({ city: str(s.city) }),
+});
+
 // Сервер отдаёт админку по /admin (apps/api/src/main.ts), Vite — с base: '/admin/'.
 export const router = createRouter({
-  routeTree: root.addChildren([people, feed, agents, hosts, host, events, eventNew, event, catalog, catalogItem, users, user, sources, topics, cities, actions, action, accounts]),
+  routeTree: root.addChildren([people, feed, agents, hosts, host, events, eventNew, event, catalog, catalogItem, users, user, sources, topics, cities, showcase, actions, action, accounts]),
   basepath: '/admin',
 });
 

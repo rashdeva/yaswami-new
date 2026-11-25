@@ -202,7 +202,7 @@ export const CityCreateInput = City.pick({ id: true, name: true }).extend({
 export type CityCreateInput = z.infer<typeof CityCreateInput>;
 
 /** `id` не меняется: он стоит в `city_id` у источников, событий и организаторов. */
-export const CityUpdateInput = CityCreateInput.omit({ id: true }).partial();
+export const CityUpdateInput = CityCreateInput.omit({ id: true }).extend({ showcase_mode: City.shape.showcase_mode }).partial();
 export type CityUpdateInput = z.infer<typeof CityUpdateInput>;
 
 // --- Пользователи
@@ -254,7 +254,7 @@ export type AdminContactListInput = z.infer<typeof AdminContactListInput>;
 // --- Журнал действий команды (в Luma такого нет; ADR-0004)
 
 /** Чего касается действие. `entity_id` — id в API: у собранного события — его адрес, у пользователя — его id (не Telegram id). */
-export const ADMIN_ENTITIES = ['event', 'collected_event', 'host', 'user', 'account', 'conversation', 'message', 'contact', 'source', 'city', 'job', 'topic'] as const;
+export const ADMIN_ENTITIES = ['event', 'collected_event', 'host', 'user', 'account', 'conversation', 'message', 'contact', 'source', 'city', 'job', 'topic', 'shelf'] as const;
 export type AdminEntity = (typeof ADMIN_ENTITIES)[number];
 
 /**
