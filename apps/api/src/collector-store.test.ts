@@ -140,6 +140,7 @@ test('сборщик: организаторы, их услуги и фото', 
   await store.setPracticeDetails(unclassified[0].id, { formats: [], for_kids: false, price_amount: 300000, price_currency: 'VND' });
   assert.deepEqual((await store.practicesToClassify(10)).map((p: any) => p.title), ['Бокс']);
   assert.deepEqual({ ...(await sql`select formats, price_amount from practices where title = 'Йога'`)[0] }, { formats: [], price_amount: '300000' });
+  await sql`update hosts set profiled_at = now() where telegram_id = 502`; // Вера нужна только здесь: профили ниже проверяются на Анне и Борисе
 
   assert.deepEqual((await store.stalePhotos(7, 5)).map((h: any) => h.channel), ['anna_channel']);
   await store.savePhotos(host!.id, ['telegram:anna_channel/1', 'telegram:anna_channel/2'], [{ source: 'telegram:anna_channel/1', data: Buffer.from([1]) }, { source: 'telegram:anna_channel/2', data: Buffer.from([2]) }]);
