@@ -2,10 +2,11 @@
 // пишущего аккаунта не должна останавливать сбор событий.
 // Сборщик здесь — только транспорт: входит в аккаунт по шагам из админки, пересылает личные сообщения в API
 // и отправляет то, что API положил в очередь. Что отвечать и кому — решает не он.
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import telegram from 'telegram';
 import { NewMessage, Raw } from 'telegram/events/index.js';
-import { COLD_PAUSE_DAYS } from '@yaswami/core';
+import { COLD_PAUSE_DAYS, inboxMediaKey, mediaExt } from '@yaswami/core';
+import { pickThumb } from './host.mjs';
 import { connect } from './mtproto.mjs';
 
 const NO_TEXT = '[сообщение без текста]';
@@ -31,17 +32,58 @@ const code = (e) => e?.errorMessage ?? e?.message ?? String(e);
 // Сессии больше нет: помочь может только новый вход. Всё остальное (сеть, FLOOD_WAIT) проходит само.
 const SESSION_DEAD = /AUTH_KEY|SESSION_REVOKED|SESSION_EXPIRED|USER_DEACTIVATED|PHONE_NUMBER_BANNED/;
 const RECONNECT_MS = 60_000;
+// Вложение в переписке тяжелее — не качаем: в админке будет «не сохранили», расшифровки не будет.
+const MEDIA_MAX_BYTES = 50_000_000;
+const PHOTO_SIDE = 1280;
+
+/**
+ * Вложение сообщения MTProto: что это, без скачивания. null — вложения нет или оно не наше (стикер, ссылка, опрос).
+ * Голосовое и кружок Telegram отличает атрибутами документа, а не типом содержимого.
+ */
+export function attachmentOf(msg) {
+  const media = msg.media;
+  if (media?.className === 'MessageMediaPhoto') {
+    const thumb = pickThumb(media.photo?.sizes, PHOTO_SIDE);
+    return thumb ? { type: 'photo', mime_type: 'image/jpeg', duration: null, file_name: null, size: 0, thumb } : null;
+  }
+  const doc = media?.className === 'MessageMediaDocument' ? media.document : null;
+  if (!doc) return null;
+  const attr = (name) => doc.attributes?.find((a) => a.className === name);
+  if (attr('DocumentAttributeSticker')) return null;
+  const audio = attr('DocumentAttributeAudio');
+  const video = attr('DocumentAttributeVideo');
+  const type = audio ? (audio.voice ? 'voice' : 'audio') : video ? (video.roundMessage ? 'video_note' : 'video') : 'document';
+  return { type, mime_type: doc.mimeType ?? null, duration: (audio ?? video)?.duration ?? null, file_name: attr('DocumentAttributeFilename')?.fileName ?? null, size: Number(doc.size ?? 0) };
+}
 
 /**
  * `store` — запросы к базе (store.mjs), `report` — сообщить API о личном сообщении или ответе нам в чате, `reportTyping` — что собеседник
  * набирает сообщение, `connectClient` — клиент MTProto (тесты подставляют свой). `tick()` делает один проход: шаги входа, подключение аккаунтов, отправка очереди.
  */
-export function createSender({ store, apiId, apiHash, key, report, reportTyping = async () => {}, connectClient = connect, log = console.log }) {
+export function createSender({ store, apiId, apiHash, key, report, reportTyping = async () => {}, bucket = null, connectClient = connect, log = console.log }) {
   const clients = new Map(); // id аккаунта → подключённый клиент
   const logins = new Map(); // id аккаунта → { client, phoneCodeHash }: вход между шагами живёт только в памяти
   const retryAt = new Map(); // id аккаунта → когда снова пробовать подключиться после сбоя
   let started = false;
   const sentIds = new Map(); // id аккаунта → номера сообщений, отправленных нами: о них в API не сообщаем
+
+  /**
+   * Вложение — в бакет, в папку собеседника (inboxMediaKey); расшифровывает речь API. Без бакета или не скачалось —
+   * вложение всё равно передаём, без адреса: в админке видно, что человек прислал голосовое.
+   */
+  async function saveAttachment(client, msg, peerId, info) {
+    const { size, thumb, ...media } = info;
+    if (!bucket || size > MEDIA_MAX_BYTES) return { ...media, url: null };
+    try {
+      const data = await client.downloadMedia(msg, thumb ? { thumb } : {});
+      if (!Buffer.isBuffer(data)) return { ...media, url: null };
+      const key = inboxMediaKey('account', peerId, randomUUID(), mediaExt(media.mime_type, media.type, media.file_name));
+      return { ...media, url: await bucket.put(key, data, media.mime_type ?? 'application/octet-stream') };
+    } catch (e) {
+      log(`вложение от ${peerId} не сохранено: ${code(e)}`);
+      return { ...media, url: null };
+    }
+  }
 
   function listen(account, client) {
     client.addEventHandler(async (event) => {
@@ -55,11 +97,15 @@ export function createSender({ store, apiId, apiHash, key, report, reportTyping 
         const chat = await msg.getChat();
         const peer = inChat ? await msg.getSender() : chat;
         if (!chat || !peer || peer.bot || peer.className !== 'User') return;
+        const info = attachmentOf(msg);
+        const media = info ? [await saveAttachment(client, msg, Number(peer.id), info)] : [];
         await report({
           account_id: account.id,
           peer: { id: Number(peer.id), name: [peer.firstName, peer.lastName].filter(Boolean).join(' ') || String(peer.id), username: peer.username ?? null },
           direction: msg.out ? 'out' : 'in',
-          text: msg.message || NO_TEXT,
+          // Голосовое без подписи — без текста: что в нём, скажет расшифровка.
+          text: msg.message || (media.length ? '' : NO_TEXT),
+          ...(media.length ? { media } : {}),
           // Адрес чата — как в lead.mjs: username или полный id; по нему же уйдёт наш ответ.
           ...(inChat ? { reply_to: { chat: chat.username ?? `-100${chat.id}`, message_id: msg.id } } : {}),
         });

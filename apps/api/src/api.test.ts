@@ -28,6 +28,8 @@ import { refreshTopics, requestNextTopicIcon } from './topics.ts';
 import { eventFeedback, events as eventsTable } from './db/schema.ts';
 
 import sharp from 'sharp';
+import { transcriber } from './media.ts';
+import type { SupportTurn } from './support.ts';
 import { curator, host, hunter, illustrator, librarian, parseIllustration, parseSupportReply, support, verifyTicket } from './support.ts';
 import { recordHostLead, recordLead } from './inbox.ts';
 import { requestCuration } from './curator.ts';
@@ -1473,6 +1475,69 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.equal((await call(admin, 'POST', `/admin/conversations/${id}/messages`, { text: 'Вы тут?' })).status, 409);
   bot.call = ok;
   assert.deepEqual([(await inbox()).messages[0]!.text, (await inbox()).messages[0]!.status], ['Вы тут?', 'failed']);
+});
+
+test('вложения: голосовое боту и на аккаунт лежит в бакете по папкам, роль получает расшифровку', async () => {
+  await db.execute(sql`truncate conversations, tg_accounts cascade`);
+  settings.adminIds = [70];
+  settings.collectorSecret = 'collector-secret';
+  const admin = tma(70, 'Админ');
+  const puts: string[] = [];
+  const heard: string[] = [];
+  setBucket({ put: async (key) => (puts.push(key), `https://media.test/${key}`) });
+  const realFetch = globalThis.fetch;
+  const realCall = bot.call;
+  const realTranscribe = transcriber.transcribe;
+  const ask = support.ask;
+  let asked: SupportTurn[] = [];
+  const ogg = Buffer.from('OggS-voice');
+  globalThis.fetch = async (input) => (String(input).startsWith('https://api.telegram.org/file/') || String(input).startsWith('https://media.test/') ? new Response(ogg) : realFetch(input));
+  bot.call = async (method, body) => (method === 'getFile' ? { ok: true, result: { file_path: 'voice/file_1.oga' } } : (sent.push([method, body]), { ok: true, result: { message_id: 1 } }));
+  transcriber.transcribe = async (data, mime, name) => (heard.push(`${mime} ${name} ${data.length}`), 'Где сегодня бачата?');
+  support.ask = async (history) => ((asked = history), { text: 'В 19:00 на Ми Кхе.', human: null });
+  settings.supportUrl = 'http://support.test';
+  try {
+    // Голосовое боту: файл в бакете в папке собеседника, расшифровка — в сообщении и в переписке для роли.
+    const voice = { file_id: 'v1', file_unique_id: 'u1', duration: 4, mime_type: 'audio/ogg', file_size: ogg.length };
+    await handleUpdate(db, botMessage(72, '', { text: undefined, voice }));
+    assert.match(puts[0]!, /^inbox\/bot\/72\/[0-9a-f-]{36}\.ogg$/);
+    assert.deepEqual(heard, [`audio/ogg voice.ogg ${ogg.length}`]);
+    assert.equal(asked.at(-1)!.content, '[голосовое 0:04, расшифровка: Где сегодня бачата?]');
+    const feed = (await (await call(admin, 'GET', '/admin/inbox')).json()) as InboxFeed;
+    const msg = feed.messages.find((m) => m.direction === 'in')!;
+    assert.equal(msg.text, '');
+    assert.deepEqual(msg.meta?.media, [{ type: 'voice', url: `https://media.test/${puts[0]}`, mime_type: 'audio/ogg', duration: 4, file_name: null, transcript: 'Где сегодня бачата?' }]);
+
+    // Фото без подписи — роль не зовём, просим написать словами; фото всё равно сохранено.
+    sent.length = 0;
+    await handleUpdate(db, botMessage(72, '', { text: undefined, photo: [{ file_id: 'p1', file_unique_id: 'pu1', width: 90, height: 90 }] }));
+    assert.deepEqual(sent.filter(([m]) => m === 'sendMessage').map(([, b]) => b.text), [REPLIES.photo]);
+    assert.match(puts[1]!, /^inbox\/bot\/72\/.+\.jpg$/);
+
+    // Кружок на наш аккаунт: сборщик уже положил его в бакет, API расшифровывает по адресу.
+    const [account] = await db.insert(tgAccounts).values({ label: 'Аня', phone: '+84900000009', status: 'active' }).returning();
+    const res = await app.request('/internal/account-message', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-collector-secret': 'collector-secret' },
+      body: JSON.stringify({ account_id: account!.id, peer: { id: 556, name: 'Тим', username: null }, direction: 'in', text: '',
+        media: [{ type: 'video_note', url: 'https://media.test/inbox/account/556/x.mp4', mime_type: 'video/mp4', duration: 9, file_name: null }] }),
+    });
+    assert.equal(res.status, 204);
+    const [row] = await db.select().from(messages).where(sql`${messages.meta}->'media'->0->>'type' = 'video_note'`);
+    assert.equal(row!.meta?.media?.[0]?.transcript, 'Где сегодня бачата?');
+    assert.equal(heard.at(-1), `video/mp4 video_note.mp4 ${ogg.length}`);
+    const empty = await app.request('/internal/account-message', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-collector-secret': 'collector-secret' },
+      body: JSON.stringify({ account_id: account!.id, peer: { id: 556, name: 'Тим', username: null }, direction: 'in', text: ' ' }),
+    });
+    assert.equal(empty.status, 400, 'без текста и без вложения — отказ');
+  } finally {
+    globalThis.fetch = realFetch;
+    bot.call = realCall;
+    transcriber.transcribe = realTranscribe;
+    support.ask = ask;
+    settings.supportUrl = '';
+    setBucket(null);
+  }
 });
 
 test('скрытие: диалог пропадает из списка до следующего сообщения человека, скрытие отменяется', async () => {

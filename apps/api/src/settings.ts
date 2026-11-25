@@ -66,4 +66,7 @@ export const settings = {
   requestsPerMinute: Number(process.env.REQUESTS_PER_MINUTE ?? 300),
   /** Ключ шифрования сборщика (тот же ACCOUNTS_KEY): им API шифрует код и пароль входа в наш аккаунт Telegram. Пусто — шаг входа отклоняется (accounts_key_missing): открытым текстом секреты в базу не кладём. */
   accountsKey: process.env.ACCOUNTS_KEY ?? '',
+  /** Ключ Groq: расшифровка голосовых и видео в переписке (media.ts). Пусто — вложения сохраняются без расшифровки. */
+  groqKey: process.env.GROQ_API_KEY ?? '',
+  transcribeModel: process.env.TRANSCRIBE_MODEL ?? 'whisper-large-v3-turbo',
 };

@@ -138,10 +138,10 @@ async function refreshPosts() {
 }
 
 // Сообщение в API от имени сборщика: личное сообщение на аккаунте, «печатает» или вопрос из чата.
-const toApi = async (path, body) => {
+const toApi = async (path, body, timeoutMs = 15_000) => {
   const res = await fetch(`${env.API_URL}/internal/${path}`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-collector-secret': env.COLLECTOR_SECRET },
-    body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
+    body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`API ответил ${res.status}`);
 };
@@ -217,8 +217,10 @@ if (startupDelayMs) {
 if (env.ACCOUNTS_KEY && env.API_URL && env.COLLECTOR_SECRET) {
   const sender = createSender({
     store, apiId: env.TG_API_ID, apiHash: env.TG_API_HASH, key: env.ACCOUNTS_KEY,
-    report: (message) => toApi('account-message', message),
+    // С голосовым API отвечает после расшифровки: это до минуты.
+    report: (message) => toApi('account-message', message, message.media ? 120_000 : 15_000),
     reportTyping: (typing) => toApi('account-typing', typing),
+    bucket,
   });
   (async () => {
     for (;;) {

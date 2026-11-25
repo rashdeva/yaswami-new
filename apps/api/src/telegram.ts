@@ -1,5 +1,6 @@
 // Bot API: вызов метода и разбор входящего сообщения. Библиотек нет: виджеты (Bot API 10.4) они ещё не знают.
 import type { TelegramUser } from './auth.ts';
+import type { BotFile } from './media.ts';
 
 export interface BotResult {
   ok: boolean;
@@ -86,7 +87,11 @@ export interface Incoming {
   /** Откуда переслано; null — человек написал сам. `channel` — публикация канала, у неё есть адрес. */
   replyTo: number | null; // на какое сообщение человек ответил
   origin: { userId?: number; username?: string; channel?: { id: number; username?: string; number: number } } | null;
+  /** Голосовое, видео, фото или файл в сообщении; null — только текст. */
+  file: BotFile | null;
 }
+
+interface TgFile { file_id: string; file_size?: number; mime_type?: string; duration?: number; file_name?: string; width?: number }
 
 interface TgMessage {
   message_id: number;
@@ -95,6 +100,13 @@ interface TgMessage {
   from?: TelegramUser & { is_bot?: boolean };
   text?: string;
   caption?: string;
+  voice?: TgFile;
+  audio?: TgFile;
+  video?: TgFile;
+  video_note?: TgFile;
+  animation?: TgFile;
+  document?: TgFile;
+  photo?: TgFile[];
   reply_to_message?: { message_id: number };
   forward_origin?: {
     type: string; date: number; sender_user?: { id: number; username?: string };
@@ -124,5 +136,16 @@ export function parseIncoming(update: unknown): Incoming | null {
             : undefined,
         }
       : null,
+    file: botFile(m),
   };
+}
+
+/** Первое вложение сообщения. Фото — самый крупный размер, который Telegram уже приготовил (JPEG). */
+function botFile(m: TgMessage): BotFile | null {
+  const photo = m.photo?.at(-1);
+  const [type, f] = m.voice ? ['voice', m.voice] as const : m.video_note ? ['video_note', m.video_note] as const : m.audio ? ['audio', m.audio] as const
+    : m.video ? ['video', m.video] as const : m.animation ? ['video', m.animation] as const : photo ? ['photo', photo] as const : m.document ? ['document', m.document] as const : [null, null];
+  if (!type) return null;
+  const mime = f.mime_type ?? (type === 'photo' ? 'image/jpeg' : type === 'video_note' ? 'video/mp4' : null);
+  return { type, file_id: f.file_id, file_size: f.file_size ?? null, mime_type: mime, duration: f.duration ?? null, file_name: f.file_name ?? null };
 }

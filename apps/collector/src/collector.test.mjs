@@ -214,7 +214,14 @@ assert.equal(await downloadCover({ downloadMedia: async () => Buffer.from('png?'
 console.log('cover ok');
 // Аккаунты для переписки: вход по шагам, приём и отправка — на поддельном клиенте Telegram и хранилище в памяти.
 {
-  const { createSender, seal, unseal } = await import('./sender.mjs');
+  const { attachmentOf, createSender, seal, unseal } = await import('./sender.mjs');
+  const doc = (attributes, extra = {}) => ({ media: { className: 'MessageMediaDocument', document: { mimeType: 'audio/ogg', size: 900, attributes, ...extra } } });
+  assert.equal(attachmentOf(doc([{ className: 'DocumentAttributeAudio', voice: true, duration: 7 }])).type, 'voice');
+  assert.equal(attachmentOf(doc([{ className: 'DocumentAttributeVideo', roundMessage: true, duration: 5 }], { mimeType: 'video/mp4' })).type, 'video_note');
+  assert.deepEqual(attachmentOf(doc([{ className: 'DocumentAttributeFilename', fileName: 'Прайс.pdf' }], { mimeType: 'application/pdf' })),
+    { type: 'document', mime_type: 'application/pdf', duration: null, file_name: 'Прайс.pdf', size: 900 });
+  assert.equal(attachmentOf(doc([{ className: 'DocumentAttributeSticker' }])), null, 'стикер — не вложение');
+  assert.equal(attachmentOf({ message: 'текст' }), null);
   const key = 'ab'.repeat(32);
   assert.equal(unseal(key, seal(key, 'сессия')), 'сессия');
   assert.throws(() => unseal('cd'.repeat(32), seal(key, 'сессия')), 'чужим ключом не открыть');
@@ -246,7 +253,9 @@ console.log('cover ok');
     sendMessage: async (peer, { message }) => { if (peer === 42) throw fail('PEER_ID_INVALID'); sentTo.push([peer, message]); return { id: 900 }; },
     disconnect: async () => {},
   };
-  const sender = createSender({ store, apiId: '1', apiHash: 'h', key, report: async (m) => void reported.push(m), reportTyping: async (t) => void typing.push(t), connectClient: () => client, log: () => {} });
+  const puts = [];
+  const bucket = { put: async (key, data, type) => (puts.push([key, data.length, type]), `https://media/${key}`) };
+  const sender = createSender({ store, apiId: '1', apiHash: 'h', key, report: async (m) => void reported.push(m), reportTyping: async (t) => void typing.push(t), bucket, connectClient: () => client, log: () => {} });
 
   await sender.tick();
   assert.equal(account.status, 'login_code', 'код запрошен');
@@ -272,6 +281,12 @@ console.log('cover ok');
   await handler({ isPrivate: false, message: { id: 2, out: false, message: 'в группе', getChat: async () => user } });
   await handler({ isPrivate: true, message: { id: 3, out: false, message: 'я бот', getChat: async () => ({ ...user, bot: true }) } });
   assert.deepEqual(reported, [{ account_id: 'a1', peer: { id: 42, name: 'Тим', username: 'tim' }, direction: 'in', text: 'Привет' }]);
+  // Голосовое: файл в бакет, в папку собеседника; текста нет — пустой, расшифровывает API.
+  client.downloadMedia = async () => Buffer.from('OggS');
+  await handler({ isPrivate: true, message: { id: 4, out: false, message: '', getChat: async () => user, ...doc([{ className: 'DocumentAttributeAudio', voice: true, duration: 7 }]) } });
+  const voice = reported.pop();
+  assert.match(puts[0][0], /^inbox\/account\/42\/[0-9a-f-]{36}\.ogg$/);
+  assert.deepEqual([voice.text, voice.media], ['', [{ type: 'voice', mime_type: 'audio/ogg', duration: 7, file_name: null, url: `https://media/${puts[0][0]}` }]]);
 
   // «Печатает» уходит в API не чаще раза в несколько секунд; «перестал печатать» — нет.
   await typingHandler({ userId: 42n, action: { className: 'SendMessageTypingAction' } });
