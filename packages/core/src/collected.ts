@@ -96,3 +96,25 @@ export function collectedSignupUrl(
   if (instagram && /^[\w.]{1,30}$/.test(instagram)) return `https://ig.me/m/${instagram}`;
   return sourceUrl;
 }
+
+/** Часть дня события: по ней экран «Все события» раскладывает день. `unknown` — время в анонсе не указано (00:00). В Luma такого нет. */
+export const DAYPARTS = [
+  { key: 'morning', label: 'Утро', emoji: '☀️' },
+  { key: 'day', label: 'День', emoji: '🌤' },
+  { key: 'evening', label: 'Вечер', emoji: '🌙' },
+  { key: 'unknown', label: 'Время уточняется', emoji: '🕓' },
+] as const;
+export type Daypart = (typeof DAYPARTS)[number]['key'];
+
+/** Утро — до 12:00, день — до 17:00, вечер — с 17:00, по часам города (время записано в строке ISO). */
+export function collectedDaypart(iso: string): Daypart {
+  const time = collectedTime(iso);
+  if (!time) return 'unknown';
+  const hour = Number(time.slice(0, 2));
+  return hour < 12 ? 'morning' : hour < 17 ? 'day' : 'evening';
+}
+
+/** События одного дня по частям, в порядке DAYPARTS; пустые части не возвращаются. */
+export function byDaypart<T extends Pick<CollectedEventItem, 'starts_at'>>(events: T[]): { part: (typeof DAYPARTS)[number]; events: T[] }[] {
+  return DAYPARTS.map((part) => ({ part, events: events.filter((e) => collectedDaypart(e.starts_at) === part.key) })).filter((g) => g.events.length);
+}

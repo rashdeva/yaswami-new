@@ -12,7 +12,7 @@ import { ProfileButton } from '../components/Avatar.tsx';
 import { EventRow } from '../components/EventRow.tsx';
 import { ShelfRail } from '../components/ShelfRail.tsx';
 import { useShowcase } from '../hooks/useShowcase.ts';
-import { dayLabel } from '../format.ts';
+import { dayLabel, eventsCount } from '../format.ts';
 
 interface Props {
   /** Блок над списком: предложение организатору подтвердить свои события. */
@@ -22,6 +22,8 @@ interface Props {
   onOpenShelf: (id: string) => void;
   /** Плитка направления — экран направления с его темами. */
   onOpenDirection: (slug: string) => void;
+  /** «Все события» в конце витрины — экран всех событий по дням. */
+  onOpenAll: () => void;
 }
 
 /** Значение фильтра «Популярное»: стоит в одном ряду с темами, но темой не является. */
@@ -32,7 +34,7 @@ const POPULAR = '🔥';
  * и соседних городов по дням. Открыта без входа; кто ещё не выбрал город — сначала выбирает. Выбрал тему в фильтре —
  * полки прячутся: человек ищет сам.
  */
-export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection }: Props) {
+export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection, onOpenAll }: Props) {
   const city = useCity();
   const { items, failed } = useCollectedFeed();
   const { shelves } = useShowcase();
@@ -55,12 +57,12 @@ export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection }: Props
   // Плитки — направления, где есть события (внутри — темы); тема без направления — своей плиткой-фильтром.
   const topicItems = useTopicItems();
   const groups = topicsByDirection(topicItems.filter((t) => topics.includes(t.name)));
-  // Без темы внизу — события, которых нет на полках: полки уже показали их выше. Выбрана тема — все события темы.
-  const onShelves = new Set(topic ? [] : (shelves ?? []).flatMap((s) => s.events.map((e) => e.id)));
+  // Есть полки и тема не выбрана — внизу не список, а кнопка «Все события» (экран /all): витрина остаётся короткой.
+  // Полок нет или выбрана тема — список по дням прямо здесь.
+  const compact = !topic && !!shelves?.length;
   const days: CollectedEventItem[][] = [];
-  for (const item of items ?? []) {
+  for (const item of compact ? [] : items ?? []) {
     if (topic && (topic === POPULAR ? !item.popular : item.topic !== topic)) continue;
-    if (onShelves.has(item.id)) continue;
     const last = days.at(-1);
     if (last && collectedDayKey(last[0]!.starts_at) === collectedDayKey(item.starts_at)) last.push(item);
     else days.push([item]);
@@ -125,7 +127,7 @@ export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection }: Props
       {!items && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
       {items?.length === 0 && <div className="state"><b>🌿</b><p>Пока ничего не запланировано. Загляните позже.</p></div>}
       {!topic && shelves?.map((shelf, i) => <ShelfRail key={shelf.id} shelf={shelf} index={i} onOpen={onOpen} onMore={() => onOpenShelf(shelf.id)} />)}
-      {!topic && !!shelves?.length && !!days.length && <h2 className="all-events">Ещё события</h2>}
+      {compact && !!items?.length && <AllEventsCard items={items} onOpen={onOpenAll} />}
       {days.map((list) => {
         const label = dayLabel(list[0]!.starts_at);
         return (
@@ -150,6 +152,21 @@ export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection }: Props
           </section>
         );
       })}
+    </>
+  );
+}
+
+/** Конец витрины: вход в «Все события» — иконки первых тем и сколько всего событий. */
+function AllEventsCard({ items, onOpen }: { items: CollectedEventItem[]; onOpen: () => void }) {
+  const icons = [...new Set(items.flatMap((e) => (e.topic ? [e.topic] : [])))].slice(0, 4);
+  return (
+    <>
+      <button className="all-card" onClick={() => { track('all_events_opened'); onOpen(); }}>
+        <span className="all-icons">{icons.map((t) => <img key={t} src={topicIcon(t)} alt="" />)}</span>
+        <span className="all-text"><b>Все события</b><small>{eventsCount(items.length)} — по дням, утро, день и вечер</small></span>
+        <span className="all-chev" aria-hidden="true">›</span>
+      </button>
+      <p className="note all-note">Полки выше — подборки. Здесь — всё подряд.</p>
     </>
   );
 }

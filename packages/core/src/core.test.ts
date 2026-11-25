@@ -211,3 +211,10 @@ test('направления: темы по направлениям в их п�
   assert.equal(directionBySlug('kids')?.name, 'Детям');
   assert.equal(directionBySlug('nope'), undefined);
 });
+
+test('части дня: утро до 12, день до 17, вечер; без времени — отдельно', async () => {
+  const { collectedDaypart, byDaypart } = await import('./index.ts');
+  assert.deepEqual(['2026-11-26T07:00:00+07:00', '2026-11-26T11:59:00+07:00', '2026-11-26T12:00:00+07:00', '2026-11-26T17:00:00+07:00', '2026-11-26T00:00:00+07:00'].map(collectedDaypart), ['morning', 'morning', 'day', 'evening', 'unknown']);
+  const parts = byDaypart([{ starts_at: '2026-11-26T19:00:00+07:00' }, { starts_at: '2026-11-26T08:00:00+07:00' }]);
+  assert.deepEqual(parts.map((p) => [p.part.key, p.events.length]), [['morning', 1], ['evening', 1]]);
+});
