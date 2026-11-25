@@ -1,6 +1,7 @@
 import { Drawer } from 'vaul';
 import type { HostListItem, Practice } from '@yaswami/core';
 import { topicIcon, topicSlug } from '@yaswami/core';
+import { formatLabel, hasAmount, practicePrice } from '../services.ts';
 import { GuestRow } from './GuestRow.tsx';
 
 interface Props {
@@ -32,7 +33,18 @@ export function PracticeSheet({ open, onClose, onPick, onSignUp, onOpenHost }: P
                 </div>
               </div>
               {open.practice.description && <p>{open.practice.description}</p>}
-              <p className="practice-price"><span>Цена</span><b>{open.practice.price ?? 'по запросу — спросите мастера'}</b></p>
+              <dl className="practice-facts">
+                <div>
+                  <dt>Цена</dt>
+                  <dd>
+                    <b>{hasAmount(open.practice) ? practicePrice(open.practice) : open.practice.price ?? 'по запросу — спросите мастера'}</b>
+                    {/* Как написал мастер — там бывают пробное занятие и абонемент, которых в числе нет. */}
+                    {hasAmount(open.practice) && open.practice.price && <small>{open.practice.price}</small>}
+                  </dd>
+                </div>
+                {formatLabel(open.practice) && <div><dt>Формат</dt><dd>{formatLabel(open.practice)}</dd></div>}
+                {open.practice.for_kids && <div><dt>Детям</dt><dd>подходит</dd></div>}
+              </dl>
               <div className="group">
                 <button className="plain" onClick={() => onOpenHost(open.host)}>
                   <GuestRow name={open.host.name} photo={open.host.photo_url} sub="Все услуги и события мастера" label="›" />
@@ -44,7 +56,7 @@ export function PracticeSheet({ open, onClose, onPick, onSignUp, onOpenHost }: P
                   <div className="group">
                     {others.map((p) => (
                       <button key={p.id} className="plain" onClick={() => onPick(p)}>
-                        <div className="guest"><div>{p.title}<small>{p.price ?? 'цена по запросу'}</small></div><span>›</span></div>
+                        <div className="guest"><div>{p.title}<small>{practicePrice(p)}</small></div><span>›</span></div>
                       </button>
                     ))}
                   </div>

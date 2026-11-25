@@ -4,7 +4,7 @@ import type { HostItem, HostListItem, Practice } from '@yaswami/core';
 import { practiceSignupUrl } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { api } from '../api.ts';
-import { serviceGroups, type ServiceItem } from '../services.ts';
+import { CHEAP, cheapest, serviceGroups, serviceShortcuts, type ServiceGroup, type ServiceItem } from '../services.ts';
 import { openExternal } from '../tg.ts';
 import { keys } from './keys.ts';
 import { useTopicItems } from './useTopics.ts';
@@ -17,11 +17,27 @@ export function useHosts() {
   return { hosts: data ?? null, failed: error };
 }
 
-/** Услуги города, разложенные по направлениям (вкладка «Услуги»). `groups` null — каталог ещё грузится. */
+/** Сколько услуг на полке «Попробовать недорого» и в её разделе целиком. */
+const CHEAP_SHELF = 5;
+const CHEAP_ALL = 30;
+
+/**
+ * Услуги города для вкладки «Услуги». `sections` — разделы по направлениям; «Детям» в них заменяет одноимённое направление
+ * сквозным разделом (те же услуги и ещё размеченные «для детей»). `tiles` — сначала сквозные («Мастер-классы», «Детям»),
+ * потом остальные направления. `cheap` — полка «Попробовать недорого». `sections` null — каталог грузится.
+ */
 export function useServices() {
   const { hosts, failed } = useHosts();
   const topics = useTopicItems();
-  return { groups: hosts ? serviceGroups(hosts, topics) : null, failed };
+  if (!hosts) return { sections: null, tiles: [], cheap: [], find: () => undefined, failed };
+  const groups = serviceGroups(hosts, topics);
+  const items = groups.flatMap((g) => g.items);
+  const shortcuts = serviceShortcuts(items, topics);
+  const sections = groups.map((g) => shortcuts.find((s) => s.key === g.key) ?? g);
+  const tiles = [...shortcuts, ...groups.filter((g) => !shortcuts.some((s) => s.key === g.key))];
+  const cheap = cheapest(items, CHEAP_ALL);
+  const all: ServiceGroup[] = [...tiles, ...(cheap.length ? [{ key: CHEAP, name: 'Недорого', topic: null, items: cheap }] : [])];
+  return { sections, tiles, cheap: cheap.slice(0, CHEAP_SHELF), find: (key: string) => all.find((g) => g.key === key), failed };
 }
 
 /** Шторка услуги: какая открыта, переключение на другую услугу того же мастера и запись. */

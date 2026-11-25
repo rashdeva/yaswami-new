@@ -1,7 +1,7 @@
 // Операции команды над всем сервисом (`admin_*` в MCP, `/admin/*` в REST) и журнал этих действий: формы входа и ответа.
 import * as z from 'zod';
 import type { AdminCollectedEvent, EventView, Practice } from './api.ts';
-import { cityId, dateTime, EventCreateInput, EventUpdateInput, PRACTICE_STATUSES, timeZone } from './api.ts';
+import { cityId, dateTime, EventCreateInput, EventUpdateInput, PRACTICE_FORMATS, PRACTICE_STATUSES, timeZone } from './api.ts';
 import type { Event, Guest, User } from './schema.ts';
 import { City, Feature, RsvpStatus, User as UserSchema } from './schema.ts';
 import type { TopicItem } from './topics.ts';
@@ -164,6 +164,12 @@ export const PracticeInput = z.object({
   description: text(500).nullable(),
   price: text(100).nullable().describe('Price as the organizer states it, e.g. «500k»; null — on request'),
   status: z.enum(PRACTICE_STATUSES).describe('Moderation: pending — waits for the team, published — shown in the public catalogue, rejected — never shown'),
+  // Разбор услуги: обычно его делает сборщик; команда поправляет, если он ошибся. Не передали — остаётся как есть.
+  formats: z.array(z.enum(PRACTICE_FORMATS)).max(PRACTICE_FORMATS.length).nullable().optional()
+    .describe('How it runs: personal, group, online, workshop (a one-off master class); several allowed. null — let the collector classify it again'),
+  for_kids: z.boolean().nullable().optional().describe('For children or teenagers'),
+  price_amount: z.number().int().min(0).nullable().optional().describe('Usual price of one session in whole currency units (150k → 150000), the lowest if a range; 0 — free; null — unknown'),
+  price_currency: z.string().regex(/^[A-Z]{3}$/).nullable().optional().describe('ISO 4217 code of price_amount: VND, USD, LKR'),
 });
 
 /** Добавить организатора по username: профиль (имя, «о себе», канал, сводку) соберёт сборщик. В Luma такого нет. */

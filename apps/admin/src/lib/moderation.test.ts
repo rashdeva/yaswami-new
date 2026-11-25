@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { batchPlan, batchSummary, decisionCall, moderationQueue, moderationTotal } from './moderation.ts';
 
-const practice = (id: string, status: 'pending' | 'published') => ({ id, title: `Услуга ${id}`, topic: 'йога', description: null, price: id === 'p1' ? '50 лари' : null, status });
+const practice = (id: string, status: 'pending' | 'published') => ({ id, title: `Услуга ${id}`, topic: 'йога', description: null, price: id === 'p1' ? '50 лари' : null, status, formats: null, for_kids: null, price_amount: null, price_currency: null });
 const sources = {
   events: [
     { id: 'e1', title: 'Йога на крыше', starts_at: '2030-05-01T15:00:00.000Z', channel: 'tbilisi_events', source_url: 'https://t.me/tbilisi_events/5', status: 'pending' as const },

@@ -1,9 +1,43 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { HostListItem, Practice, SearchEntry, TopicItem, Wire } from '@yaswami/core';
-import { searchSections, serviceGroups } from './services.ts';
+import { cheapest, formatLabel, money, practicePrice, searchSections, serviceGroups, serviceShortcuts, usefulFilters, type ServiceItem } from './services.ts';
 
-const practice = (title: string, topic: string): Practice => ({ id: title, title, topic, description: null, price: null, status: 'published' });
+const practice = (title: string, topic: string, details: Partial<Practice> = {}): Practice =>
+  ({ id: title, title, topic, description: null, price: null, status: 'published', formats: null, for_kids: null, price_amount: null, price_currency: null, ...details });
+const item = (title: string, details: Partial<Practice> = {}, topic = 'спорт'): ServiceItem => ({ practice: practice(title, topic, details), host: host('Мастер', []) });
+
+test('цена коротко и одинаково: донги тысячами и миллионами, доллары знаком, бесплатно словом', () => {
+  assert.deepEqual([money(150000, 'VND'), money(1200000, 'VND'), money(30, 'USD'), money(0, 'VND'), money(2500, 'LKR'), money(45, 'GEL'), money(500, 'THB')],
+    ['150k ₫', '1,2 млн ₫', '$30', 'бесплатно', 'Rs 2 500', '45 ₾', '500 THB']); // разряды — неразрывным пробелом, как toLocaleString
+  assert.equal(practicePrice({ price: '500.000 VND', price_amount: 500000, price_currency: 'VND' }), '500k ₫');
+  assert.equal(practicePrice({ price: 'от 500K', price_amount: null, price_currency: null }), 'от 500K', 'не разобрана — как написал мастер');
+  assert.equal(practicePrice({ price: null, price_amount: null, price_currency: null }), 'цена по запросу');
+  assert.equal(formatLabel({ formats: ['personal', 'online'] }), 'лично, онлайн');
+  assert.equal(formatLabel({ formats: null }), '');
+});
+
+test('«Попробовать недорого»: самые дешёвые в главной валюте города, бесплатные — всегда; меньше трёх — пусто', () => {
+  const items = [
+    item('Йога', { price_amount: 250000, price_currency: 'VND' }), item('Шахматы', { price_amount: 150000, price_currency: 'VND' }),
+    item('Психолог', { price_amount: 30, price_currency: 'USD' }), item('Пластика', { price_amount: 0, price_currency: null }),
+    item('Баня', { price_amount: 800000, price_currency: 'VND' }), item('Бокс'),
+  ];
+  assert.deepEqual(cheapest(items, 3).map((i) => i.practice.title), ['Пластика', 'Шахматы', 'Йога']);
+  assert.deepEqual(cheapest(items.slice(0, 2), 3), []);
+});
+
+test('сквозные разделы: мастер-классы по формату, «Детям» — по разбору и по теме направления', () => {
+  const topics = [topic('детям', 'kids', 'kids'), topic('спорт', 'sport', 'sport')];
+  const items = [item('Акрил', { formats: ['workshop'] }), item('Скрипка', { for_kids: true }), item('Лего', {}, 'детям'), item('Бокс', { formats: ['personal'] })];
+  assert.deepEqual(serviceShortcuts(items, topics).map((g) => [g.key, g.items.map((i) => i.practice.title)]), [['workshops', ['Акрил']], ['kids', ['Скрипка', 'Лего']]]);
+  assert.deepEqual(serviceShortcuts([item('Бокс')], topics), []);
+});
+
+test('фильтры раздела — только те, что что-то меняют', () => {
+  const items = [item('Бокс', { formats: ['personal', 'group'], price_amount: 1, price_currency: 'VND' }), item('Кроссфит', { formats: ['group'] })];
+  assert.deepEqual(usefulFilters(items), ['personal', 'priced']);
+});
 const host = (name: string, practices: Practice[]) => ({ id: name, name, practices }) as unknown as HostListItem;
 const topic = (name: string, slug: string, direction: TopicItem['direction']) => ({ name, slug, direction }) as TopicItem;
 

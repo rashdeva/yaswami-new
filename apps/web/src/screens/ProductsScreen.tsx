@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import type { ProductItem, Wire } from '@yaswami/core';
 import { PRODUCT_CATEGORIES } from '@yaswami/core';
 import { ProfileButton } from '../components/Avatar.tsx';
+import { CityPick } from '../components/CityPick.tsx';
 import { ProductCard } from '../components/ProductCard.tsx';
 import { useProducts } from '../hooks/useProducts.ts';
 import { useViewed } from '../hooks/useViewed.ts';
@@ -24,7 +25,7 @@ export function ProductsScreen({ city, onOpen }: Props) {
         <ProfileButton />
         <div className="head">
           <h1>Товары</h1>
-          <p>📍 {city} · домашняя еда и хендмейд</p>
+          <CityPick />
         </div>
       </div>
       <div className="chips">

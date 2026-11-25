@@ -1,6 +1,6 @@
 {
-  "id": "0dda67c4-023f-430e-a25a-ffa3ab1278b8",
-  "prevId": "77a926f1-eb0b-4e30-8406-972507bd6a72",
+  "id": "548bfbbf-3732-445f-b2ef-5fcdc7d16971",
+  "prevId": "ea9cff0c-d299-4a2e-ab14-49c6b76dbbc6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2088,6 +2088,30 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'pending'"
+        },
+        "formats": {
+          "name": "formats",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "for_kids": {
+          "name": "for_kids",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_amount": {
+          "name": "price_amount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_currency": {
+          "name": "price_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "position": {
           "name": "position",
