@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { orderShelvesFor } from '@yaswami/core';
+import { MIN_SHELF_EVENTS, collectedStarted, orderShelvesFor } from '@yaswami/core';
 import { api } from '../api.ts';
 import { keys } from './keys.ts';
 import { meQuery, useCity } from './useSession.ts';
@@ -12,7 +12,12 @@ export function useShowcase() {
   const { city_id } = useCity();
   const subscribed = useQuery(meQuery).data?.subscribed_topics ?? [];
   const { data, error } = useQuery({ queryKey: keys.showcase(city_id), queryFn: () => api.showcase(city_id) });
-  return { shelves: data ? orderShelvesFor(data.shelves, subscribed) : null, failed: error };
+  // Начавшееся с момента ответа прячем и на полках; полка, где после этого меньше MIN_SHELF_EVENTS, уходит.
+  const now = Date.now();
+  const fresh = data?.shelves
+    .map((s) => ({ ...s, events: s.events.filter((e) => !collectedStarted(e, now)) }))
+    .filter((s) => s.events.length >= MIN_SHELF_EVENTS);
+  return { shelves: fresh ? orderShelvesFor(fresh, subscribed) : null, failed: error };
 }
 
 /** Одна полка из уже загруженной витрины: экран полки открывают с витрины, данные там есть. */

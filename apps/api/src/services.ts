@@ -132,6 +132,12 @@ const toCollectedItem = ({ external_id, city_id, event, announcement, claimed_ev
   };
 };
 const upcomingCollected = gte(sql`coalesce(${collectedEvents.ends_at}, ${collectedEvents.starts_at})`, sql`now()`);
+/**
+ * Что видит гость (витрина, поиск, мастера): только ещё не начавшиеся — на начатое уже не успеть, даже если оно идёт
+ * до вечера или неделю. Время в анонсе не указано (сборщик записывает 00:00 по часам города) — до конца того дня.
+ * Служебным очередям (обложки, ролики, админка) нужен upcomingCollected: там и идущие.
+ */
+const notStarted = sql`(${collectedEvents.starts_at} >= now() or (${collectedEvents.event}->>'starts_at' like '%T00:00:00%' and ${collectedEvents.starts_at} > now() - interval '1 day'))`;
 /** В ленту, на страницу события и в каталог для агентов попадает только опубликованное (модерация). */
 const published = eq(collectedEvents.status, 'published');
 /** Подтвердить как своё можно только событие, которое команда одобрила: контакт в непроверенном анонсе мог подставить кто угодно. */
@@ -175,7 +181,7 @@ export async function assertCity(db: Db | Tx, id: string | undefined): Promise<v
  */
 export async function listCollectedEvents(db: Db | Tx, { city_id = DEFAULT_CITY_ID }: CityFilterInput = {}): Promise<CollectedEventItem[]> {
   const rows = await collectedWithCover(db)
-    .where(and(upcomingCollected, published, inArray(collectedEvents.city_id, await nearbyCities(db, city_id))))
+    .where(and(notStarted, published, inArray(collectedEvents.city_id, await nearbyCities(db, city_id))))
     .orderBy(asc(collectedEvents.starts_at))
     .limit(500); // ponytail: без постраничной выдачи, пока событий одного города меньше лимита
   const popular = popularIds(rows, (r) => r.external_id);
@@ -523,7 +529,7 @@ function toHostListItem(h: HostRecord, all: Practice[], eventTopics: (string | u
 /** Темы предстоящих опубликованных событий по username контакта. */
 async function upcomingTopicsByHost(db: Db, username?: string): Promise<Map<string, (string | undefined)[]>> {
   const rows = await db.select({ username: collectedEvents.telegram_username, event: collectedEvents.event }).from(collectedEvents)
-    .where(and(upcomingCollected, published, username ? eq(collectedEvents.telegram_username, username) : isNotNull(collectedEvents.telegram_username)));
+    .where(and(notStarted, published, username ? eq(collectedEvents.telegram_username, username) : isNotNull(collectedEvents.telegram_username)));
   const byHost = new Map<string, (string | undefined)[]>();
   for (const r of rows) byHost.set(r.username!, [...byHost.get(r.username!) ?? [], r.event.topic]);
   return byHost;
@@ -544,7 +550,7 @@ export async function getHost(db: Db, id: string): Promise<HostItem> {
   const [h] = await db.select().from(hosts).where(eq(hosts.id, id));
   const item = h && toHostListItem(h, (await practicesByHost(db, h.id)).get(h.id) ?? [], (await upcomingTopicsByHost(db, h.username)).get(h.username) ?? []);
   if (!item) throw new AppError('not_found', 404);
-  const rows = await collectedWithCover(db).where(and(upcomingCollected, published, eq(collectedEvents.telegram_username, h!.username))).orderBy(asc(collectedEvents.starts_at));
+  const rows = await collectedWithCover(db).where(and(notStarted, published, eq(collectedEvents.telegram_username, h!.username))).orderBy(asc(collectedEvents.starts_at));
   return { ...item, photos: await hostPhotos(db, h!.id), events: rows.map(toCollectedItem) };
 }
 
@@ -626,7 +632,7 @@ export async function search(db: Db, { query, city_id = DEFAULT_CITY_ID, paginat
   const [events, offers, vacancies, topics, offered] = await Promise.all([
     db.select({ ...getTableColumns(collectedEvents), cover_id: photos.id, score: eventScore })
       .from(collectedEvents).leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id))
-      .where(and(upcomingCollected, published, inArray(collectedEvents.city_id, near), event.where)).orderBy(desc(eventScore)).limit(limit),
+      .where(and(notStarted, published, inArray(collectedEvents.city_id, near), event.where)).orderBy(desc(eventScore)).limit(limit),
     db.select({ host: hosts, id: practices.id, score: practice.score })
       .from(practices).innerJoin(hosts, eq(hosts.id, practices.host_id))
       .where(and(eq(practices.status, 'published'), ne(hosts.status, 'rejected'), inArray(hosts.city_id, near), practice.where)),

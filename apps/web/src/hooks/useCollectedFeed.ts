@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { DEFAULT_CITY_ID } from '@yaswami/core';
+import { DEFAULT_CITY_ID, collectedStarted } from '@yaswami/core';
 import { api } from '../api.ts';
 import { served } from '../served.ts';
 import { keys } from './keys.ts';
@@ -15,5 +15,7 @@ export function useCollectedFeed() {
     initialData: feed,
     staleTime: feed ? Infinity : 0,
   });
-  return { items: data ?? null, failed: error };
+  // Список мог прийти со страницей и жить в кэше долго: начавшееся за это время прячем и здесь (collectedStarted).
+  const now = Date.now();
+  return { items: data ? data.filter((e) => !collectedStarted(e, now)) : null, failed: error };
 }
