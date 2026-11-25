@@ -23,6 +23,7 @@ import { PeopleScreen } from './screens/PeopleScreen.tsx';
 import { SearchScreen } from './screens/SearchScreen.tsx';
 import { ShelfScreen } from './screens/ShelfScreen.tsx';
 import { DirectionScreen } from './screens/DirectionScreen.tsx';
+import { AllEventsScreen } from './screens/AllEventsScreen.tsx';
 import { startParam } from './tg.ts';
 
 const Spinner = () => <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>;
@@ -57,6 +58,7 @@ function FeedPage() {
       onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })}
       onOpenShelf={(id) => void navigate({ to: '/s/$id', params: { id } })}
       onOpenDirection={(slug) => void navigate({ to: '/d/$slug', params: { slug } })}
+      onOpenAll={() => void navigate({ to: '/all' })}
     />
   );
 }
@@ -81,6 +83,14 @@ function DirectionPage() {
   return <DirectionScreen key={slug} slug={slug} onBack={onBack} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} onGone={gone} />;
 }
 const directionRoute = createRoute({ getParentRoute: () => app, path: '/d/$slug', component: DirectionPage });
+
+/** Все события: день по частям. */
+function AllEventsPage() {
+  const navigate = useNavigate();
+  const { onBack } = useShell();
+  return <AllEventsScreen onBack={onBack} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
+}
+const allRoute = createRoute({ getParentRoute: () => app, path: '/all', component: AllEventsPage });
 
 function CollectedPage() {
   const { id } = collected.useParams();
@@ -278,7 +288,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, collected, hostsRoute, oldHostsRoute, hostRoute, jobsRoute, jobRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, allRoute, collected, hostsRoute, oldHostsRoute, hostRoute, jobsRoute, jobRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 

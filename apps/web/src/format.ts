@@ -70,6 +70,12 @@ export function dayLabel(wall: string): string {
   return key === localDate() ? 'Сегодня' : key === localDate(1) ? 'Завтра' : collectedDay(wall);
 }
 
+/** «4 события», «5 событий», «21 событие». */
+export function eventsCount(n: number): string {
+  const d = n % 10, h = n % 100;
+  return `${n} ${d === 1 && h !== 11 ? 'событие' : d >= 2 && d <= 4 && (h < 12 || h > 14) ? 'события' : 'событий'}`;
+}
+
 /** Откуда вакансия, для подписи ссылки на исходное объявление: «чат @danang_rabota»; у закрытого чата username нет. */
 export const jobSource = (sourceUrl: string) => {
   const chat = sourceUrl.match(/^https:\/\/t\.me\/(?!c\/)(\w+)\//)?.[1];

@@ -410,3 +410,31 @@ h2.today { color: var(--btn); }
 .topic-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 18px 20px 4px; }
 .topic-head h2 { margin: 0; font-size: 22px; font-weight: 700; }
 .topic-head .chip { margin: 0; }
+
+/* Конец витрины: вход в «Все события» — иконки тем, подпись, стрелка. */
+.all-card { display: flex; align-items: center; gap: 14px; width: calc(100% - 32px); margin: 26px 16px 0; padding: 16px; border-radius: 26px; text-align: left; cursor: pointer; background: var(--mat); border: .5px solid var(--stroke); box-shadow: inset 0 1px 0 var(--shine), var(--shadow); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); transition: transform .2s var(--spring); }
+.all-card:active { transform: scale(.98); }
+.all-icons { flex: none; display: grid; grid-template-columns: repeat(2, 30px); gap: 4px; }
+.all-icons img { width: 30px; height: 30px; }
+.all-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.all-text b { font-size: 19px; font-weight: 700; }
+.all-text small { font-size: 14px; color: var(--hint); }
+.all-chev { flex: none; font-size: 28px; line-height: 1; color: var(--btn); }
+.all-note { text-align: center; }
+
+/* «Все события»: дни переключателем, день — по частям, события плитками в две колонки. */
+.all-top .chip { margin-bottom: 14px; }
+.days { display: flex; gap: 6px; padding: 14px 16px 2px; overflow-x: auto; scrollbar-width: none; }
+.days::-webkit-scrollbar { display: none; }
+.day-chip { flex: none; border: 0; border-radius: 12px; padding: 8px 14px; font: inherit; font-size: 14px; font-weight: 600; color: var(--hint); background: color-mix(in srgb, var(--hint) 12%, transparent); cursor: pointer; }
+.day-chip[aria-selected='true'] { background: var(--text); color: var(--bg); }
+.part h2 { margin: 22px 20px 10px; font-size: 18px; font-weight: 700; }
+.part h2 span { font-size: 13px; font-weight: 500; color: var(--hint); }
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 16px; }
+.ev-tile { display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 18px; color: var(--text); text-decoration: none; background: var(--mat); border: .5px solid var(--stroke); box-shadow: inset 0 1px 0 var(--shine), var(--shadow); transition: transform .2s var(--spring); min-width: 0; }
+.ev-tile:active { transform: scale(.97); }
+.ev-tile-hd { display: flex; align-items: center; justify-content: space-between; }
+.ev-tile-hd img { width: 36px; height: 36px; }
+.ev-tile time { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--c, var(--text)); }
+.ev-tile b { font-size: 14px; font-weight: 600; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.ev-tile small { font-size: 11px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
