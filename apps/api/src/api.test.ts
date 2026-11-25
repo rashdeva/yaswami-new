@@ -75,6 +75,8 @@ Object.assign(bot.pace, { globalMs: 0, chatMs: 0 });
 settings.featuresOn = ['event_create'];
 // Лимит запросов в минуту тестам мешал бы: один «пользователь» делает их сотни. Сам лимит проверяет тест «безопасность».
 settings.requestsPerMinute = Infinity;
+// Адрес тестового бакета (setBucket ниже): расшифровка качает вложения только оттуда.
+process.env.MEDIA_PUBLIC_URL = 'https://media.test';
 Object.assign(settings, { ipRequestsPerMinute: Infinity, ipCostlyPerMinute: Infinity, botInboundPerMinute: Infinity, botMediaPerDay: Infinity });
 // Каждый тест начинает с чистых счётчиков: оповещение о диалоге и ключи подписи не переходят из теста в тест.
 beforeEach(() => { resetAlerts(); forgetKeys(); resetBotLimits(); });

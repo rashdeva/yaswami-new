@@ -252,7 +252,8 @@ export function createStore(url) {
      * Новое событие или дополнение уже известного. Публикация и решение модерации остаются от первого анонса.
      * `loaded_at` — версия строки из upcoming(), с которой склеивали: если команда за это время поправила событие или
      * решила его судьбу (updated_at сдвинулся), дополнение не пишем — склейка шла по устаревшим данным.
-     * Возвращает новую версию строки или null, если пропустили.
+     * Возвращает новую версию строки или null, если пропустили. Параметр — текстом (`::text`): с типом timestamptz
+     * postgres.js провёл бы его через Date и потерял микросекунды, и версии никогда бы не совпали.
      */
     upsert: async ({ external_id, channel, city_id, announcement, event, signup_url, status = 'pending', loaded_at = null }) => {
       const [row] = await sql`
@@ -267,7 +268,7 @@ export function createStore(url) {
         on conflict (external_id) do update set
           event = excluded.event, starts_at = excluded.starts_at, ends_at = excluded.ends_at,
           telegram_username = excluded.telegram_username, signup_url = excluded.signup_url, updated_at = now()
-        ${loaded_at ? sql`where collected_events.updated_at = ${loaded_at}::timestamptz` : sql``}
+        ${loaded_at ? sql`where collected_events.updated_at = ${loaded_at}::text::timestamptz` : sql``}
         returning updated_at::text as loaded_at`;
       return row?.loaded_at ?? null;
     },

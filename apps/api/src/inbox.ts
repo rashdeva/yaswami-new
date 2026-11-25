@@ -347,8 +347,9 @@ export const resetAlerts = () => alerted.clear();
  * сказать, что ответить), без его токена — бот «Я с вами». Кто не открывал этого бота — не получит.
  */
 export async function alertAdmins(conversation: Conversation, reason: string): Promise<void> {
-  // Один диалог — не чаще раза в ALERT_EVERY_MS: иначе человек, который шлёт сообщение за сообщением, пишет каждому из нас.
-  if (alerted.hit(conversation.id) > 1) return;
+  // Одна и та же причина по диалогу — не чаще раза в ALERT_EVERY_MS: иначе человек, который шлёт сообщение за
+  // сообщением, пишет каждому из нас. Новая причина (роль просит человека, жалоба) приходит сразу.
+  if (alerted.hit(`${conversation.id}:${reason}`) > 1) return;
   const text = `${conversation.peer_name}${conversation.peer_username ? ` (@${conversation.peer_username})` : ''} ждёт человека: ${reason}\n${settings.publicUrl}/admin/?c=${conversation.id}`; // сразу открывает этот диалог в «Людях»
   // Админу, который сам и есть собеседник (проверяет бота), не пишем: оповещение упало бы в тот же чат.
   await alertTeam(text, conversation.peer_id);

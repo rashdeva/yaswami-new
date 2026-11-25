@@ -20,8 +20,6 @@ export interface RsvpArgs {
   now: Date;
 }
 
-/** У события без конца считаем, что оно длится до 12 часов. */
-const ENDS_AFTER_MS = 12 * 3_600_000;
 const seats = (g: Guest) => 1 + g.plus_ones;
 const sum = (gs: Guest[]) => gs.reduce((n, g) => n + seats(g), 0);
 
@@ -32,9 +30,6 @@ const sum = (gs: Guest[]) => gs.reduce((n, g) => n + seats(g), 0);
 export function rsvp(a: RsvpArgs): RsvpResult {
   const { event, ticketTypes, guests, user_id, approval_status, now } = a;
   if (event.status !== 'published') return { ok: false, error: 'closed' };
-  // Прошедшее событие гость уже не меняет: «пойду» на вчерашнее испортило бы счётчики и отзывы. Организатор — может.
-  const endsAt = event.end_at ? new Date(event.end_at).getTime() : new Date(event.start_at).getTime() + ENDS_AFTER_MS;
-  if (!a.by_host && endsAt < now.getTime()) return { ok: false, error: 'closed' };
 
   const prev = guests.find((g) => g.user_id === user_id);
   const others = guests.filter((g) => g.user_id !== user_id);
