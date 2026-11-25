@@ -296,11 +296,13 @@ test('собранные события: витрина без входа, за�
   await db.insert(collectedEvents).values([
     row('telegram:danangevent/1#0', new Date(Date.now() + 86_400_000)),
     row('telegram:danangevent/2#0', new Date(Date.now() - 86_400_000)),
+    // Началось час назад и идёт ещё два часа: гостю его уже не показываем — не успеть.
+    { ...row('telegram:danangevent/4#0', new Date(Date.now() - 3600e3)), ends_at: new Date(Date.now() + 2 * 3600e3) },
     { ...row('telegram:danangevent/3#0', new Date(Date.now() + 2 * 86_400_000)), reactions: 12,
       announcement: { url: 'https://t.me/danangevent/3', media: [{ type: 'video' as const, url: 'https://media.x/telegram/danangevent/3.mp4' }] } },
   ]);
 
-  // витрина: только предстоящие, контакт организатора — только внутри ссылки записи
+  // витрина: только ещё не начавшиеся, контакт организатора — только внутри ссылки записи
   const items = (await (await app.request('/collected-events')).json()) as CollectedEventItem[];
   // отклик на анонс наружу не отдаём: из него только пометка «Популярное»
   assert.deepEqual(items.map((i) => [i.id, i.popular, 'reactions' in i]), [['danangevent-1-0', false, false], ['danangevent-3-0', true, false]]);
