@@ -116,6 +116,13 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
                 <Button size="sm" type="submit" disabled={!imageUrl}>Заменить нарисованной</Button>
               </form>
               <Hint>Картинка — только из хранилища xAI. Решение можно отменить в «Журнале».</Hint>
+              <Confirm
+                title={e.video_url ? 'Перерисовать обложку и ролик?' : 'Перерисовать обложку?'} action="Перерисовать"
+                description="Нарисованная обложка и ролик удалятся, иллюстратор сделает новые минут через 20–30 — это стоит денег. Пока он не взялся, действие можно отменить в «Журнале»."
+                onConfirm={() => redo(id)}
+              >
+                <Button size="sm" variant="outline" disabled={e.status === 'pending' || e.status === 'rejected'}>Перерисовать</Button>
+              </Confirm>
             </div>
           </div>
         </Section>
@@ -125,13 +132,6 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
             ? (
               <div className="flex flex-col items-start gap-2">
                 <div className="w-40"><AspectRatio ratio={9 / 16} className="overflow-hidden rounded-md bg-muted"><video className="size-full" src={e.video_url} controls preload="metadata" /></AspectRatio></div>
-                <Confirm
-                  title="Перерисовать обложку и ролик?" action="Перерисовать"
-                  description="Нарисованная обложка и ролик удалятся, иллюстратор сделает новые минут через 20–30 — это стоит денег. Пока он не взялся, действие можно отменить в «Журнале»."
-                  onConfirm={() => redo(id)}
-                >
-                  <Button size="sm" variant="outline">Перерисовать обложку и ролик</Button>
-                </Confirm>
               </div>
             )
             : (
