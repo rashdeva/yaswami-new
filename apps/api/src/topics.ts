@@ -13,12 +13,13 @@ import { illustrator } from './support.ts';
 export const topicFields = {
   name: topics.name, slug: topics.slug, emoji: topics.emoji, color: topics.color, what: topics.what, why: topics.why, first: topics.first,
   not_for: topics.not_for, tags: topics.tags, enabled: topics.enabled, origin: topics.origin, created_at: topics.created_at, icon_at: topics.icon_at,
+  direction: topics.direction,
 };
 type TopicRow = { [K in keyof typeof topicFields]: (typeof topics.$inferSelect)[K] };
 
 /** Адрес иконки из базы; время правки в адресе — чтобы кэш навсегда не держал старую. Относительный: годится и сайту, и приложению. */
-export const toTopicItem = ({ name, slug, emoji, color, what, why, first, not_for, icon_at }: TopicRow): TopicItem => ({
-  name, slug, emoji, color, what, why, first, not_for, icon_url: icon_at ? `/api/topics/${slug}/icon?v=${icon_at.getTime()}` : null,
+export const toTopicItem = ({ name, slug, emoji, color, what, why, first, not_for, icon_at, direction }: TopicRow): TopicItem => ({
+  name, slug, emoji, color, what, why, first, not_for, icon_url: icon_at ? `/api/topics/${slug}/icon?v=${icon_at.getTime()}` : null, direction,
 });
 
 /** Включённые темы в порядке фильтров. */

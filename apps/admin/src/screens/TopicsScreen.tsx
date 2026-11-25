@@ -1,13 +1,14 @@
 // «Темы»: по ним события раскладывает сборщик, люди фильтруют ленту и подписываются. Тему добавляют команда, агент
 // через MCP или сборщик сам — по меткам, которые копятся у событий без темы. Ненужную — выключить.
 import type { AdminTopic, TopicCandidate, Wire } from '@yaswami/core';
-import { TopicCreateInput } from '@yaswami/core';
+import { DIRECTIONS, TopicCreateInput, directionBySlug } from '@yaswami/core';
 import { useState } from 'react';
 import { Failed, Loading, Page } from '@/components/Page';
 import { ActionsCell, ActionsHead } from '@/components/RowActions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { useTopics } from '@/hooks/useTopics';
@@ -15,7 +16,8 @@ import { LibrarianLog } from '@/components/History';
 
 const DESCRIPTION = 'Темы, по которым раскладываются события и услуги. Новая тема сразу появляется в фильтрах и подписках, сборщик начинает относить к ней анонсы, а события без темы с её метками переходят в неё. Иконку рисует иллюстратор за несколько минут; свою можно загрузить. Список тем — это и то, что мы публикуем: событие без темы в ленту не попадает. Новые темы заводит хранитель тем — роль, которая раз в день сверяет события с темами; его правки — внизу, с отменой. Темы, которые раньше добавил сборщик, помечены «сборщик». Лишнюю тему выключите: события сохранят её имя, и её можно включить обратно.';
 const ORIGIN = { built_in: null, team: 'команда', collector: 'сборщик' } as const;
-const EMPTY = { name: '', slug: '', emoji: '', color: '#64748b', what: '', why: '', first: '', not_for: '', tags: '', split_from: '' };
+const NO_DIRECTION = 'none'; // у Radix Select не бывает пустого значения
+const EMPTY = { name: '', slug: '', emoji: '', color: '#64748b', what: '', why: '', first: '', not_for: '', tags: '', split_from: '', direction: NO_DIRECTION };
 type Draft = typeof EMPTY;
 const GUIDE: [keyof Draft, string][] = [
   ['what', 'Что это: что происходит на таком событии'],
@@ -39,10 +41,10 @@ export function TopicsScreen() {
   const [invalid, setInvalid] = useState<string | null>(null);
   const set = (key: keyof Draft) => (e: { target: { value: string } }) => setDraft((d) => ({ ...d, [key]: e.target.value }));
   const reset = () => (setEditing(null), setDraft(EMPTY), setInvalid(null));
-  const edit = (t: Wire<AdminTopic>) => (setEditing(t.name), setInvalid(null), setDraft({ name: t.name, slug: t.slug, emoji: t.emoji, color: t.color, what: t.what, why: t.why, first: t.first, not_for: t.not_for, tags: t.tags.join(', '), split_from: '' }));
+  const edit = (t: Wire<AdminTopic>) => (setEditing(t.name), setInvalid(null), setDraft({ name: t.name, slug: t.slug, emoji: t.emoji, color: t.color, what: t.what, why: t.why, first: t.first, not_for: t.not_for, tags: t.tags.join(', '), split_from: '', direction: t.direction ?? NO_DIRECTION }));
   const propose = (c: TopicCandidate) => (setEditing(null), setInvalid(null), setDraft({ ...EMPTY, name: c.tag, tags: c.tag, split_from: c.inside ?? '' }));
   const submit = () => {
-    const parsed = TopicCreateInput.safeParse({ ...draft, tags: tagsOf(draft.tags), split_from: draft.split_from || undefined });
+    const parsed = TopicCreateInput.safeParse({ ...draft, tags: tagsOf(draft.tags), split_from: draft.split_from || undefined, direction: draft.direction === NO_DIRECTION ? null : draft.direction });
     if (!parsed.success) return setInvalid(`Проверьте поле «${String(parsed.error.issues[0]!.path[0])}»: имя — по-русски, slug — латиницей (banya), цвет — #rrggbb, тексты гида — до 400 знаков.`);
     const { name, slug, split_from, ...rest } = parsed.data;
     if (editing) update({ name: editing, ...rest }, { onSuccess: reset });
@@ -67,6 +69,13 @@ export function TopicsScreen() {
           <Input className="w-36" placeholder="slug: games" value={draft.slug} onChange={set('slug')} disabled={!!editing} />
           <Input className="w-20" placeholder="🎲" value={draft.emoji} onChange={set('emoji')} />
           <Input className="w-16 p-1" type="color" aria-label="Цвет темы" value={draft.color} onChange={set('color')} />
+          <Select value={draft.direction} onValueChange={(v) => setDraft((d) => ({ ...d, direction: v }))}>
+            <SelectTrigger className="w-52" aria-label="Направление"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_DIRECTION}>Без направления</SelectItem>
+              {DIRECTIONS.map((d) => <SelectItem key={d.slug} value={d.slug}>{d.emoji} {d.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
         {GUIDE.map(([key, label]) => <Textarea key={key} rows={2} placeholder={label} value={draft[key]} onChange={set(key)} />)}
         <Input placeholder="Метки через запятую: цигун, тайцзи — события без темы с ними перейдут сюда" value={draft.tags} onChange={set('tags')} />
@@ -82,7 +91,7 @@ export function TopicsScreen() {
       {!!topics?.length && (
         <Table>
           <TableHeader>
-            <TableRow><TableHead>Тема</TableHead><TableHead>Гид</TableHead><TableHead>Метки</TableHead><TableHead>Событий</TableHead><ActionsHead /></TableRow>
+            <TableRow><TableHead>Тема</TableHead><TableHead>Направление</TableHead><TableHead>Гид</TableHead><TableHead>Метки</TableHead><TableHead>Событий</TableHead><ActionsHead /></TableRow>
           </TableHeader>
           <TableBody>
             {topics.map((t) => (
@@ -97,6 +106,7 @@ export function TopicsScreen() {
                     {!t.enabled && <Badge variant="outline">выключена</Badge>}
                   </div>
                 </TableCell>
+                <TableCell>{directionBySlug(t.direction) ? `${directionBySlug(t.direction)!.emoji} ${directionBySlug(t.direction)!.name}` : <Badge variant="destructive">нет</Badge>}</TableCell>
                 <TableCell className="text-muted-foreground max-w-md truncate" title={[t.what, t.why, t.first, t.not_for].join('\n\n')}>{t.what}</TableCell>
                 <TableCell className="max-w-48 truncate" title={t.tags.join(', ')}>{t.tags.join(', ')}</TableCell>
                 <TableCell>{t.events_count}</TableCell>

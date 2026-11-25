@@ -5,7 +5,7 @@ import { cityId, dateTime, EventCreateInput, EventUpdateInput, PRACTICE_STATUSES
 import type { Event, Guest, User } from './schema.ts';
 import { City, Feature, RsvpStatus, User as UserSchema } from './schema.ts';
 import type { TopicItem } from './topics.ts';
-import { OTHER_TOPIC, isTopic } from './topics.ts';
+import { DIRECTIONS, DIRECTION_SLUGS, OTHER_TOPIC, isTopic } from './topics.ts';
 
 const text = (max: number) => z.string().trim().max(max);
 // Сервис сам убирает @ и приводит к нижнему регистру (normalUsername): преобразование в схеме не описать в JSON Schema для MCP.
@@ -321,6 +321,8 @@ export const TopicCreateInput = z.object({
   not_for: guideText('Guide: who should be careful or check something beforehand'),
   tags: z.array(z.string().trim().toLowerCase().min(1).max(40)).max(30).default([])
     .describe('Tags that mean this topic (e.g. «цигун», «тайцзи»): events with topic «другое» and one of these tags move to the topic'),
+  direction: z.enum(DIRECTION_SLUGS).nullable().optional()
+    .describe(`Direction the topic belongs to — the big section people start from: ${DIRECTIONS.map((d) => `${d.slug} (${d.name})`).join(', ')}. Every topic should have one`),
   split_from: z.string().optional()
     .describe('Name of an existing broad topic this one is carved out of (`inside` of a candidate): its events carrying one of `tags` move to the new topic too, and people subscribed to the broad topic get subscribed to the new one'),
 });

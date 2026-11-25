@@ -16,12 +16,13 @@ const source = inTelegram ? 'telegram' : 'web';
  * поиск людей: host_searches_viewed → host_search_enabled или host_search_created → host_search_match_opened.
  * Витрина из полок (ADR-0009): shelf_viewed (полка показана) → shelf_item_opened (событие с полки) или shelf_opened («Все» —
  * экран полки); у всех — id полки, её автор (team/curator) и место на витрине: по ним куратор решает, какие полки работают.
+ * Направления: direction_opened (плитка на витрине, `direction`) → direction_filtered (тема внутри, `topic`).
  * Вакансии: jobs_viewed → job_viewed → job_contact_clicked (отклик в базе не хранится — считаем только здесь).
  * «Первый заход» отдельным действием не шлём: в PostHog у шага воронки есть условие «впервые для пользователя».
  */
 type Action =
   | 'app_opened' | 'login_started' | 'logged_in' | 'logged_out'
-  | 'feed_viewed' | 'feed_filtered' | 'shelf_viewed' | 'shelf_opened' | 'shelf_item_opened' | 'topics_subscribed' | 'topics_skipped' | 'collected_event_viewed' | 'signup_clicked' | 'collected_signed_up' | 'host_contacted' | 'host_channel_opened' | 'host_instagram_opened'
+  | 'feed_viewed' | 'feed_filtered' | 'shelf_viewed' | 'shelf_opened' | 'shelf_item_opened' | 'direction_opened' | 'direction_filtered' | 'topics_subscribed' | 'topics_skipped' | 'collected_event_viewed' | 'signup_clicked' | 'collected_signed_up' | 'host_contacted' | 'host_channel_opened' | 'host_instagram_opened'
   | 'hosts_viewed' | 'hosts_filtered' | 'host_viewed' | 'practice_signup_clicked'
   | 'jobs_viewed' | 'job_viewed' | 'job_contact_clicked'
   | 'search_viewed' | 'search_result_opened'

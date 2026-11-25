@@ -532,12 +532,12 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
 
     tool('admin_topics_create', {
       title: 'Add topic', shape: TopicCreateInput.shape,
-      description: `Add a topic: it appears in filters and subscriptions, the collector starts sorting announcements into it, and events with topic «другое» carrying one of \`tags\` move to it. The icon is drawn automatically within minutes. The topic list is also the content policy — add only a kind of offline activity we are ready to publish, never a single organizer's brand. Write the guide in Russian, in the tone of existing topics (admin_topics_list). ${ONLY_TEAM} Errors: topic_exists, topic_not_found (split_from).`,
+      description: `Add a topic: it appears in filters and subscriptions under its direction (\`direction\`, required in practice: people browse directions first, then topics inside), the collector starts sorting announcements into it, and events with topic «другое» carrying one of \`tags\` move to it. The icon is drawn automatically within minutes. The topic list is also the content policy — add only a kind of offline activity we are ready to publish, never a single organizer's brand. Write the guide in Russian, in the tone of existing topics (admin_topics_list). ${ONLY_TEAM} Errors: topic_exists, topic_not_found (split_from).`,
     }, (a) => admin.createTopic(db, ctx, a));
 
     tool('admin_topics_update', {
       title: 'Edit topic', shape: { name: z.string().describe('Topic name from admin_topics_list'), ...TopicUpdateInput.shape },
-      description: `Change a topic's guide, emoji, colour, tags or icon, or hide it (enabled: false — instead of deleting: events keep the name). Only passed fields change. ${ONLY_TEAM} Errors: not_found, bad_image_url, bad_image.`,
+      description: `Change a topic's direction (\`direction\`: the big section it is shown under), guide, emoji, colour, tags or icon, or hide it (enabled: false — instead of deleting: events keep the name). Only passed fields change. ${ONLY_TEAM} Errors: not_found, bad_image_url, bad_image.`,
     }, ({ name, ...input }) => admin.updateTopic(db, ctx, name, input));
 
     // --- Полки витрины (shelves.ts, ADR-0009)

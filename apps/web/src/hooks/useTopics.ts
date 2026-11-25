@@ -16,7 +16,17 @@ function paint(topics: TopicItem[]) {
  * хук — чтобы перерисоваться, когда темы пришли.
  */
 export function useTopics(): string[] {
-  useQuery({
+  useTopicQuery();
+  return Object.keys(TOPIC_GUIDES);
+}
+
+/** Темы целиком — с направлением (`direction`): по ним витрина раскладывает темы по направлениям. До ответа — пусто. */
+export function useTopicItems(): TopicItem[] {
+  return useTopicQuery().data ?? [];
+}
+
+function useTopicQuery() {
+  return useQuery({
     queryKey: keys.topics,
     queryFn: async () => {
       const topics = await api.listTopics();
@@ -26,5 +36,4 @@ export function useTopics(): string[] {
     },
     staleTime: 5 * 60_000,
   });
-  return Object.keys(TOPIC_GUIDES);
 }

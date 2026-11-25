@@ -27,6 +27,36 @@ export interface TopicItem extends TopicGuide {
   name: string;
   color: string;
   icon_url: string | null;
+  direction: DirectionSlug | null; // направление, в котором тема (DIRECTIONS); null — тема пока ни в одном
+}
+
+/**
+ * Направление (CONTEXT.md): крупный раздел над темами — с него человек начинает искать, внутри видит темы.
+ * Список меняется редко и живёт здесь, в коде; к какому направлению относится тема — поле `direction` темы в базе,
+ * его правят команда и хранитель тем (ADR-0010). В Luma такого нет.
+ */
+export const DIRECTIONS = [
+  { slug: 'body', name: 'Тело и практики', emoji: '🧘' },
+  { slug: 'sport', name: 'Спорт и движение', emoji: '🏃' },
+  { slug: 'creative', name: 'Творчество', emoji: '🎨' },
+  { slug: 'social', name: 'Игры и общение', emoji: '🎲' },
+  { slug: 'growth', name: 'Развитие', emoji: '📚' },
+  { slug: 'travel', name: 'Путешествия', emoji: '🧭' },
+  { slug: 'kids', name: 'Детям', emoji: '👶' },
+] as const;
+export type DirectionSlug = (typeof DIRECTIONS)[number]['slug'];
+export type Direction = (typeof DIRECTIONS)[number];
+export const DIRECTION_SLUGS = DIRECTIONS.map((d) => d.slug) as [DirectionSlug, ...DirectionSlug[]];
+export const directionBySlug = (slug: string | null | undefined): Direction | undefined => DIRECTIONS.find((d) => d.slug === slug);
+
+/**
+ * Темы, разложенные по направлениям, в порядке DIRECTIONS; внутри — в порядке тем. Тема без направления —
+ * отдельной строкой в конце (`direction: null`), чтобы её не потерять. Пустые направления не возвращаются.
+ */
+export function topicsByDirection<T extends { direction: DirectionSlug | null }>(topics: T[]): { direction: Direction | null; topics: T[] }[] {
+  const groups = DIRECTIONS.map((d) => ({ direction: d as Direction | null, topics: topics.filter((t) => t.direction === d.slug) }));
+  const loose = topics.filter((t) => !directionBySlug(t.direction));
+  return [...groups, ...loose.map((t) => ({ direction: null, topics: [t] }))].filter((g) => g.topics.length);
 }
 
 export const TOPIC_GUIDES: Record<string, TopicGuide> = {
@@ -148,7 +178,7 @@ export const hasBuiltInIcon = (slug: string) => BUILT_IN_SLUGS.has(slug);
 export const isTopic = (topic: string) => topic === OTHER_TOPIC || Object.hasOwn(TOPIC_GUIDES, topic);
 
 /** Заменяет реестр списком из базы; порядок — как пришёл. Объект тот же: кто его импортировал, видит новое. */
-export function setTopics(list: TopicItem[]): void {
+export function setTopics(list: (Omit<TopicItem, 'direction'> & { direction?: DirectionSlug | null })[]): void {
   for (const key of Object.keys(TOPIC_GUIDES)) delete TOPIC_GUIDES[key];
-  for (const { name, ...guide } of list) TOPIC_GUIDES[name] = guide;
+  for (const { name, direction: _direction, ...guide } of list) TOPIC_GUIDES[name] = guide;
 }

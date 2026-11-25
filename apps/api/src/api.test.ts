@@ -2362,6 +2362,22 @@ test('хранитель тем: задание раз в день в его ч�
   librarian.ask = ask;
 });
 
+test('направления: тема знает своё направление, команда его меняет, чужого направления нет', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const list = async () => (await (await app.request('/topics')).json()) as TopicItem[];
+  // Первые темы разложены миграцией.
+  const yoga = (await list()).find((t) => t.name === 'йога');
+  assert.equal(yoga?.direction, 'body');
+  const before = (await list()).find((t) => t.name === 'кино')!.direction;
+  const moved = await call(admin, 'PATCH', `/admin/topics/${encodeURIComponent('кино')}`, { direction: 'growth' });
+  assert.equal(moved.status, 200);
+  assert.equal(((await moved.json()) as AdminTopic).direction, 'growth');
+  assert.equal((await list()).find((t) => t.name === 'кино')!.direction, 'growth');
+  assert.equal((await call(admin, 'PATCH', `/admin/topics/${encodeURIComponent('кино')}`, { direction: 'nowhere' })).status, 400);
+  await call(admin, 'PATCH', `/admin/topics/${encodeURIComponent('кино')}`, { direction: before });
+});
+
 // Операции команды: инструмент MCP ↔ маршрут REST. Изменяющие из них проверяет тест журнала ниже.
 const ADMIN_PAIRS: Record<string, string> = {
   admin_overview_get: 'GET /admin/overview',
