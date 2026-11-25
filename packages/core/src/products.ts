@@ -36,8 +36,11 @@ export const productCategoryBySlug = (slug: string | null | undefined) => PRODUC
  */
 export const PRODUCT_TTL_DAYS = 30;
 
-/** С какого числа мастеров с опубликованными товарами в городе мини-приложение показывает вход в раздел «Товары». */
-export const PRODUCTS_MIN_HOSTS = 15;
+/**
+ * С какого числа мастеров с опубликованными товарами в городе мини-приложение показывает вход в раздел «Товары».
+ * Было 15 (#184); 2026-11-26 в Дананге товары у 6 мастеров и 100 позиций в шести категориях — раздел уже полезен, вкладку открыли с 5.
+ */
+export const PRODUCTS_MIN_HOSTS = 5;
 
 /** Ключ повтора товара у мастера: название без регистра, «ё» и лишних пробелов. */
 export const productTitleKey = (title: string) => title.toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
