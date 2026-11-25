@@ -2,12 +2,12 @@ import type { ReactNode } from 'react';
 import { track } from '../analytics.ts';
 import { useViewed } from '../hooks/useViewed.ts';
 import { useEffect, useState } from 'react';
-import type { CollectedEventItem } from '@yaswami/core';
-import { collectedBadges, collectedDayKey, collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
+import type { CollectedEventItem, Direction, TopicItem } from '@yaswami/core';
+import { collectedBadges, collectedDayKey, collectedPath, collectedTime, topicIcon, topicsByDirection, topicSlug } from '@yaswami/core';
 import { useCollectedFeed } from '../hooks/useCollectedFeed.ts';
 import { useCity } from '../hooks/useSession.ts';
 import { useTopicSubscription } from '../hooks/useTopicSubscription.ts';
-import { useTopics } from '../hooks/useTopics.ts';
+import { useTopicItems, useTopics } from '../hooks/useTopics.ts';
 import { ProfileButton } from '../components/Avatar.tsx';
 import { EventRow } from '../components/EventRow.tsx';
 import { ShelfRail } from '../components/ShelfRail.tsx';
@@ -20,6 +20,8 @@ interface Props {
   onOpen: (event: CollectedEventItem) => void;
   /** «Все» у полки — экран полки целиком. */
   onOpenShelf: (id: string) => void;
+  /** Плитка направления — экран направления с его темами. */
+  onOpenDirection: (slug: string) => void;
 }
 
 /** Значение фильтра «Популярное»: стоит в одном ряду с темами, но темой не является. */
@@ -30,7 +32,7 @@ const POPULAR = '🔥';
  * и соседних городов по дням. Открыта без входа; кто ещё не выбрал город — сначала выбирает. Выбрал тему в фильтре —
  * полки прячутся: человек ищет сам.
  */
-export function FeedScreen({ lead, onOpen, onOpenShelf }: Props) {
+export function FeedScreen({ lead, onOpen, onOpenShelf, onOpenDirection }: Props) {
   const city = useCity();
   const { items, failed } = useCollectedFeed();
   const { shelves } = useShowcase();
@@ -50,6 +52,9 @@ export function FeedScreen({ lead, onOpen, onOpenShelf }: Props) {
   // Фильтр предлагает только темы, по которым есть события; порядок — как в гиде.
   const allTopics = useTopics();
   const topics = allTopics.filter((t) => items?.some((e) => e.topic === t));
+  // Плитки — направления, где есть события (внутри — темы); тема без направления — своей плиткой-фильтром.
+  const topicItems = useTopicItems();
+  const groups = topicsByDirection(topicItems.filter((t) => topics.includes(t.name)));
   // Без темы внизу — события, которых нет на полках: полки уже показали их выше. Выбрана тема — все события темы.
   const onShelves = new Set(topic ? [] : (shelves ?? []).flatMap((s) => s.events.map((e) => e.id)));
   const days: CollectedEventItem[][] = [];
@@ -83,15 +88,19 @@ export function FeedScreen({ lead, onOpen, onOpenShelf }: Props) {
   return (
     <>
       {top}
-      {/* Быстрый поиск: плитки тем — в одно касание к событиям для детей, йоге, бане. Выбранная тема прячет полки. */}
+      {/* Быстрый поиск: плитки направлений — «Тело и практики», «Детям»…; внутри направления — его темы. */}
       {(topics.length > 1 || items?.some((e) => e.popular)) && (
         <div className="quick" role="group" aria-label="Темы">
           {items?.some((e) => e.popular) && (
             <button className="tile" aria-pressed={topic === POPULAR} onClick={() => setTopic(topic === POPULAR ? null : POPULAR)}><span className="tile-ico hot" />Популярное</button>
           )}
-          {topics.map((t) => (
-            <button key={t} className="tile" aria-pressed={topic === t} onClick={() => setTopic(topic === t ? null : t)}>
-              <img className="tile-ico" src={topicIcon(t)} alt="" />{t[0]!.toUpperCase() + t.slice(1)}
+          {groups.map(({ direction, topics: inside }) => direction ? (
+            <button key={direction.slug} className="tile" onClick={() => { track('direction_opened', { direction: direction.slug }); onOpenDirection(direction.slug); }}>
+              <img className="tile-ico" src={topicIcon(inside[0]!.name)} alt="" />{direction.name}
+            </button>
+          ) : (
+            <button key={inside[0]!.name} className="tile" aria-pressed={topic === inside[0]!.name} onClick={() => setTopic(topic === inside[0]!.name ? null : inside[0]!.name)}>
+              <img className="tile-ico" src={topicIcon(inside[0]!.name)} alt="" />{inside[0]!.name[0]!.toUpperCase() + inside[0]!.name.slice(1)}
             </button>
           ))}
         </div>
@@ -105,7 +114,7 @@ export function FeedScreen({ lead, onOpen, onOpenShelf }: Props) {
       {/* Первый раз спрашиваем сами; дальше темы меняются в профиле. */}
       {subscription.topics === null && (
         <TopicPicker
-          all={allTopics}
+          groups={topicsByDirection(topicItems.filter((t) => allTopics.includes(t.name)))}
           saving={subscription.saving}
           error={subscription.failed?.message}
           onSave={(topics) => void subscription.save(topics).catch(() => {})}
@@ -146,30 +155,33 @@ export function FeedScreen({ lead, onOpen, onOpenShelf }: Props) {
 }
 
 interface PickerProps {
-  all: string[];
+  /** Темы по направлениям: человек выбирает направление целиком — подписка на все его темы. */
+  groups: { direction: Direction | null; topics: TopicItem[] }[];
   saving: boolean;
   error?: string;
   onSave: (topics: string[]) => void;
 }
 
-/** «Что вам интересно?» — первый вопрос о темах подписки. Отказ тоже ответ: второй раз не спрашиваем, темы — в профиле. */
-function TopicPicker({ all, saving, error, onSave }: PickerProps) {
+/** «Что вам интересно?» — первый вопрос о подписке. Выбор — направления: подписка на все их темы; отдельные темы — в профиле. Отказ тоже ответ. */
+function TopicPicker({ groups, saving, error, onSave }: PickerProps) {
   const [picked, setPicked] = useState<string[]>([]);
-  const toggle = (t: string) => setPicked((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
+  const key = (g: PickerProps['groups'][number]) => g.direction?.slug ?? g.topics[0]!.name;
+  const toggle = (k: string) => setPicked((p) => (p.includes(k) ? p.filter((x) => x !== k) : [...p, k]));
+  const topics = groups.filter((g) => picked.includes(key(g))).flatMap((g) => g.topics.map((t) => t.name));
   return (
     <section className="topics-ask">
       <h2>Что вам интересно?</h2>
-      <p className="note lead">Отметьте темы — бот напишет в Telegram, когда по ним появятся новые события. Не чаще раза в день. Поменять — в профиле.</p>
+      <p className="note lead">Отметьте направления — бот напишет в Telegram, когда в них появятся новые события. Не чаще раза в день. Отдельные темы — в профиле.</p>
       <div className="chips">
-        {all.map((t) => (
-          <button key={t} className="chip" aria-pressed={picked.includes(t)} onClick={() => toggle(t)}>
-            <img src={topicIcon(t)} alt="" />{t[0]!.toUpperCase() + t.slice(1)}
+        {groups.map((g) => (
+          <button key={key(g)} className="chip" aria-pressed={picked.includes(key(g))} onClick={() => toggle(key(g))}>
+            <img src={topicIcon(g.topics[0]!.name)} alt="" />{g.direction?.name ?? g.topics[0]!.name[0]!.toUpperCase() + g.topics[0]!.name.slice(1)}
           </button>
         ))}
       </div>
       {error && <p className="note" role="alert">{error}</p>}
       <div className="cta-row">
-        <button className="cta" disabled={saving || !picked.length} onClick={() => onSave(picked)}>{saving ? 'Сохраняем…' : 'Сообщать о новом'}</button>
+        <button className="cta" disabled={saving || !topics.length} onClick={() => onSave(topics)}>{saving ? 'Сохраняем…' : 'Сообщать о новом'}</button>
         <button className="cta alt" disabled={saving} onClick={() => onSave([])}>Не сейчас</button>
       </div>
     </section>

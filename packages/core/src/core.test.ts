@@ -202,3 +202,12 @@ test('полки: период по календарю города, прави�
   assert.deepEqual(orderShelvesFor(shelves, ['танцы']).map((s) => s.i), [0, 3, 1, 2], 'полка темы поднимается, первое место — за командой');
   assert.deepEqual(orderShelvesFor(shelves, []).map((s) => s.i), [0, 1, 2, 3]);
 });
+
+test('направления: темы по направлениям в их порядке, тема без направления — отдельно в конце', async () => {
+  const { topicsByDirection, directionBySlug } = await import('./index.ts');
+  const t = (name: string, direction: 'body' | 'creative' | 'kids' | null) => ({ name, direction });
+  const groups = topicsByDirection([t('музыка', 'creative'), t('йога', 'body'), t('новая', null), t('баня', 'body')]);
+  assert.deepEqual(groups.map((g) => [g.direction?.slug ?? null, g.topics.map((x) => x.name)]), [['body', ['йога', 'баня']], ['creative', ['музыка']], [null, ['новая']]]);
+  assert.equal(directionBySlug('kids')?.name, 'Детям');
+  assert.equal(directionBySlug('nope'), undefined);
+});
