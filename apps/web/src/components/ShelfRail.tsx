@@ -4,6 +4,7 @@ import { collectedPath, collectedTime, topicIcon } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { dayLabel } from '../format.ts';
 import { Cover } from './Cover.tsx';
+import { MoreButton } from './MoreButton.tsx';
 
 /** Когда событие: «Сегодня, 19:00» — коротко, карточка на полке узкая. */
 export const shelfWhen = (e: CollectedEventItem) => [dayLabel(e.starts_at), collectedTime(e.starts_at)].filter(Boolean).join(', ');
@@ -25,7 +26,7 @@ export function ShelfRail({ shelf, index, onOpen, onMore }: Props) {
       <div className="shelf-head">
         {shelf.topic && <img src={topicIcon(shelf.topic)} alt="" />}
         <h2>{shelf.title}</h2>
-        <button className="more" onClick={() => { track('shelf_opened', props); onMore(); }}>Все {shelf.events.length}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" /></svg></button>
+        <MoreButton count={shelf.events.length} onClick={() => { track('shelf_opened', props); onMore(); }} />
       </div>
       <div className="rail">
         {shelf.events.map((e) => (
