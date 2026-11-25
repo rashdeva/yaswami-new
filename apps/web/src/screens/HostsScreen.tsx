@@ -9,6 +9,7 @@ import { PracticeSheet } from '../components/PracticeSheet.tsx';
 import { SearchField } from '../components/SearchField.tsx';
 import { SearchResults } from '../components/SearchResults.tsx';
 import { ServiceRow } from '../components/ServiceRow.tsx';
+import { AddInvite } from '../components/AddInvite.tsx';
 import { CHEAP } from '../services.ts';
 import { usePracticeSheet, useServices } from '../hooks/useHosts.ts';
 import { useSearch } from '../hooks/useSearch.ts';
@@ -24,6 +25,8 @@ interface Props {
   onOpenHost: (host: HostListItem) => void;
   /** Находка поиска не услуга (событие, товар) — её страница. */
   onOpenEntry: (entry: Wire<SearchEntry>) => void;
+  /** Добавить свою услугу — через бота. */
+  onAdd: () => void;
 }
 
 /** Сколько услуг раздела видно на вкладке; остальные — за «Все». */
@@ -33,7 +36,7 @@ const PREVIEW = 3;
  * Вкладка «Услуги»: строка поиска, плитки (сквозные разделы и направления), полка «Попробовать недорого» и разделы по направлениям — по три
  * услуги и «Все». Услуга открывает шторку с записью. Набран запрос — вместо витрины находки, услуги первыми. Открыта без входа.
  */
-export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onOpenEntry }: Props) {
+export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onOpenEntry, onAdd }: Props) {
   useTopics(); // иконки тем у событий в находках поиска — из базы: перерисоваться, когда пришли
   const { sections, tiles, cheap, find, failed } = useServices();
   const search = useSearch(query, 'services');
@@ -102,6 +105,7 @@ export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onO
           <p className="note">Услуги собраны из открытых каналов и чатов. Записывает и отвечает сам мастер.</p>
         </>
       )}
+      <AddInvite title="Ведёте занятия или оказываете услуги?" text="Массаж, уроки, тренировки, стрижки. Напишите боту, что делаете, и мы добавим вас в «Услуги»." onOpen={onAdd} />
       <PracticeSheet open={sheet.open} onClose={sheet.close} onPick={sheet.pick} onSignUp={sheet.signUp} onOpenHost={onOpenHost} />
     </>
   );

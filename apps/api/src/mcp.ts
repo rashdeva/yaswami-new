@@ -5,7 +5,7 @@ import * as z from 'zod';
 import type { CollectedEventItem, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminActivityListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, AdminGuestUpdateInput, CityCreateInput, CityUpdateInput,
-  CityFilterInput, CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminProductListInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceAddInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, SOURCES_PER_DAY, TEMPLATES, cityId, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSelfUpdateInput,
+  CityFilterInput, CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminProductListInput, PracticeSignupInput, PracticeUpdateInput, PracticeCreateInput, ProductCreateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceAddInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, SOURCES_PER_DAY, PRACTICES_PER_DAY, PRODUCTS_PER_DAY, TEMPLATES, cityId, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSelfUpdateInput,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
@@ -16,6 +16,7 @@ import {
   adminOverview, conversationById, createAccount, deleteAccount, inboxFeed, inboxSend, inboxThread, inboxUpdate, isAdmin, listAccounts, rejectDraft, sendDraft,
   updateAccount, updateDraft,
 } from './inbox.ts';
+import { createPractice, createProduct } from './maker.ts';
 import { collectedUrl, eventUrl } from './notifications.ts';
 import * as hs from './host-searches.ts';
 import * as s from './services.ts';
@@ -30,9 +31,9 @@ const KINDS = `Event kind is a visual template: ${Object.entries(TEMPLATES).map(
 
 // Что доступно токену с областью действия (роли Hermes, с которыми говорят посторонние): только эти инструменты.
 // Ограничение живёт здесь, на сервере, а не в конфиге роли: украденный токен роли не открывает ни переписку, ни админку.
-const PERSON_TOOLS = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update', 'person_sources_add'];
+const PERSON_TOOLS = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update', 'person_sources_add', 'person_products_create', 'person_practices_create'];
 const SCOPE_TOOLS: Record<TokenScope, Set<string>> = {
-  support: new Set(['collected_events_list', 'hosts_list', 'products_list', 'products_get', 'search', ...PERSON_TOOLS]),
+  support: new Set(['collected_events_list', 'topics_list', 'hosts_list', 'products_list', 'products_get', 'search', ...PERSON_TOOLS]),
   catalog: new Set(['collected_events_list', 'hosts_list', 'products_list', 'products_get', 'search']),
   // Куратор витрины (agents/curator): читает каталог и правит только полки; что ему можно с полкой, решает shelves.ts.
   curator: new Set(['cities_list', 'topics_list', 'collected_events_list', 'showcase_get', 'admin_shelves_list', 'admin_shelves_create', 'admin_shelves_update', 'admin_shelves_delete']),
@@ -248,6 +249,16 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
     description: 'Set the topics the user is subscribed to, the city they live in and the bot notifications they turned off (`muted_notifications`: topic_digest, rsvp_confirmed, guest_registered, feedback_request, feedback_received); only passed fields change. Once a day the bot tells them about new catalogue events of these topics in their city. The topic list replaces the previous one; [] unsubscribes. Current values — `subscribed_topics` (null: never asked) and `city_id` in users_get_self. Call only when the user asked for it. Errors: invalid_input, city_not_found.',
   }, (a, me, db) => s.updateSelf(db, me, a));
 
+  const PRODUCTS_CREATE = `Add a product the user makes and sells themselves (home food, pastry, farm produce, handmade) to their own maker page. Not for resale, services (practices_create) or events. It waits for the team's approval and is not shown until then; the team is told at once. The maker page is the user's own organizer profile, created if they have none yet; people order through the user's Telegram chat, so a Telegram username is required. Ask for what is missing (what it is, price) before calling; one call per product. \`host_url\` — the maker page where it appears once approved. Errors: username_required — the user has no Telegram username: ask them to set one in Telegram settings; product_exists — they already have a product with this title; products_limit — ${PRODUCTS_PER_DAY} products in the last 24 hours, try tomorrow; city_not_found.`;
+  tool('products_create', {
+    title: 'Add my product', asUser: true, shape: ProductCreateInput.shape, description: PRODUCTS_CREATE,
+  }, (a, me, db) => createProduct(db, me, a));
+
+  const PRACTICES_CREATE = `Add a service or regular class the user runs themselves (massage, haircut, training, lessons, a weekly club) to their own organizer page — something without a date; a one-off dated event is events_create. It waits for the team's approval and is not shown until then; the team is told at once. The page is the user's own organizer profile, created if they have none yet; people sign up through the user's Telegram chat, so a Telegram username is required. Ask for what is missing (what it is, price) before calling; one call per service. \`host_url\` — the page where it appears once approved. Errors: username_required — the user has no Telegram username: ask them to set one in Telegram settings; practices_limit — ${PRACTICES_PER_DAY} services in the last 24 hours, try tomorrow; city_not_found.`;
+  tool('practices_create', {
+    title: 'Add my service', asUser: true, shape: PracticeCreateInput.shape, description: PRACTICES_CREATE,
+  }, (a, me, db) => createPractice(db, me, a));
+
   const SOURCES_ADD = `Suggest a channel the collector should read announcements from: a public Telegram channel (@username or t.me link) or an Instagram profile (instagram.com/<handle>). It is not read until the team approves it; when approved, the bot tells the person. Call only when the person asks to add a channel. Errors: sources_limit — the person already suggested ${SOURCES_PER_DAY} sources in the last 24 hours, try tomorrow; source_exists — we already know this channel (it is read, waits for a decision or was declined); channel_not_found — no public Telegram chat with this username; not_a_channel — it is a group, chat or bot, only channels are accepted; invalid_input — neither a Telegram channel nor an Instagram profile; city_not_found.`;
   tool('sources_add', {
     title: 'Suggest an announcement source', asUser: true, shape: SourceAddInput.shape, description: SOURCES_ADD,
@@ -338,6 +349,16 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
       title: 'Suggest a source for the person', shape: { ticket, ...SourceAddInput.shape },
       description: `${SOURCES_ADD} The suggestion is recorded as the person's: the team sees who sent it, the daily limit is theirs.`,
     }, async ({ ticket: t, ...input }) => addSource(db, await person(t), input));
+
+    tool('person_products_create', {
+      title: 'Add a product for the person', shape: { ticket, ...ProductCreateInput.shape },
+      description: `${PRODUCTS_CREATE} The product is the person's: it goes to their maker page, the daily limit is theirs.`,
+    }, async ({ ticket: t, ...input }) => createProduct(db, await person(t), input));
+
+    tool('person_practices_create', {
+      title: 'Add a service for the person', shape: { ticket, ...PracticeCreateInput.shape },
+      description: `${PRACTICES_CREATE} The service is the person's: it goes to their page, the daily limit is theirs.`,
+    }, async ({ ticket: t, ...input }) => createPractice(db, await person(t), input));
 
     // --- События Ясвами (admin/events.ts): любое событие, от имени его организатора и по его правилам
     tool('admin_events_list', {
