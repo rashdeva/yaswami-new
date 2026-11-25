@@ -4,7 +4,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import * as z from 'zod';
 import type { CollectedEventItem, User } from '@yaswami/core';
 import {
-  AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, AdminGuestUpdateInput, CityCreateInput, CityUpdateInput,
+  AccountCreateInput, AccountUpdateInput, AdminActionListInput, AdminActivityListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, AdminGuestUpdateInput, CityCreateInput, CityUpdateInput,
   CityFilterInput, CollectedListInput, CollectedUpdateInput, CoverSetInput, DraftSendInput, EventCreateInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, AdminProductListInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceAddInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, SOURCES_PER_DAY, TEMPLATES, cityId, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSelfUpdateInput,
   TicketTypeCreateInput, TicketTypeUpdateInput, UserSearchInput, UserUpdateInput,
 } from '@yaswami/core';
@@ -577,8 +577,13 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
     // --- Пользователи и аудитория (admin/users.ts)
     tool('admin_users_search', {
       title: 'Find user', readOnly: true, shape: UserSearchInput.shape,
-      description: 'Find people who have used the service, by name or username; without query — the first 50 by name. Returns their user id (`id`) — pass it as as_user_id to act on their behalf, or to admin_users_get — and `telegram_id` (null for people who signed in with Apple or Google).',
+      description: 'Find people who have used the service, by name or username; without query — the 50 who joined last. Each has created_at (joined), joined_via, start_param, last_seen_at and registrations (sign-ups count). Returns their user id (`id`) — pass it as as_user_id to act on their behalf, or to admin_users_get — and `telegram_id` (null for people who signed in with Apple or Google).',
     }, (a) => admin.searchUsers(db, a.query));
+
+    tool('admin_activity_list', {
+      title: 'Activity: who joined, signed up, opened what', readOnly: true, shape: AdminActivityListInput.shape,
+      description: 'Activity feed, newest first: people who joined (how — mini_app, bot, site, mobile_app — and start_param: the link they came with, `<event>-r<inviter user id>-s<tag>`), answers to Yaswami events, sign-ups to catalogue events and services, and event pages opened (with who invited them). Filter by type or user_id; page with next_cursor. Use it to see who is new, what people sign up for, or to spot spam sign-ups.',
+    }, (a) => admin.listActivity(db, a));
 
     tool('admin_users_get', {
       title: 'One user', readOnly: true, shape: { user_id },

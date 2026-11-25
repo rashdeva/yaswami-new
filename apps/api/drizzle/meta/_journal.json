@@ -495,8 +495,13 @@
     {
       "idx": 70,
       "version": "7",
+<<<<<<< HEAD
       "when": 1795628591810,
       "tag": "20261126090000_product_categories",
+=======
+      "when": 1795631112790,
+      "tag": "20261125182512_user_activity",
+>>>>>>> origin/main
       "breakpoints": true
     }
   ]
