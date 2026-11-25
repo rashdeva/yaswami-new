@@ -4,6 +4,7 @@ import type { AdminCollectedEvent, AdminCollectedEventView, AdminHost, AdminHost
 import { normalUsername } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
+import { assertLibrarianMayEditEvent } from '../librarian.ts';
 import type { Db } from '../db/client.ts';
 import { collectedEvents, collectedEventSignups, hosts, jobs, photos, practices, practiceSignups, users } from '../db/schema.ts';
 import { photoUrl } from '../photos.ts';
@@ -22,8 +23,11 @@ export async function getCollectedEventSignups(db: Db, slug: string): Promise<Ad
   return { ...item, status: row!.status, city_id: row!.city_id, channel: row!.channel, source_text: row!.announcement.text ?? null, views: row!.views, reactions: row!.reactions, telegram_username, whatsapp_phone, instagram_username, url, signups };
 }
 
-export const updateCollectedEvent = (db: Db, ctx: Ctx, slug: string, input: CollectedUpdateInput): Promise<AdminCollectedEvent> =>
-  audited(db, ctx, { action: 'admin_collected_events_update', entity: 'collected_event', id: slug, input }, (tx) => s.updateCollectedEvent(tx, slug, input));
+/** Правка и решение модератора. Хранителю тем (ADR-0010) — только тема и снятие с публикации. */
+export async function updateCollectedEvent(db: Db, ctx: Ctx, slug: string, input: CollectedUpdateInput): Promise<AdminCollectedEvent> {
+  await assertLibrarianMayEditEvent(db, ctx, input);
+  return audited(db, ctx, { action: 'admin_collected_events_update', entity: 'collected_event', id: slug, input }, (tx) => s.updateCollectedEvent(tx, slug, input));
+}
 
 /**
  * Перерисовать обложку и ролик: нарисованная обложка удаляется, обработка сбрасывается, очередь возьмёт событие

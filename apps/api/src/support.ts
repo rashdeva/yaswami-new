@@ -130,6 +130,11 @@ export const curator = {
   ask: (task: string): Promise<string | null> => askRole(settings.curatorUrl, settings.curatorKey, [{ role: 'user', content: task }], 10 * 60_000),
 };
 
+/** Роль librarian (agents/librarian): разбирает темы и раскладку событий через наш MCP и отвечает отчётом. Тесты подменяют `ask`. */
+export const librarian = {
+  ask: (task: string): Promise<string | null> => askRole(settings.librarianUrl, settings.librarianKey, [{ role: 'user', content: task }], 15 * 60_000),
+};
+
 /** Роль hunter (agents/hunter): по вопросу из чата пишет короткий ответ с событием. Тесты подменяют `ask`. */
 export const hunter = {
   /** Текст ответа; null — роль недоступна или решила не отвечать. */

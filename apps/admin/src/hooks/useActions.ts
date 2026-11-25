@@ -19,6 +19,12 @@ export function useActionFeed(filter: ActionFilter) {
 
 export const useAction = (id: string) => useQuery({ queryKey: keys.action(id), queryFn: () => api.action(id) });
 
+/** Последние правки роли с токеном этой области (хранитель тем — `librarian`), раз в минуту. */
+export function useScopeHistory(scope: string, limit = 30) {
+  const filter = { scope, pagination_limit: limit };
+  return useQuery({ queryKey: keys.actions(filter), queryFn: () => api.actions(filter), refetchInterval: 60_000 });
+}
+
 /** Последние действия над одной сущностью — блок «История» в её карточке. */
 export function useHistory(entity: AdminEntity, entity_id: string, limit = 10) {
   const filter = { entity, entity_id, pagination_limit: limit };

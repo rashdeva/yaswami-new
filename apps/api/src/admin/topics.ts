@@ -7,6 +7,7 @@ import { audited } from '../audit.ts';
 import type { Db, Tx } from '../db/client.ts';
 import { subscriptions, topics } from '../db/schema.ts';
 import { AppError } from '../services.ts';
+import { assertLibrarianMayEditTopic } from '../librarian.ts';
 import { refreshTopics, setTopicIcon, topicFields, toTopicItem } from '../topics.ts';
 
 const selectTopics = (db: Db | Tx) => db.select({
@@ -45,6 +46,7 @@ const followSplit = (tx: Db | Tx, name: string, from: string) => tx.update(subsc
 
 /** Новая тема: сразу видна людям и сборщику; иконку нарисует иллюстратор на следующем шаге очереди. */
 export async function createTopic(db: Db, ctx: Ctx, { split_from, ...input }: TopicCreateInput): Promise<AdminTopic> {
+  await assertLibrarianMayEditTopic(db, ctx);
   const created = await audited<AdminTopic>(db, ctx, { action: 'admin_topics_create', entity: 'topic', id: (r) => r.name, input: { ...input, split_from } }, async (tx) => {
     if (split_from && !(await tx.select({ name: topics.name }).from(topics).where(eq(topics.name, split_from))).length) throw new AppError('topic_not_found', 404);
     const added = await tx.insert(topics)
@@ -62,6 +64,7 @@ export async function createTopic(db: Db, ctx: Ctx, { split_from, ...input }: To
 /** Правка гида, меток, цвета, иконки; выключение. Только переданные поля. */
 export async function updateTopic(db: Db, ctx: Ctx, name: string, { icon_url, ...input }: TopicUpdateInput): Promise<AdminTopic> {
   await getTopic(db, name);
+  await assertLibrarianMayEditTopic(db, ctx, { icon_url });
   // Картинку в журнал не пишем: data URL — это мегабайты.
   const updated = await audited<AdminTopic>(db, ctx, { action: 'admin_topics_update', entity: 'topic', id: name, input: { ...input, ...(icon_url ? { icon_url: icon_url.startsWith('data:') ? 'data:…' : icon_url } : {}) } }, async (tx) => {
     const values = Object.fromEntries(Object.entries({ ...input, color: input.color?.toLowerCase() }).filter(([, v]) => v !== undefined));

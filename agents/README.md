@@ -15,6 +15,7 @@ agents/
   host/             роль: пишет черновики сообщений организаторам (профиль host)
   illustrator/      роль: рисует обложку в фирменном стиле и ролик-историю с неё через Grok Imagine (профиль illustrator)
   curator/          роль: раз в день собирает витрину города из полок через MCP (профиль curator, ADR-0009)
+  librarian/        роль: хранитель тем — раз в день разбирает темы и раскладку событий через MCP (профиль librarian, ADR-0010)
 ```
 
 ## Выкладка
@@ -44,6 +45,8 @@ railway up agents --path-as-root --service hermes
 | `HUNTER_API_KEY` | ключ роли `hunter`; тот же ключ — в `HUNTER_KEY` сервиса `api` |
 | `HOST_API_KEY` | ключ роли `host`; тот же ключ — в `HOST_KEY` сервиса `api`. Не задан — роль не ставится |
 | `ILLUSTRATOR_API_KEY` | ключ роли `illustrator`; тот же ключ — в `ILLUSTRATOR_KEY` сервиса `api`. Не задан — роль не ставится |
+| `LIBRARIAN_API_KEY` | ключ роли `librarian`; тот же ключ — в `LIBRARIAN_KEY` сервиса `api`. Не задан — роль не ставится |
+| `YASWAMI_LIBRARIAN_MCP_TOKEN` | токен хранителя тем: `pnpm api:token <telegram id админа> <имя> librarian` — темы и раскладка событий; без него роль не ставится |
 | `CURATOR_API_KEY` | ключ роли `curator`; тот же ключ — в `CURATOR_KEY` сервиса `api`. Не задан — роль не ставится |
 | `YASWAMI_CURATOR_MCP_TOKEN` | токен роли curator: `pnpm api:token <telegram id админа> <имя> curator` — каталог и полки витрины, и сервер узнаёт по нему куратора. Без него роль не ставится: на токене админа её правки сошли бы за правки команды |
 
@@ -70,6 +73,12 @@ railway ssh --service hermes -- hermes -p illustrator auth add xai-oauth --no-br
 Витрина города — полки (ADR-0009). Раз в день, в 7 утра по часам города, API шлёт роли задание (`apps/api/src/curator.ts`): город, дата, режим витрины. Роль читает каталог и полки и правит только свои полки инструментами `admin_shelves_*`; что ей можно, решает сервер (`apps/api/src/shelves.ts`): закреплённые и полки команды — только читать, в режиме города `draft` новые полки — предложенные (`proposed`), их публикует команда в админке («Витрина»), не больше 40 изменений в сутки. Ответ роли — отчёт о правках — пишется в лог API; сами правки видны в журнале команды.
 
 Чтобы включить: выпустить токен (`pnpm api:token <telegram id админа> curator curator`), задать `CURATOR_API_KEY` и `YASWAMI_CURATOR_MCP_TOKEN` сервису `hermes`, `CURATOR_URL` (`http://hermes.railway.internal:8642/p/curator`) и `CURATOR_KEY` сервису `api`. Режим города — переключатель в «Витрине» или `admin_cities_update` (`showcase_mode`).
+
+## Темы (librarian)
+
+Хранитель тем (ADR-0010). Раз в день, в 6 утра по часам первого города — за час до куратора, — API шлёт роли задание (`apps/api/src/librarian.ts`): дата и города. Роль сверяет события с темами и правит инструментами `admin_*`: переносит события, снимает не-события, заводит и выделяет темы, правит гиды, выключает размытые темы. Сервер держит её в границах по области токена: у события — только `topic` и `status: rejected`, иконки тем не трогает, не больше 60 правок в сутки. Всё — в журнале команды; в админке её правки — в разделе «Темы». Сборщик темы сам больше не заводит (`TOPICS_AUTO=1` возвращает прежнее).
+
+Чтобы включить: выпустить токен (`pnpm api:token <telegram id админа> librarian librarian`), задать `LIBRARIAN_API_KEY` и `YASWAMI_LIBRARIAN_MCP_TOKEN` сервису `hermes`, `LIBRARIAN_URL` (`http://hermes.railway.internal:8642/p/librarian`) и `LIBRARIAN_KEY` сервису `api`.
 
 ## Обложки и ролики (illustrator)
 

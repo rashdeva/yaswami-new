@@ -42,6 +42,11 @@ export const settings = {
   /** Роль curator в Hermes: раз в день собирает витрину города из полок (curator.ts, ADR-0009). Пусто — выключено. */
   curatorUrl: (process.env.CURATOR_URL ?? '').replace(/\/$/, ''),
   curatorKey: process.env.CURATOR_KEY ?? '',
+  /** Роль librarian в Hermes: раз в день разбирает темы и раскладку событий (librarian.ts, ADR-0010). Пусто — выключено. */
+  librarianUrl: (process.env.LIBRARIAN_URL ?? '').replace(/\/$/, ''),
+  librarianKey: process.env.LIBRARIAN_KEY ?? '',
+  /** Час по времени первого города, когда хранитель разбирает темы: раньше куратора — витрина собирается по готовым темам. */
+  librarianHour: Number(process.env.LIBRARIAN_HOUR ?? 6),
   /** Час по времени города, когда куратор собирает витрину на день. */
   curatorHour: Number(process.env.CURATOR_HOUR ?? 7),
   /** Общий со сборщиком секрет: им он подписывает сообщения с аккаунтов Telegram. Пусто — приём закрыт. */

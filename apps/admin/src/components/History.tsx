@@ -6,7 +6,8 @@ import { Hint, Loading, Section } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemSeparator, ItemTitle } from '@/components/ui/item';
-import { useHistory } from '@/hooks/useActions';
+import { useHistory, useScopeHistory } from '@/hooks/useActions';
+import { EntityLink } from '@/components/EntityLink';
 import { useUndo } from '@/hooks/useAct';
 import { useUserName } from '@/hooks/useUsers';
 import { actionLabel } from '@/lib/journal';
@@ -56,6 +57,42 @@ export function History({ entity, id }: { entity: AdminEntity; id: string | numb
         ))}
       </ItemGroup>
       {data?.has_more && <Hint>Показаны последние {data.entries.length}; остальное — в «Журнале».</Hint>}
+    </Section>
+  );
+}
+
+/** Что правка поменяла, одной строкой: «→ путешествия», «снято с публикации», «выключена». */
+const change = (input: unknown) => {
+  const i = (input ?? {}) as { topic?: string; status?: string; enabled?: boolean; name?: string; split_from?: string };
+  if (i.status === 'rejected') return 'снято с публикации';
+  if (i.topic) return `→ ${i.topic}`;
+  if (i.enabled === false) return 'выключена';
+  if (i.split_from) return `выделена из «${i.split_from}»`;
+  return null;
+};
+
+/** Правки хранителя тем (роль librarian, ADR-0010): что он перенёс, завёл и выключил — с отменой. */
+export function LibrarianLog() {
+  const { data, error } = useScopeHistory('librarian');
+  return (
+    <Section title="Правки хранителя тем" description="Роль раз в день сверяет события с темами: переносит, снимает не-события, заводит и выключает темы. Неверное — отмените.">
+      {!data && !error && <Loading rows={2} />}
+      {error && <Hint>{error.message}</Hint>}
+      {data?.entries.length === 0 && <Hint>Хранитель ещё ничего не менял.</Hint>}
+      <ItemGroup className="gap-0">
+        {data?.entries.map((a, i) => (
+          <Fragment key={a.id}>
+            {i > 0 && <ItemSeparator />}
+            <Item size="xs" className="px-0">
+              <ItemContent>
+                <ItemTitle><ActionLink id={a.id}>{actionLabel(a.action)}</ActionLink><ActionState a={a} /></ItemTitle>
+                <ItemDescription>{when(a.created_at)} · <EntityLink entity={a.entity} id={a.entity_id}>{a.entity_id}</EntityLink>{change(a.input) && <> · {change(a.input)}</>}</ItemDescription>
+              </ItemContent>
+              <ItemActions><UndoButton a={a} size="xs" /></ItemActions>
+            </Item>
+          </Fragment>
+        ))}
+      </ItemGroup>
     </Section>
   );
 }

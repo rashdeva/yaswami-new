@@ -164,7 +164,7 @@ export const shares = pgTable(
  * Область действия токена роли Hermes: с ним доступен только MCP и только перечисленные инструменты (mcp.ts), REST закрыт.
  * support — каталог и события собеседника по билету; catalog — только каталог. В Luma такого нет.
  */
-export const TOKEN_SCOPES = ['support', 'catalog', 'curator'] as const;
+export const TOKEN_SCOPES = ['support', 'catalog', 'curator', 'librarian'] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
 
 // Токены доступа для REST и MCP вне Telegram. Храним только sha256: сам токен показывается один раз.
