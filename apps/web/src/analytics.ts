@@ -17,6 +17,8 @@ const source = inTelegram ? 'telegram' : 'web';
  * Витрина из полок (ADR-0009): shelf_viewed (полка показана) → shelf_item_opened (событие с полки) или shelf_opened («Все» —
  * экран полки); у всех — id полки, её автор (team/curator) и место на витрине: по ним куратор решает, какие полки работают.
  * Направления: direction_opened (плитка на витрине, `direction`) → direction_filtered (тема внутри, `topic`).
+ * Услуги: hosts_viewed → hosts_filtered (плитка направления, `direction`) → practice_opened (шторка услуги) → practice_signup_clicked.
+ * Поиск — строка в шапке «Событий» и «Услуг»: search_used (первый ответ на запрос, `tab`) → search_result_opened (`type`, `tab`).
  * Все события: all_events_opened (кнопка в конце витрины) → all_events_day (выбрал день, `day`).
  * Товары: products_viewed → product_viewed → product_contact_clicked (заказ в базе не хранится — считаем только здесь).
  * «Первый заход» отдельным действием не шлём: в PostHog у шага воронки есть условие «впервые для пользователя».
@@ -24,9 +26,9 @@ const source = inTelegram ? 'telegram' : 'web';
 type Action =
   | 'app_opened' | 'login_started' | 'logged_in' | 'logged_out'
   | 'feed_viewed' | 'feed_filtered' | 'shelf_viewed' | 'shelf_opened' | 'shelf_item_opened' | 'direction_opened' | 'direction_filtered' | 'all_events_opened' | 'all_events_day' | 'topics_subscribed' | 'topics_skipped' | 'collected_event_viewed' | 'signup_clicked' | 'collected_signed_up' | 'host_contacted' | 'host_channel_opened' | 'host_instagram_opened'
-  | 'hosts_viewed' | 'hosts_filtered' | 'host_viewed' | 'practice_signup_clicked'
+  | 'hosts_viewed' | 'hosts_filtered' | 'host_viewed' | 'practice_opened' | 'practice_signup_clicked'
   | 'products_viewed' | 'products_filtered' | 'product_viewed' | 'product_contact_clicked'
-  | 'search_viewed' | 'search_result_opened'
+  | 'search_used' | 'search_result_opened'
   | 'event_viewed' | 'rsvp_submitted' | 'link_shared'
   | 'my_events_viewed' | 'create_opened' | 'create_denied' | 'event_created' | 'event_updated' | 'event_claimed' | 'city_changed' | 'notification_toggled' | 'profile_opened'
   | 'host_searches_viewed' | 'host_search_created' | 'host_search_enabled' | 'host_search_paused' | 'host_search_match_opened';
