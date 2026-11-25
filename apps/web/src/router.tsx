@@ -11,7 +11,6 @@ import { useCity, useSession } from './hooks/useSession.ts';
 import { SourceSuggest } from './screens/SourceSuggest.tsx';
 import { useViewed } from './hooks/useViewed.ts';
 import { CollectedScreen } from './screens/CollectedScreen.tsx';
-import { CreateScreen } from './screens/CreateScreen.tsx';
 import { EditScreen } from './screens/EditScreen.tsx';
 import { EventScreen } from './screens/EventScreen.tsx';
 import { FeedScreen } from './screens/FeedScreen.tsx';
@@ -26,6 +25,9 @@ import { ServiceGroupScreen } from './screens/ServiceGroupScreen.tsx';
 import { ShelfScreen } from './screens/ShelfScreen.tsx';
 import { DirectionScreen } from './screens/DirectionScreen.tsx';
 import { AllEventsScreen } from './screens/AllEventsScreen.tsx';
+import { AddScreen } from './screens/AddScreen.tsx';
+import { isAddKind } from './add.ts';
+import type { AddKind } from './add.ts';
 import { startParam } from './tg.ts';
 
 const Spinner = () => <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>;
@@ -152,6 +154,7 @@ function HostsPage() {
       onOpenGroup={(key) => void navigate({ to: '/services/$group', params: { group: key } })}
       onOpenHost={(host) => void navigate({ to: '/hosts/$id', params: { id: host.id } })}
       onOpenEntry={useOpenEntry()}
+      onAdd={() => void navigate({ to: '/add', search: { kind: 'service' } })}
     />
   );
 }
@@ -187,7 +190,7 @@ const hostRoute = createRoute({ getParentRoute: () => app, path: '/hosts/$id', c
 function ProductsPage() {
   const navigate = useNavigate();
   const { city } = useSession();
-  return <ProductsScreen city={city} onOpen={(product) => void navigate({ to: '/products/$id', params: { id: product.id } })} />;
+  return <ProductsScreen city={city} onOpen={(product) => void navigate({ to: '/products/$id', params: { id: product.id } })} onAdd={() => void navigate({ to: '/add', search: { kind: 'product' } })} />;
 }
 const productsRoute = createRoute({ getParentRoute: () => app, path: '/products', component: ProductsPage });
 
@@ -199,6 +202,17 @@ function ProductPage() {
   return <ProductScreen key={id} id={id} city={city} onBack={onBack} onOpenHost={(hostId) => void navigate({ to: '/hosts/$id', params: { id: hostId } })} />;
 }
 const productRoute = createRoute({ getParentRoute: () => app, path: '/products/$id', component: ProductPage });
+
+/** Добавить событие, товар или услугу: форм нет, экран отправляет в бота. Открыт и гостю: войти нужно только в Telegram. */
+function AddPage() {
+  const { kind } = addRoute.useSearch();
+  const { onBack } = useShell();
+  return <AddScreen kind={kind ?? 'event'} onBack={onBack} />;
+}
+const addRoute = createRoute({
+  getParentRoute: () => app, path: '/add', component: AddPage,
+  validateSearch: (s: Record<string, unknown>): { kind?: AddKind } => ({ kind: isAddKind(s.kind) ? s.kind : undefined }),
+});
 
 // Старый адрес поиска: теперь это строка в шапке витрины.
 const searchRoute = createRoute({
@@ -236,7 +250,6 @@ function MyEvents() {
   const navigate = useNavigate();
   const { events, collected: seen, total, failed } = useMyEvents();
   const { onKind } = useShell();
-  const canCreate = useFeature('event_create');
   const logout = useLogout();
   const { me } = useSession();
   if (failed) return <Failed error={failed} />;
@@ -249,7 +262,7 @@ function MyEvents() {
       onOpen={(id) => void navigate({ to: '/events/$id', params: { id } })}
       onOpenCollected={(item) => void navigate({ to: '/e/$id', params: { id: item.id } })}
       onLogout={logout}
-      onNew={canCreate ? () => void navigate({ to: '/new' }) : null}
+      onNew={() => void navigate({ to: '/add' })}
       onPeople={me?.host_id ? () => void navigate({ to: '/people' }) : null}
       onKind={onKind}
     />
@@ -282,18 +295,8 @@ function PeoplePage() {
 }
 const people = createRoute({ getParentRoute: () => personal, path: '/people', component: PeoplePage });
 
-function CreatePage() {
-  const navigate = useNavigate();
-  const { toast, onKind, onBack } = useShell();
-  return <CreateScreen onBack={onBack} onKind={onKind} toast={toast} onCreated={(view) => void navigate({ to: '/events/$id', params: { id: view.event.id } })} />;
-}
-/** Создание открыто не всем: без возможности `event_create` адрес /new ведёт в «Мои». */
-function CreateGate() {
-  const canCreate = useFeature('event_create');
-  useViewed(canCreate ? 'create_opened' : 'create_denied');
-  return canCreate ? <CreatePage /> : <Navigate to="/my" replace />;
-}
-const create = createRoute({ getParentRoute: () => personal, path: '/new', component: CreateGate });
+// Формы создания больше нет: событие, как товар и услугу, человек описывает боту (экран «Добавить»). Старый адрес ведёт туда.
+const create = createRoute({ getParentRoute: () => personal, path: '/new', beforeLoad: () => { throw redirect({ to: '/add', search: { kind: 'event' }, replace: true }); } });
 
 function EventPage() {
   const { id } = event.useParams();
@@ -324,7 +327,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, allRoute, collected, hostsRoute, serviceGroupRoute, oldHostsRoute, hostRoute, productsRoute, productRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, allRoute, collected, hostsRoute, serviceGroupRoute, oldHostsRoute, hostRoute, productsRoute, productRoute, addRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 

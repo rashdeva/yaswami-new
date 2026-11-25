@@ -23,7 +23,8 @@ mcp_servers:
     tools:
       # Публичный каталог и события самого собеседника (по билету от нашего API); переписка и чужие события роли не видны.
       # hosts_list и search правила роли звали и раньше (скилл find-service), а в списке их не было — добавлены вместе с товарами.
-      include: [collected_events_list, hosts_list, products_list, products_get, search, person_events_list, person_events_get, person_events_create, person_events_update, person_sources_add]
+      # topics_list и person_products_create / person_practices_create — человек сам добавляет товар или услугу (скилл my-offers).
+      include: [collected_events_list, topics_list, hosts_list, products_list, products_get, search, person_events_list, person_events_get, person_events_create, person_events_update, person_sources_add, person_products_create, person_practices_create]
       resources: false
       prompts: false
 

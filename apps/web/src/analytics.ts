@@ -32,6 +32,7 @@ type Action =
   | 'search_used' | 'search_result_opened'
   | 'event_viewed' | 'rsvp_submitted' | 'link_shared'
   | 'my_events_viewed' | 'create_opened' | 'create_denied' | 'event_created' | 'event_updated' | 'event_claimed' | 'city_changed' | 'notification_toggled' | 'profile_opened'
+  | 'add_viewed' | 'add_bot_opened' | 'add_opened'
   | 'host_searches_viewed' | 'host_search_created' | 'host_search_enabled' | 'host_search_paused' | 'host_search_match_opened';
 type Props = Record<string, string | number | boolean | null | undefined>;
 

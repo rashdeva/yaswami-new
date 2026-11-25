@@ -27,16 +27,17 @@ export const useShell = () => useContext(ShellContext)!;
 export function App() {
   const navigate = useNavigate();
   const matchRoute = useMatchRoute();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const addKind = (search as { kind?: string }).kind; // «Добавить» возвращает туда, откуда пришли: товары, услуги или профиль
   const { hasEvents } = useMyEvents();
   const { toast, showToast } = useToast();
   const [kind, setKind] = useState<Event['kind']>('o');
 
   // У публичных экранов свой нейтральный цвет; личные выставляют цвет шаблона события сами.
-  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/s/') || pathname.startsWith('/d/') || pathname === '/all' || pathname.startsWith('/hosts') || pathname.startsWith('/products') || pathname.startsWith('/services')) && kind !== 'o') setKind('o');
+  if ((pathname === '/' || pathname.startsWith('/e/') || pathname.startsWith('/s/') || pathname.startsWith('/d/') || pathname === '/all' || pathname.startsWith('/hosts') || pathname.startsWith('/products') || pathname.startsWith('/services') || pathname === '/add') && kind !== 'o') setKind('o');
 
   // Куда ведёт «назад»: событие, полка, направление, все события и профиль → витрина, организатор и раздел услуг → «Услуги», товар → товары, своё событие и поиск людей → профиль,
-  // создание → профиль или витрина. null — корень (вкладки таббара).
+  // «Добавить» → товары, услуги, профиль или витрина. null — корень (вкладки таббара).
   const here = { includeSearch: false } as const; // ?signup, ?startapp в адресе маршрут не меняют
   const section = matchRoute({ to: '/events/$id/edit/$section', ...here });
   const edit = matchRoute({ to: '/events/$id/edit', ...here });
@@ -52,8 +53,8 @@ export function App() {
         ? () => void navigate({ to: '/events/$id', params: { id: edit.id } })
         : matchRoute({ to: '/events/$id', ...here }) || matchRoute({ to: '/people', ...here })
           ? () => void navigate({ to: '/my' })
-          : matchRoute({ to: '/new', ...here })
-            ? () => void navigate({ to: hasEvents ? '/my' : '/' })
+          : matchRoute({ to: '/add', ...here })
+            ? () => void navigate({ to: addKind === 'product' ? '/products' : addKind === 'service' ? '/services' : hasEvents ? '/my' : '/' })
             : null;
   useTelegramBack(back);
   const withTabBar = pathname === '/' || pathname === '/services' || pathname === '/products';

@@ -5,7 +5,7 @@ import { after, before, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Me, Message, Practice, PracticeSignup, AdminProduct, AdminProductList, ProductItem, ProductList, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
+import type { AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Me, Message, Practice, PracticeSignup, PracticeSubmission, AdminProduct, AdminProductList, ProductSubmission, ProductItem, ProductList, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -264,7 +264,7 @@ test('MCP: список инструментов, создание событи�
     'cities_list', 'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
     'events_ticket_types_update', 'events_update', 'host_searches_create', 'host_searches_delete', 'host_searches_list', 'host_searches_matches_list', 'host_searches_update',
-    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'me_collected_list', 'products_get', 'products_list', 'search', 'showcase_get', 'sources_add', 'topics_list', 'users_get_self', 'users_update_self',
+    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'me_collected_list', 'practices_create', 'products_create', 'products_get', 'products_list', 'search', 'showcase_get', 'sources_add', 'topics_list', 'users_get_self', 'users_update_self',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
@@ -1376,6 +1376,13 @@ test('переписка: бот пишет всё в базу, админ от�
   // Человек в переписке просит добавить канал: заявка — его (по билету), а не владельца токена.
   assert.equal((await tool('person_sources_add', { ticket, channel: 't.me/anya_events' })).approval_status, 'pending_approval');
   assert.equal((await db.select().from(sources).where(eq(sources.channel, 'anya_events')))[0]!.submitted_by, await uid(71));
+  // Человек пишет «пеку медовики» или «делаю массаж»: товар и услуга — его, на его странице мастера, ждут команду.
+  const cake = await tool('person_products_create', { ticket, title: 'Медовик порционно', price: '55k', unit: '100 г', category: 'bakery' });
+  assert.equal(cake.status, 'pending');
+  const [mine] = await db.select().from(hosts).where(eq(hosts.user_id, await uid(71)));
+  assert.equal(cake.host_id, mine!.id, 'товар на странице самого человека, а не владельца токена');
+  const massage = await tool('person_practices_create', { ticket, title: 'Массаж спины', price: '500k за час' });
+  assert.deepEqual([massage.host_id, massage.topic, massage.status], [mine!.id, 'другое', 'pending']);
   const view = (await (await call(tma(71, 'Аня'), 'GET', `/events/${made.event.id}`)).json()) as EventView;
   assert.deepEqual([view.event.name, view.is_host], ['Йога на рассвете', true], 'событие принадлежит человеку, а не владельцу токена');
   settings.supportKey = '';
@@ -2678,6 +2685,48 @@ test('источники: команда добавляет и выключае�
   }
 });
 
+test('мастер сам добавляет товар и услугу: своя страница мастера, ждут команду, повтор и без username — отказ', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const lena = tma(8201, 'Лена');
+  await call(lena, 'GET', '/me');
+  // Профиля мастера нет — заводится свой, на её username и в её городе; товар ждёт решения и гостю не виден.
+  const res = await call(lena, 'POST', '/products', { title: 'Пельмени с говядиной', price: '180k', unit: '1 кг', category: 'frozen' });
+  assert.equal(res.status, 201);
+  const made = (await res.json()) as ProductSubmission;
+  assert.equal(made.status, 'pending');
+  const [host] = await db.select().from(hosts).where(eq(hosts.id, made.host_id));
+  assert.deepEqual([host!.user_id, host!.username, host!.telegram_id], [await uid(8201), 'u8201', 8201]);
+  assert.ok(made.host_url.endsWith(`/hosts/${made.host_id}`));
+  const guestSees = async () => ((await (await app.request('/products?category=frozen')).json()) as ProductList).entries.map((p) => p.title);
+  assert.ok(!(await guestSees()).includes('Пельмени с говядиной'), 'до решения команды не виден');
+  assert.equal((await call(lena, 'POST', '/products', { title: 'пельмени  с говядиной', category: 'frozen' })).status, 409, 'тот же товар второй раз');
+  assert.equal((await call(admin, 'PATCH', `/admin/products/${made.id}`, { status: 'published' })).status, 200);
+  assert.ok((await guestSees()).includes('Пельмени с говядиной'), 'одобренный виден гостю');
+
+  // Услуга идёт на ту же страницу, последней в списке; тему и формат, если не дали, решают команда и сборщик.
+  const yoga = await call(lena, 'POST', '/practices', { title: 'Йога для беременных', price: '300k', topic: 'йога', formats: ['group'] });
+  assert.equal(yoga.status, 201);
+  const practice = (await yoga.json()) as PracticeSubmission;
+  assert.deepEqual([practice.host_id, practice.topic, practice.status], [made.host_id, 'йога', 'pending']);
+  assert.equal((await call(lena, 'POST', '/practices', { title: 'Массаж', topic: 'нет такой темы' })).status, 400);
+
+  // Профиль, собранный сборщиком по её Telegram, становится её — второго не заводим.
+  const [collected] = await db.insert(hosts).values({ telegram_id: 8202, username: 'old_name', name: 'Катя', city_id: 'danang' }).returning();
+  const katya = tma(8202, 'Катя');
+  await call(katya, 'GET', '/me');
+  await db.update(hosts).set({ user_id: null }).where(eq(hosts.id, collected!.id)); // как будто вошла до сборщика
+  const massage = (await (await call(katya, 'POST', '/practices', { title: 'Массаж лица' })).json()) as PracticeSubmission;
+  assert.equal(massage.host_id, collected!.id);
+
+  // Без username в Telegram к мастеру не написать: добавить нельзя.
+  await call(tma(8203, 'Без ника'), 'GET', '/me');
+  await db.update(users).set({ username: null }).where(eq(users.id, await uid(8203)));
+  const nameless = `Bearer ${await issueToken(db, await uid(8203))}`;
+  const refused = await call(nameless, 'POST', '/products', { title: 'Сыр', category: 'dairy' });
+  assert.deepEqual([refused.status, await refused.json()], [400, { error: 'username_required' }]);
+});
+
 test('источник от человека: предложить канал, лимит в сутки, решение команды, спасибо от бота', async () => {
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
@@ -3037,6 +3086,8 @@ test('парность: у каждого инструмента MCP есть м
     me_collected_list: 'GET /me/collected',
     contacts_list: 'GET /contacts',
     sources_add: 'POST /sources',
+    products_create: 'POST /products',
+    practices_create: 'POST /practices',
     host_searches_list: 'GET /host-searches',
     host_searches_create: 'POST /host-searches',
     host_searches_update: 'PATCH /host-searches/:id',
@@ -3052,7 +3103,7 @@ test('парность: у каждого инструмента MCP есть м
     events_ticket_types_delete: 'DELETE /ticket-types/:id',
     ...ADMIN_PAIRS,
   };
-  const MCP_ONLY = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update', 'person_sources_add'];
+  const MCP_ONLY = ['person_events_list', 'person_events_get', 'person_events_create', 'person_events_update', 'person_sources_add', 'person_products_create', 'person_practices_create'];
   const REST_ONLY = [
     'GET /health', 'GET /config', 'GET /photos/:id', 'GET /topics/:slug/icon', 'POST /telegram/webhook', 'POST /internal/account-message', 'POST /internal/account-typing', 'POST /internal/lead', 'GET /admin/live',
     'GET /auth/telegram/login', 'GET /auth/telegram/callback', 'POST /auth/logout', 'POST /auth/apple', 'POST /auth/google', 'POST /tokens', 'DELETE /tokens', 'DELETE /me',
@@ -3420,7 +3471,7 @@ test('безопасность: чужой контакт не даёт прав
   const rpc = async (auth: string, method: string, params?: object) => (await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params })).json()) as any;
   const names = async (auth: string) => ((await rpc(auth, 'tools/list')).result.tools as { name: string }[]).map((t) => t.name).sort();
   const role = `Bearer ${await issueToken(db, await uid(70), { scope: 'support' })}`;
-  assert.deepEqual(await names(role), ['collected_events_list', 'hosts_list', 'person_events_create', 'person_events_get', 'person_events_list', 'person_events_update', 'person_sources_add', 'products_get', 'products_list', 'search']);
+  assert.deepEqual(await names(role), ['collected_events_list', 'hosts_list', 'person_events_create', 'person_events_get', 'person_events_list', 'person_events_update', 'person_practices_create', 'person_products_create', 'person_sources_add', 'products_get', 'products_list', 'search', 'topics_list']);
   assert.deepEqual(await names(`Bearer ${await issueToken(db, await uid(70), { scope: 'catalog' })}`), ['collected_events_list', 'hosts_list', 'products_get', 'products_list', 'search']);
   const denied = await rpc(role, 'tools/call', { name: 'admin_users_search', arguments: {} });
   assert.ok(denied.error || denied.result.isError, 'инструмент команды токену роли не отвечает');
