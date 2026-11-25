@@ -5,6 +5,12 @@ import { EventRow } from '../components/EventRow.tsx';
 import { dayLabel } from '../format.ts';
 import { useShelf } from '../hooks/useShowcase.ts';
 
+/** «4 события», «5 событий», «21 событие». */
+const eventsCount = (n: number) => {
+  const d = n % 10, h = n % 100;
+  return `${n} ${d === 1 && h !== 11 ? 'событие' : d >= 2 && d <= 4 && (h < 12 || h > 14) ? 'события' : 'событий'}`;
+};
+
 interface Props {
   id: string;
   onBack: (() => void) | null;
@@ -34,7 +40,7 @@ export function ShelfScreen({ id, onBack, onOpen, onGone }: Props) {
       <div className={`hero shelf-hero${onBack ? '' : ' nb'}`} data-topic={topicSlug(shelf.topic)}>
         {onBack && <button className="back" onClick={onBack}>← События</button>}
         {shelf.topic && <img className="emo" src={topicIcon(shelf.topic)} alt="" />}
-        <small>{shelf.events.length} событий</small>
+        <small>{eventsCount(shelf.events.length)}</small>
         <h1>{shelf.title}</h1>
       </div>
       {days.map((list) => (

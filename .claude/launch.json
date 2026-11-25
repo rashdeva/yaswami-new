@@ -1,8 +1,38 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "api", "runtimeExecutable": "pnpm", "runtimeArgs": ["dev"], "port": 3000 },
-    { "name": "web", "runtimeExecutable": "pnpm", "runtimeArgs": ["dev:web"], "port": 5173 },
-    { "name": "admin", "runtimeExecutable": "pnpm", "runtimeArgs": ["dev:admin"], "port": 5174 }
+    {
+      "name": "api",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "dev:web"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "admin",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "dev:admin"
+      ],
+      "port": 5174
+    },
+    {
+      "name": "web-prod",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "PATH=$HOME/.local/node/bin:$PATH API_PROXY=https://yaswami.com pnpm dev:web"
+      ],
+      "port": 5173
+    }
   ]
 }

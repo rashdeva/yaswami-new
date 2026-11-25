@@ -12,6 +12,7 @@ syncTheme();
 try {
   tg?.ready();
   tg?.expand();
+  if (tg?.isVersionAtLeast('7.7')) tg.disableVerticalSwipes?.();
   syncFullscreen();
 } catch {
   // обычный браузер

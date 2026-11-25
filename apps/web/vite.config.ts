@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     port: 5173,
     // В разработке фронт ходит на /api так же, как в продакшене; Vite пересылает запросы локальному API.
-    proxy: { '/api': 'http://localhost:3000' },
+    // API_PROXY=https://yaswami.com — посмотреть фронт на данных прода (публичные ручки, без входа).
+    proxy: { '/api': { target: process.env.API_PROXY ?? 'http://localhost:3000', changeOrigin: true } },
   },
 });

@@ -9,6 +9,8 @@ interface WebApp {
   ready(): void;
   expand(): void;
   requestFullscreen?(): void;
+  /** Не закрывать мини-приложение свайпом вниз (Bot API 7.7): иначе прокрутка ленты вверх сворачивает его. */
+  disableVerticalSwipes?(): void;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
   setBottomBarColor?(color: string): void;
