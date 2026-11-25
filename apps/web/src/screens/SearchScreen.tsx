@@ -6,6 +6,7 @@ import { track } from '../analytics.ts';
 import { EventRow } from '../components/EventRow.tsx';
 import { GuestRow } from '../components/GuestRow.tsx';
 import { PracticeRow } from '../components/PracticeRow.tsx';
+import { ProductCard } from '../components/ProductCard.tsx';
 import { dayLabel } from '../format.ts';
 import { usePracticeSignup } from '../hooks/useHosts.ts';
 import { useSearch } from '../hooks/useSearch.ts';
@@ -17,7 +18,7 @@ interface Props {
   onOpen: (entry: Wire<SearchEntry>) => void;
 }
 
-/** Единый поиск: события и услуги мастеров одним списком, самое подходящее первым. Открыт без входа. */
+/** Единый поиск: события, услуги и товары мастеров одним списком, самое подходящее первым. Открыт без входа. */
 export function SearchScreen({ query, onQuery, onOpen }: Props) {
   useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const { ready, entries, failed } = useSearch(query);
@@ -37,7 +38,7 @@ export function SearchScreen({ query, onQuery, onOpen }: Props) {
           <input type="search" autoFocus enterKeyHint="search" placeholder="Йога, массаж, ретрит" aria-label="Что ищем" value={query} onChange={(e) => onQuery(e.target.value)} />
         </label>
       </div>
-      {!ready && <p className="note">События и услуги мастеров. Окончания и мелкие опечатки не страшны.</p>}
+      {!ready && <p className="note">События, услуги и товары мастеров. Окончания и мелкие опечатки не страшны.</p>}
       {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}
       {ready && !entries && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
       {entries?.length === 0 && <div className="state"><b>🌿</b><p>Ничего не нашлось. Попробуйте другое слово.</p></div>}
@@ -55,6 +56,8 @@ export function SearchScreen({ query, onQuery, onOpen }: Props) {
               topic={topicSlug(entry.event.topic)}
               onOpen={() => open(entry)}
             />
+          ) : entry.type === 'product' ? (
+            <ProductCard key={`g-${entry.product.id}`} product={entry.product} row onOpen={() => open(entry)} />
           ) : (
             // Услуга — как во вкладке «Услуги»: мастер и под ним она сама с записью
             <div key={`p-${entry.practice.id}`} className="group">

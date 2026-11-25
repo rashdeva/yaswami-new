@@ -1,4 +1,4 @@
-// Стек каждой вкладки. Экраны события и организатора общие: открываются поверх любой вкладки.
+// Стек каждой вкладки. Экраны события, организатора и товара общие: открываются поверх любой вкладки.
 import { Stack } from 'expo-router/stack';
 import { colors } from '@/theme';
 
@@ -6,11 +6,12 @@ import { colors } from '@/theme';
 export const unstable_settings = {
   anchor: 'index',
   hosts: { anchor: 'hosts' },
+  products: { anchor: 'products' },
   me: { anchor: 'me' },
   search: { anchor: 'search' },
 };
 
-const TITLES: Record<string, string> = { index: 'События', hosts: 'Услуги', me: 'Мои', search: 'Поиск' };
+const TITLES: Record<string, string> = { index: 'События', hosts: 'Услуги', products: 'Товары', me: 'Мои', search: 'Поиск' };
 
 export default function Layout({ segment }: { segment: string }) {
   const screen = segment.match(/\((.*)\)/)?.[1] ?? 'index';
@@ -33,6 +34,7 @@ export default function Layout({ segment }: { segment: string }) {
       <Stack.Screen name="e/[id]" options={{ title: '' }} />
       <Stack.Screen name="events/[id]" options={{ title: '' }} />
       <Stack.Screen name="hosts/[id]" options={{ title: '' }} />
+      <Stack.Screen name="products/[id]" options={{ title: '' }} />
     </Stack>
   );
 }

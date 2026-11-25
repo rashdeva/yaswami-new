@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
 import { useTopics } from '../hooks/useTopics.ts';
-import type { CollectedEventItem } from '@yaswami/core';
+import type { CollectedEventItem, ProductItem } from '@yaswami/core';
 import { collectedBadges, collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { EventRow } from '../components/EventRow.tsx';
 import { PracticeRow } from '../components/PracticeRow.tsx';
+import { ProductCard } from '../components/ProductCard.tsx';
 import { dayLabel } from '../format.ts';
 import { useHost, usePracticeSignup } from '../hooks/useHosts.ts';
 import { useViewed } from '../hooks/useViewed.ts';
@@ -14,11 +15,12 @@ interface Props {
   id: string;
   city: string;
   onOpenEvent: (event: CollectedEventItem) => void;
+  onOpenProduct: (product: ProductItem) => void;
   onBack: (() => void) | null;
 }
 
-/** Страница организатора или мастера: кто это, что ведёт, ближайшие события и как ему написать. */
-export function HostScreen({ id, city, onOpenEvent, onBack }: Props) {
+/** Страница организатора или мастера: кто это, что ведёт, что продаёт, ближайшие события и как ему написать. */
+export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack }: Props) {
   useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const { host, loaded, failed } = useHost(id);
   const signUp = usePracticeSignup();
@@ -60,6 +62,15 @@ export function HostScreen({ id, city, onOpenEvent, onBack }: Props) {
         </>
       )}
 
+      {host.products.length > 0 && (
+        <>
+          <h2>Товары</h2>
+          <div className="products">
+            {host.products.map((p) => <ProductCard key={p.id} product={p} onOpen={() => onOpenProduct(p)} />)}
+          </div>
+        </>
+      )}
+
       {host.events.length > 0 && (
         <>
           <h2>Ближайшие события</h2>
@@ -72,7 +83,7 @@ export function HostScreen({ id, city, onOpenEvent, onBack }: Props) {
           </div>
         </>
       )}
-      {loaded && !host.events.length && host.upcoming_count === 0 && <p className="note">Ближайших событий нет — напишите, чтобы узнать расписание.</p>}
+      {loaded && !host.events.length && !host.products.length && host.upcoming_count === 0 && <p className="note">Ближайших событий нет — напишите, чтобы узнать расписание.</p>}
 
       {host.photos.length > 0 && (
         <div className="shots" style={{ margin: '16px 16px 0' }}>

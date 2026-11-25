@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, City, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, RsvpInput, SearchResult, Showcase, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
+import type { AppConfig, City, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, ProductItem, ProductList, ProductListInput, RsvpInput, SearchResult, Showcase, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
 import { track } from './analytics.ts';
 import { inTelegram, tg } from './tg.ts';
 
@@ -22,6 +22,7 @@ const MESSAGES: Record<string, string> = {
   ticket_required: 'Выберите билет',
   ticket_unknown: 'Такого билета больше нет',
   not_found: 'Событие не найдено',
+  product_not_found: 'Товар не найден', // бэк отвечает общим not_found — getProduct подменяет код, чтобы текст был про товар
   forbidden: 'Это может только организатор',
   feature_off: 'Создавать события пока могут только организаторы',
   events_limit: 'Бесплатные события закончились. Подписка для большего числа скоро появится',
@@ -72,6 +73,10 @@ export const api = {
   listHosts: (city_id: string) => request<HostListItem[]>('GET', `/hosts?city_id=${encodeURIComponent(city_id)}`),
   getHost: (id: string) => request<HostItem>('GET', `/hosts/${encodeURIComponent(id)}`),
   search: (query: string, city_id: string) => request<Wire<SearchResult>>('GET', `/search?query=${encodeURIComponent(query)}&city_id=${encodeURIComponent(city_id)}`),
+  listProducts: ({ city_id, category, pagination_cursor, pagination_limit }: ProductListInput = {}) =>
+    request<Wire<ProductList>>('GET', `/products?${new URLSearchParams(Object.entries({ city_id, category, pagination_cursor, pagination_limit }).flatMap(([k, v]) => (v === undefined ? [] : [[k, String(v)]])))}`),
+  getProduct: (id: string) =>
+    request<Wire<ProductItem>>('GET', `/products/${encodeURIComponent(id)}`).catch((e: ApiError) => { throw e.code === 'not_found' ? new ApiError('product_not_found') : e; }),
   signUpForPractice: (id: string, practice_id: string) => request<PracticeSignup>('POST', `/hosts/${encodeURIComponent(id)}/practices/signup`, { practice_id }, true),
   claim: (id: string) => request<EventData>('POST', `/collected-events/${encodeURIComponent(id)}/claim`),
   signUp: (id: string) => request<CollectedEventItem>('POST', `/collected-events/${encodeURIComponent(id)}/signup`, undefined, true),

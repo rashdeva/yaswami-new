@@ -1,7 +1,7 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк. Как apps/web/src/api.ts, только
 // вход — Bearer-токен из защищённого хранилища устройства, а не initData или cookie.
 import * as SecureStore from 'expo-secure-store';
-import type { TopicItem, CollectedEventItem, EventListItem, EventView, HostItem, HostListItem, Me, MyCollectedItem, RsvpInput, SearchResult, Wire } from '@yaswami/core';
+import type { TopicItem, CollectedEventItem, EventListItem, EventView, HostItem, HostListItem, Me, MyCollectedItem, ProductItem, ProductList, ProductListInput, RsvpInput, SearchResult, Wire } from '@yaswami/core';
 
 export const SITE = process.env.EXPO_PUBLIC_SITE_URL ?? 'https://yaswami.com';
 export const BASE = `${SITE}/api`;
@@ -71,5 +71,8 @@ export const api = {
   rsvp: (eid: string, input: RsvpInput) => request<Wire<EventView>>('POST', `/events/${id(eid)}/rsvp`, input),
   hosts: (city_id: string) => request<HostListItem[]>('GET', `/hosts?city_id=${id(city_id)}`),
   host: (hid: string) => request<HostItem>('GET', `/hosts/${id(hid)}`),
+  products: (input: ProductListInput) =>
+    request<Wire<ProductList>>('GET', `/products?${new URLSearchParams(Object.entries(input).flatMap(([k, v]) => (v === undefined ? [] : [[k, String(v)]])))}`),
+  product: (pid: string) => request<Wire<ProductItem>>('GET', `/products/${id(pid)}`),
   search: (query: string, city_id: string) => request<Wire<SearchResult>>('GET', `/search?query=${id(query)}&city_id=${id(city_id)}`),
 };

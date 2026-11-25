@@ -16,6 +16,8 @@ import { FeedScreen } from './screens/FeedScreen.tsx';
 import { HostScreen } from './screens/HostScreen.tsx';
 import { HostsScreen } from './screens/HostsScreen.tsx';
 import { ListScreen } from './screens/ListScreen.tsx';
+import { ProductScreen } from './screens/ProductScreen.tsx';
+import { ProductsScreen } from './screens/ProductsScreen.tsx';
 import { ProfileScreen } from './screens/ProfileScreen.tsx';
 import { PeopleScreen } from './screens/PeopleScreen.tsx';
 import { SearchScreen } from './screens/SearchScreen.tsx';
@@ -127,9 +129,30 @@ function HostPage() {
   const navigate = useNavigate();
   const { city } = useSession();
   const { onBack } = useShell();
-  return <HostScreen key={id} id={id} city={city} onBack={onBack} onOpenEvent={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} />;
+  return (
+    <HostScreen key={id} id={id} city={city} onBack={onBack}
+      onOpenEvent={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })}
+      onOpenProduct={(product) => void navigate({ to: '/products/$id', params: { id: product.id } })} />
+  );
 }
 const hostRoute = createRoute({ getParentRoute: () => app, path: '/hosts/$id', component: HostPage });
+
+/** Товары мастеров — вкладка таббара, когда мастеров набралось; по прямой ссылке открывается всегда. */
+function ProductsPage() {
+  const navigate = useNavigate();
+  const { city } = useSession();
+  return <ProductsScreen city={city} onOpen={(product) => void navigate({ to: '/products/$id', params: { id: product.id } })} />;
+}
+const productsRoute = createRoute({ getParentRoute: () => app, path: '/products', component: ProductsPage });
+
+function ProductPage() {
+  const { id } = productRoute.useParams();
+  const navigate = useNavigate();
+  const { city } = useSession();
+  const { onBack } = useShell();
+  return <ProductScreen key={id} id={id} city={city} onBack={onBack} onOpenHost={(hostId) => void navigate({ to: '/hosts/$id', params: { id: hostId } })} />;
+}
+const productRoute = createRoute({ getParentRoute: () => app, path: '/products/$id', component: ProductPage });
 
 /** Поиск. Запрос живёт в адресе (?q=): находками можно поделиться ссылкой, а «назад» браузера возвращает к ним. */
 function SearchPage() {
@@ -141,7 +164,9 @@ function SearchPage() {
       onQuery={(next) => void navigate({ to: '/search', search: { q: next || undefined }, replace: true })}
       onOpen={(entry) => void (entry.type === 'event'
         ? navigate({ to: '/e/$id', params: { id: entry.event.id } })
-        : navigate({ to: '/hosts/$id', params: { id: entry.type === 'practice' ? entry.host.id : entry.product.host.id } }))}
+        : entry.type === 'product'
+          ? navigate({ to: '/products/$id', params: { id: entry.product.id } })
+          : navigate({ to: '/hosts/$id', params: { id: entry.host.id } }))}
     />
   );
 }
@@ -268,7 +293,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, allRoute, collected, hostsRoute, oldHostsRoute, hostRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, allRoute, collected, hostsRoute, oldHostsRoute, hostRoute, productsRoute, productRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 

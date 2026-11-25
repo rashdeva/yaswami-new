@@ -1,6 +1,6 @@
 import { haptic } from '../tg.ts';
 
-export type Tab = 'feed' | 'hosts';
+export type Tab = 'feed' | 'hosts' | 'products';
 
 const ICONS: Record<Tab, React.ReactNode> = {
   feed: (
@@ -18,8 +18,14 @@ const ICONS: Record<Tab, React.ReactNode> = {
       <path d="M16.5 14.6c2.6.1 4.5 1.8 5 4.9" />
     </>
   ),
+  products: (
+    <>
+      <path d="M5 8.5h14l-1.2 10.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8z" />
+      <path d="M9 11V7a3 3 0 0 1 6 0v4" />
+    </>
+  ),
 };
-const LABELS: Record<Tab, string> = { feed: 'События', hosts: 'Услуги' };
+const LABELS: Record<Tab, string> = { feed: 'События', hosts: 'Услуги', products: 'Товары' };
 
 /**
  * Нижний таббар, как в iOS. `tabs` — вкладка и куда она ведёт.
