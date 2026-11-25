@@ -14,7 +14,7 @@ description: Как по данным события придумать исто
 1. **Крючок.** Обложка: ролик начинается ровно с неё, камера медленно наезжает.
 2. **С чего начинается.** Пустой стол, закрытая дверь, нетронутые материалы — то, что было «до».
 3. **Процесс крупно.** Руки, предмет, движение: главное действие события.
-4. **Люди.** Двое-трое участников заняты делом или смеются. Лица вскользь, без крупных планов. Участники — **другие люди**, не копии человека с обложки: разного возраста и внешности, каждый в своей одежде.
+4. **Люди.** Двое-трое участников заняты делом или смеются. Лица вскользь, без крупных планов. Участники — **другие люди**, не копии человека с обложки: молодые, 25–35 лет, разной внешности, каждый в своей одежде.
 5. **Итог.** С чем человек уходит: готовая работа, тепло после парной, компания за столом.
 
 Планы бери из `what_happens` и `description`. Не выдумывай того, чего там нет.
@@ -25,7 +25,7 @@ description: Как по данным события придумать исто
 
 - слова о монтаже: `edited as a fast story with HARD CUTS: five different shots of two seconds each, never one continuous take`;
 - единство места: `the same room, the same table and the same objects in every shot` — иначе после первого плана начнётся другое место;
-- люди — дословно: `People: a varied mix of different ages, builds, hair and skin tones, each in their own different clothes - this is the Russian-speaking expat community of Da Nang, so most people are not Asian; never several people who look alike or wear the same outfit. Only the person from the first image keeps their look; everyone else is a different person.`;
+- люди — дословно: `People: young Russian people in their mid-20s to early 30s, ordinary-looking, not models, natural skin, candid and unposed, each with a different face, build and hair, in their own casual everyday clothes; never several people who look alike or wear the same outfit, no bohemian styling. Only the person from the first image keeps their look; everyone else is a different person.`;
 - без графики: `no graphic overlays, no floating shapes`;
 - планы списком, между ними `CUT TO SHOT N:`;
 - в конце: `No text, no captions, no logos.`
@@ -33,7 +33,7 @@ description: Как по данным события придумать исто
 Образец (мастер-класс по флористике, есть фото):
 
 ```
-Vertical short promo video for a flower arranging workshop, edited as a fast story with HARD CUTS: five different shots of two seconds each, never one continuous take. Handheld phone footage, soft daylight, the same cafe room with wooden tables and the same white and pink flowers in every shot. People: a varied mix of different ages, builds, hair and skin tones, each in their own different clothes - this is the Russian-speaking expat community of Da Nang, so most people are not Asian; never several people who look alike or wear the same outfit. Only the person from the first image keeps their look; everyone else is a different person. No graphic overlays, no floating shapes. SHOT 1: starts exactly on this image, slow push-in on the finished arrangement. CUT TO SHOT 2: an empty glass dish with a metal pin holder in water, loose flowers and scissors beside it on the wooden table. CUT TO SHOT 3: extreme close-up of fingers pressing a flowering branch onto the pin holder. CUT TO SHOT 4: three different women of different ages and looks, each in her own clothes, laughing at the table while arranging their own flowers, faces soft and out of focus. CUT TO SHOT 5: four finished arrangements in a row on the table, slow pan, warm light. No text, no captions, no logos.
+Vertical short promo video for a flower arranging workshop, edited as a fast story with HARD CUTS: five different shots of two seconds each, never one continuous take. Handheld phone footage, soft daylight, the same cafe room with wooden tables and the same white and pink flowers in every shot. People: young Russian people in their mid-20s to early 30s, ordinary-looking, not models, natural skin, candid and unposed, each with a different face, build and hair, in their own casual everyday clothes; never several people who look alike or wear the same outfit, no bohemian styling. Only the person from the first image keeps their look; everyone else is a different person. No graphic overlays, no floating shapes. SHOT 1: starts exactly on this image, slow push-in on the finished arrangement. CUT TO SHOT 2: an empty glass dish with a metal pin holder in water, loose flowers and scissors beside it on the wooden table. CUT TO SHOT 3: extreme close-up of fingers pressing a flowering branch onto the pin holder. CUT TO SHOT 4: three different young women with different looks, each in her own clothes, laughing at the table while arranging their own flowers, faces soft and out of focus. CUT TO SHOT 5: four finished arrangements in a row on the table, slow pan, warm light. No text, no captions, no logos.
 ```
 
 ## 3. Сними
