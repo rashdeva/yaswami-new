@@ -60,6 +60,9 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 .row[aria-invalid='true'] label { color: var(--bad); }
 .error { margin: 8px 20px 0; font-size: 13px; color: var(--bad); }
 .note { margin: 12px 20px 0; font-size: 13px; color: var(--hint); }
+/* «Выйти» — строка группы красным, как в настройках iOS. */
+.group.logout { margin-top: 28px; }
+.logout .row { border-top: 0; justify-content: center; font-size: 17px; }
 .quiet { display: block; border: 0; background: none; color: var(--btn); font-size: 15px; padding: 12px 20px 0; cursor: pointer; }
 
 .chips { display: flex; gap: 8px; padding: 0 16px 12px; overflow-x: auto; scrollbar-width: none; }
@@ -234,7 +237,6 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 
 /* Широкое окно (Telegram Desktop, браузер): шторка — по центру как диалог */
 @media (min-width: 700px) {
-  #app { padding-top: 20px; }
   .chips { flex-wrap: wrap; overflow-x: visible; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -403,7 +405,9 @@ h2.today { color: var(--btn); }
 .shelf-head { display: flex; align-items: center; gap: 8px; margin: 0 20px 10px; }
 .shelf-head img { width: 30px; height: 30px; flex: none; }
 .shelf-head h2 { margin: 0; flex: 1; min-width: 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em; overflow-wrap: anywhere; }
-.shelf-head .quiet { padding: 0; flex: none; }
+.shelf-head .more { flex: none; display: inline-flex; align-items: center; gap: 2px; border: 0; border-radius: 99px; padding: 6px 9px 6px 12px; font-size: 14px; font-weight: 600; color: var(--text); background: color-mix(in srgb, var(--hint) 14%, transparent); cursor: pointer; transition: transform .2s var(--spring); }
+.shelf-head .more:active { transform: scale(.94); }
+.shelf-head .more svg { width: 14px; height: 14px; fill: none; stroke: var(--hint); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .rail { display: flex; gap: 10px; padding: 0 16px 4px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 0 16px; scrollbar-width: none; overscroll-behavior-x: contain; }
 .rail::-webkit-scrollbar { display: none; }
 .rail .cover { flex: none; width: 150px; scroll-snap-align: start; }
@@ -414,7 +418,7 @@ h2.today { color: var(--btn); }
 /* Быстрый поиск по темам: плитки с иконкой в ряд, прокрутка вбок; выбранная — в цвет текста, как чип. */
 .quick { display: flex; gap: 8px; padding: 14px 16px 4px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
 .quick::-webkit-scrollbar { display: none; }
-.tile { flex: none; width: 92px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 9px; border-radius: 20px; font-size: 12px; font-weight: 500; line-height: 1.2; text-align: center; cursor: pointer; background: var(--mat); border: .5px solid var(--stroke); box-shadow: inset 0 1px 0 var(--shine), var(--shadow); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); transition: transform .2s var(--spring); overflow-wrap: normal; hyphens: auto; }
+.tile { flex: none; width: 92px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 9px; border-radius: 20px; font-size: 12px; font-weight: 500; line-height: 1.2; text-align: center; cursor: pointer; background: var(--mat); border: .5px solid var(--stroke); box-shadow: inset 0 1px 0 var(--shine), var(--shadow); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); transition: transform .2s var(--spring); overflow-wrap: normal; hyphens: manual; }
 .tile:active { transform: scale(.95); transition-delay: .12s; }
 .tile[aria-pressed='true'] { background: var(--text); color: var(--bg); border-color: transparent; }
 .tile-ico { width: 40px; height: 40px; display: grid; place-items: center; font-size: 28px; }
