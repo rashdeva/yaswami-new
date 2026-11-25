@@ -50,9 +50,12 @@ export function FeedScreen({ lead, onOpen, onOpenShelf }: Props) {
   // Фильтр предлагает только темы, по которым есть события; порядок — как в гиде.
   const allTopics = useTopics();
   const topics = allTopics.filter((t) => items?.some((e) => e.topic === t));
+  // Без темы внизу — события, которых нет на полках: полки уже показали их выше. Выбрана тема — все события темы.
+  const onShelves = new Set(topic ? [] : (shelves ?? []).flatMap((s) => s.events.map((e) => e.id)));
   const days: CollectedEventItem[][] = [];
   for (const item of items ?? []) {
     if (topic && (topic === POPULAR ? !item.popular : item.topic !== topic)) continue;
+    if (onShelves.has(item.id)) continue;
     const last = days.at(-1);
     if (last && collectedDayKey(last[0]!.starts_at) === collectedDayKey(item.starts_at)) last.push(item);
     else days.push([item]);
@@ -80,17 +83,23 @@ export function FeedScreen({ lead, onOpen, onOpenShelf }: Props) {
   return (
     <>
       {top}
+      {/* Быстрый поиск: плитки тем — в одно касание к событиям для детей, йоге, бане. Выбранная тема прячет полки. */}
       {(topics.length > 1 || items?.some((e) => e.popular)) && (
-        <div className="chips">
-          <button className="chip" aria-pressed={!topic} onClick={() => setTopic(null)}>Все</button>
+        <div className="quick" role="group" aria-label="Темы">
           {items?.some((e) => e.popular) && (
-            <button className="chip" aria-pressed={topic === POPULAR} onClick={() => setTopic(topic === POPULAR ? null : POPULAR)}><span className="hot" />Популярное</button>
+            <button className="tile" aria-pressed={topic === POPULAR} onClick={() => setTopic(topic === POPULAR ? null : POPULAR)}><span className="tile-ico hot" />Популярное</button>
           )}
           {topics.map((t) => (
-            <button key={t} className="chip" aria-pressed={topic === t} onClick={() => setTopic(topic === t ? null : t)}>
-              <img src={topicIcon(t)} alt="" />{t[0]!.toUpperCase() + t.slice(1)}
+            <button key={t} className="tile" aria-pressed={topic === t} onClick={() => setTopic(topic === t ? null : t)}>
+              <img className="tile-ico" src={topicIcon(t)} alt="" />{t[0]!.toUpperCase() + t.slice(1)}
             </button>
           ))}
+        </div>
+      )}
+      {topic && (
+        <div className="topic-head">
+          <h2>{topic === POPULAR ? 'Популярное' : topic[0]!.toUpperCase() + topic.slice(1)}</h2>
+          <button className="chip" onClick={() => setTopic(null)}>✕ Все события</button>
         </div>
       )}
       {/* Первый раз спрашиваем сами; дальше темы меняются в профиле. */}
@@ -107,7 +116,7 @@ export function FeedScreen({ lead, onOpen, onOpenShelf }: Props) {
       {!items && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
       {items?.length === 0 && <div className="state"><b>🌿</b><p>Пока ничего не запланировано. Загляните позже.</p></div>}
       {!topic && shelves?.map((shelf, i) => <ShelfRail key={shelf.id} shelf={shelf} index={i} onOpen={onOpen} onMore={() => onOpenShelf(shelf.id)} />)}
-      {!topic && !!shelves?.length && !!days.length && <h2 className="all-events">Все события</h2>}
+      {!topic && !!shelves?.length && !!days.length && <h2 className="all-events">Ещё события</h2>}
       {days.map((list) => {
         const label = dayLabel(list[0]!.starts_at);
         return (

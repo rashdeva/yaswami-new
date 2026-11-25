@@ -398,3 +398,15 @@ h2.today { color: var(--btn); }
 .rail .cover b { font-size: 15px; }
 .all-events { margin-top: 30px; }
 .shelf-hero .emo { margin-top: 18px; }
+
+/* Быстрый поиск по темам: плитки с иконкой в ряд, прокрутка вбок; выбранная — в цвет текста, как чип. */
+.quick { display: flex; gap: 8px; padding: 14px 16px 4px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.quick::-webkit-scrollbar { display: none; }
+.tile { flex: none; width: 84px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 9px; border-radius: 20px; font-size: 12px; font-weight: 500; line-height: 1.2; text-align: center; cursor: pointer; background: var(--mat); border: .5px solid var(--stroke); box-shadow: inset 0 1px 0 var(--shine), var(--shadow); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); transition: transform .2s var(--spring); overflow-wrap: anywhere; }
+.tile:active { transform: scale(.95); }
+.tile[aria-pressed='true'] { background: var(--text); color: var(--bg); border-color: transparent; }
+.tile-ico { width: 40px; height: 40px; display: grid; place-items: center; font-size: 28px; }
+.tile-ico.hot::before { margin: 0; }
+.topic-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 18px 20px 4px; }
+.topic-head h2 { margin: 0; font-size: 22px; font-weight: 700; }
+.topic-head .chip { margin: 0; }
