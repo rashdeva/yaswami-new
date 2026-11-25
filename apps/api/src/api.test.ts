@@ -260,7 +260,7 @@ test('MCP: список инструментов, создание событи�
     'cities_list', 'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
     'events_ticket_types_update', 'events_update', 'host_searches_create', 'host_searches_delete', 'host_searches_list', 'host_searches_matches_list', 'host_searches_update',
-    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'jobs_get', 'jobs_list', 'me_collected_list', 'search', 'topics_list', 'users_get_self', 'users_update_self',
+    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'jobs_get', 'jobs_list', 'me_collected_list', 'search', 'showcase_get', 'topics_list', 'users_get_self', 'users_update_self',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
