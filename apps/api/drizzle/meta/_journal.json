@@ -442,6 +442,13 @@
       "when": 1795618019281,
       "tag": "20261125144659_drop_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1795618994986,
+      "tag": "20261125150314_products",
+      "breakpoints": true
     }
   ]
 }

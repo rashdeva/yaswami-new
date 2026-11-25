@@ -3,8 +3,8 @@
 import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeStatus, Product, ProductStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
+import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, PRODUCT_CATEGORIES, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -333,6 +333,35 @@ export const practiceSignups = pgTable(
 );
 
 // Полка витрины города (core/shelves.ts, ADR-0009): правило или ручной список собранных событий. Правят команда и куратор.
+// Товар мастера (Product в @yaswami/core): то, что мастер сам делает и продаёт. Пишет сборщик из источников вида products,
+// команда одобряет в «Каталоге». Город — город мастера. Гость видит published не старше PRODUCT_TTL_DAYS от posted_at.
+export const products = pgTable(
+  'products',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    host_id: uuid().notNull().references(() => hosts.id, { onDelete: 'cascade' }),
+    title: text().notNull(),
+    description: text(),
+    price: text(),
+    unit: text(),
+    category: text({ enum: PRODUCT_CATEGORIES }).notNull(),
+    photo_url: text(),
+    announcement: jsonb().$type<Product['announcement']>().notNull(),
+    title_key: text().notNull(),
+    status: text().$type<ProductStatus>().notNull().default('pending'),
+    posted_at: at('posted_at').notNull().defaultNow(),
+    created_at: at('created_at').notNull().defaultNow(),
+    updated_at: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    // Повтор — тот же товар у того же мастера: сборщик обновляет цену, фото и posted_at, а не пишет вторую строку.
+    uniqueIndex('products_host_title_idx').on(t.host_id, t.title_key),
+    index('products_list_idx').on(t.status, t.posted_at),
+    check('products_status_check', oneOf('status', PRODUCT_STATUSES)),
+    check('products_category_check', oneOf('category', PRODUCT_CATEGORIES)),
+  ],
+);
+
 export const shelves = pgTable(
   'shelves',
   {
@@ -618,4 +647,5 @@ export const tablesMatchCore: [
   Same<typeof hostSearches.$inferSelect, HostSearch>,
   Same<typeof hostSearchMatches.$inferSelect, HostSearchMatch>,
   Same<typeof shelves.$inferSelect, Shelf>,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true];
+  Same<typeof products.$inferSelect, Product>,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true];

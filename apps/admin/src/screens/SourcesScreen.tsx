@@ -17,11 +17,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useHosts } from '@/hooks/useHosts';
 import { useSources } from '@/hooks/useSources';
 
+export const KIND_NAMES: Record<SourceKind, string> = { announcements: 'Анонсы', leads: 'Чат города', products: 'Товары' };
 
-
-export const KIND_NAMES: Record<SourceKind, string> = { announcements: 'Анонсы', leads: 'Чат города' };
-
-/** Вид источника: анонсы; чат города — вопросы «куда сходить» и мастера. */
+/** Вид источника: анонсы; чат города — вопросы «куда сходить» и мастера; товары — канал мастера или группа объявлений. */
 function KindSelect({ value, onChange }: { value: SourceKind; onChange: (kind: SourceKind) => void }) {
   return (
     <Select value={value} onValueChange={(v) => onChange(v as SourceKind)}>

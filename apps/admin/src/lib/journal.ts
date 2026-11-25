@@ -62,6 +62,7 @@ export const ENTITIES: Record<AdminEntity, string> = {
   city: 'Город',
   topic: 'Тема',
   shelf: 'Полка витрины',
+  product: 'Товар',
 };
 
 /** Куда ведёт сущность в админке; null — своей карточки нет (сообщение, контакт). */

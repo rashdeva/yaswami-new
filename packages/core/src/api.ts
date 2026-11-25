@@ -290,11 +290,11 @@ export interface AdminSource {
 
 /**
  * Что сборщик берёт из источника: announcements — анонсы событий; leads — большой чат города: вопросы «куда сходить»
- * и мастера. Мастера получают город источника.
+ * и мастера; products — канал мастера или группа объявлений: товары мастеров (products.ts). Мастера получают город источника.
  */
-export const SOURCE_KINDS = ['announcements', 'leads'] as const;
+export const SOURCE_KINDS = ['announcements', 'leads', 'products'] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
-const sourceKind = z.enum(SOURCE_KINDS).describe('announcements — event announcements (default); leads — a big city chat: questions "where to go", and masters');
+const sourceKind = z.enum(SOURCE_KINDS).describe('announcements — event announcements (default); leads — a big city chat: questions "where to go", and masters; products — a maker\'s channel or a classifieds group: goods made by local makers');
 
 /**
  * Источник Instagram хранится как `instagram:<ник>`: ник в Instagram может совпасть с чужим username в Telegram.
