@@ -3,8 +3,8 @@
 import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeFormat, PracticeStatus, ServiceCategory, Product, ProductStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, PRODUCT_CATEGORIES, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, JoinedVia, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeFormat, PracticeStatus, ServiceCategory, Product, ProductStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
+import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, JOINED_VIA, PRODUCT_CATEGORIES, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -50,6 +50,21 @@ export const userIdentities = pgTable(
   },
   (t) => [primaryKey({ columns: [t.provider, t.subject] }), uniqueIndex('user_identities_user_provider_uq').on(t.user_id, t.provider)],
 );
+
+/**
+ * Приход и заходы пользователя (CONTEXT.md, «Приход»): когда и откуда пришёл в первый раз, когда заходил последний раз.
+ * Отдельно от users: это знает только команда, в `/me` не уходит, и частая запись `last_seen_at` не трогает строку
+ * пользователя — её снимок в журнале (audit.ts) не устаревает от каждого захода. В Luma такого нет.
+ * Строку заводит первый вход (`signInWith`); у пришедших до 2026-11-26 её создала миграция с `joined_via` = null.
+ */
+export const userActivity = pgTable('user_activity', {
+  user_id: userId('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+  created_at: at('created_at').notNull().defaultNow(), // первый вход
+  joined_via: text().$type<JoinedVia>(), // JOINED_VIA; null — пришёл до того, как мы стали это записывать
+  // С чем открыл в первый раз: startapp мини-приложения или хвост /start у бота — событие, кто позвал, метка (parseStart).
+  start_param: text(),
+  last_seen_at: at('last_seen_at'), // последний заход; пишется не чаще раза в полчаса (touchUser в auth.ts)
+}, (t) => [index('user_activity_created_idx').on(t.created_at), check('user_activity_joined_via_check', oneOf('joined_via', JOINED_VIA))]);
 
 // Подписка на темы (CONTEXT.md): строка появляется, когда человек ответил на вопрос «что интересно» — в том числе
 // отказом (`topics` = []). `notified_at` — до какого момента события ему уже показаны: при подписке — её время, после

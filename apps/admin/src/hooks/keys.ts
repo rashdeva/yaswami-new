@@ -1,5 +1,5 @@
 // Ключи запросов TanStack Query — все здесь: по ним хуки находят и обновляют данные друг друга.
-import type { AdminActionListInput } from '@yaswami/core';
+import type { AdminActionListInput, AdminActivityListInput } from '@yaswami/core';
 
 export const keys = {
   /** Лента переписки: диалоги, последние сообщения, аккаунты. */
@@ -22,6 +22,8 @@ export const keys = {
   users: (query?: string) => ['users', query],
   user: (id: number) => ['user', id],
   contacts: (hostUser: number) => ['contacts', hostUser],
+  /** Лента «Активность»: целиком или одного человека. */
+  activity: (filter: Omit<AdminActivityListInput, 'pagination_cursor'>) => ['activity', filter],
   actions: (filter: Omit<AdminActionListInput, 'pagination_cursor'>) => ['actions', filter],
   action: (id: string) => ['action', id],
   sources: ['sources'],

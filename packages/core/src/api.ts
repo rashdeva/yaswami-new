@@ -65,7 +65,7 @@ export const VisitInput = z.object({ ref: z.number().int().optional() });
 export type VisitInput = z.infer<typeof VisitInput>;
 
 /** Поиск человека среди пользователей сервиса; без запроса — список. */
-export const UserSearchInput = z.object({ query: z.string().trim().min(1).max(64).optional().describe('Part of a first name or @username; omit to list everyone (first 50 by name)') });
+export const UserSearchInput = z.object({ query: z.string().trim().min(1).max(64).optional().describe('Part of a first name or @username; omit to list the 50 newest') });
 export type UserSearchInput = z.infer<typeof UserSearchInput>;
 
 /** Решение иллюстратора об обложке собранного события. */

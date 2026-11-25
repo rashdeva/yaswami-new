@@ -70,6 +70,7 @@
 | Товар мастера — Product (в Luma такого нет) | `products_*`, `/products`; для команды `admin_products_*`, `/admin/products`; ссылка «Написать» — `contact_url` | `PATCH /admin/products/<id>` `{ "status": "published" }` |
 | Предложенный источник — Source от человека (в Luma так добавляют событие в чужой календарь: `calendars/events/add` с `submission_mode: pending`, затем approve/reject) | человек — `sources_add`, `POST /sources`; роль support за собеседника — `person_sources_add`; решение команды — поле `approval_status` (`approved`, `declined`) в `admin_sources_update`; ждёт — `pending_approval`, кто прислал — `submitted_by` в `admin_sources_list` | `POST /sources` `{ "channel": "t.me/danang_party" }` |
 | Единый поиск по каталогу: события, услуги и товары (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
+| Приход и активность (в Luma такого нет; там у гостя только `utm_source`) | команде — `admin_activity_list`, `GET /admin/activity`, вход `type` (`user_joined`, `signup`, `visit`) и `user_id`; у `AdminUser` поля `created_at`, `joined_via` (`JOINED_VIA`), `start_param`, `last_seen_at`, `registrations` | `GET /admin/activity?type=signup` |
 
 Новый публичный ресурс каталога добавляется в поиск в том же PR (так добавлены услуги — `type: 'practice'`, и товары — `type: 'product'`): ещё один `type` в `SearchEntry` и ещё один запрос в `search` (`services.ts`).
 

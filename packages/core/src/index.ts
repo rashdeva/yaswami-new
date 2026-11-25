@@ -12,3 +12,4 @@ export * from './host-searches.ts';
 export * from './cities.ts';
 export * from './shelves.ts';
 export * from './products.ts';
+export * from './start.ts';

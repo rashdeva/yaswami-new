@@ -1,6 +1,6 @@
 // Клиент API админки: единственное место, где есть fetch. Формы запросов и ответов — из @yaswami/core.
 import type {
-  AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
+  AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminActivityList, AdminActivityListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
   AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminShelf, AdminSource, AdminTopic, CollectedEventItem, ShelfCreateInput, ShelfUpdateInput, TopicCandidate, TopicCreateInput, TopicUpdateInput,
   AdminUser, AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, AdminProduct, AdminProductList, AdminProductListInput, HostUpdateInput, Practice, PracticeUpdateInput, ProductUpdateInput, InboxConversation, SourceSearch, SourceSearchCreateInput, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
@@ -183,7 +183,8 @@ export const api = {
   productUpdate: (product: string, input: ProductUpdateInput) => request<Wire<AdminProduct>>('PATCH', `/admin/products/${id(product)}`, input),
 
   // Пользователи и контакты
-  users: (query?: string) => request<AdminUser[]>('GET', `/admin/users${qs({ query })}`),
+  users: (query?: string) => request<Wire<AdminUser>[]>('GET', `/admin/users${qs({ query })}`),
+  activity: (input: AdminActivityListInput) => request<Wire<AdminActivityList>>('GET', `/admin/activity${qs(input)}`),
   user: (user: number) => request<Wire<AdminUserView>>('GET', `/admin/users/${user}`),
   userUpdate: (user: number, input: UserUpdateInput) => request<User>('PATCH', `/admin/users/${user}`, input),
   userDelete: (user: number) => request<void>('DELETE', `/admin/users/${user}`),

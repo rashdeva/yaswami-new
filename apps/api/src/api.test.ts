@@ -2478,6 +2478,7 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_shelves_delete: 'DELETE /admin/shelves/:id',
   admin_hosts_delete: 'DELETE /admin/hosts/:id',
   admin_users_search: 'GET /admin/users',
+  admin_activity_list: 'GET /admin/activity',
   admin_users_get: 'GET /admin/users/:id',
   admin_users_update: 'PATCH /admin/users/:id',
   admin_users_delete: 'DELETE /admin/users/:id',
@@ -3368,4 +3369,60 @@ test('безопасность: чужой контакт не даёт прав
   }
   const huge = await app.request('/telegram/webhook', { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': String(9 * 1024 * 1024) }, body: '{}' });
   assert.equal(huge.status, 413);
+});
+
+test('активность: кто пришёл, откуда, куда записался и что открывал', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const rest = async (path: string) => (await call(admin, 'GET', path)).json() as Promise<any>;
+  // initData с start_param: с ним человек открыл мини-приложение по ссылке t.me/<бот>/<приложение>?startapp=…
+  const withStart = (id: number, first_name: string, start_param: string) => {
+    const params = new URLSearchParams({ auth_date: String(Math.floor(Date.now() / 1000)), start_param, user: JSON.stringify({ id, first_name }) });
+    const secret = createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
+    params.set('hash', createHmac('sha256', secret).update([...params].map(([k, v]) => `${k}=${v}`).sort().join('\n')).digest('hex'));
+    return `tma ${params}`;
+  };
+  const { event } = await newEvent(tma(91, 'Олег'), { name: 'Покер у моря', start_at: new Date(Date.now() + 86_400_000).toISOString() });
+  const oleg = await uid(91);
+
+  // Вера пришла в мини-приложение по ссылке Олега на событие, с меткой поста; второй вход приход не переписывает.
+  const vera = withStart(92, 'Вера', `${event.id}-r${oleg}-spost1`);
+  assert.equal((await call(vera, 'GET', '/me')).status, 200);
+  assert.equal((await call(withStart(92, 'Вера', 'other'), 'GET', '/me')).status, 200);
+  assert.equal((await call(vera, 'POST', `/events/${event.id}/visit`, { ref: oleg })).status, 204);
+  assert.equal((await call(vera, 'POST', `/events/${event.id}/rsvp`, { approval_status: 'approved' })).status, 200);
+  // Аня пришла через бота по ссылке t.me/<бот>?start=promo.
+  await handleUpdate(db, botMessage(93, '/start promo'));
+
+  const uid92 = await uid(92);
+  const uid93 = await uid(93);
+  const pick = (o: any, k: string[]) => Object.fromEntries(k.map((x) => [x, o[x]]));
+  const users = await rest('/admin/users');
+  assert.equal(users[0].id, uid93, 'без запроса — пришедшие последними сверху');
+  assert.deepEqual(pick(users[0], ['joined_via', 'start_param', 'registrations']), { joined_via: 'bot', start_param: 'promo', registrations: 0 });
+  const veraRow = users.find((u: any) => u.id === uid92);
+  assert.deepEqual(pick(veraRow, ['joined_via', 'start_param', 'registrations']), { joined_via: 'mini_app', start_param: `${event.id}-r${oleg}-spost1`, registrations: 1 });
+  assert.ok(veraRow.created_at && veraRow.last_seen_at, 'время прихода и последнего захода');
+  assert.equal((await rest(`/admin/users/${uid92}`)).user.joined_via, 'mini_app', 'карточка — с приходом');
+
+  // Лента Веры: пришла → открыла событие (позвал Олег) → записалась; новые сверху.
+  const mine = await rest(`/admin/activity?user_id=${uid92}`);
+  assert.deepEqual(mine.entries.map((e: any) => e.type), ['guest_registered', 'visit', 'user_joined']);
+  assert.deepEqual(mine.entries[0].target, { entity: 'event', id: event.id, name: 'Покер у моря' });
+  assert.deepEqual(mine.entries[1].referrer, { id: oleg, first_name: 'Олег' });
+  assert.deepEqual(pick(mine.entries[2], ['joined_via', 'start_param']), { joined_via: 'mini_app', start_param: `${event.id}-r${oleg}-spost1` });
+  assert.equal(mine.entries[2].user.first_name, 'Вера');
+  // Отбор по виду и страницы по next_cursor.
+  assert.deepEqual((await rest(`/admin/activity?user_id=${uid92}&type=signup`)).entries.map((e: any) => e.type), ['guest_registered']);
+  const first = await rest(`/admin/activity?user_id=${uid92}&pagination_limit=2`);
+  assert.equal(first.has_more, true);
+  const second = await rest(`/admin/activity?user_id=${uid92}&pagination_limit=2&pagination_cursor=${encodeURIComponent(first.next_cursor)}`);
+  assert.deepEqual(second.entries.map((e: any) => e.type), ['user_joined']);
+  assert.equal(second.has_more, false);
+  assert.ok((await rest('/admin/activity?type=user_joined')).entries.some((e: any) => e.user.id === uid93 && e.start_param === 'promo'));
+
+  // Тот же ответ через MCP; не команде — закрыто.
+  const viaMcp = JSON.parse((await (await call(admin, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'admin_activity_list', arguments: { user_id: uid92 } } })).json() as any).result.content[0].text);
+  assert.deepEqual(viaMcp.entries.map((e: any) => e.type), mine.entries.map((e: any) => e.type));
+  assert.equal((await call(vera, 'GET', '/admin/activity')).status, 403);
 });
