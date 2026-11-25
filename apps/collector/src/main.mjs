@@ -262,6 +262,10 @@ const ADOPT_PER_PASS = Number(env.ADOPT_PER_PASS ?? 5);
 // Источник, события которого команда стабильно одобряет, модерацию пропускает (store.trustedChannels). 0 — выключено.
 const AUTO_APPROVE_MIN = Number(env.AUTO_APPROVE_MIN ?? 5);
 
+// Источник, где ИИ столько публикаций подряд не нашёл ни одного события, выключается (store.countParse): каждый разбор —
+// запрос из общей квоты ИИ, а такие каналы — магазины, блоги и чаты, где время пишут не про события. 0 — не выключать.
+const SOURCE_EMPTY_PARSES = Number(env.SOURCE_EMPTY_PARSES ?? 20);
+
 // Поиск источников для городов (source_searches): новому городу — в первый же проход, остальным — раз в
 // SOURCE_SEARCH_DAYS дней (0 — только по просьбе команды). Канал, где за месяц SOURCE_AUTO_ADD_MIN и больше публикаций
 // похожи на анонс, становится источником сам: его события всё равно идут через модерацию. Группы и остальное ждут
@@ -300,6 +304,7 @@ async function pollChannel(source, known, trusted) {
   const fresh = (await fetchChatAnnouncements(userbot, channel, cursors[channel] ?? 0))
     .sort((a, b) => a.announcement.number - b.announcement.number);
   for (const { announcement, album } of fresh) {
+    if (source.off) break;
     const candidate = Date.now() - new Date(announcement.published_at) < maxAgeMs && looksLikeEvent(announcement.text);
     // Фото качаем только для кандидатов: их видит ИИ (афиша) и, если событие новое, они уходят в бакет.
     const photos = candidate ? await downloadPhotos(userbot, album) : [];
@@ -316,9 +321,15 @@ async function pollChannel(source, known, trusted) {
  * в бакет — один раз, когда из неё появилось новое событие. `cover` — обложка нового события (JPEG) или null: у Telegram
  * её кладёт refreshPosts, у Instagram — сразу, потом публикацию не перечитываем. Возвращает, сколько событий нашёл ИИ.
  */
-async function saveEvents({ channel, host_username, city_id, city, timezone }, announcement, photos, upload, known, trusted, cover = null) {
+async function saveEvents(source, announcement, photos, upload, known, trusted, cover = null) {
+  const { channel, host_username, city_id, city, timezone } = source;
   const events = await extractFor({ city, timezone })({ ...announcement, images: photos.slice(0, 1).map((p) => p.data) }); // ИИ — только первое фото: афиша обычно первая, остальные стоят токенов зря
   await sleep(llmPauseMs); // бесплатный уровень Gemini считает запросы в минуту
+  // Считаем только состоявшийся разбор: сбой ИИ (квота, перегрузка) бросает выше и источник не штрафует.
+  if (await store.countParse(channel, events.length > 0, SOURCE_EMPTY_PARSES)) {
+    source.off = true; // остальные публикации этого прохода в ИИ уже не идут
+    console.log(`источник ${channel}: ${SOURCE_EMPTY_PARSES} разборов подряд без событий — выключен`);
+  }
   const ig = instagramOf(channel);
   let media; // фото и видео публикации в бакете: заливаем один раз, когда из неё появилось новое событие
   for (const [i, event] of events.entries()) {
@@ -383,6 +394,7 @@ async function pollInstagram(known, trusted) {
       .sort((a, b) => a.announcement.number - b.announcement.number);
     try {
       for (const { post, announcement } of fresh) {
+        if (source.off) break;
         const candidate = Date.now() - new Date(announcement.published_at) < maxAgeMs && looksLikeEvent(announcement.text);
         // Фото — только кандидатам, ролик — только когда из публикации появилось новое событие.
         const photos = candidate ? await downloadInstagram(post, 'photo') : [];

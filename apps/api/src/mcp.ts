@@ -496,7 +496,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
     // --- Источники сборщика (admin/sources.ts)
     tool('admin_sources_list', {
       title: 'Announcement sources', readOnly: true, shape: {},
-      description: 'Telegram channels and groups the collector reads, newest first. `kind`: announcements — events are taken from it; leads — a big city chat: questions "where to go" and masters. Masters get the city of the chat. `host` — the organizer the source belongs to: set by the collector when it takes a channel from an organizer\'s profile, or by the team; null — none. Disabled sources are not read; `disabled_reason` — the collector disabled it itself (the channel is gone or private), null — the team did.',
+      description: 'Telegram channels and groups the collector reads, newest first. `kind`: announcements — events are taken from it; leads — a big city chat: questions "where to go" and masters. Masters get the city of the chat. `host` — the organizer the source belongs to: set by the collector when it takes a channel from an organizer\'s profile, or by the team; null — none. Disabled sources are not read; `disabled_reason` — the collector disabled it itself (the channel is gone or private, or the AI parsed 20 of its posts in a row without finding an event — `empty_parses` counts them; enabling a source resets it), null — the team did.',
     }, () => admin.listSources(db));
 
     tool('admin_sources_create', {

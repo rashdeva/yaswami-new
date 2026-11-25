@@ -1,0 +1,1 @@
+ALTER TABLE "sources" ADD COLUMN "empty_parses" integer DEFAULT 0 NOT NULL;

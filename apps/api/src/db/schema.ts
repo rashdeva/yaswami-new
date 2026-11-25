@@ -500,6 +500,9 @@ export const sources = pgTable(
     kind: text({ enum: SOURCE_KINDS }).notNull().default('announcements'),
     // Почему выключен сборщиком: канала больше нет в Telegram или он стал закрытым. null — выключила команда или включён.
     disabled_reason: text(),
+    // Сколько публикаций подряд ИИ разобрал и не нашёл ни одного события: найдено — снова 0. Набралось
+    // SOURCE_EMPTY_PARSES (20) — сборщик выключает источник: каждый разбор — запрос к ИИ. Команда включила — снова 0.
+    empty_parses: integer('empty_parses').notNull().default(0),
     created_at: at('created_at').notNull().defaultNow(),
   },
   // Username в Telegram не различает регистр: @Tea и @tea — один канал.

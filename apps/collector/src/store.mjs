@@ -60,6 +60,19 @@ export function createStore(url) {
     savePeers: (account, peers) => peers.length ? sql`
       insert into tg_peers ${sql(peers.map((p) => ({ account, ...p })))}
       on conflict (account, username) do update set peer_id = excluded.peer_id, access_hash = excluded.access_hash, updated_at = now()` : [],
+    /**
+     * Разбор публикации источника ИИ: нашёл события — счёт пустых разборов заново, нет — плюс один. Набралось `max`
+     * пустых подряд — источник выключается с причиной (каждый разбор — запрос к ИИ из общей квоты). `max` 0 — не
+     * выключать. Возвращает true, если источник выключен этим разбором.
+     */
+    countParse: async (channel, found, max) => (await sql`
+      update sources set
+        empty_parses = case when ${found} then 0 else empty_parses + 1 end,
+        enabled = enabled and not (${max} > 0 and not ${found} and empty_parses + 1 >= ${max}),
+        disabled_reason = case when ${max} > 0 and not ${found} and empty_parses + 1 >= ${max}
+          then ${`${max} разборов подряд без событий`} else disabled_reason end
+      where lower(channel) = lower(${channel}) and enabled
+      returning enabled`)[0]?.enabled === false,
     /** Источник, которого больше нет в Telegram, — выключить с причиной; команда видит её в «Источниках» и может включить. */
     disableSource: (channel, reason) => sql`
       update sources set enabled = false, disabled_reason = ${reason} where lower(channel) = lower(${channel}) and enabled`,
