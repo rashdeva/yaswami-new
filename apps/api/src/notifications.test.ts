@@ -28,8 +28,10 @@ const message = (extra: object) => ({ update_id: 1, message: { message_id: 9, da
 
 test('входящее сообщение: текст, подпись к фото, пересланная публикация', () => {
   assert.deepEqual(parseIncoming(message({ text: ' Йога завтра ' })), {
-    chatId: 5, messageId: 9, from, text: 'Йога завтра', publishedAt: new Date(1794366000 * 1000).toISOString(), authorUsername: 'anna_yoga', origin: null, replyTo: null,
+    chatId: 5, messageId: 9, from, text: 'Йога завтра', publishedAt: new Date(1794366000 * 1000).toISOString(), authorUsername: 'anna_yoga', origin: null, replyTo: null, file: null,
   });
+  assert.deepEqual(parseIncoming(message({ voice: { file_id: 'v', file_size: 900, mime_type: 'audio/ogg', duration: 4 } }))?.file,
+    { type: 'voice', file_id: 'v', file_size: 900, mime_type: 'audio/ogg', duration: 4, file_name: null }, 'голосовое');
   assert.equal(parseIncoming(message({ photo: [{}], caption: 'Афиша' }))?.text, 'Афиша');
   assert.equal(parseIncoming(message({ photo: [{}] }))?.text, '', 'фото без подписи');
 
