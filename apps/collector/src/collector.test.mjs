@@ -356,6 +356,7 @@ console.log('cover ok');
   assert.equal(signalOf('Ищу няню для ребёнка 3 лет'), null, 'наём — не услуга из каталога');
   assert.equal(signalOf('Девочки, где купить нормальный творог?'), 'product');
   assert.equal(signalOf('Кто печёт бенто-торты на заказ?'), 'product');
+  assert.equal(signalOf('Подскажите, где можно купить солёное сало?'), 'product', 'вопрос из danang_women, ноябрь 2026');
   assert.equal(signalOf('Подскажите, где взять хлеб на закваске'), 'product');
   assert.equal(signalOf('Пельмени домашние, 250к за кг, доставка, пишите в лс'), null, 'мастер продаёт, а не ищет');
   assert.equal(signalOf('Ищем кондитера в кафе, торты, зарплата от 12 млн'), null, 'наём — не товар');
@@ -577,18 +578,21 @@ console.log('cover ok');
   assert.ok(!looksLikeProduct('Продам платье, надевала 2 раза, размер S, отдам за 300к, самовывоз Ан Тхыонг'), 'барахолка');
   assert.ok(!looksLikeProduct('Массаж лица и тела, 60 минут — 500к, выезд на дом, запись в лс'), 'услуга');
   assert.ok(!looksLikeProduct('Наличие 55к'), 'слишком коротко');
+  assert.ok(looksLikeProduct('Свежие яйца от своих кур, 10 шт — 50k, привезу в Ан Тхыонг'), 'фермерское в группе');
+  assert.ok(looksLikeProduct('Серьги из жемчуга своими руками, каждая пара — 250k'), 'хендмейд в группе');
 
   // Один пост «наличие» — несколько товаров; не мастер и неразборчивый ответ — ни одного.
   const ai = { is_maker: true, contact: '@Melody_Cafe', products: [
-    { title: 'Медовик порционно', description: null, price: '55к', unit: '100 г', category: 'food' },
-    { title: 'Наполеон', description: '', price: '55к', unit: '100 г', category: 'food' },
-    { title: 'Творог', description: 'домашний', price: '120к', unit: '0,5 кг', category: 'food' },
-    { title: '', description: null, price: null, unit: null, category: 'food' }, // без названия — отброшен
+    { title: 'Медовик порционно', description: null, price: '55к', unit: '100 г', category: 'bakery' },
+    { title: 'Наполеон', description: '', price: '55к', unit: '100 г', category: 'bakery' },
+    { title: 'Творог', description: 'домашний', price: '120к', unit: '0,5 кг', category: 'dairy' },
+    { title: '', description: null, price: null, unit: null, category: 'bakery' }, // без названия — отброшен
     { title: 'Доставка', description: null, price: null, unit: null, category: 'service' }, // чужая категория — отброшен
+    { title: 'Пирожки', description: null, price: null, unit: null, category: 'food' }, // старая категория — отброшен
   ] };
   const parsed = parseProducts('danangmelody/1', 'STOP', JSON.stringify(ai));
   assert.equal(parsed.contact, 'melody_cafe');
-  assert.deepEqual(parsed.products.map((p) => [p.title, p.price, p.unit, p.description]), [['Медовик порционно', '55к', '100 г', null], ['Наполеон', '55к', '100 г', null], ['Творог', '120к', '0,5 кг', 'домашний']]);
+  assert.deepEqual(parsed.products.map((p) => [p.title, p.price, p.unit, p.description, p.category]), [['Медовик порционно', '55к', '100 г', null, 'bakery'], ['Наполеон', '55к', '100 г', null, 'bakery'], ['Творог', '120к', '0,5 кг', 'домашний', 'dairy']]);
   assert.deepEqual(parseProducts('x/1', 'STOP', JSON.stringify({ ...ai, is_maker: false })).products, [], 'перепродажа, услуга, событие — пусто');
   {
     const error = console.error;

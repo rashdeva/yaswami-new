@@ -9,8 +9,8 @@ import { keys } from './keys.ts';
 import { useCity } from './useSession.ts';
 
 /**
- * Товары мастеров города, свежие сверху, страницами. `category` — переключатель «Все / Еда / Хендмейд» (null — все);
- * `more` — подгрузить следующую страницу, null — больше нет.
+ * Товары мастеров города, свежие сверху, страницами. `category` — выбранная плашка категории (null — все);
+ * `categories` — категории, где в городе есть товары; `more` — подгрузить следующую страницу, null — больше нет.
  */
 export function useProducts() {
   const { city_id } = useCity();
@@ -27,6 +27,7 @@ export function useProducts() {
   };
   return {
     products: data?.pages.flatMap((p) => p.entries) ?? null,
+    categories: data?.pages[0]?.categories ?? [],
     category,
     setCategory,
     failed: error,

@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, JoinedVia, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeFormat, PracticeStatus, ServiceCategory, Product, ProductStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, JOINED_VIA, PRODUCT_CATEGORIES, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
+import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, JOINED_VIA, PRODUCT_CATEGORY_SLUGS, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -368,7 +368,7 @@ export const products = pgTable(
     description: text(),
     price: text(),
     unit: text(),
-    category: text({ enum: PRODUCT_CATEGORIES }).notNull(),
+    category: text({ enum: PRODUCT_CATEGORY_SLUGS }).notNull(), // категория товара (PRODUCT_CATEGORIES, ADR-0013)
     photo_url: text(),
     announcement: jsonb().$type<Product['announcement']>().notNull(),
     title_key: text().notNull(),
@@ -382,7 +382,7 @@ export const products = pgTable(
     uniqueIndex('products_host_title_idx').on(t.host_id, t.title_key),
     index('products_list_idx').on(t.status, t.posted_at),
     check('products_status_check', oneOf('status', PRODUCT_STATUSES)),
-    check('products_category_check', oneOf('category', PRODUCT_CATEGORIES)),
+    check('products_category_check', oneOf('category', PRODUCT_CATEGORY_SLUGS)),
   ],
 );
 

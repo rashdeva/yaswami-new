@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { GuestRow } from '../components/GuestRow.tsx';
 import { contactProduct, useProduct } from '../hooks/useProducts.ts';
 import { useViewed } from '../hooks/useViewed.ts';
-import { PRODUCT_CATEGORY_LABELS, productPlaceholder, productPrice } from '../product.ts';
+import { productCategoryName, productPlaceholder, productPrice } from '../product.ts';
 import { openExternal } from '../tg.ts';
 
 interface Props {
@@ -34,7 +34,7 @@ export function ProductScreen({ id, city, onOpenHost, onBack }: Props) {
     <>
       <div className={`hero${onBack ? '' : ' nb'}`}>
         {onBack && <button className="back" onClick={onBack}>← Все товары</button>}
-        <small>{[city, PRODUCT_CATEGORY_LABELS[p.category]].join(' · ')}</small>
+        <small>{[city, productCategoryName(p.category)].join(' · ')}</small>
         <h1>{p.title}</h1>
       </div>
 

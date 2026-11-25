@@ -356,8 +356,8 @@ test('сборщик: товары мастеров — источники, ма
   const day = (d: number) => new Date(Date.UTC(2026, 10, d, 9)).toISOString();
   const post1 = { announcement: { url: 'https://t.me/danangmelody/1', text: 'Наличие 20 ноября' }, posted_at: day(20), photo_url: 'https://m/1.jpg' };
   const saved = await store.saveProducts(melody!.id, [
-    { title: 'Медовик порционно', description: null, price: '55k', unit: '100 г', category: 'food' },
-    { title: 'Творог', description: 'домашний', price: '120k', unit: '0,5 кг', category: 'food' },
+    { title: 'Медовик порционно', description: null, price: '55k', unit: '100 г', category: 'bakery' },
+    { title: 'Творог', description: 'домашний', price: '120k', unit: '0,5 кг', category: 'dairy' },
   ], post1);
   assert.deepEqual(saved.map((r: any) => r.created), [true, true]);
   assert.deepEqual((await sql`select title, title_key, status, price, unit, photo_url from products order by title`).map((p) => [p.title, p.title_key, p.status, p.price, p.unit, p.photo_url]), [
@@ -369,17 +369,17 @@ test('сборщик: товары мастеров — источники, ма
   // чего в посте нет (фото, вес), остаётся прежним.
   await sql`update products set status = 'published' where title = 'Медовик порционно'`;
   const post2 = { announcement: { url: 'https://t.me/danangmelody/2', text: 'Наличие 21 ноября' }, posted_at: day(21), photo_url: null };
-  const again = await store.saveProducts(melody!.id, [{ title: '  МЕДОВИК   порционно', description: null, price: '60k', unit: null, category: 'food' }], post2);
+  const again = await store.saveProducts(melody!.id, [{ title: '  МЕДОВИК   порционно', description: null, price: '60k', unit: null, category: 'bakery' }], post2);
   assert.deepEqual(again.map((r: any) => r.created), [false]);
   const medovik = await sql`select title, status, price, unit, photo_url, posted_at, announcement from products where title_key = 'медовик порционно'`;
   assert.equal(medovik.length, 1);
   assert.deepEqual([medovik[0]!.title, medovik[0]!.status, medovik[0]!.price, medovik[0]!.unit, medovik[0]!.photo_url, medovik[0]!.posted_at.toISOString(), medovik[0]!.announcement.url],
     ['Медовик порционно', 'published', '60k', '100 г', 'https://m/1.jpg', day(21), 'https://t.me/danangmelody/2']);
   // Пост старше уже записанного (повторный backfill) ничего не меняет.
-  assert.deepEqual(await store.saveProducts(melody!.id, [{ title: 'Медовик порционно', description: null, price: '50k', unit: null, category: 'food' }], { ...post1, posted_at: day(19) }), []);
+  assert.deepEqual(await store.saveProducts(melody!.id, [{ title: 'Медовик порционно', description: null, price: '50k', unit: null, category: 'bakery' }], { ...post1, posted_at: day(19) }), []);
   assert.equal((await sql`select price from products where title_key = 'медовик порционно'`)[0]!.price, '60k');
   // Тот же товар у другого мастера — своя строка.
-  await store.saveProducts(olga.id, [{ title: 'Творог', description: null, price: null, unit: null, category: 'food' }], post2);
+  await store.saveProducts(olga.id, [{ title: 'Творог', description: null, price: null, unit: null, category: 'dairy' }], post2);
   assert.equal((await sql`select count(*)::int as n from products where title_key = 'творог'`)[0]!.n, 2);
 
   // Тот же текст поста снова (объявление повторили): в ИИ не идёт, товарам поста — новая дата и ссылка.

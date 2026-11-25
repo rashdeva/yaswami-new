@@ -8,7 +8,7 @@ import type {
   TicketTypeCreateInput, TicketTypeUpdateInput, User, UserSelfUpdateInput, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
-import { ADDRESS_MAX, collectedSlug, DEFAULT_CITY_ID, Feature, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, PRODUCT_TTL_DAYS, productContactUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, serviceCategoryBySlug, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
+import { ADDRESS_MAX, collectedSlug, DEFAULT_CITY_ID, Feature, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, PRODUCT_CATEGORY_SLUGS, PRODUCT_TTL_DAYS, productContactUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, serviceCategoryBySlug, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
 import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, photos, practices, practiceSignups, products, sources, subscriptions, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
@@ -585,12 +585,18 @@ export async function productPage(db: Db, where: SQL | undefined, { pagination_c
 /** Товары мастеров города и его соседей для гостя (без города — первого). Открыт всем, как витрина событий. */
 export async function listProducts(db: Db, { city_id = DEFAULT_CITY_ID, category, ...page }: ProductListInput): Promise<ProductList> {
   const inCity = and(liveProduct, visibleMaker, inArray(hosts.city_id, await nearbyCities(db, city_id)));
-  const [result, [makers]] = await Promise.all([
+  const [result, [makers], present] = await Promise.all([
     productPage(db, and(inCity, category ? eq(products.category, category) : undefined), page),
     // Вход в раздел решается по всем товарам города, без отбора по категории (PRODUCTS_MIN_HOSTS).
     db.select({ n: sql<number>`count(distinct ${products.host_id})::int` }).from(products).innerJoin(hosts, eq(hosts.id, products.host_id)).where(inCity),
+    // Плашки — только у категорий, где в городе что-то есть; порядок — как в PRODUCT_CATEGORIES.
+    db.selectDistinct({ category: products.category }).from(products).innerJoin(hosts, eq(hosts.id, products.host_id)).where(inCity),
   ]);
-  return { ...result, entries: result.entries.map((r) => toProductItem(r.product, r.host)), hosts_count: makers?.n ?? 0 };
+  const has = new Set(present.map((r) => r.category));
+  return {
+    ...result, entries: result.entries.map((r) => toProductItem(r.product, r.host)), hosts_count: makers?.n ?? 0,
+    categories: PRODUCT_CATEGORY_SLUGS.filter((c) => has.has(c)),
+  };
 }
 
 /** Один товар. Неодобренный, просроченный и товар отклонённого мастера для гостя не существуют. */

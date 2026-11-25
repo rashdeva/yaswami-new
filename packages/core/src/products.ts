@@ -8,9 +8,27 @@ import { cityId } from './api.ts';
 export const PRODUCT_STATUSES = ['pending', 'published', 'rejected'] as const;
 export type ProductStatus = (typeof PRODUCT_STATUSES)[number];
 
-/** Что за товар: food — еда и напитки (торты, пельмени, сыр, комбуча), handmade — вещи ручной работы (одежда, украшения, декор). */
-export const PRODUCT_CATEGORIES = ['food', 'handmade'] as const;
-export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
+/**
+ * Категория товара (CONTEXT.md, ADR-0013): по ней гость ищет, что ему нужно, — торт, творог, пельмени в морозилку, свечу.
+ * Список меняет команда; `what` — что входит, по нему же ИИ ставит категорию при разборе поста. Порядок — порядок плашек.
+ * Разведка, откуда такие группы: docs/research/product-categories-2026-11.md. В Luma такого нет — это наше.
+ * Пометки о составе («без сахара», «без глютена», «веган») — не категория: они остаются в описании товара.
+ */
+export const PRODUCT_CATEGORIES = [
+  { slug: 'bakery', name: 'Выпечка и десерты', emoji: '🎂', what: 'торты, порционные десерты, пирожные, печенье, конфеты, хлеб и выпечка на закваске, пироги' },
+  { slug: 'frozen', name: 'Пельмени и полуфабрикаты', emoji: '🥟', what: 'пельмени, вареники, манты, блинчики с начинкой, котлеты, сырники, голубцы — замороженное, чтобы приготовить дома' },
+  { slug: 'meals', name: 'Готовая еда', emoji: '🍲', what: 'обеды и ужины на сегодня, супы, вторые блюда, салаты, домашние суши, рационы и ланч-боксы с доставкой' },
+  { slug: 'dairy', name: 'Молочное и сыр', emoji: '🧀', what: 'творог, сметана, кефир, йогурт, айран, сырки, домашний сыр, масло' },
+  { slug: 'pantry', name: 'Заготовки и деликатесы', emoji: '🫙', what: 'варенье и джемы, соленья и квашеная капуста, маринады, икра из овощей, соусы и аджика, вяленое мясо и рыба, сало, колбаски, гранола' },
+  { slug: 'drinks', name: 'Напитки', emoji: '🧃', what: 'комбуча, морс, компот, квас, лимонады, кофе своей обжарки, чай своего сбора' },
+  { slug: 'farm', name: 'Фермерское', emoji: '🥬', what: 'овощи, фрукты, зелень, яйца, мёд, мясо и птица — что человек вырастил сам, не перекупил на рынке' },
+  { slug: 'cosmetics', name: 'Косметика и мыло', emoji: '🧼', what: 'мыло, кремы, бальзамы, скрабы, натуральная косметика ручной работы' },
+  { slug: 'wear', name: 'Одежда и украшения', emoji: '💍', what: 'одежда своего пошива, вязаное, украшения, сумки, аксессуары из кожи' },
+  { slug: 'decor', name: 'Дом и подарки', emoji: '🕯️', what: 'свечи, керамика, декор, картины, текстиль, блокноты, игрушки ручной работы, подарочные наборы' },
+] as const;
+export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number]['slug'];
+export const PRODUCT_CATEGORY_SLUGS = PRODUCT_CATEGORIES.map((c) => c.slug) as [ProductCategory, ...ProductCategory[]];
+export const productCategoryBySlug = (slug: string | null | undefined) => PRODUCT_CATEGORIES.find((c) => c.slug === slug);
 
 /**
  * Сколько дней после последнего упоминания товар видят гости. Мастера каждый день публикуют «наличие» и этим держат
@@ -67,6 +85,8 @@ export interface ProductItem extends Pick<Product, 'id' | 'title' | 'description
   url: string; // страница товара в Ясвами
 }
 
+const PRODUCT_CATEGORY_HINT = 'Product category: bakery — cakes, desserts, bread; frozen — dumplings and other frozen semi-finished food; meals — cooked meals for today; dairy — cottage cheese, sour cream, kefir, cheese; pantry — preserves, pickles, sauces, cured meat and fish; drinks — kombucha, mors, kvass; farm — vegetables, fruit, eggs, honey grown by the seller; cosmetics — handmade soap and skincare; wear — handmade clothes, jewelry, bags; decor — candles, ceramics, decor, gifts.';
+
 const pagination = {
   pagination_cursor: z.string().max(200).optional().describe('next_cursor from the previous page'),
   pagination_limit: z.coerce.number().int().min(1).max(100).optional().describe('Default 50'),
@@ -74,7 +94,7 @@ const pagination = {
 
 export const ProductListInput = z.object({
   city_id: cityId.optional(),
-  category: z.enum(PRODUCT_CATEGORIES).optional().describe('food — food and drinks; handmade — handmade goods. Omit for both'),
+  category: z.enum(PRODUCT_CATEGORY_SLUGS).optional().describe(PRODUCT_CATEGORY_HINT + ' Omit for all'),
   ...pagination,
 });
 export type ProductListInput = z.infer<typeof ProductListInput>;
@@ -85,6 +105,7 @@ export interface ProductList {
   has_more: boolean;
   next_cursor: string | null;
   hosts_count: number; // сколько мастеров с такими товарами в городе и у соседей, без учёта category: вход в раздел — от PRODUCTS_MIN_HOSTS
+  categories: ProductCategory[]; // у каких категорий в городе и у соседей есть товары, без учёта category: плашки пустых не показываем
 }
 
 export const AdminProductListInput = z.object({
@@ -116,7 +137,7 @@ export const ProductUpdateInput = z
     description: text(2000).nullable(),
     price: text(200).nullable().describe('Price as the maker states it; null — not stated'),
     unit: text(100).nullable().describe('Weight, volume or count: "100 г", "1 кг", "6 шт"; null — not stated'),
-    category: z.enum(PRODUCT_CATEGORIES),
+    category: z.enum(PRODUCT_CATEGORY_SLUGS).describe(PRODUCT_CATEGORY_HINT),
     status: z.enum(PRODUCT_STATUSES).describe('Moderation: pending — waits for the team, published — shown to guests, rejected — never shown'),
   })
   .partial();
