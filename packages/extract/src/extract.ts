@@ -1,5 +1,4 @@
-import { setTimeout as sleep } from 'node:timers/promises';
-import { GoogleGenAI } from '@google/genai';
+import { gemini } from './gemini.ts';
 import { CollectedEvent, OTHER_TOPIC, TOPIC_GUIDES } from '@yaswami/core';
 
 /** Публикация в том виде, в каком её видит ИИ. */
@@ -137,10 +136,11 @@ export function parseExtracted(id: string, finish: string | undefined, text: str
 const INSTAGRAM_NOTE = 'Публикация из Instagram, автор указан ником в Instagram. В telegram_username его не ставь — только Telegram-контакт, прямо названный в тексте (t.me/…, «в телеграм @…»). Записаться можно в директ автора, поэтому событие без другого контакта всё равно верни.\n';
 
 export function createExtractor({ model, city, timezone }: { model: string; city: string; timezone: string }) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const generate = gemini();
   return async function extract(announcement: Announcement): Promise<CollectedEvent[]> {
-    // Лимит бесплатного уровня (429) не ловим: бросаем, отметка канала не сдвигается, следующий проход повторит.
-    const request = () => ai.models.generateContent({
+    // Повторы, перегрузка и дневной лимит — в gemini.ts. Лимит всех моделей (QuotaExhausted, 429) бросаем: отметка канала
+    // не сдвигается, следующий проход повторит.
+    const res = await generate({
       model,
       contents: [
         { text: `Дата публикации: ${announcement.published_at}\nАвтор публикации: ${announcement.author_username ? `@${announcement.author_username}` : 'не указан'}\n${announcement.platform === 'instagram' ? INSTAGRAM_NOTE : ''}\n<publication>\n${announcement.text}\n</publication>` },
@@ -152,10 +152,6 @@ export function createExtractor({ model, city, timezone }: { model: string; city
         responseJsonSchema: schema(),
       },
     });
-    // 503 «модель перегружена» случается часто и проходит за секунды: две повторные попытки.
-    const res = await request()
-      .catch((e: { status?: number }) => (e.status === 503 ? sleep(10_000).then(request) : Promise.reject(e)))
-      .catch((e: { status?: number }) => (e.status === 503 ? sleep(30_000).then(request) : Promise.reject(e)));
     return parseExtracted(announcement.id, res.candidates?.[0]?.finishReason, res.text);
   };
 }

@@ -1,8 +1,7 @@
 // Товары мастера из поста: что автор сам делает и продаёт (Product в @yaswami/core) — домашняя еда, выпечка, хендмейд.
 // Сборщик зовёт это для постов из источников вида products, прошедших дешёвый отбор (apps/collector/src/products.mjs).
 // Перепродажу, барахолку, услуги и события отсекает ИИ: для них список пуст.
-import { setTimeout as sleep } from 'node:timers/promises';
-import { GoogleGenAI } from '@google/genai';
+import { gemini } from './gemini.ts';
 import { PRODUCT_CATEGORIES, PRODUCT_CATEGORY_SLUGS, type Product } from '@yaswami/core';
 
 /** Товар, как его вынул ИИ: без мастера, фото и поста — их ставит сборщик; статус новой строки — pending. */
@@ -82,19 +81,17 @@ export function parseProducts(id: string, finish: string | undefined, text: stri
 }
 
 export function createProductExtractor({ model }: { model: string }) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const generate = gemini();
   /**
    * Товары поста `id` (<чат>/<номер>). `author` — кто написал: канал мастера или автор в группе. Ошибку модели
    * (лимит после повтора, 503) бросает: сборщик перечитает пост в следующий проход.
    */
   return async function extractProducts(id: string, author: string, text: string): Promise<ProductPost> {
-    const request = () => ai.models.generateContent({
+    const res = await generate({
       model,
       contents: `Автор: ${author}\n\n<post>\n${text}\n</post>`,
       config: { systemInstruction: system(), responseMimeType: 'application/json', responseJsonSchema: schema() },
     });
-    // Минутный лимит (429) общий с разбором анонсов, перегрузка (503) проходит за секунды: одна повторная попытка.
-    const res = await request().catch((e: { status?: number }) => (e.status === 429 || e.status === 503 ? sleep(60_000).then(request) : Promise.reject(e)));
     return parseProducts(id, res.candidates?.[0]?.finishReason, res.text);
   };
 }

@@ -8,3 +8,4 @@ export * from './offer.ts';
 export * from './search.ts';
 export * from './topic.ts';
 export * from './product.ts';
+export * from './gemini.ts';

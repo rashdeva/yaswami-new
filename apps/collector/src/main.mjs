@@ -43,13 +43,18 @@ const extractFor = ({ city, timezone }) => extractors.get(`${city}|${timezone}`)
 // Повторный разбор уже собранных событий (backfill.mjs, refresh.mjs): в городе и поясе самого события ({ city, timezone }).
 const extract = (announcement, place) => extractFor(place)(announcement);
 
-const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
-const extractOffer = createOfferExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
-const extractProducts = createProductExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
-const classifyPractice = createPracticeClassifier({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
+// У каждой модели Gemini свой дневной лимит бесплатного уровня, и одна модель на всё кончалась к полудню. Анонсы —
+// EXTRACT_MODEL, его лимит только им; всё второстепенное (мастера из объявлений, товары, справки, находки, разметка
+// услуг) — SIDE_MODEL, со своим лимитом. Исчерпанную модель подменяет запасная (packages/extract/src/gemini.ts,
+// GEMINI_FALLBACK_MODELS).
+const sideModel = env.SIDE_MODEL ?? 'gemini-3.1-flash-lite';
+const summarize = createSummarizer({ model: sideModel });
+const extractOffer = createOfferExtractor({ model: sideModel });
+const extractProducts = createProductExtractor({ model: sideModel });
+const classifyPractice = createPracticeClassifier({ model: sideModel });
 // Новая тема из меток: TOPIC_MODEL — модель для неё (гид читают все, можно взять посильнее), TOPICS_AUTO=0 — не добавлять темы самому.
 const proposeTopic = createTopicProposer({ model: env.TOPIC_MODEL ?? env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
-const matcher = createSearchMatcher({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
+const matcher = createSearchMatcher({ model: sideModel });
 // Поиск по username — самый флудоопасный вызов Telegram: за проход собираем немного профилей, остальные — в следующий.
 const PROFILES_PER_PASS = 15;
 // Профиль пересматриваем раз в неделю: «о себе» и канал меняются, а по каналу берутся фото и источник.
