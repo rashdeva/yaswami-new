@@ -1,6 +1,6 @@
 {
-  "id": "d65d305f-a646-45ae-907e-fb4455344b23",
-  "prevId": "7aea9362-8068-44c9-ad96-bbf7d83af3c4",
+  "id": "ac1eca49-9204-49f1-b3a2-3fadba23d935",
+  "prevId": "df68cdd3-61f6-432b-aaae-fa253d12a11a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -266,6 +266,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'draft'"
+        },
+        "launch_status": {
+          "name": "launch_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'launched'"
         },
         "created_at": {
           "name": "created_at",

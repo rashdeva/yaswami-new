@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
+import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, SHARE_KINDS, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -71,6 +71,8 @@ export const cities = pgTable('cities', {
   longitude: doublePrecision(),
   // Кто публикует полки витрины (ADR-0009): draft — изменения куратора ждут команду, auto — куратор публикует сам.
   showcase_mode: text({ enum: ['draft', 'auto'] }).notNull().default('draft'),
+  // archived — город на паузе: гостям не виден, сборщик его не читает (CITY_LAUNCH_STATUSES в core).
+  launch_status: text({ enum: CITY_LAUNCH_STATUSES }).notNull().default('launched'),
   created_at: at('created_at').notNull().defaultNow(),
 });
 

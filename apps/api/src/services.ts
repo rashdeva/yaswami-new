@@ -142,8 +142,14 @@ const collectedWithCover = (db: Db | Tx) => db
   .from(collectedEvents)
   .leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id));
 
-/** Города, где работает сервис, первый — старейший (он же город по умолчанию). Открыт всем: из них гость выбирает свой. */
-export const listCities = (db: Db | Tx): Promise<City[]> => db.select().from(cities).orderBy(asc(cities.created_at), asc(cities.id));
+/** Все города, и в архиве тоже, первый — старейший (он же город по умолчанию). Команде — в «Городах». */
+export const listAllCities = (db: Db | Tx): Promise<City[]> => db.select().from(cities).orderBy(asc(cities.created_at), asc(cities.id));
+
+/**
+ * Города, где работает сервис (`launch_status: launched`), в том же порядке. Открыт всем: из них гость выбирает свой.
+ * Город в архиве отсюда пропадает — а с ним из витрины соседей, из заданий куратору и хранителю тем.
+ */
+export const listCities = async (db: Db | Tx): Promise<City[]> => (await listAllCities(db)).filter((c) => c.launch_status === 'launched');
 
 /** Город и его соседи (nearbyCityIds): витрина, каталог и поиск города показывают и их. */
 export const nearbyCities = async (db: Db | Tx, city_id: string): Promise<string[]> => nearbyCityIds(await listCities(db), city_id);

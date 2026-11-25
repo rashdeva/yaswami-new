@@ -2,7 +2,7 @@
 // источники ему сборщик ищет сам (поиск источников), найденное, что не добавилось само, команда добавляет тут же.
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { City, CityCreateInput as CreateInput, CityUpdateInput as UpdateInput, Wire } from '@yaswami/core';
-import { CityCreateInput, CityUpdateInput } from '@yaswami/core';
+import { CityCreateInput, CityUpdateInput, DEFAULT_CITY_ID } from '@yaswami/core';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { SourceLink } from '@/components/EntityLink';
@@ -17,7 +17,7 @@ import { useCities } from '@/hooks/useCities';
 import { useSourceSearches } from '@/hooks/useSourceSearches';
 import { KIND_NAMES } from './SourcesScreen';
 
-const DESCRIPTION = 'Города, в которых работает сервис. Витрина, услуги и поиск города показывают и соседние города в 25 км — для этого у города нужны координаты. У источника, события каталога, организатора и события Ясвами указан город; всё, что было до городов, — Дананг. Новому городу сборщик сам ищет источники в Telegram по названию и другим написаниям, а в Instagram — по хэштегам города — в первый же проход, потом раз в месяц. Каналы и профили, где за месяц хотя бы три публикации похожи на анонс, сразу становятся источниками: их события всё равно проходят модерацию. Группы и остальное найденное — ниже у города: добавьте нужное.';
+const DESCRIPTION = 'Города, в которых работает сервис. Витрина, услуги и поиск города показывают и соседние города в 25 км — для этого у города нужны координаты. У источника, события каталога, организатора и события Ясвами указан город; всё, что было до городов, — Дананг. Новому городу сборщик сам ищет источники в Telegram по названию и другим написаниям, а в Instagram — по хэштегам города — в первый же проход, потом раз в месяц. Каналы и профили, где за месяц хотя бы три публикации похожи на анонс, сразу становятся источниками: их события всё равно проходят модерацию. Группы и остальное найденное — ниже у города: добавьте нужное. Город в архиве стоит на паузе: гости его не видят, сборщик не читает его источники и не ищет новые, куратор и хранитель тем его пропускают; ничего не удаляется.';
 const ALIASES_HINT = 'Через запятую, как каналы пишут город латиницей или иначе: Nha Trang. По ним ищутся источники';
 const STATUS: Record<string, string> = { queued: 'ждёт сборщика', running: 'ищет, несколько минут', failed: 'не получилось' };
 
@@ -71,12 +71,31 @@ function Coordinates({ form }: { form: Form }) {
   );
 }
 
+const ARCHIVED_HINT = 'На паузе: гости город не видят, сборщик не читает его источники и не ищет новые. Вернуть — и всё заработает как было.';
+
+/** В архив и обратно; город по умолчанию в архив не уходит — на нём держится всё, у чего город не указан. */
+function LaunchToggle({ city }: { city: Wire<City> }) {
+  const { update } = useCities();
+  if (city.id === DEFAULT_CITY_ID) return null;
+  const archived = city.launch_status === 'archived';
+  return (
+    <Button size="sm" variant="outline" onClick={() => update({ id: city.id, launch_status: archived ? 'launched' : 'archived' })}>
+      {archived ? 'Вернуть из архива' : 'В архив'}
+    </Button>
+  );
+}
+
 function CityForm({ city }: { city: Wire<City> }) {
   const { update } = useCities();
   const values = useMemo((): UpdateInput => ({ name: city.name, timezone: city.timezone, aliases: city.aliases, latitude: city.latitude, longitude: city.longitude }), [city]);
   const form = useForm({ resolver: zodResolver(CityUpdateInput), values, resetOptions: { keepDirtyValues: true } });
+  if (city.launch_status === 'archived') return (
+    <Section title={<>{city.name} <Badge variant="outline">в архиве</Badge></>} description={`id: ${city.id}`} actions={<LaunchToggle city={city} />}>
+      <Hint>{ARCHIVED_HINT}</Hint>
+    </Section>
+  );
   return (
-    <Section title={city.name} description={`id: ${city.id}`}>
+    <Section title={city.name} description={`id: ${city.id}`} actions={<LaunchToggle city={city} />}>
       <form onSubmit={saveDirty(form, (input: UpdateInput, cb) => update({ id: city.id, ...input }, cb))} className="flex flex-col gap-4">
         <FieldGroup>
           <div className="grid gap-4 md:grid-cols-2">
@@ -98,10 +117,11 @@ export function CitiesScreen() {
   const form = useForm({ resolver: zodResolver(CityCreateInput), defaultValues: EMPTY });
   const submit = form.handleSubmit((input) => create(input, { onSuccess: () => form.reset(EMPTY), onError: (e) => showIssues(form, e) }));
   return (
-    <Page title={<>Города <Badge>{cities?.length ?? '…'}</Badge></>} description={DESCRIPTION}>
+    <Page title={<>Города <Badge>{cities ? cities.filter((c) => c.launch_status !== 'archived').length : '…'}</Badge></>} description={DESCRIPTION}>
       {!cities && !error && <Loading />}
       {error && <Failed error={error} />}
-      {cities?.map((c) => <CityForm key={c.id} city={c} />)}
+      {/* Работающие — сверху, архив — под ними: порядок внутри — как пришёл (старейший первым). */}
+      {cities && [...cities.filter((c) => c.launch_status !== 'archived'), ...cities.filter((c) => c.launch_status === 'archived')].map((c) => <CityForm key={c.id} city={c} />)}
       <Section title="Новый город">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <FieldGroup>

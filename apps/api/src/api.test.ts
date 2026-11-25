@@ -2556,6 +2556,58 @@ test('города: всё прежнее — Дананг; новый горо�
   settings.featuresOn = featuresOn;
 });
 
+test('город в архиве: гость его не видит, сборщик не читает и не ищет ему источники; вернуть — и всё как было', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const tool = async (name: string, args: object) =>
+    JSON.parse(((await (await call(admin, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })).json()) as { result: any }).result.content[0].text);
+  const guestCities = async () => ((await (await app.request('/cities')).json()) as City[]).map((c) => c.id);
+  assert.equal((await call(admin, 'POST', '/admin/cities', { id: 'colombo', name: 'Коломбо', timezone: 'Asia/Colombo' })).status, 201);
+  await db.delete(sources).where(eq(sources.city_id, 'colombo'));
+  await tool('admin_sources_create', { channel: 'colombo_events', city_id: 'colombo' });
+  await tool('admin_sources_create', { channel: 'colombo_chat', city_id: 'colombo', kind: 'leads' });
+  await db.delete(sourceSearches);
+
+  const { createStore } = await import(new URL('../../collector/src/store.mjs', import.meta.url).href);
+  const store = createStore(url.href);
+  const read = async () => [
+    ...(await store.sources()).map((x: { channel: string }) => x.channel),
+    ...(await store.chats()).map((x: { chat: string }) => x.chat),
+  ].filter((c: string) => c.startsWith('colombo'));
+  try {
+    assert.deepEqual(await read(), ['colombo_events', 'colombo_chat']);
+    assert.equal(((await (await call(admin, 'GET', '/admin/cities')).json()) as City[]).find((c) => c.id === 'colombo')!.launch_status, 'launched');
+
+    const archived = (await (await call(admin, 'PATCH', '/admin/cities/colombo', { launch_status: 'archived' })).json()) as City;
+    assert.equal(archived.launch_status, 'archived');
+    // Гость и роли (cities_list) города не видят, команда видит со статусом.
+    assert.ok(!(await guestCities()).includes('colombo'));
+    assert.ok(!((await tool('cities_list', {})) as City[]).some((c) => c.id === 'colombo'));
+    assert.equal(((await tool('admin_cities_list', {})) as City[]).find((c) => c.id === 'colombo')!.launch_status, 'archived');
+    // Сборщик: ни анонсов, ни чатов, ни нового поиска; поиск, поставленный раньше, ждёт, а не берётся.
+    assert.deepEqual(await read(), []);
+    await store.queueSourceSearches(30);
+    assert.ok(!(await db.select().from(sourceSearches)).some((x) => x.city_id === 'colombo'));
+    await db.delete(sourceSearches);
+    await db.insert(sourceSearches).values({ city_id: 'colombo', names: ['Коломбо'] });
+    assert.equal(await store.takeSourceSearch(), null);
+    // Ничего не удалено: источники остались включёнными.
+    assert.deepEqual((await db.select().from(sources).where(eq(sources.city_id, 'colombo'))).map((x) => x.enabled), [true, true]);
+
+    // Город по умолчанию в архив не уходит.
+    assert.deepEqual(await (await call(admin, 'PATCH', '/admin/cities/danang', { launch_status: 'archived' })).json(), { error: 'default_city' });
+    assert.deepEqual(await tool('admin_cities_update', { city_id: 'danang', launch_status: 'archived' }), { error: 'default_city' });
+
+    assert.equal(((await tool('admin_cities_update', { city_id: 'colombo', launch_status: 'launched' })) as City).launch_status, 'launched');
+    assert.ok((await guestCities()).includes('colombo'));
+    assert.deepEqual(await read(), ['colombo_events', 'colombo_chat']);
+  } finally {
+    await store.end();
+    await db.delete(sourceSearches);
+    await db.delete(sources).where(eq(sources.city_id, 'colombo'));
+  }
+});
+
 test('поиск источников: команда ставит поиск города в очередь, второй не плодит; найденное, что уже в источниках, отмечено', async () => {
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');

@@ -484,6 +484,15 @@ console.log('cover ok');
   assert.ok(cityMatcher(['Ханой']).test('Йога в Ханое'));
   assert.ok(cityMatcher(['St. Petersburg (SPb)']).test('Йога st. petersburg (spb)'), 'спецсимволы названия — как текст');
   assert.ok(!cityMatcher(['St. Petersburg']).test('stx petersburg'));
+  // Город — отдельным словом: Galle не находит галереи, Kandy — чужие ники, Элла — «Эллу» находит, «Эллипс» — нет.
+  const galle = cityMatcher(['Галле', 'Galle']);
+  assert.ok(['Йога в Галле', 'Galle Fort events', 'gt_galle', 'Галле Форт'].every((t) => galle.test(t)));
+  assert.ok(!['GT Gallery GT_Gallery', 'Yoga Gallery yoga_gallery', 'Begim Parfum begimparfumgallery', 'gallyam2022'].some((t) => galle.test(t)));
+  assert.ok(!cityMatcher(['Канди', 'Kandy']).test('Kandybaaa kandybaaa'));
+  assert.ok(cityMatcher(['Элла', 'Ella']).test('Йога в Элле') && !cityMatcher(['Элла', 'Ella']).test('Эллипс ellaindo'));
+  // В username длинное название склеено со словом — это всё ещё город.
+  assert.ok(['danangevent', 'da_nang_chat', 'Афиша danangpals'].every((t) => local.test(t)));
+  assert.ok(['eventnhatrang', 'afisha_nhatrang'].every((t) => cityMatcher(['Нячанг', 'Nha Trang']).test(t)));
   // Чаты разовых скриптов: без аргументов — чаты города из источников; чат не из базы — в первом городе.
   const store = {
     chats: async () => [{ chat: 'Big', city_id: 'hanoi', city: 'Ханой' }],

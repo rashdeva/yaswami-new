@@ -460,7 +460,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
     // --- Города (admin/cities.ts)
     tool('admin_cities_list', {
       title: 'Cities', readOnly: true, shape: {},
-      description: 'Cities the service works in, oldest first. Sources, catalogue events, organizers and events carry `city_id`; the public catalogue, hosts_list and search take `city_id` (the first city without it) and show neighbour cities within 25 km too — set `latitude`/`longitude` for that.',
+      description: 'All cities, archived ones too (`launch_status`), oldest first. Sources, catalogue events, organizers and events carry `city_id`; the public catalogue, hosts_list and search take `city_id` (the first city without it) and show neighbour cities within 25 km too — set `latitude`/`longitude` for that.',
     }, () => admin.listCities(db));
 
     tool('admin_cities_create', {
@@ -470,7 +470,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
 
     tool('admin_cities_update', {
       title: 'Edit city', shape: { city_id: z.string().describe('City id from admin_cities_list'), ...CityUpdateInput.shape },
-      description: `Rename a city, change its time zone or coordinates (the zone applies to events collected afterwards), or its showcase_mode: draft — the curator only proposes shelves, auto — it publishes itself. Only passed fields change. ${ONLY_TEAM} Errors: not_found.`,
+      description: `Rename a city, change its time zone or coordinates (the zone applies to events collected afterwards), or its showcase_mode: draft — the curator only proposes shelves, auto — it publishes itself. launch_status: archived pauses the city (hidden from guests and cities_list, the collector stops reading its sources and searching new ones, the curator and the librarian skip it), launched brings it back; nothing is deleted. The first (default) city cannot be archived. Only passed fields change. ${ONLY_TEAM} Errors: not_found, default_city.`,
     }, ({ city_id, ...input }) => admin.updateCity(db, ctx, city_id, input));
 
     // --- Источники сборщика (admin/sources.ts)
