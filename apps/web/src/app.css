@@ -113,6 +113,9 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 @media (prefers-reduced-motion: reduce) { .hero.drawing::after { animation: none; } }
 .hero.nb .emo { margin-top: 0; }
 .hero + .group { margin-top: 12px; }
+/* Страница события: шапка и тело — одна колонка на телефоне (обёртки не видны), две на широком окне (ниже). */
+.ev-page, .ev-body { display: contents; }
+.ev-body > .group:first-child { margin-top: 12px; }
 /* шапка с обложкой события: картинка во всю шапку, текст внизу поверх затемнения */
 /* Обложка или ролик — на весь первый экран, без полей и скруглений сверху: событие встречает картинкой.
    Кнопки «Записаться» и «Поделиться» на первом экране лежат внизу шапки, поверх затемнения. */
@@ -462,12 +465,20 @@ h2.today { color: var(--btn); }
 /* Широкое окно (сайт на компьютере, Telegram Desktop): витрина шире колонки, полки — сеткой в ряд по шесть без
    прокрутки (дальше — «Все»), плитки направлений переносятся, «Все события» — в четыре колонки. */
 @media (min-width: 1024px) {
-  #app[data-wide] { max-width: 1040px; }
-  #app[data-wide] .rail { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); overflow: visible; scroll-snap-type: none; padding-bottom: 4px; margin-bottom: 0; }
-  #app[data-wide] .rail .cover { width: auto; }
-  #app[data-wide] .rail .cover:nth-child(n + 7) { display: none; }
-  #app[data-wide] .quick { flex-wrap: wrap; overflow: visible; padding-bottom: 4px; margin-bottom: 0; }
-  #app[data-wide] .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  #app[data-wide] .feed { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #app[data-wide] .days { flex-wrap: wrap; overflow: visible; }
+  #app { max-width: 1040px; }
+  #app .rail { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); overflow: visible; scroll-snap-type: none; padding-bottom: 4px; margin-bottom: 0; }
+  #app .rail .cover { width: auto; }
+  #app .rail .cover:nth-child(n + 7) { display: none; }
+  #app .quick { flex-wrap: wrap; overflow: visible; padding-bottom: 4px; margin-bottom: 0; }
+  #app .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #app .feed { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #app .days { flex-wrap: wrap; overflow: visible; }
+  .ev-page { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 24px; align-items: start; padding: 24px 16px 0; }
+  .ev-page > .hero { position: sticky; top: 24px; margin: 0; }
+  .ev-page > .hero.cov { min-height: 0; height: calc(100vh - 48px); max-height: 800px; padding: 16px 20px 20px; border-radius: 34px; animation: none; }
+  .ev-page > .hero .mark { top: 24px; }
+  .ev-page > .hero .vctl { top: 16px; }
+  .ev-body { display: block; }
+  .ev-body > :first-child { margin-top: 0; }
+  .ev-page ~ .main { display: none; }
 }
