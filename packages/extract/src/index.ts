@@ -7,3 +7,4 @@ export * from './host.ts';
 export * from './offer.ts';
 export * from './search.ts';
 export * from './topic.ts';
+export * from './product.ts';

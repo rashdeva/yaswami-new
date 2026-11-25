@@ -122,7 +122,7 @@
 
 ### Сборщик пишет в те же таблицы
 
-Сборщик (`apps/collector/src/store.mjs`) пишет в `collected_events`, `hosts`, `practices`, `sources`, `photos`, `tg_accounts` и `messages` сырым SQL: это `.mjs`, типы его не проверяют. Поэтому, меняя таблицу, которую он трогает:
+Сборщик (`apps/collector/src/store.mjs`) пишет в `collected_events`, `hosts`, `practices`, `products`, `sources`, `photos`, `tg_accounts` и `messages` сырым SQL: это `.mjs`, типы его не проверяют. Поэтому, меняя таблицу, которую он трогает:
 
 - поправь запрос в `store.mjs` в том же PR — старый сборщик и новая схема выкладываются одним образом;
 - каждый запрос хранилища вызван в `apps/api/src/collector-store.test.ts` на настоящей базе; новый запрос добавь и туда. Этот тест — единственное, что ловит переименованную колонку до прода;

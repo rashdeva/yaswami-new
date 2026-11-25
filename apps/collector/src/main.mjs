@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createExtractor, createOfferExtractor, createSearchMatcher, createSummarizer, createTopicProposer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
+import { createExtractor, createOfferExtractor, createProductExtractor, createSearchMatcher, createSummarizer, createTopicProposer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
 import { connect, goneReason, loadPeers, newPeers, downloadCover, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { refreshOld } from './refresh.mjs';
@@ -12,6 +12,8 @@ import { backfillTopics } from './backfill.mjs';
 import { createSender } from './sender.mjs';
 import { fetchLeads } from './lead.mjs';
 import { resolveAuthor, saveOffers } from './offers.mjs';
+import { pickProducts, saveProducts, uploadFirstPhoto } from './products.mjs';
+import { PRODUCT_TTL_DAYS } from '@yaswami/core';
 import { searchChannels, TOPICS } from './find-sources.mjs';
 import { cityMatcher } from './city.mjs';
 import { candidatesFrom, cityHashtags, createInstagram, download, mediaOf, toAnnouncement as fromInstagram, toJpeg, toStats as instagramStats } from './instagram.mjs';
@@ -42,6 +44,7 @@ const extract = (announcement, place) => extractFor(place)(announcement);
 
 const summarize = createSummarizer({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const extractOffer = createOfferExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
+const extractProducts = createProductExtractor({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 // Новая тема из меток: TOPIC_MODEL — модель для неё (гид читают все, можно взять посильнее), TOPICS_AUTO=0 — не добавлять темы самому.
 const proposeTopic = createTopicProposer({ model: env.TOPIC_MODEL ?? env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
 const matcher = createSearchMatcher({ model: env.EXTRACT_MODEL ?? 'gemini-3.5-flash-lite' });
@@ -169,6 +172,25 @@ async function pollLeads({ chat, city_id }, searches) {
   const masters = await saveOffers({ store, extractOffer, resolve: (u) => resolveAuthor(userbot, u), pause: () => sleep(llmPauseMs), city_id }, offers);
   // Каждый проход — в журнал: иначе не отличить «вопросов нет» от «чат не читается».
   console.log(`вопросы ${chat}: прочитано ${read}, похоже на «куда сходить» — ${leads.length}, мастеров ${masters} из ${offers.length}, находок ${found} из ${candidates.length}`);
+}
+
+/**
+ * Один источник товаров (канал мастера или группа объявлений): новые посты — в ИИ, товары — в базу. Посты старше
+ * PRODUCT_TTL_DAYS гость всё равно бы не увидел — их не разбираем. Анонсы, вопросы и мастера-услуги отсюда не берутся.
+ */
+async function pollProducts(source) {
+  const key = `product:${source.channel}`; // отметка в той же таблице, что у каналов с анонсами
+  const chat = /^-?\d+$/.test(source.channel) ? Number(source.channel) : source.channel;
+  const messages = (await userbot.getMessages(chat, { limit: 100, minId: cursors[key] ?? 0 })).reverse();
+  if (!messages.length) return;
+  const posts = pickProducts(source.channel, messages, { maxAgeMs: PRODUCT_TTL_DAYS * 86_400_000 });
+  const { products, hosts } = await saveProducts({
+    store, extractProducts, resolve: (u) => resolveAuthor(userbot, u), pause: () => sleep(llmPauseMs),
+    photo: (post) => uploadFirstPhoto({ bucket, downloadPhotos: (album) => downloadPhotos(userbot, album) }, post),
+  }, source, posts);
+  // Отметка — после записи: упали посередине (FLOOD_WAIT) — перечитаем эти же сообщения.
+  await store.saveCursor(key, (cursors[key] = messages.at(-1).id));
+  console.log(`товары ${source.channel}: прочитано ${messages.length}, похоже на товары ${posts.length}, записано ${products} у мастеров: ${hosts}`);
 }
 
 // Railway проверяет /health при деплое (настройка сервиса на Railway) и гасит старый контейнер, только когда новый ответил.
@@ -432,6 +454,10 @@ do {
     await sleep(2000); // не частим с запросами к Telegram
   }
   await pollInstagram(known, trusted).catch((e) => console.error(`Instagram: ${e.message}`));
+  for (const source of await store.productSources()) {
+    await pollProducts(source).catch((e) => failed(source.channel, `товары ${source.channel}`, e));
+    await sleep(2000);
+  }
   await savePeers().catch((e) => console.error(`каналы: ${e.message}`));
   await sourceSearch().catch((e) => console.error(`поиск источников: ${e.message}`));
   // Вопросы уходят в API: без его адреса чаты города не читаем.

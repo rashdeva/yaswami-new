@@ -549,3 +549,108 @@ console.log('cover ok');
   assert.deepEqual(calls, ['/acts/apify~instagram-scraper/runs?maxItems=10&maxTotalChargeUsd=0.2', '/actor-runs/r1?waitForFinish=60', '/datasets/d1/items?clean=true']);
   console.log('instagram ok');
 }
+
+// Товары мастеров: дешёвый отбор, разбор ответа ИИ, мастер поста и запись (store — подделка; запросы — в collector-store.test.ts).
+{
+  const { looksLikeProduct, pickProducts, makerOf, saveProducts, uploadFirstPhoto } = await import('./products.mjs');
+  const { parseProducts } = await import('@yaswami/extract');
+  const melody = '📅 Наличие 21 ноября на 16:00\nМедовик порционно 100гр/55к\nНаполеон 100гр/55к\nТворог 0,5 кг/120к\nКефир 1 л/90к\nЗаказы в лс @melody_cafe';
+  const pelmeni = 'Домашние пельмени с говядиной и свининой! Лепим вручную, без добавок. В наличии: 5кг / 250 000 ₫ / кг. Доставка по My An и Son Tra, пишите @DaNang_pelmeshki';
+  assert.ok(looksLikeProduct(melody), 'пост «наличие»');
+  assert.ok(looksLikeProduct(pelmeni), 'объявление о пельменях');
+  assert.ok(!looksLikeProduct('Продам платье, надевала 2 раза, размер S, отдам за 300к, самовывоз Ан Тхыонг'), 'барахолка');
+  assert.ok(!looksLikeProduct('Массаж лица и тела, 60 минут — 500к, выезд на дом, запись в лс'), 'услуга');
+  assert.ok(!looksLikeProduct('Наличие 55к'), 'слишком коротко');
+
+  // Один пост «наличие» — несколько товаров; не мастер и неразборчивый ответ — ни одного.
+  const ai = { is_maker: true, contact: '@Melody_Cafe', products: [
+    { title: 'Медовик порционно', description: null, price: '55к', unit: '100 г', category: 'food' },
+    { title: 'Наполеон', description: '', price: '55к', unit: '100 г', category: 'food' },
+    { title: 'Творог', description: 'домашний', price: '120к', unit: '0,5 кг', category: 'food' },
+    { title: '', description: null, price: null, unit: null, category: 'food' }, // без названия — отброшен
+    { title: 'Доставка', description: null, price: null, unit: null, category: 'service' }, // чужая категория — отброшен
+  ] };
+  const parsed = parseProducts('danangmelody/1', 'STOP', JSON.stringify(ai));
+  assert.equal(parsed.contact, 'melody_cafe');
+  assert.deepEqual(parsed.products.map((p) => [p.title, p.price, p.unit, p.description]), [['Медовик порционно', '55к', '100 г', null], ['Наполеон', '55к', '100 г', null], ['Творог', '120к', '0,5 кг', 'домашний']]);
+  assert.deepEqual(parseProducts('x/1', 'STOP', JSON.stringify({ ...ai, is_maker: false })).products, [], 'перепродажа, услуга, событие — пусто');
+  {
+    const error = console.error;
+    console.error = () => {};
+    assert.deepEqual(parseProducts('x/1', 'SAFETY', undefined), { contact: null, products: [] });
+    assert.deepEqual(parseProducts('x/1', 'STOP', '{"products": [oops'), { contact: null, products: [] });
+    console.error = error;
+  }
+
+  const now = Date.parse('2026-11-25T10:00:00Z');
+  const date = now / 1000 - 3600;
+  const user = (id, username) => ({ className: 'User', id: BigInt(id), firstName: 'Ольга', username, bot: false });
+  const photo = { className: 'MessageMediaPhoto' };
+  const posts = pickProducts('ads_danang', [
+    { id: 1, date, message: pelmeni, sender: user(7, 'Olga_Cook') },
+    { id: 2, date, message: pelmeni, sender: user(7, 'Olga_Cook') }, // пачка одинаковых объявлений — одно, последнее
+    { id: 3, date, message: 'Продам платье, надевала 2 раза, размер S, 300к, доставка', sender: user(8, 'x') },
+    { id: 4, date: date - 40 * 86400, message: melody, sender: user(9, 'old') }, // старше срока
+    { id: 5, date, message: melody.replace('@melody_cafe', ''), sender: { className: 'User', id: 1n, username: 'ads_bot', bot: true } }, // бот чата
+    { id: 6, date, message: melody.replace('Заказы в лс @melody_cafe', 'Пишите в лс'), sender: user(10, 'Anna_Cakes'), groupedId: 77n },
+    { id: 7, date, message: '', media: photo, groupedId: 77n },
+  ], { now, maxAgeMs: 30 * 86_400_000 });
+  assert.deepEqual(posts.map((p) => [p.url, p.author?.username, p.album.map((m) => m.id)]), [
+    ['https://t.me/ads_danang/2', 'olga_cook', [2]],
+    ['https://t.me/ads_danang/6', 'anna_cakes', [6, 7]],
+  ]);
+  const group = { channel: 'ads_danang', host_id: null, host_username: null, host_status: null, city_id: 'danang', city: 'Дананг' };
+  // Мастер в группе: контакт из текста (ИИ назвал не тот, что в тексте, — берём из текста), иначе автор, иначе сам чат.
+  assert.equal(makerOf(group, posts[0], 'danang_pelmeshki'), 'danang_pelmeshki');
+  assert.equal(makerOf(group, posts[0], 'hallucinated'), 'danang_pelmeshki');
+  assert.equal(makerOf(group, posts[1], null), 'anna_cakes');
+  assert.equal(makerOf({ ...group, channel: 'danang_cheese' }, { text: melody.replace('Заказы в лс @melody_cafe', ''), author: null }, null), 'danang_cheese', 'пост канала без контакта — товар канала');
+  assert.equal(makerOf({ ...group, channel: '-1001' }, { text: 'без контакта', author: null }, null), null, 'закрытый чат без контакта — некому написать');
+  assert.equal(makerOf({ ...group, host_id: 'h1' }, posts[0], null), null, 'у канала мастера Host уже известен');
+
+  const calls = [];
+  const hosts = { danang_pelmeshki: undefined, spam_cook: { id: 'h-spam', status: 'rejected' } };
+  const store = {
+    touchProducts: async ({ text }) => (text === 'повтор' ? 2 : 0),
+    hostByUsername: async (u) => hosts[u],
+    saveMaker: async (h) => (calls.push(['saveMaker', h]), { id: `h-${h.username}`, status: 'pending' }),
+    saveProducts: async (host_id, products, rest) => (calls.push(['saveProducts', host_id, products.map((p) => p.title), rest]), products.map(() => ({ id: 'p', created: true }))),
+  };
+  // ИИ назвал «Медовик порционно» дважды, по-разному написав: ключ повтора один — строка одна, первая.
+  const fromAi = { contact: 'danang_pelmeshki', products: [...parsed.products, { ...parsed.products[0], title: '  медовик   ПОРЦИОННО ' }] };
+  const extractProducts = async (id, author, text) => (text.startsWith('Домашние') ? fromAi : { contact: null, products: [] });
+  const resolve = async (u) => (u === 'danang_pelmeshki' ? { id: -100123, name: 'Пельмени Дананг' } : null);
+  const log = console.log;
+  console.log = () => {};
+  const result = await saveProducts({ store, extractProducts, resolve, photo: async () => 'https://m/p.jpg', pause: async () => {} }, group, [
+    posts[0],
+    { ...posts[1], text: 'повтор' }, // этот текст уже разбирали — в ИИ не идёт
+    posts[1], // ИИ: не товары
+  ]);
+  assert.deepEqual(result, { products: 3, hosts: 1 });
+  assert.deepEqual(calls, [
+    ['saveMaker', { telegram_id: -100123, username: 'danang_pelmeshki', name: 'Пельмени Дананг', city_id: 'danang', offer_url: 'https://t.me/ads_danang/2' }],
+    // Несколько товаров одного мастера — одним вызовом.
+    ['saveProducts', 'h-danang_pelmeshki', ['Медовик порционно', 'Наполеон', 'Творог'], { announcement: { url: 'https://t.me/ads_danang/2', text: pelmeni }, posted_at: posts[0].posted_at, photo_url: 'https://m/p.jpg' }],
+  ]);
+
+  // Канал мастера: товары — его Host без поиска в Telegram; отклонённый мастер товаров не получает.
+  calls.length = 0;
+  const channel = { channel: 'danangmelody', host_id: 'h-melody', host_username: 'melody_cafe', host_status: 'pending', city_id: 'danang', city: 'Дананг' };
+  const always = async () => fromAi;
+  await saveProducts({ store, extractProducts: always, resolve: async () => assert.fail('не ищем'), photo: async () => null, pause: async () => {} }, channel, [posts[1]]);
+  assert.deepEqual(calls.map((c) => c.slice(0, 2)), [['saveProducts', 'h-melody']]);
+  calls.length = 0;
+  await saveProducts({ store, extractProducts: always, resolve, photo: async () => null, pause: async () => {} }, { ...channel, host_status: 'rejected' }, [posts[1]]);
+  await saveProducts({ store, extractProducts: async () => ({ contact: 'spam_cook', products: parsed.products }), resolve, photo: async () => null, pause: async () => {} }, group, [{ ...posts[1], text: `${posts[1].text} @spam_cook` }]);
+  console.log = log;
+  assert.deepEqual(calls, [], 'отклонённый мастер');
+
+  // Первое фото поста — в бакет; без бакета или без фото — null.
+  const bucket = { put: async (key) => `https://media/${key}` };
+  const downloadPhotos = async ([m]) => [{ number: m.id, data: Buffer.from([0xff, 0xd8]), width: 1280, height: 960 }];
+  assert.equal(await uploadFirstPhoto({ bucket, downloadPhotos }, posts[1]), 'https://media/products/ads_danang/7_1280x960.jpg');
+  assert.equal(await uploadFirstPhoto({ bucket, downloadPhotos }, posts[0]), null, 'в посте нет фото');
+  assert.equal(await uploadFirstPhoto({ bucket: null, downloadPhotos }, posts[1]), null);
+  console.log('products ok');
+}

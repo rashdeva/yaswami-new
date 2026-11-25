@@ -311,3 +311,69 @@ test('сборщик: профили Instagram — свой список, Instag
   await sql`delete from sources`;
   await sql`delete from hosts where username in ('ig_anna', 'ig_spam', 'ig_found')`;
 });
+
+test('сборщик: товары мастеров — источники, мастер из товаров, повтор не меняет решение команды', async () => {
+  await sql`delete from sources`;
+  // Канал мастера (у источника Host) и группа объявлений; анонсы и вопросы из них не берутся.
+  const [melody] = await sql`insert into hosts (telegram_id, username, name) values (-100900, 'melody_cafe', 'Melody') returning id`;
+  await sql`insert into sources (channel, kind, host_id) values ('danangmelody', 'products', ${melody!.id})`;
+  await sql`insert into sources (channel, kind) values ('ads_danang', 'products')`;
+  await sql`insert into sources (channel, kind, enabled) values ('off_products', 'products', false)`;
+  assert.deepEqual((await store.productSources()).map((s: any) => [s.channel, s.host_id, s.host_username, s.host_status, s.city_id, s.city]), [
+    ['danangmelody', melody!.id, 'melody_cafe', 'pending', 'danang', 'Дананг'],
+    ['ads_danang', null, null, null, 'danang', 'Дананг'],
+  ]);
+  assert.deepEqual([(await store.sources()).length, (await store.chats()).length], [0, 0], 'товары — не анонсы и не вопросы');
+
+  // Мастер из группы: ещё нет — новый Host с городом источника; входил в Ясвами — сразу привязан (users.id — не Telegram id, ADR-0008).
+  assert.equal(await store.hostByUsername('olga_cook'), undefined);
+  await sql`insert into users (id, first_name, lang, timezone) values (901, 'Ольга', 'ru', 'UTC')`;
+  await sql`insert into user_identities (provider, subject, user_id) values ('telegram', '910', 901)`;
+  const olga = await store.saveMaker({ telegram_id: 910, username: 'olga_cook', name: 'Ольга', city_id: 'danang', offer_url: 'https://t.me/ads_danang/5' });
+  assert.equal(olga.status, 'pending');
+  assert.deepEqual(await store.hostByUsername('olga_cook'), { id: olga.id, status: 'pending' });
+  const [row] = await sql`select user_id, city_id, offer_url from hosts where id = ${olga.id}`;
+  assert.deepEqual([Number(row!.user_id), row!.city_id, row!.offer_url], [901, 'danang', 'https://t.me/ads_danang/5']);
+  assert.equal((await store.saveMaker({ telegram_id: 910, username: 'olga_bakes', name: 'Ольга', city_id: 'danang', offer_url: 'x' })).id, olga.id, 'тот же человек под новым username');
+
+  // Один пост «наличие» — несколько товаров, новые ждут решения команды.
+  const day = (d: number) => new Date(Date.UTC(2026, 10, d, 9)).toISOString();
+  const post1 = { announcement: { url: 'https://t.me/danangmelody/1', text: 'Наличие 20 ноября' }, posted_at: day(20), photo_url: 'https://m/1.jpg' };
+  const saved = await store.saveProducts(melody!.id, [
+    { title: 'Медовик порционно', description: null, price: '55k', unit: '100 г', category: 'food' },
+    { title: 'Творог', description: 'домашний', price: '120k', unit: '0,5 кг', category: 'food' },
+  ], post1);
+  assert.deepEqual(saved.map((r: any) => r.created), [true, true]);
+  assert.deepEqual((await sql`select title, title_key, status, price, unit, photo_url from products order by title`).map((p) => [p.title, p.title_key, p.status, p.price, p.unit, p.photo_url]), [
+    ['Медовик порционно', 'медовик порционно', 'pending', '55k', '100 г', 'https://m/1.jpg'],
+    ['Творог', 'творог', 'pending', '120k', '0,5 кг', 'https://m/1.jpg'],
+  ]);
+
+  // Повтор в следующем посте: строку не добавляет, цену и posted_at обновляет, решение команды и название не трогает;
+  // чего в посте нет (фото, вес), остаётся прежним.
+  await sql`update products set status = 'published' where title = 'Медовик порционно'`;
+  const post2 = { announcement: { url: 'https://t.me/danangmelody/2', text: 'Наличие 21 ноября' }, posted_at: day(21), photo_url: null };
+  const again = await store.saveProducts(melody!.id, [{ title: '  МЕДОВИК   порционно', description: null, price: '60k', unit: null, category: 'food' }], post2);
+  assert.deepEqual(again.map((r: any) => r.created), [false]);
+  const medovik = await sql`select title, status, price, unit, photo_url, posted_at, announcement from products where title_key = 'медовик порционно'`;
+  assert.equal(medovik.length, 1);
+  assert.deepEqual([medovik[0]!.title, medovik[0]!.status, medovik[0]!.price, medovik[0]!.unit, medovik[0]!.photo_url, medovik[0]!.posted_at.toISOString(), medovik[0]!.announcement.url],
+    ['Медовик порционно', 'published', '60k', '100 г', 'https://m/1.jpg', day(21), 'https://t.me/danangmelody/2']);
+  // Пост старше уже записанного (повторный backfill) ничего не меняет.
+  assert.deepEqual(await store.saveProducts(melody!.id, [{ title: 'Медовик порционно', description: null, price: '50k', unit: null, category: 'food' }], { ...post1, posted_at: day(19) }), []);
+  assert.equal((await sql`select price from products where title_key = 'медовик порционно'`)[0]!.price, '60k');
+  // Тот же товар у другого мастера — своя строка.
+  await store.saveProducts(olga.id, [{ title: 'Творог', description: null, price: null, unit: null, category: 'food' }], post2);
+  assert.equal((await sql`select count(*)::int as n from products where title_key = 'творог'`)[0]!.n, 2);
+
+  // Тот же текст поста снова (объявление повторили): в ИИ не идёт, товарам поста — новая дата и ссылка.
+  assert.equal(await store.touchProducts({ text: 'Новый пост', url: 'https://t.me/x/1', posted_at: day(22) }), 0);
+  assert.equal(await store.touchProducts({ text: 'Наличие 20 ноября', url: 'https://t.me/ads_danang/9', posted_at: day(23) }), 1);
+  const [tvorog] = await sql`select posted_at, announcement from products where host_id = ${melody!.id} and title_key = 'творог'`;
+  assert.deepEqual([tvorog!.posted_at.toISOString(), tvorog!.announcement], [day(23), { url: 'https://t.me/ads_danang/9', text: 'Наличие 20 ноября' }]);
+  assert.equal(await store.touchProducts({ text: 'Наличие 20 ноября', url: 'https://t.me/old/1', posted_at: day(1) }), 1, 'старый повтор — известен, но дату не двигает');
+  assert.equal((await sql`select announcement->>'url' as url from products where host_id = ${melody!.id} and title_key = 'творог'`)[0]!.url, 'https://t.me/ads_danang/9');
+
+  await sql`delete from sources`;
+  await sql`delete from hosts where id in (${melody!.id}, ${olga.id})`;
+});
