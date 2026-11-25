@@ -1,4 +1,4 @@
-// Город и чаты для разовых скриптов сборщика (find-sources, scout, backfill-jobs, backfill-leads, find-masters):
+// Город и чаты для разовых скриптов сборщика (find-sources, scout, backfill-leads, find-masters):
 // всё берётся из базы, а не из окружения.
 import { DEFAULT_CITY_ID } from '@yaswami/core';
 
@@ -19,13 +19,13 @@ export async function scoutCity(store, { CITY_ID = DEFAULT_CITY_ID, CITY_ALIASES
 }
 
 /**
- * Чаты для прохода по истории: из аргументов или, без них, источники вида `kinds`. Чат из аргументов, которого нет
- * среди источников, читается в первом городе — его мастера и вакансии получат этот город.
+ * Чаты для прохода по истории: из аргументов или, без них, чаты города из источников (`kind` leads). Чат из аргументов,
+ * которого нет среди источников, читается в первом городе — его мастера получат этот город.
  */
-export async function chatsToRead(store, args, kinds) {
+export async function chatsToRead(store, args) {
   const known = await store.chats();
-  if (!args.length) return known.filter((c) => kinds.includes(c.leads ? 'leads' : 'jobs'));
+  if (!args.length) return known;
   const [first] = await store.cities();
   return args.map((a) => known.find((c) => c.chat.toLowerCase() === a.replace(/^@/, '').toLowerCase())
-    ?? { chat: a.replace(/^@/, ''), leads: true, city_id: first.id, city: first.name });
+    ?? { chat: a.replace(/^@/, ''), city_id: first.id, city: first.name });
 }

@@ -9,7 +9,7 @@ import type { AdminAction, AdminActionList, AdminActionListInput, AdminEntity, U
 import type { Db } from './db/client.ts';
 import type { TokenScope } from './db/schema.ts';
 import {
-  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hostSearches, hosts, jobs, messages, photos, practices, practiceSignups, shares, shelves, sources, topics,
+  adminActions, cities, collectedEvents, collectedEventSignups, contacts, conversations, eventFeedback, events, guests, hostSearches, hosts, messages, photos, practices, practiceSignups, shares, shelves, sources, topics,
   ticketTypes, tgAccounts, users,
 } from './db/schema.ts';
 import { AppError, collectedExternalId } from './services.ts';
@@ -76,7 +76,6 @@ const KINDS: Record<AdminEntity, Kind> = {
   topic: { root: topics, key: topics.name, omit: ['icon', 'icon_at', 'icon_tries'] },
   city: { root: cities, key: cities.id },
   // posted_at сдвигает сборщик при каждом повторе объявления: в снимке он ломал бы отмену.
-  job: { root: jobs, key: jobs.id, omit: ['posted_at'] },
   shelf: { root: shelves, key: shelves.id },
 };
 

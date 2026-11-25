@@ -1,4 +1,4 @@
-// Источники сборщика (Source): каналы и группы, откуда он берёт анонсы, вопросы, мастеров и вакансии (kind). Пишут сюда сборщик (CHANNELS при старте,
+// Источники сборщика (Source): каналы и группы, откуда он берёт анонсы, вопросы и мастеров (kind). Пишут сюда сборщик (CHANNELS при старте,
 // каналы организаторов каждый проход) и команда — через журнал.
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { AdminSource, SourceCreateInput, SourceSearch, SourceSearchCreateInput, SourceUpdateInput } from '@yaswami/core';

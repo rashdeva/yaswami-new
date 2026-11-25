@@ -16,7 +16,7 @@ export function useTopics(): string[] {
 }
 
 /**
- * Город, чью витрину, мастеров, вакансии и поиск показывает приложение: город вошедшего (`me.city_id`, выбирается
+ * Город, чью витрину, мастеров и поиск показывает приложение: город вошедшего (`me.city_id`, выбирается
  * в мини-приложении), иначе первый. ponytail: своего выбора города в приложении нет, пока оно только для Вьетнама.
  */
 function useCityId(): string {
@@ -84,11 +84,6 @@ export function useHosts() {
   return useQuery({ queryKey: keys.hosts(city), queryFn: () => api.hosts(city) });
 }
 export const useHost = (id: string) => useQuery({ queryKey: keys.host(id), queryFn: () => api.host(id) });
-export function useJobs() {
-  const city = useCityId();
-  return useQuery({ queryKey: keys.jobs(city), queryFn: () => api.jobs(city) });
-}
-export const useJob = (id: string) => useQuery({ queryKey: keys.job(id), queryFn: () => api.job(id) });
 
 /** Поиск начинается с двух букв — так же проверяет сервер. */
 export function useSearch(query: string) {

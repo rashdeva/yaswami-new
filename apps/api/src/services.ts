@@ -4,14 +4,14 @@ import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNot
 import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedListInput, CollectedStatus, CollectedUpdateInput,
-  City, CityFilterInput, CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, Job, JobItem, JobList, JobListInput, MyCollectedItem, Practice, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
+  City, CityFilterInput, CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, Practice, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, UserSelfUpdateInput, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
-import { ADDRESS_MAX, DEFAULT_CITY_ID, Feature, JOB_TTL_DAYS, jobContactUrl, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
+import { ADDRESS_MAX, DEFAULT_CITY_ID, Feature, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
-import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, jobs, photos, practices, practiceSignups, sources, subscriptions, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
+import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, photos, practices, practiceSignups, sources, subscriptions, ticketTypes, userIdentities, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
 import { eventFeedbackView } from './feedback.ts';
@@ -145,7 +145,7 @@ const collectedWithCover = (db: Db | Tx) => db
 /** Города, где работает сервис, первый — старейший (он же город по умолчанию). Открыт всем: из них гость выбирает свой. */
 export const listCities = (db: Db | Tx): Promise<City[]> => db.select().from(cities).orderBy(asc(cities.created_at), asc(cities.id));
 
-/** Город и его соседи (nearbyCityIds): витрина, каталог, вакансии и поиск города показывают и их. */
+/** Город и его соседи (nearbyCityIds): витрина, каталог и поиск города показывают и их. */
 export const nearbyCities = async (db: Db | Tx, city_id: string): Promise<string[]> => nearbyCityIds(await listCities(db), city_id);
 
 /** Город человека (`users.city_id`) целиком: название и часовой пояс нужны роли поддержки. Не выбрал — первый город. */
@@ -542,41 +542,6 @@ export async function getHost(db: Db, id: string): Promise<HostItem> {
   return { ...item, photos: await hostPhotos(db, h!.id), events: rows.map(toCollectedItem) };
 }
 
-// --- Вакансии (Job в CONTEXT.md). Пишет их сборщик; здесь — что видит гость.
-
-const UUID = /^[0-9a-f-]{36}$/i;
-/** Что видит гость: одобрено командой и объявление повторяли не раньше JOB_TTL_DAYS дней назад. */
-const liveJob = and(eq(jobs.status, 'published'), sql`${jobs.posted_at} > now() - make_interval(days => ${JOB_TTL_DAYS})`);
-const toJobItem = ({ id, city_id, title, employer, description, pay, posted_at, telegram_username, announcement }: Job): JobItem => {
-  const url = `${settings.publicUrl}/jobs/${id}`;
-  return { id, city_id, title, employer, description, pay, posted_at, contact_url: jobContactUrl(telegram_username, title, url), source_url: announcement.url, url };
-};
-
-/** Страница вакансий, свежие сверху. Курсор — id последней на прошлой странице. */
-export async function jobPage(db: Db, where: SQL | undefined, { pagination_cursor: cursor, pagination_limit: limit = 50 }: JobListInput) {
-  if (cursor && !UUID.test(cursor)) throw new AppError('invalid_input', 400);
-  const rows = await db.select().from(jobs)
-    // Сравнение в базе: в JS время теряет микросекунды, и курсор промахнулся бы.
-    .where(and(where, cursor ? sql`(${jobs.posted_at}, ${jobs.id}) < (select posted_at, id from jobs where id = ${cursor})` : undefined))
-    .orderBy(desc(jobs.posted_at), desc(jobs.id)).limit(limit + 1);
-  const entries = rows.slice(0, limit);
-  const has_more = rows.length > limit;
-  return { entries, has_more, next_cursor: has_more ? entries.at(-1)!.id : null };
-}
-
-/** Вакансии города и его соседей для гостя. Открыт всем, как витрина событий. */
-export async function listJobs(db: Db, input: JobListInput): Promise<JobList> {
-  const page = await jobPage(db, and(liveJob, inArray(jobs.city_id, await nearbyCities(db, input.city_id ?? DEFAULT_CITY_ID))), input);
-  return { ...page, entries: page.entries.map(toJobItem) };
-}
-
-/** Одна вакансия. Неодобренная и просроченная для гостя не существуют. */
-export async function getJob(db: Db, id: string): Promise<JobItem> {
-  const [job] = UUID.test(id) ? await db.select().from(jobs).where(and(eq(jobs.id, id), liveJob)) : [];
-  if (!job) throw new AppError('not_found', 404);
-  return toJobItem(job);
-}
-
 const SEARCH_LIMIT = 20;
 /**
  * С какой похожести названия считаем запрос опечаткой, а не другим словом (word_similarity из pg_trgm, 0…1).
@@ -603,28 +568,26 @@ function searchMatch(query: string, title: SQL, b: SQL[], c: SQL[]) {
 const jsonText = (column: typeof collectedEvents.event, key: string) => sql`${column}->>'${sql.raw(key)}'`;
 
 /**
- * Единый поиск по публичному каталогу: события из ленты, услуги из вкладки «Услуги» и вакансии, самое подходящее первым. Открыт всем.
+ * Единый поиск по публичному каталогу: события из ленты, услуги из вкладки «Услуги», самое подходящее первым. Открыт всем.
  * Ищет в городе и его соседях, как витрина: без `city_id` — в первом (DEFAULT_CITY_ID).
  */
 export async function search(db: Db, { query, city_id = DEFAULT_CITY_ID, pagination_limit: limit = SEARCH_LIMIT }: SearchInput): Promise<SearchResult> {
   const e = (key: string) => jsonText(collectedEvents.event, key);
   const event = searchMatch(query, e('title'), [e('place'), e('address'), e('tags'), e('topic'), e('for_whom')], [e('description'), e('what_happens'), e('takeaway')]);
   const practice = searchMatch(query, sql`${practices.title}`, [sql`${practices.topic}`], [sql`${practices.description}`]);
-  const job = searchMatch(query, sql`${jobs.title}`, [sql`${jobs.employer}`], [sql`${jobs.description}`]);
-  if (!event || !practice || !job) return { entries: [] };
+  if (!event || !practice) return { entries: [] };
   const near = await nearbyCities(db, city_id);
 
   // ponytail: среди одинаково подходящих событий ближайшее чуть выше — надбавка на глаз, до 0.1 и тает за недели
   const eventScore = sql<number>`${event.score} + 0.1 / (1 + greatest(0, extract(epoch from ${collectedEvents.starts_at} - now())) / 604800)`;
 
-  const [events, offers, vacancies, topics, offered] = await Promise.all([
+  const [events, offers, topics, offered] = await Promise.all([
     db.select({ ...getTableColumns(collectedEvents), cover_id: photos.id, score: eventScore })
       .from(collectedEvents).leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id))
       .where(and(upcomingCollected, published, inArray(collectedEvents.city_id, near), event.where)).orderBy(desc(eventScore)).limit(limit),
     db.select({ host: hosts, id: practices.id, score: practice.score })
       .from(practices).innerJoin(hosts, eq(hosts.id, practices.host_id))
       .where(and(eq(practices.status, 'published'), ne(hosts.status, 'rejected'), inArray(hosts.city_id, near), practice.where)),
-    db.select({ job: jobs, score: job.score }).from(jobs).where(and(liveJob, inArray(jobs.city_id, near), job.where)).orderBy(desc(job.score)).limit(limit),
     upcomingTopicsByHost(db),
     practicesByHost(db),
   ]);
@@ -637,7 +600,6 @@ export async function search(db: Db, { query, city_id = DEFAULT_CITY_ID, paginat
       const practice = item?.practices.find((p) => p.id === r.id);
       return item && practice ? [{ type: 'practice' as const, practice, host: item, score: r.score }] : [];
     }),
-    ...vacancies.map((r) => ({ type: 'job' as const, job: toJobItem(r.job), score: r.score })),
   ];
   return { entries: found.sort((a, b) => b.score - a.score).slice(0, limit).map(({ score: _, ...entry }) => entry as SearchEntry) };
 }

@@ -5,7 +5,6 @@ import { collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/cor
 import { track } from '../analytics.ts';
 import { EventRow } from '../components/EventRow.tsx';
 import { GuestRow } from '../components/GuestRow.tsx';
-import { JobRow } from '../components/JobRow.tsx';
 import { PracticeRow } from '../components/PracticeRow.tsx';
 import { dayLabel } from '../format.ts';
 import { usePracticeSignup } from '../hooks/useHosts.ts';
@@ -18,7 +17,7 @@ interface Props {
   onOpen: (entry: Wire<SearchEntry>) => void;
 }
 
-/** Единый поиск: события, услуги мастеров и вакансии одним списком, самое подходящее первым. Открыт без входа. */
+/** Единый поиск: события и услуги мастеров одним списком, самое подходящее первым. Открыт без входа. */
 export function SearchScreen({ query, onQuery, onOpen }: Props) {
   useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const { ready, entries, failed } = useSearch(query);
@@ -56,8 +55,6 @@ export function SearchScreen({ query, onQuery, onOpen }: Props) {
               topic={topicSlug(entry.event.topic)}
               onOpen={() => open(entry)}
             />
-          ) : entry.type === 'job' ? (
-            <div key={`j-${entry.job.id}`} className="group"><JobRow job={entry.job} onOpen={() => open(entry)} /></div>
           ) : (
             // Услуга — как во вкладке «Услуги»: мастер и под ним она сама с записью
             <div key={`p-${entry.practice.id}`} className="group">

@@ -22,9 +22,8 @@ export const TOPICS = {
   танцы: ['танцы', 'бачата', 'сальса', 'кизомба', 'hip hop', 'dance'], йога: ['йога', 'пилатес', 'yoga', 'pilates'],
   настолки: ['настолки', 'настольные игры', 'board games'], бег: ['бег', 'running'], квиз: ['квиз', 'quiz'],
 };
-/** Каким источником вероятнее всего будет найденный чат: про работу — чат о работе, группа — чат города, канал — анонсы. */
-export const suggestKind = ({ title, username, megagroup }) =>
-  /работ|ваканс|\bjobs?\b|hiring/i.test(`${title} ${username}`) ? 'jobs' : megagroup ? 'leads' : 'announcements';
+/** Каким источником вероятнее всего будет найденный чат: группа — чат города, канал — анонсы. */
+export const suggestKind = ({ megagroup }) => (megagroup ? 'leads' : 'announcements');
 
 /**
  * Каналы и группы города по запросам «<название> <слово>» (`words` — { тема: [слова] }, слово '' — само название):
@@ -64,7 +63,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const topics = args.length ? Object.fromEntries(args.map((t) => [t, TOPICS[t] ?? [t]])) : TOPICS;
   const store = createStore(DATABASE_URL);
   const city = await scoutCity(store);
-  const chats = process.env.SCOUT_CHATS?.split(',') ?? (await store.chats()).filter((c) => c.leads && c.city_id === city.id).map((c) => c.chat);
+  const chats = process.env.SCOUT_CHATS?.split(',') ?? (await store.chats()).filter((c) => c.city_id === city.id).map((c) => c.chat);
   const known = await store.knownChannels();
   await store.end();
 

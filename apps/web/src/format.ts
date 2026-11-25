@@ -61,17 +61,8 @@ export function fromWall(date: string, time: string, timeZone: string): string {
   return new Date(guess - (Date.parse(`${d}T${t}:00Z`) - guess)).toISOString();
 }
 
-/** Дата объявления вакансии: «23 ноября». */
-export const postedLabel = (iso: string) => new Date(iso).toLocaleDateString('ru', { day: 'numeric', month: 'long' });
-
 /** Заголовок дня в ленте: «Сегодня», «Завтра» или «пятница, 14 ноября». Сегодня — по дате устройства. */
 export function dayLabel(wall: string): string {
   const key = collectedDayKey(wall);
   return key === localDate() ? 'Сегодня' : key === localDate(1) ? 'Завтра' : collectedDay(wall);
 }
-
-/** Откуда вакансия, для подписи ссылки на исходное объявление: «чат @danang_rabota»; у закрытого чата username нет. */
-export const jobSource = (sourceUrl: string) => {
-  const chat = sourceUrl.match(/^https:\/\/t\.me\/(?!c\/)(\w+)\//)?.[1];
-  return chat ? `чат @${chat}` : 'объявление в чате';
-};

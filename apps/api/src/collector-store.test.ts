@@ -26,7 +26,7 @@ before(async () => {
   await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
   await db.$client.end();
   sql = postgres(url.href, { max: 1, onnotice: () => {} });
-  await sql`truncate users, collected_events, hosts, tg_accounts, conversations, collector_cursors, jobs, tg_peers cascade`;
+  await sql`truncate users, collected_events, hosts, tg_accounts, conversations, collector_cursors, tg_peers cascade`;
   await sql`delete from sources`;
   await sql`delete from cities where id <> 'danang'`; // города из прошлого запуска
   store = createStore(url.href);
@@ -42,13 +42,13 @@ const event = { title: 'Йога на пляже', description: 'd', starts_at: 
 test('сборщик: события, источники и отметки', async () => {
   await store.addSources(['danang', 'yoga']);
   await store.addSources([]);
-  // Чаты города и чаты о работе — тоже источники, но анонсы из них не берутся: они в chats(), со своим городом.
+  // Чаты города — тоже источники, но анонсы из них не берутся: они в chats(), со своим городом.
   await store.addSources(['big_chat'], 'leads');
   // Уже был с другим видом — не переделываем, но возвращаем расхождение: сборщик о нём предупредит.
-  assert.deepEqual((await store.addSources(['jobs_chat', 'Big_Chat'], 'jobs')).map((s: any) => [s.channel, s.kind]), [['big_chat', 'leads']]);
+  assert.deepEqual((await store.addSources(['Big_Chat'])).map((s: any) => [s.channel, s.kind]), [['big_chat', 'leads']]);
   assert.deepEqual(await store.addSources([]), []);
   assert.deepEqual((await store.sources()).map((s: any) => [s.channel, s.city_id, s.host_username]), [['danang', 'danang', null], ['yoga', 'danang', null]]);
-  assert.deepEqual((await store.chats()).map((c: any) => [c.chat, c.leads, c.city_id, c.city]), [['big_chat', true, 'danang', 'Дананг'], ['jobs_chat', false, 'danang', 'Дананг']]);
+  assert.deepEqual((await store.chats()).map((c: any) => [c.chat, c.city_id, c.city]), [['big_chat', 'danang', 'Дананг']]);
   assert.deepEqual((await store.cities()).map((c: any) => [c.id, c.name]), [['danang', 'Дананг']]);
   await sql`update sources set enabled = false where channel = 'yoga'`;
   assert.deepEqual([...(await store.knownChannels())].filter(([c]) => ['danang', 'yoga'].includes(c)), [['danang', 'есть'], ['yoga', 'выключен']]);
@@ -188,23 +188,6 @@ test('сборщик: Запросы организаторов и Находк�
   await store.saveSearchMatch(match);
   await store.saveSearchMatch(match);
   assert.deepEqual((await sql`select author_id::int, author_name, author_username, text from host_search_matches`).map((r) => ({ ...r })), [{ author_id: 42, author_name: 'Лена', author_username: null, text: 'Нужен массаж' }]);
-});
-
-test('сборщик: вакансии', async () => {
-  const day = (n: number) => new Date(Date.UTC(2026, 10, n));
-  const job = { city_id: 'danang', title: 'Официант', employer: 'Ресторан в Сонтра', description: null, pay: 'от 500$', telegram_username: 'sontra_hr', announcement: { url: 'https://t.me/danang_rabota/1', text: 'Ищем официантов' }, author_id: 42, text_hash: 'h1', posted_at: day(1) };
-  assert.equal(await store.touchJob('danang', 'h1', day(1)), false, 'такой вакансии ещё нет');
-  await store.saveJob(job);
-  const [row] = await sql`select city_id, title, pay, telegram_username, announcement, author_id::int, status, posted_at from jobs`;
-  assert.deepEqual({ ...row }, { city_id: 'danang', title: 'Официант', pay: 'от 500$', telegram_username: 'sontra_hr', announcement: job.announcement, author_id: 42, status: 'pending', posted_at: day(1) });
-
-  // Повтор не создаёт вторую строку, сдвигает posted_at (назад — нет) и не меняет решение команды.
-  await sql`update jobs set status = 'published'`;
-  assert.equal(await store.touchJob('danang', 'h1', day(5)), true);
-  assert.equal(await store.touchJob('danang', 'h1', day(3)), true);
-  await store.saveJob({ ...job, title: 'Другое', posted_at: day(7), author_id: null });
-  await store.saveJob({ ...job, posted_at: day(2) });
-  assert.deepEqual((await sql`select title, status, posted_at from jobs`).map((r) => ({ ...r })), [{ title: 'Официант', status: 'published', posted_at: day(7) }]);
 });
 
 test('сборщик: темы из базы, кандидаты из меток, новая тема переводит события без темы', async () => {
