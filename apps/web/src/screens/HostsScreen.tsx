@@ -4,11 +4,11 @@ import { topicIcon } from '@yaswami/core';
 import { useTopics } from '../hooks/useTopics.ts';
 import { track } from '../analytics.ts';
 import { ProfileButton } from '../components/Avatar.tsx';
+import { CityPick } from '../components/CityPick.tsx';
 import { PracticeSheet } from '../components/PracticeSheet.tsx';
 import { SearchField } from '../components/SearchField.tsx';
 import { SearchResults } from '../components/SearchResults.tsx';
 import { ServiceRow } from '../components/ServiceRow.tsx';
-import { servicesCount } from '../format.ts';
 import { CHEAP } from '../services.ts';
 import { usePracticeSheet, useServices } from '../hooks/useHosts.ts';
 import { useSearch } from '../hooks/useSearch.ts';
@@ -35,7 +35,7 @@ const PREVIEW = 3;
  */
 export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onOpenEntry }: Props) {
   useTopics(); // иконки тем — из базы: перерисоваться, когда пришли
-  const { sections, tiles, cheap, total, find, failed } = useServices();
+  const { sections, tiles, cheap, find, failed } = useServices();
   const search = useSearch(query, 'services');
   const sheet = usePracticeSheet();
   useViewed('hosts_viewed');
@@ -58,7 +58,7 @@ export function HostsScreen({ city, query, onQuery, onOpenGroup, onOpenHost, onO
         <ProfileButton />
         <div className="head">
           <h1>Услуги</h1>
-          <p>{city}{total ? ` · ${servicesCount(total)}` : ''}</p>
+          <CityPick />
         </div>
       </div>
       <SearchField value={query} onChange={onQuery} label="Поиск услуг" placeholder="Кого ищете? Тренер, скрипка, баня…" />

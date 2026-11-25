@@ -29,7 +29,7 @@ const CHEAP_ALL = 30;
 export function useServices() {
   const { hosts, failed } = useHosts();
   const topics = useTopicItems();
-  if (!hosts) return { sections: null, tiles: [], cheap: [], total: 0, find: () => undefined, failed };
+  if (!hosts) return { sections: null, tiles: [], cheap: [], find: () => undefined, failed };
   const groups = serviceGroups(hosts, topics);
   const items = groups.flatMap((g) => g.items);
   const shortcuts = serviceShortcuts(items, topics);
@@ -37,7 +37,7 @@ export function useServices() {
   const tiles = [...shortcuts, ...groups.filter((g) => !shortcuts.some((s) => s.key === g.key))];
   const cheap = cheapest(items, CHEAP_ALL);
   const all: ServiceGroup[] = [...tiles, ...(cheap.length ? [{ key: CHEAP, name: 'Недорого', topic: null, items: cheap }] : [])];
-  return { sections, tiles, cheap: cheap.slice(0, CHEAP_SHELF), total: items.length, find: (key: string) => all.find((g) => g.key === key), failed };
+  return { sections, tiles, cheap: cheap.slice(0, CHEAP_SHELF), find: (key: string) => all.find((g) => g.key === key), failed };
 }
 
 /** Шторка услуги: какая открыта, переключение на другую услугу того же мастера и запись. */
