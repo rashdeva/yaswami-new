@@ -1,4 +1,5 @@
 // Данные экранов: useQuery на чтение, useMutation на изменение. Экран зовёт хук, api.* видит только этот файл.
+import { useRef } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import type { CollectedEventItem, Me, ProductCategory, ProductList, RsvpInput, Wire } from '@yaswami/core';
 import { collectedDayKey, DEFAULT_CITY_ID, PRODUCTS_MIN_HOSTS, setTopics, TOPIC_GUIDES } from '@yaswami/core';
@@ -94,7 +95,11 @@ export function useProducts(category: ProductCategory | null) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.has_more ? last.next_cursor ?? undefined : undefined),
   });
-  return { ...q, products: q.data?.pages.flatMap((p) => p.entries) ?? [], categories: q.data?.pages[0]?.categories ?? [] };
+  // Категории города не зависят от выбранной: пока грузится новая плашка, держим прежний список, иначе плашки мигают.
+  const known = useRef<ProductCategory[]>([]);
+  const categories = q.data?.pages[0]?.categories ?? known.current;
+  known.current = categories;
+  return { ...q, products: q.data?.pages.flatMap((p) => p.entries) ?? [], categories };
 }
 
 export function useProduct(id: string) {

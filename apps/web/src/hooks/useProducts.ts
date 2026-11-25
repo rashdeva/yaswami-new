@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ProductCategory, ProductItem, ProductList, Wire } from '@yaswami/core';
 import { PRODUCTS_MIN_HOSTS } from '@yaswami/core';
 import { track } from '../analytics.ts';
@@ -21,13 +21,17 @@ export function useProducts() {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.has_more ? last.next_cursor ?? undefined : undefined),
   });
+  // Категории города не зависят от выбранной: пока грузится новая плашка, держим прежний список, иначе плашки мигают.
+  const known = useRef<ProductCategory[]>([]);
+  const categories = data?.pages[0]?.categories ?? known.current;
+  known.current = categories;
   const setCategory = (next: ProductCategory | null) => {
     if (next) track('products_filtered', { category: next });
     pick(next);
   };
   return {
     products: data?.pages.flatMap((p) => p.entries) ?? null,
-    categories: data?.pages[0]?.categories ?? [],
+    categories,
     category,
     setCategory,
     failed: error,
