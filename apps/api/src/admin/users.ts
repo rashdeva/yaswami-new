@@ -130,9 +130,9 @@ export async function listActivity(db: Db, input: AdminActivityListInput): Promi
   const want = (t: NonNullable<AdminActivityListInput['type']>) => !input.type || input.type === t;
   // Колонки каждой части: тип, время, кто, сущность и id цели, её название, откуда пришёл, ссылка входа, кто позвал.
   const parts = [
-    want('user_joined') && sql`select 'user_joined' as type, a.created_at, a.user_id, null as entity, null as target_id, null as target_name,
-      a.joined_via, a.start_param, null::bigint as referrer_id from user_activity a`,
-    want('signup') && sql`select 'guest_registered', g.registered_at, g.user_id, 'event', e.id, e.name, null, null, null
+    want('user_joined') && sql`select 'user_joined', a.created_at, a.user_id, null, null, null, a.joined_via, a.start_param, null::bigint
+      from user_activity a`,
+    want('signup') && sql`select 'guest_registered', g.registered_at, g.user_id, 'event', e.id, e.name, null, null, null::bigint
       from guests g join events e on e.id = g.event_id`,
     want('signup') && sql`select 'collected_signup', c.created_at, c.user_id, 'collected_event', c.external_id, ce.event->>'title', null, null, null
       from collected_event_signups c join collected_events ce on ce.external_id = c.external_id`,
@@ -143,10 +143,11 @@ export async function listActivity(db: Db, input: AdminActivityListInput): Promi
         coalesce(e.name, ce.event->>'title'), null, null, v.referrer_id
       from visits v left join events e on e.id = v.event_id left join collected_events ce on ce.external_id = v.collected_external_id`,
   ].filter((p) => p !== false);
+  // Имена колонок — у подзапроса: первой в объединении может оказаться любая часть, а Postgres берёт имена из первой.
   const rows = await db.execute<{
     type: AdminActivityEntry['type']; created_at: Date | string; user_id: string | number; entity: string | null; target_id: string | null;
     target_name: string | null; joined_via: JoinedVia | null; start_param: string | null; referrer_id: string | number | null;
-  }>(sql`select * from (${sql.join(parts, sql` union all `)}) x
+  }>(sql`select * from (${sql.join(parts, sql` union all `)}) x(type, created_at, user_id, entity, target_id, target_name, joined_via, start_param, referrer_id)
     where ${input.user_id ? sql`x.user_id = ${input.user_id}` : sql`true`}
       and ${input.pagination_cursor ? sql`x.created_at < ${input.pagination_cursor}::timestamptz` : sql`true`}
     order by x.created_at desc limit ${limit + 1}`);
