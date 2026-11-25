@@ -17,3 +17,16 @@ export function parseStart(raw: string | undefined): Start {
   const m = /^(.*?)(?:-r(-?\d+))?(?:-s([A-Za-z0-9_]+))?$/.exec(raw ?? '');
   return { param: m?.[1] || undefined, ref: m?.[2] ? Number(m[2]) : undefined, tag: m?.[3] };
 }
+
+/**
+ * С какой ссылкой человек пришёл на сайт — для его прихода при входе: `?startapp=…` как есть, а без него
+ * `?utm_source=<метка>` становится меткой `-s<метка>` (ссылки из Instagram и рекламы обычно с utm). Метка — только
+ * буквы, цифры и `_`, как в startapp; иначе — ничего.
+ */
+export function siteStart(search: string): string | undefined {
+  const params = new URLSearchParams(search);
+  const startapp = params.get('startapp');
+  if (startapp && /^[\w-]{1,64}$/.test(startapp)) return startapp;
+  const utm = params.get('utm_source')?.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 60);
+  return utm ? `-s${utm}` : undefined;
+}

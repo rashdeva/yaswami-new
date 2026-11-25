@@ -1,7 +1,7 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
 import type { AppConfig, City, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, ProductItem, ProductList, ProductListInput, RsvpInput, SearchResult, Showcase, SourceAddInput, SourceSubmission, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
 import { track } from './analytics.ts';
-import { inTelegram, tg } from './tg.ts';
+import { inTelegram, siteArrival, tg } from './tg.ts';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
 const devToken = import.meta.env.DEV ? import.meta.env.VITE_DEV_TOKEN : undefined;
@@ -13,7 +13,8 @@ export const hasCredentials = authorization !== null;
 /** Уводит на вход через Telegram; после входа человек вернётся на `back`. */
 export function startLogin(back: string) {
   track('login_started', { back });
-  location.href = `${BASE}/auth/telegram/login?return=${encodeURIComponent(back)}`;
+  // start — с какой ссылкой пришёл на сайт: если человек новый, это станет его приходом (видно команде в «Активности»).
+  location.href = `${BASE}/auth/telegram/login?return=${encodeURIComponent(back)}${siteArrival ? `&start=${encodeURIComponent(siteArrival)}` : ''}`;
 }
 
 const MESSAGES: Record<string, string> = {

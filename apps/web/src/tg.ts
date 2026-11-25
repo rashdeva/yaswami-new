@@ -1,5 +1,5 @@
 // Тонкая обёртка над Telegram.WebApp: только то, чем пользуемся. В обычном браузере объекта нет — всё молча пропускается.
-import { parseStart } from '@yaswami/core';
+import { parseStart, siteStart } from '@yaswami/core';
 
 interface Inset { top: number; bottom: number; left: number; right: number }
 interface WebApp {
@@ -54,6 +54,23 @@ export const startParam = start.param;
 export const startRef = start.ref;
 /** Метка источника из ссылки (`-s<метка>`): откуда человек пришёл — пост, реклама, партнёр. */
 export const startTag = start.tag;
+/**
+ * На сайте — ссылка, с которой человек пришёл впервые (startapp или utm_source). Её получает вход: новому человеку она
+ * становится приходом. Первая ссылка хранится в браузере — пришёл из Instagram, ушёл, вошёл через неделю — она та же.
+ */
+export const siteArrival = inTelegram ? undefined : firstArrival(siteStart(location.search));
+
+function firstArrival(now: string | undefined): string | undefined {
+  const KEY = 'ysw_arrival';
+  try {
+    const saved = localStorage.getItem(KEY);
+    if (saved) return saved;
+    if (now) localStorage.setItem(KEY, now);
+  } catch {
+    // хранилище закрыто (приватный режим) — обойдёмся ссылкой этого захода
+  }
+  return now;
+}
 
 const safely = (fn: () => void) => {
   try {

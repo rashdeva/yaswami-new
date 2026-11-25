@@ -14,7 +14,7 @@ import type { CollectedEvent } from '@yaswami/core';
 import { issueToken, signInWith, telegramIdOf, userIdByTelegram, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, messages, photos, practices as practicesTable, practiceSignups, products, shelves, sources, sourceSearches, ticketTypes, topics as topicsTable, users, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, messages, photos, practices as practicesTable, practiceSignups, products, shelves, sources, sourceSearches, ticketTypes, topics as topicsTable, users, userActivity, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { notify } from './notifications.ts';
@@ -575,6 +575,32 @@ function idTokens() {
   };
   return { jwks, make };
 }
+
+test('вход с сайта: ссылка, с которой пришёл, становится приходом нового человека', async () => {
+  const web = createApp({ db, botToken: BOT_TOKEN, webLogin: { clientSecret: 'secret', publicUrl: 'https://yaswami.test' } });
+  const { jwks, make } = idTokens();
+  const realFetch = globalThis.fetch;
+  let tgId = 0;
+  globalThis.fetch = async (input) => String(input).endsWith('/token')
+    ? Response.json({ id_token: make({ iss: ISSUER, aud: '123456', id: tgId, name: 'Гость сайта' }) })
+    : Response.json(jwks);
+  const signIn = async (id: number, start: string) => {
+    tgId = id;
+    const res = await web.request(`/auth/telegram/login?return=/&start=${encodeURIComponent(start)}`);
+    const state = new URL(res.headers.get('location')!).searchParams.get('state')!;
+    const cookie = res.headers.get('set-cookie')!.split(';')[0]!;
+    assert.equal((await web.request(`/auth/telegram/callback?code=c&state=${state}`, { headers: { cookie } })).status, 302);
+    const [row] = await db.select().from(userActivity).where(eq(userActivity.user_id, await uid(id)));
+    return row && { joined_via: row.joined_via, start_param: row.start_param };
+  };
+  try {
+    assert.deepEqual(await signIn(9501, '-sinstagram'), { joined_via: 'site', start_param: '-sinstagram' });
+    assert.deepEqual(await signIn(9501, '-sother'), { joined_via: 'site', start_param: '-sinstagram' }, 'приход пишется один раз');
+    assert.deepEqual(await signIn(9502, '<script>'), { joined_via: 'site', start_param: null }, 'чужие знаки — не ссылка');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
 
 test('вход в приложение через Telegram (?app=1): токен и ошибки — в схеме приложения', async () => {
   const web = createApp({ db, botToken: BOT_TOKEN, webLogin: { clientSecret: 'secret', publicUrl: 'https://yaswami.test' } });
