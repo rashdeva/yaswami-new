@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createExtractor, createOfferExtractor, createPracticeClassifier, createProductExtractor, createSearchMatcher, createSummarizer, createTopicProposer, isSameEvent, looksLikeEvent, mergeEvents } from '@yaswami/extract';
+import { createExtractor, createOfferExtractor, createPracticeClassifier, createProductExtractor, createSearchMatcher, createSummarizer, createTopicProposer, looksLikeEvent, mergeEvents, pairEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
 import { connect, goneReason, loadPeers, newPeers, downloadCover, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { refreshOld } from './refresh.mjs';
@@ -357,12 +357,18 @@ async function saveEvents(source, announcement, photos, upload, known, trusted, 
   }
   const ig = instagramOf(channel);
   let media; // фото и видео публикации в бакете: заливаем один раз, когда из неё появилось новое событие
+  for (const event of events) {
+    // В Instagram ник профиля — не контакт в Telegram (contactFor отбросит его как «сам канал»); записаться можно в директ.
+    event.telegram_username = contactFor(event, ig ?? channel, host_username, ig ? null : announcement);
+    if (ig) event.instagram_username = ig;
+  }
+  // Дубли подбираются на всю публикацию сразу: занятия одного расписания друг с другом не склеиваются (pairEvents).
+  const prefix = `${ig ? 'instagram' : 'telegram'}:${announcement.id}#`;
+  const inCity = known.filter((k) => k.city_id === city_id);
+  const sames = pairEvents(events, inCity, (k) => (k.external_id.startsWith(prefix) ? Number(k.external_id.slice(prefix.length)) : null));
   for (const [i, event] of events.entries()) {
     if (new Date(event.ends_at ?? event.starts_at) < Date.now()) continue; // уже прошло
-    // В Instagram ник профиля — не контакт в Telegram (contactFor отбросит его как «сам канал»); записаться можно в директ.
-    event.telegram_username = contactFor(event, ig ?? channel, host_username);
-    if (ig) event.instagram_username = ig;
-    const same = known.find((k) => k.city_id === city_id && isSameEvent(k.event, event));
+    const same = sames[i];
     // Канал организатора в источники попал сам, без решения команды: событие, которое она уже проверила, он не меняет.
     const decided = same && same.status !== 'pending';
     if (decided && host_username) continue;
@@ -375,7 +381,7 @@ async function saveEvents(source, announcement, photos, upload, known, trusted, 
       : mergeEvents(same.event, event);
     if (same && JSON.stringify(merged) === JSON.stringify(same.event)) continue; // повтор без новых сведений
     // Дубль дополняет запись первого анонса, а не создаёт вторую.
-    const external_id = same?.external_id ?? `${ig ? 'instagram' : 'telegram'}:${announcement.id}#${i}`;
+    const external_id = same?.external_id ?? `${prefix}${i}`;
     if (!same && bucket) media ??= await upload();
     const status = trusted.has(channel) ? 'approved' : 'pending'; // у известного события upsert статус не меняет
     const loaded_at = await store.upsert({

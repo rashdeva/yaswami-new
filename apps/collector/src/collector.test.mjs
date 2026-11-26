@@ -65,6 +65,8 @@ assert.deepEqual(toAnnouncement('danangevent', msg), [{
 assert.deepEqual(toAnnouncement('x', { ...msg, message: '' }), [], 'сообщение без текста');
 assert.equal(toAnnouncement('x', { ...msg, sender: { className: 'Channel', username: 'x' } })[0].author_username, null, 'канал — не автор');
 assert.deepEqual(toAnnouncement('x', { ...msg, sender: { bot: true } }), [], 'сообщение бота');
+assert.equal(toAnnouncement('x', { ...msg, message: '🧘 Студия А: локация', entities: [{ className: 'MessageEntityTextUrl', offset: 13, length: 7, url: 'https://maps.app.goo.gl/a' }, { className: 'MessageEntityBold', offset: 3, length: 8 }] })[0].text,
+  '🧘 Студия А: локация (https://maps.app.goo.gl/a)', 'ссылка под словом дописана в текст');
 const { fetchChatAnnouncements } = await import('./mtproto.mjs');
 const shot = (id, extra) => ({ id, message: '', date: 1794366000, groupedId: 5n, media: { className: 'MessageMediaPhoto' }, ...extra });
 const albumClient = { connected: true, getMessages: async () => [shot(9), shot(8, { message: 'Йога в субботу' }), shot(7), { ...msg, id: 6 }] };
@@ -181,6 +183,14 @@ assert.equal(contactFor({ ...noContact, telegram_username: '@Yoga_News' }, 'yoga
 assert.equal(contactFor({ ...noContact, telegram_username: 'yoga_news' }, 'yoga_news', 'anna'), 'anna', 'в канале организатора контакт — он сам');
 assert.equal(contactFor({ ...noContact, whatsapp_phone: '+84 90' }, 'yoga_news', 'anna'), null, 'есть WhatsApp — организатора не подставляем');
 assert.equal(contactFor(noContact, 'tea_house', 'Tea_House'), null, 'организатор — сама площадка');
+{
+  // Группа клуба: расписание выкладывает ведущий, ИИ берёт его автором-контактом, а записывает клуб.
+  const post = { author_username: 'Konstantin_Pokrovskiy', text: 'Открываю запись на следующую неделю…' };
+  const byAuthor = { ...noContact, telegram_username: 'konstantin_pokrovskiy' };
+  assert.equal(contactFor(byAuthor, 'yogaclubdanang', 'yoga_club_da_nang', post), 'yoga_club_da_nang', 'автор группы уступает организатору');
+  assert.equal(contactFor(byAuthor, 'yogaclubdanang', 'yoga_club_da_nang', { ...post, text: 'Запись у @Konstantin_Pokrovskiy' }), 'konstantin_pokrovskiy', 'автор назван в тексте — он и контакт');
+  assert.equal(contactFor(byAuthor, 'yogaclubdanang', null, post), 'konstantin_pokrovskiy', 'без организатора — автор');
+}
 assert.equal(channelFromBio('Веду йогу. Канал: t.me/anna_yoga_life, запись @anna_yoga', 'anna_yoga'), 'anna_yoga_life');
 assert.equal(channelFromBio('Запись @Anna_Yoga, почта anna@gmail.com, t.me/joinchat/abc, @yoga_bot', 'anna_yoga'), null, 'сам контакт, почта, приглашение, бот');
 assert.equal(channelFromBio(null, 'anna_yoga'), null);
