@@ -17,9 +17,17 @@ export function channelFromBio(bio, username) {
  * Telegram-контакт события из источника `channel`. Сам канал — не контакт: ИИ иногда подставляет его, когда в посте
  * контакта нет. В канале организатора (`host` — его username) пишут «пишите в личку» без ника: тогда контакт — он сам.
  * Если организатор и есть этот канал (площадка), подставлять нечего: записаться в канал нельзя.
+ * Контакт, который ИИ взял у автора публикации, а не из текста, в источнике с организатором тоже уступает организатору.
  */
-export function contactFor(event, channel, host) {
-  const isChannel = (u) => u.replace(/^@/, '').toLowerCase() === channel.toLowerCase();
+export function contactFor(event, channel, host, announcement = null) {
+  const bare = (u) => u.replace(/^@/, '').toLowerCase();
+  const isChannel = (u) => bare(u) === channel.toLowerCase();
+  // В группе организатора (`announcement` — публикация) автор — участник или ведущий, который выложил расписание. ИИ
+  // берёт его контактом, когда в тексте контакта нет; но записывает организатор группы, и событие должно быть его.
+  const author = announcement?.author_username && bare(announcement.author_username);
+  const byAuthor = author && event.telegram_username && bare(event.telegram_username) === author
+    && !new RegExp(`(@|t\\.me/)${author}\\b`, 'i').test(announcement.text ?? '');
+  if (byAuthor && host && !isChannel(host)) return host;
   if (event.telegram_username && !isChannel(event.telegram_username)) return event.telegram_username;
   return !event.whatsapp_phone && host && !isChannel(host) ? host : null;
 }

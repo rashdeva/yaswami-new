@@ -25,9 +25,18 @@ export function toAnnouncement(chat, msg) {
     image_url: null,
     // Автор — только человек: у публикации канала отправитель сам канал, ему в личку не написать.
     author_username: msg.sender?.className === 'User' ? msg.sender.username ?? null : null,
-    // ponytail: ссылки, спрятанные под текстом, теряются — msg.message это текст без разметки.
-    text: msg.message,
+    text: withHiddenLinks(msg.message, msg.entities),
   }];
+}
+
+/**
+ * Текст с открытыми ссылками: `msg.message` — без разметки, и ссылка, спрятанная под словом («Студия А: локация»),
+ * в нём теряется. Дописываем адрес в скобках после слова — ИИ видит карту площадки или страницу записи.
+ * Смещения сущностей — в UTF-16, как и индексы строк JS.
+ */
+export function withHiddenLinks(text, entities) {
+  const links = (entities ?? []).filter((e) => e.className === 'MessageEntityTextUrl' && e.url).sort((a, b) => b.offset - a.offset);
+  return links.reduce((t, e) => `${t.slice(0, e.offset + e.length)} (${e.url})${t.slice(e.offset + e.length)}`, text);
 }
 
 /** Отклик на публикацию: просмотры (у публикаций в группах их нет) и сумма реакций. */
