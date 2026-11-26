@@ -67,6 +67,14 @@ assert.equal(toAnnouncement('x', { ...msg, sender: { className: 'Channel', usern
 assert.deepEqual(toAnnouncement('x', { ...msg, sender: { bot: true } }), [], 'сообщение бота');
 assert.equal(toAnnouncement('x', { ...msg, message: '🧘 Студия А: локация', entities: [{ className: 'MessageEntityTextUrl', offset: 13, length: 7, url: 'https://maps.app.goo.gl/a' }, { className: 'MessageEntityBold', offset: 3, length: 8 }] })[0].text,
   '🧘 Студия А: локация (https://maps.app.goo.gl/a)', 'ссылка под словом дописана в текст');
+{
+  const { photoFits } = await import('./mtproto.mjs');
+  const at = (n, title) => ({ external_id: `telegram:yogaclubdanang/636#${n}`, title });
+  assert.ok(photoFits([at(0, 'Бачата')]), 'одно событие — фото его');
+  assert.ok(photoFits([at(0, 'Бачата'), at(1, 'Бачата ')]), 'одно событие на две даты — одна афиша');
+  assert.ok(!photoFits([at(7, 'Универсальная YOGA с Денисом'), at(8, 'YOGA FYSM с Константином')]), 'расписание: разные занятия');
+  assert.ok(!photoFits([at(11, 'YOGA Hatha с Вильмой')]), 'от расписания осталось одно занятие');
+}
 const { fetchChatAnnouncements } = await import('./mtproto.mjs');
 const shot = (id, extra) => ({ id, message: '', date: 1794366000, groupedId: 5n, media: { className: 'MessageMediaPhoto' }, ...extra });
 const albumClient = { connected: true, getMessages: async () => [shot(9), shot(8, { message: 'Йога в субботу' }), shot(7), { ...msg, id: 6 }] };

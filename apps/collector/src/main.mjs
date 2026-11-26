@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createExtractor, createOfferExtractor, createPracticeClassifier, createProductExtractor, createSearchMatcher, createSummarizer, createTopicProposer, looksLikeEvent, mergeEvents, pairEvents } from '@yaswami/extract';
 import { signupUrl } from './signup.mjs';
-import { connect, goneReason, loadPeers, newPeers, downloadCover, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
+import { connect, goneReason, loadPeers, newPeers, downloadCover, photoFits, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { refreshOld } from './refresh.mjs';
 import { createBucket } from './bucket.mjs';
 import { curateTopics, syncTopics } from './topics.mjs';
@@ -120,11 +120,11 @@ async function saveCover(external_id, source, data) {
 
 async function refreshPosts() {
   const byChat = new Map();
-  for (const { external_id, has_cover } of await store.upcoming()) {
+  for (const { external_id, has_cover, event } of await store.upcoming()) {
     const [, chat, number] = /^telegram:(.+)\/(\d+)#/.exec(external_id) ?? [];
     if (!chat) continue;
     const posts = byChat.get(chat) ?? byChat.set(chat, new Map()).get(chat);
-    (posts.get(Number(number)) ?? posts.set(Number(number), []).get(Number(number))).push({ external_id, has_cover });
+    (posts.get(Number(number)) ?? posts.set(Number(number), []).get(Number(number))).push({ external_id, has_cover, title: event.title });
   }
   for (const [chat, posts] of byChat) {
     // Источник недоступен (событие прислали боту из чужого канала) — пропускаем, остальные обновляем.
@@ -132,7 +132,7 @@ async function refreshPosts() {
     for (const [number, msg] of messages ?? []) {
       await store.setStats(`telegram:${chat}/${number}#`, toStats(msg));
       const bare = posts.get(number).filter((e) => !e.has_cover && !noCover.has(e.external_id));
-      const cover = bare.length ? await downloadCover(userbot, msg) : null;
+      const cover = bare.length && photoFits(posts.get(number)) ? await downloadCover(userbot, msg) : null;
       for (const { external_id } of bare) {
         if (cover) await saveCover(external_id, `telegram:${chat}/${number}`, cover);
         else noCover.add(external_id);

@@ -48,6 +48,18 @@ export const toStats = (msg) => ({
 const COVER_SIDE = 800; // обложку показываем на всю шапку события: превью 320 для неё мало
 const COVER_MAX_BYTES = 400_000;
 
+/**
+ * Можно ли фото публикации поставить обложкой её предстоящим событиям `events` ({ external_id, title }). Из расписания
+ * клуба выходит несколько разных занятий у разных ведущих, а фото у поста одно — ведущий одного из них: обложкой каждого
+ * оно было бы неправдой, такие рисует иллюстратор. Одно событие на несколько дат (те же названия) делит одну афишу.
+ * ponytail: прошедшие события публикации не видны — от расписания осталось одно занятие с номером > 0, фото тоже не ставим.
+ */
+export function photoFits(events) {
+  const titles = new Set(events.map((e) => e.title.trim().toLowerCase()));
+  const several = events.length > 1 || events.some((e) => !e.external_id.endsWith('#0'));
+  return !several || (events.length > 1 && titles.size === 1);
+}
+
 /** Фото публикации как обложка события: готовое превью Telegram (JPEG) или null — фото нет либо не скачалось. */
 export async function downloadCover(client, msg) {
   const thumb = msg.media?.className === 'MessageMediaPhoto' && pickThumb(msg.media.photo?.sizes, COVER_SIDE);
