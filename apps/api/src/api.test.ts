@@ -1263,6 +1263,7 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-5-0' }), { started: true });
   await new Promise((r) => setTimeout(r, 50));
   assert.ok(task.includes('"title":"Баня"') && task.includes(cover), 'роль получает данные события и фото анонса');
+  assert.match(task, /"look":\{"shot":[1-5],"colour":[1-8]\}/, 'ракурс и цвет обложки — от id события');
   assert.ok(task.startsWith('Обложка уже готова'), 'обложку проверили — роль снимает только ролик');
   assert.equal(((await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem).video_url, 'https://files-cdn.x.ai/abc/file_1.mp4');
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-5-0' }), { error: 'video_exists' });
