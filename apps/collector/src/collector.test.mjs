@@ -30,6 +30,9 @@ const extracted = { title: 'Йога', description: '', starts_at: '2026-11-20T0
   assert.deepEqual(parseExtracted('x/1', 'SAFETY', undefined), []);
   assert.deepEqual(parseExtracted('x/1', 'STOP', '{"events": [oops'), []);
   assert.deepEqual(parseExtracted('x/1', 'STOP', JSON.stringify({ events: [extracted, { ...extracted, starts_at: 'в субботу' }] })), [extracted]);
+  // Визаран — не событие, даже если ИИ его вернул.
+  const visaRuns = [{ ...extracted, title: 'Визаран в Мокбай' }, { ...extracted, title: 'Поездка в Камбоджу', tags: ['visa run'] }, { ...extracted, title: 'Тур', description: 'Бордер-ран с остановкой на рынке' }];
+  assert.deepEqual(parseExtracted('x/1', 'STOP', JSON.stringify({ events: [...visaRuns, extracted] })), [extracted]);
   console.error = error;
 }
 console.log('extract ok');
