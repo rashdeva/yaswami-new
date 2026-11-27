@@ -294,6 +294,12 @@ test('сборщик: найденные каналы аккаунта и вык
   await store.savePeers('200', [{ username: 'tea', peer_id: '-1002', access_hash: '99' }]); // у другого аккаунта свой access_hash
   assert.deepEqual((await store.peers('100')).map((p: any) => [p.username, p.peer_id, p.access_hash]).sort(), [['danang_yoga', '-1001', '11'], ['tea', '-1003', '33']]);
   assert.equal((await store.peers('300')).length, 0);
+  // Повтор username и тысячи каналов за раз: раньше вставка падала целиком и не сохранялось ничего.
+  const many = Array.from({ length: 2500 }, (_, i) => ({ username: `chat_${i}`, peer_id: `-100${i}`, access_hash: String(i) }));
+  await store.savePeers('300', [...many, { username: 'Chat_7', peer_id: '-1009', access_hash: '9' }]);
+  const saved = await store.peers('300');
+  assert.equal(saved.length, 2500);
+  assert.deepEqual(saved.filter((p: any) => p.username === 'chat_7').map((p: any) => p.peer_id), ['-1009']);
 
   await sql`delete from sources`;
   await store.addSources(['DanceHall']);

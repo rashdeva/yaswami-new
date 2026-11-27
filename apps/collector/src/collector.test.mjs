@@ -93,6 +93,10 @@ console.log('mtproto ok');
   client.session._entities.add(['-1005', '55', 'new_chat', undefined, 'Новый чат']);
   client.session._entities.add(['42', '7', 'some_person', undefined, 'Человек']); // людей не храним: только каналы и группы
   assert.deepEqual(newPeers(client, new Set(['danang_yoga'])), [{ username: 'new_chat', peer_id: '-1005', access_hash: '55' }]);
+  // Один username под двумя записями и в другом регистре — одна строка, иначе вставка падает целиком.
+  client.session._entities.add(['-1006', '66', 'New_Chat', undefined, 'Новый чат']);
+  assert.deepEqual(newPeers(client, new Set(['danang_yoga'])).map((p) => p.username), ['new_chat']);
+  assert.deepEqual(newPeers(client, new Set(['danang_yoga', 'new_chat'])), []);
   assert.equal(goneReason(new Error('No user has "dancehalldanang" as username')), 'В Telegram нет канала с таким username');
   assert.equal(goneReason({ errorMessage: 'CHANNEL_PRIVATE', message: '400: CHANNEL_PRIVATE' }), 'Канал удалён или стал закрытым');
   assert.equal(goneReason(new Error('FLOOD_WAIT_300')), null, 'временная ошибка источник не выключает');
