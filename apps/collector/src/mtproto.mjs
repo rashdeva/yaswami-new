@@ -98,10 +98,20 @@ export function loadPeers(client, peers) {
   for (const p of peers) client.session._entities.add([p.peer_id, p.access_hash, p.username, undefined, p.username]);
 }
 
-/** Каналы и группы с username из сессии, которых нет среди `known` (username): их сохранить. */
-export const newPeers = (client, known) => [...client.session._entities]
-  .filter(([id, hash, username]) => username && String(id).startsWith('-') && !known.has(username))
-  .map(([id, hash, username]) => ({ username, peer_id: String(id), access_hash: String(hash) }));
+/**
+ * Каналы и группы с username из сессии, которых нет среди `known` (username в нижнем регистре): их сохранить. Один
+ * username — одна строка: сессия держит канал и под разными записями, а повтор в одной вставке роняет её целиком
+ * («ON CONFLICT … cannot affect row a second time») — тогда не сохранялось ничего, и после каждого перезапуска
+ * сборщик заново искал все каналы и получал от Telegram FloodWait на часы.
+ */
+export function newPeers(client, known) {
+  const byName = new Map();
+  for (const [id, hash, username] of client.session._entities) {
+    const name = typeof username === 'string' ? username.toLowerCase() : '';
+    if (name && String(id).startsWith('-') && !known.has(name)) byName.set(name, { username: name, peer_id: String(id), access_hash: String(hash) });
+  }
+  return [...byName.values()];
+}
 
 /**
  * Ошибка значит, что читать нечего и не будет: username свободен или занят не каналом, канал удалён или закрыт для

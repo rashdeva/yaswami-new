@@ -57,9 +57,16 @@ export function createStore(url) {
       on conflict do nothing returning channel`).map((r) => r.channel) : [],
     /** Каналы и группы, которые аккаунт `account` уже нашёл по username (tg_peers): [{ username, peer_id, access_hash }]. */
     peers: (account) => sql`select username, peer_id, access_hash from tg_peers where account = ${account}`,
-    savePeers: (account, peers) => peers.length ? sql`
-      insert into tg_peers ${sql(peers.map((p) => ({ account, ...p })))}
-      on conflict (account, username) do update set peer_id = excluded.peer_id, access_hash = excluded.access_hash, updated_at = now()` : [],
+    /**
+     * Найденные каналы аккаунта. Порциями по 1000: сессия юзербота знает тысячи чатов, а у одной вставки предел — 65 534
+     * параметра (MAX_PARAMETERS_EXCEEDED). Повтор username в одной порции тоже роняет её: оставляем последний.
+     */
+    savePeers: async (account, peers) => {
+      const rows = [...new Map(peers.map((p) => [p.username.toLowerCase(), { ...p, account, username: p.username.toLowerCase() }])).values()];
+      for (let i = 0; i < rows.length; i += 1000) await sql`
+        insert into tg_peers ${sql(rows.slice(i, i + 1000))}
+        on conflict (account, username) do update set peer_id = excluded.peer_id, access_hash = excluded.access_hash, updated_at = now()`;
+    },
     /**
      * Разбор публикации источника ИИ: нашёл события — счёт пустых разборов заново, нет — плюс один. Набралось `max`
      * пустых подряд — источник выключается с причиной (каждый разбор — запрос к ИИ из общей квоты). `max` 0 — не
