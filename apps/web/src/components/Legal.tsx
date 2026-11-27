@@ -4,7 +4,7 @@ export function Legal() {
     <footer className="legal">
       <p>ИП Шамсудинов Рашид Ильясович</p>
       <p>ИНН 056108177486 · ОГРНИП 325050000228872</p>
-      <p><a href="mailto:rash2x@gmail.com">rash2x@gmail.com</a></p>
+      <p><a href="mailto:ceo@yaswami.com">ceo@yaswami.com</a></p>
     </footer>
   );
 }
