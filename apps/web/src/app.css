@@ -59,6 +59,9 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 .row textarea { resize: none; line-height: 1.35; min-height: 60px; field-sizing: content; }
 .row[aria-invalid='true'] label { color: var(--bad); }
 .error { margin: 8px 20px 0; font-size: 13px; color: var(--bad); }
+.legal { margin: 32px 20px 0; text-align: center; font-size: 12px; line-height: 1.6; color: var(--hint); }
+.legal p { margin: 0; }
+.legal a { color: inherit; }
 .note { margin: 12px 20px 0; font-size: 13px; color: var(--hint); }
 /* «Выйти» — строка группы красным, как в настройках iOS. */
 .group.logout { margin-top: 28px; }
