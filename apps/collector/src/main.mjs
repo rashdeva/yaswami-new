@@ -311,8 +311,9 @@ async function sourceSearch() {
   try {
     const results = (await searchChannels(userbot, { names: search.names, local: cityMatcher(search.names), words: CITY_WORDS }))
       .map(({ topic, ...r }) => r);
-    // Instagram — по хэштегам города; его сбой не отменяет найденное в Telegram.
-    if (instagram) results.push(...await instagram.hashtags(cityHashtags(search.names)).then(candidatesFrom)
+    // Instagram — по хэштегам города; его сбой не отменяет найденное в Telegram. Выключен, пока не задан
+    // INSTAGRAM_HASHTAG_SEARCH=1: 12 поисков за день съели весь баланс Apify и дали три профиля (2026-11-24).
+    if (instagram && env.INSTAGRAM_HASHTAG_SEARCH === '1') results.push(...await instagram.hashtags(cityHashtags(search.names)).then(candidatesFrom)
       .catch((e) => (console.error(`поиск в Instagram ${search.city_id}: ${e.message}`), [])));
     const strong = SOURCE_AUTO_ADD_MIN > 0 ? results.filter((r) => r.kind === 'announcements' && r.event_like >= SOURCE_AUTO_ADD_MIN) : [];
     const added = await store.addFoundSources(search.city_id, strong.map((r) => r.channel));
