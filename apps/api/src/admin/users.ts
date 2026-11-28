@@ -1,12 +1,13 @@
 // Пользователи сервиса и аудитория организаторов (контакты) глазами команды.
-import { count, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import type { AdminActivityEntry, AdminActivityList, AdminActivityListInput, AdminContact, AdminUser, AdminUserView, JoinedVia, User, UserUpdateInput } from '@yaswami/core';
 import { normalUsername } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
-import { revokeTokens } from '../auth.ts';
+import { revokeTokens, telegramIdOf } from '../auth.ts';
 import type { Db } from '../db/client.ts';
-import { collectedEventSignups, contacts, events, guests, practiceSignups, userActivity, userIdentities, users } from '../db/schema.ts';
+import { collectedEventSignups, contacts, conversations, events, guests, practiceSignups, userActivity, userIdentities, users } from '../db/schema.ts';
+import { isAdmin } from '../inbox.ts';
 import * as s from '../services.ts';
 import { verifyTicket } from '../support.ts';
 
@@ -77,12 +78,27 @@ export async function getUser(db: Db, id: number): Promise<AdminUserView> {
 
 export const updateUser = (db: Db, ctx: Ctx, id: number, input: UserUpdateInput): Promise<User> =>
   audited(db, ctx, { action: 'admin_users_update', entity: 'user', id: String(id), input }, async (tx) => {
-    const values = { ...input, ...(input.username !== undefined ? { username: normalUsername(input.username) } : {}) };
-    if (!Object.keys(values).length) return userById(tx, id);
+    const { is_banned, ...rest } = input;
+    const current = await userById(tx, id);
+    // Забаненного API не пускает: админ, забаненный по ошибке (в том числе агентом через MCP), не смог бы снять бан сам.
+    if (is_banned && await isAdmin(tx, current)) throw new s.AppError('cannot_ban_admin', 409);
+    // Повторный бан не сдвигает время первого: по нему видно, с какого дня человек забанен.
+    const ban = is_banned === undefined || is_banned === !!current.banned_at ? {} : { banned_at: is_banned ? new Date() : null };
+    const values = { ...rest, ...ban, ...(input.username !== undefined ? { username: normalUsername(input.username) } : {}) };
+    if (!Object.keys(values).length) return current;
     const [user] = await tx.update(users).set(values).where(eq(users.id, id)).returning();
-    if (!user) throw new s.AppError('user_not_found', 404);
-    return user;
+    // Забаненный больше не ждёт нас: его диалог с ботом прячется из «Людей», как скрытый вручную; бан сняли — возвращается.
+    if (is_banned !== undefined && 'banned_at' in ban) await hideBotConversation(tx, id, is_banned);
+    return user!;
   });
+
+/** Прячет диалог человека с ботом или возвращает его (его Telegram — через user_identities, ADR-0008). */
+async function hideBotConversation(db: Db, userId: number, hidden: boolean): Promise<void> {
+  const telegramId = await telegramIdOf(db, userId);
+  if (telegramId === null) return;
+  await db.update(conversations).set(hidden ? { hidden_at: new Date(), attention: null } : { hidden_at: null })
+    .where(and(eq(conversations.channel, 'bot'), eq(conversations.peer_id, telegramId)));
+}
 
 /**
  * Удалить пользователя: его ответы на события, записи, контакты, отзывы и токены уходят с ним. Организатора — нельзя

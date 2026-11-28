@@ -3,6 +3,7 @@ import { Ago, Arrival } from '@/components/ActivityFeed';
 import { EntityLink, TelegramLink } from '@/components/EntityLink';
 import { Failed, Loading, Nothing, Page } from '@/components/Page';
 import { Search } from '@/components/Search';
+import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useUsers } from '@/hooks/useUsers';
 import { IDENTITY_LABELS } from '@/lib/catalog';
@@ -26,7 +27,11 @@ export function UsersScreen({ query, onQuery }: { query: string; onQuery: (query
           <TableBody>
             {data.map((u) => (
               <TableRow key={u.id}>
-                <TableCell><EntityLink entity="user" id={u.id}>{u.first_name}</EntityLink></TableCell>
+                <TableCell>
+                  <EntityLink entity="user" id={u.id}>{u.first_name}</EntityLink>
+                  {u.banned_at && <Badge variant="destructive" className="ml-2">бан</Badge>}
+                  {u.bot_blocked_at && <Badge variant="secondary" className="ml-2" title="Заблокировал бота: уведомления не уходят">бот закрыт</Badge>}
+                </TableCell>
                 <TableCell>{u.username ? <TelegramLink username={u.username} /> : '—'}</TableCell>
                 <TableCell>{u.created_at ? <Ago at={u.created_at} /> : '—'}</TableCell>
                 <TableCell className="whitespace-normal"><Arrival via={u.joined_via} start={u.start_param} /></TableCell>

@@ -156,7 +156,7 @@ function AnswerSelect({ value, onChange }: { value: Wire<AdminGuest>['approval_s
 
 function Guests({ id, types, allowPlusOne, act }: { id: string; types: TicketType[]; allowPlusOne: boolean; act: Actions }) {
   const { data } = useGuests(id);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<Wire<User> | null>(null);
   const [answer, setAnswer] = useState<RsvpStatus>('approved');
   const [ticket, setTicket] = useState<string | undefined>();
   return (

@@ -1,12 +1,12 @@
 // Выбор пользователя сервиса поиском по имени или @username: гость события, организатор нового события.
-import type { User } from '@yaswami/core';
+import type { User, Wire } from '@yaswami/core';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList, CommandShortcut } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useUsers } from '@/hooks/useUsers';
 
-export function UserPicker({ label, picked, onPick }: { label: string; picked?: User | null; onPick: (user: User) => void }) {
+export function UserPicker({ label, picked, onPick }: { label: string; picked?: Pick<User, 'first_name' | 'username'> | null; onPick: (user: Wire<User>) => void }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const { data, isFetching } = useUsers(open ? query.trim().replace(/^@/, '') : undefined);

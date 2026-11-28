@@ -5,7 +5,7 @@ import type { AdminSource, SourceCreateInput, SourceSearch, SourceSearchCreateIn
 import { instagramOf, sourceChannel } from '@yaswami/core';
 import type { Ctx } from '../audit.ts';
 import { afterCommit, audited } from '../audit.ts';
-import { telegramIdOf } from '../auth.ts';
+import { botChatIdOf } from '../auth.ts';
 import type { Db } from '../db/client.ts';
 import { cities, collectorCursors, hosts, sourceSearches, sources, users } from '../db/schema.ts';
 import { sendCard } from '../notifications.ts';
@@ -82,7 +82,7 @@ export async function updateSource(db: Db, ctx: Ctx, channel: string, input: Sou
     }
     if (tell) {
       afterCommit(tx, async (base) => {
-        const chatId = await telegramIdOf(base, tell.id); // users.id — не Telegram id (ADR-0008)
+        const chatId = await botChatIdOf(base, tell.id); // users.id — не Telegram id (ADR-0008)
         if (chatId !== null) await sendCard(chatId, 'source_approved', { channel: key });
       });
     }

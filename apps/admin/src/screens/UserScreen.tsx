@@ -2,7 +2,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { User, UserUpdateInput as Input } from '@yaswami/core';
 import { UserUpdateInput } from '@yaswami/core';
-import { KeyRoundIcon, Trash2Icon } from 'lucide-react';
+import { BanIcon, KeyRoundIcon, Trash2Icon } from 'lucide-react';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { ActivityFeed, Ago, Arrival } from '@/components/ActivityFeed';
@@ -20,7 +20,7 @@ import { useContacts, useUser, useUserActions } from '@/hooks/useUsers';
 import { APPROVAL_LABELS, EVENT_STATUS_LABELS, FEATURE_LABELS, IDENTITY_LABELS } from '@/lib/catalog';
 import { wallParts } from '@/lib/form';
 
-const values = (u: User): Input => ({ first_name: u.first_name, username: u.username, lang: u.lang, timezone: u.timezone, features: u.features });
+const values = (u: Pick<User, 'first_name' | 'username' | 'lang' | 'timezone' | 'features'>): Input => ({ first_name: u.first_name, username: u.username, lang: u.lang, timezone: u.timezone, features: u.features });
 
 export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => void }) {
   const { data, error } = useUser(id);
@@ -38,6 +38,17 @@ export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => voi
       description={<>{u.username && <><TelegramLink username={u.username} /> · </>}{u.telegram_id ? `Telegram id ${u.telegram_id}` : 'без Telegram: бот ему не пишет'} · вход: {u.identities.map((i) => IDENTITY_LABELS[i]).join(', ') || '—'} · id {u.id} · <PostHogLink userId={u.id} /></>}
       actions={
         <>
+          {u.banned_at
+            ? <Button size="sm" variant="outline" onClick={() => act.update({ is_banned: false })}>Снять бан</Button>
+            : (
+              <Confirm
+                title={`Забанить ${u.first_name}?`} action="Забанить"
+                description={`Бот перестанет ему отвечать и писать, диалог уйдёт из «Людей», мини-приложение и API откажут. ${UNDO_HINT}`}
+                onConfirm={() => act.update({ is_banned: true })}
+              >
+                <Button size="sm" variant="outline"><BanIcon />Забанить</Button>
+              </Confirm>
+            )}
           <Confirm
             title="Отозвать токены?" action="Отозвать"
             description="Человека выкинет со всех устройств на сайте, токены его агентов перестанут работать. Это не отменить: войти он сможет заново сам."
@@ -55,6 +66,12 @@ export function UserScreen({ id, onDeleted }: { id: number; onDeleted: () => voi
         </>
       }
     >
+      {(u.banned_at || u.bot_blocked_at) && (
+        <div className="flex flex-wrap gap-2">
+          {u.banned_at && <Badge variant="destructive">Забанен <Ago at={u.banned_at} /></Badge>}
+          {u.bot_blocked_at && <Badge variant="secondary">Заблокировал бота <Ago at={u.bot_blocked_at} />: уведомления не уходят</Badge>}
+        </div>
+      )}
       <Section title="Приход">
         <Hint>
           Пришёл {u.created_at ? <Ago at={u.created_at} /> : 'неизвестно когда'}: <Arrival via={u.joined_via} start={u.start_param} />

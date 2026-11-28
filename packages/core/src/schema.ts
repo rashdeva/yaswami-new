@@ -55,6 +55,11 @@ export const User = z.object({
   features: z.array(Feature), // включённое лично этому человеку; в Luma такого нет
   city_id: z.string().nullable(), // город человека: его витрину открывает приложение; null — ещё не выбрал. В Luma такого нет
   muted_notifications: z.array(Notification), // уведомления, которые он выключил; в Luma такого нет
+  // Человек заблокировал бота (CONTEXT.md, «Бот заблокирован»): Telegram ответил 403 или прислал my_chat_member «kicked».
+  // Пока стоит — бот ему не пишет; снимается, когда он снова пишет боту. В Luma такого нет
+  bot_blocked_at: z.date().nullable(),
+  // Команда заблокировала человека (CONTEXT.md, «Бан»): бот его не слушает и не пишет ему, API отвечает 403 `banned`. В Luma такого нет
+  banned_at: z.date().nullable(),
 });
 export type User = z.infer<typeof User>;
 

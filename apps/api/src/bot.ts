@@ -3,7 +3,7 @@
 import type { User } from '@yaswami/core';
 import { collectedWhen } from '@yaswami/core';
 import type { Db } from './db/client.ts';
-import { touchUser, upsertUser } from './auth.ts';
+import { isBannedTelegram, setBotBlocked, touchUser, upsertUser } from './auth.ts';
 import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { writing } from './live.ts';
@@ -153,11 +153,41 @@ async function withDraft<T>(chatId: number, draftId: number, run: (show: (text: 
   }
 }
 
+/**
+ * Сообщение на китайском — спам: нашей аудитории китайский не родной, а такие сообщения приходят пачками. Иероглифы
+ * в тексте без единой кириллической буквы или китайский язык Telegram у отправителя при тексте без кириллицы.
+ * Русский текст с иероглифом (название чая, цитата) и японский (с каной) спамом не считаются.
+ */
+export function isChineseSpam(text: string, languageCode?: string): boolean {
+  // Кана — японский: иероглифы в нём тоже есть, но это не китайский спам.
+  if (/[\p{Script=Cyrillic}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text)) return false;
+  return /\p{Script=Han}/u.test(text) || /^zh\b/i.test(languageCode ?? '');
+}
+
+/**
+ * Человек заблокировал бота или разблокировал его: Telegram присылает my_chat_member о личном чате. Отметка у пользователя
+ * (User.bot_blocked_at) выключает ему уведомления. true — обновление было об этом.
+ */
+async function handleChatMember(db: Db, update: unknown): Promise<boolean> {
+  const u = (update as { my_chat_member?: { chat: { id: number; type: string }; new_chat_member: { status: string } } } | null)?.my_chat_member;
+  if (!u) return false;
+  if (u.chat.type === 'private') await setBotBlocked(db, u.chat.id, u.new_chat_member.status === 'kicked');
+  return true;
+}
+
 /** Обрабатывает одно обновление вебхука. */
 export async function handleUpdate(db: Db, update: unknown): Promise<void> {
+  if (await handleChatMember(db, update)) return;
+  // Забаненного командой бот не слушает совсем: ни сообщений, ни кнопок, ни «подождите» от лимита — не отвечает, не зовёт
+  // ИИ и нас, в переписку не пишет.
+  const from = (update as { message?: { from?: { id: number } }; callback_query?: { from?: { id: number } } } | null);
+  const senderId = from?.message?.from?.id ?? from?.callback_query?.from?.id;
+  if (senderId !== undefined && await isBannedTelegram(db, senderId)) return;
   if (await handleFeedbackCallback(db, update)) return; // оценка события кнопкой под карточкой
   const m = parseIncoming(update);
   if (!m) return;
+  // Китайский спам молча пропускаем: ни ответа, ни ИИ, ни пользователя, ни строки в переписке.
+  if (isChineseSpam(m.text, m.from.language_code)) return;
   const n = inbound.hit(m.from.id);
   if (n > settings.botInboundPerMinute) {
     if (n === settings.botInboundPerMinute + 1) await bot.send('sendMessage', { chat_id: m.chatId, text: REPLIES.too_often });
@@ -167,6 +197,8 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   // Новый человек пришёл через бота; хвост `/start <параметр>` — ссылка t.me/<бот>?start=…, с которой он пришёл.
   const actor = await upsertUser(db, m.from, { joined_via: 'bot', start_param: /^\/start\s+(\S+)/.exec(m.text)?.[1] ?? null });
   await touchUser(db, actor.id);
+  // Пишет — значит, бот снова открыт: уведомления ему опять уходят.
+  if (actor.bot_blocked_at) await setBotBlocked(db, m.chatId, false);
   // Голосовое, видео, фото — в бакет, речь в расшифровку: роль читает переписку текстом. Занимает секунды, поэтому до записи
   // в переписку: иначе админка покажет голосовое без плеера, а роль спросят раньше, чем готова расшифровка.
   // Вложений сверх дневного лимита не сохраняем: сообщение останется в переписке без них.
