@@ -540,7 +540,7 @@ export async function getCollectedEvent(db: Db, slug: string, anyStatus = false)
 
 type HostRecord = typeof hosts.$inferSelect;
 const hostCard = (h: HostRecord): Omit<CollectedHost, 'photos'> => ({
-  name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`, instagram_handle: h.instagram_handle,
+  id: h.id, name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`, instagram_handle: h.instagram_handle,
   photo_url: `https://t.me/i/userpic/320/${h.username}.jpg`, confirmed: h.user_id !== null,
 });
 /** Фото сообщества, новые сверху; лежат в бакете. Источник — telegram:<канал>/<публикация>: из него же ссылка на публикацию. */
@@ -566,13 +566,14 @@ export async function practicesByHost(db: Db | Tx, hostId?: string): Promise<Map
  * список категорий — контент-политика каталога услуг (ADR-0012).
  * `all` — все его Practice; `eventTopics` — темы его предстоящих опубликованных событий, по одной на событие.
  */
-function toHostListItem(h: HostRecord, all: Practice[], eventTopics: (string | undefined)[], feedback: HostFeedbackSummary = NO_FEEDBACK, sells = false): HostListItem | null {
+function toHostListItem(h: HostRecord, all: Practice[], eventTopics: (string | undefined)[], feedback: HostFeedbackSummary = NO_FEEDBACK, sells = false, always = false): HostListItem | null {
   // Отклонённого организатора не показываем целиком. Остальное решается по отдельности: события — своим статусом,
   // Practice — своим (PRACTICE_STATUSES), товары — своим (PRODUCT_STATUSES).
   if (h.status === 'rejected') return null;
   const practices = all.filter((p) => p.status === 'published' && (serviceCategoryBySlug(p.category) || p.topic in TOPIC_GUIDES));
   // `sells` — у мастера есть товары, которые видит гость: тогда его страница нужна и без событий и Practice.
-  if (!practices.length && !eventTopics.length && !sells) return null;
+  // `always` — своя страница: в каталоге пустому мастеру места нет, но на него ведут прошедшее событие и его же профиль.
+  if (!practices.length && !eventTopics.length && !sells && !always) return null;
   const mentioned = new Set([...practices.map((p) => p.topic), ...eventTopics]);
   return {
     ...hostCard(h), id: h.id, username: h.username, contact_url: `https://t.me/${h.username}`, url: `${settings.publicUrl}/hosts/${h.id}`,
@@ -604,7 +605,7 @@ export async function getHost(db: Db, id: string): Promise<HostItem> {
   if (!UUID.test(id)) throw new AppError('not_found', 404);
   const [h] = await db.select().from(hosts).where(eq(hosts.id, id));
   const sold = h ? await db.select().from(products).where(and(eq(products.host_id, h.id), liveProduct)).orderBy(desc(products.posted_at), desc(products.id)) : [];
-  const item = h && toHostListItem(h, (await practicesByHost(db, h.id)).get(h.id) ?? [], (await upcomingTopicsByHost(db, h.username)).get(h.username) ?? [], (await hostFeedbackSummaries(db, [h.id])).get(h.id), sold.length > 0);
+  const item = h && toHostListItem(h, (await practicesByHost(db, h.id)).get(h.id) ?? [], (await upcomingTopicsByHost(db, h.username)).get(h.username) ?? [], (await hostFeedbackSummaries(db, [h.id])).get(h.id), sold.length > 0, true);
   if (!item) throw new AppError('not_found', 404);
   const rows = await collectedWithCover(db).where(and(notStarted, published, eq(events.telegram_username, h!.username))).orderBy(asc(events.start_at));
   return { ...item, photos: hostPhotos(h!), events: rows.map(toCollectedItem), products: sold.map((p) => toProductItem(p, h!)), feedback_entries: await hostFeedbackEntries(db, h!.id) };

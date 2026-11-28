@@ -2,6 +2,7 @@
 import { useCallback, useState } from 'react';
 import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect, useNavigate } from '@tanstack/react-router';
 import type { SearchEntry, Wire } from '@yaswami/core';
+import { startHostId } from '@yaswami/core';
 import { App, Claims, useClaim, useClaimMany, useLogout, useShell } from './App.tsx';
 import { startLogin } from './api.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
@@ -24,6 +25,7 @@ import { ListScreen } from './screens/ListScreen.tsx';
 import { ProductScreen } from './screens/ProductScreen.tsx';
 import { ProductsScreen } from './screens/ProductsScreen.tsx';
 import { ProfileScreen } from './screens/ProfileScreen.tsx';
+import { SettingsScreen } from './screens/SettingsScreen.tsx';
 import { PeopleScreen } from './screens/PeopleScreen.tsx';
 import { ServiceGroupScreen } from './screens/ServiceGroupScreen.tsx';
 import { ShelfScreen } from './screens/ShelfScreen.tsx';
@@ -49,6 +51,8 @@ const root = createRootRoute({
   beforeLoad: () => {
     // Открыли по ссылке на событие (t.me/<бот>/<приложение>?startapp=<id>) — сразу оно.
     if (++navigations > 1 || !startParam) return;
+    const hostId = startHostId(startParam);
+    if (hostId) throw redirect({ to: '/hosts/$id', params: { id: hostId }, replace: true });
     throw startParam.startsWith('c_')
       ? redirect({ to: '/e/$id', params: { id: startParam.slice(2) }, replace: true })
       : redirect({ to: '/events/$id', params: { id: startParam }, replace: true });
@@ -169,6 +173,7 @@ function CollectedPage() {
       signedUp={!!me?.collected_signups.includes(id)}
       onClaim={mine ? () => claim(mine) : null}
       onOpenEvent={(eventId) => void navigate({ to: '/events/$id', params: { id: eventId } })}
+      onOpenHost={(hostId) => void navigate({ to: '/hosts/$id', params: { id: hostId } })}
       onBack={onBack}
       toast={toast}
     />
@@ -211,9 +216,9 @@ function HostPage() {
   const { id } = hostRoute.useParams();
   const navigate = useNavigate();
   const { city, me } = useSession();
-  const { onBack } = useShell();
+  const { onBack, toast } = useShell();
   return (
-    <HostScreen key={id} id={id} city={city} onBack={onBack}
+    <HostScreen key={id} id={id} city={city} onBack={onBack} toast={toast}
       own={me?.host_id === id}
       onOpenEvent={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })}
       onOpenProduct={(product) => void navigate({ to: '/products/$id', params: { id: product.id } })} />
@@ -285,7 +290,6 @@ function MyEvents() {
   const navigate = useNavigate();
   const { events, collected: seen, total, failed } = useMyEvents();
   const { onKind } = useShell();
-  const logout = useLogout();
   const { me } = useSession();
   // Аудитория есть у того, кто ведёт события или услуги: у остальных запрос не делаем.
   const audience = useContacts(!!me?.host_id || (events ?? []).some((e) => e.is_host));
@@ -299,7 +303,6 @@ function MyEvents() {
       tail={audience && <Audience people={audience} />}
       onOpen={(id) => void navigate({ to: '/events/$id', params: { id } })}
       onOpenCollected={(item) => void navigate({ to: '/e/$id', params: { id: item.id } })}
-      onLogout={logout}
       onNew={() => void navigate({ to: '/add' })}
       onPeople={me?.host_id ? () => void navigate({ to: '/people' }) : null}
       onKind={onKind}
@@ -307,19 +310,34 @@ function MyEvents() {
   );
 }
 
-/** Профиль: открыт и гостю — у него город и вход; у вошедшего ещё темы, уведомления и мои события. */
+/** Профиль: открыт и гостю — у него вход; у вошедшего — его страница, как её видят другие, и мои события. */
 function ProfilePage() {
-  const { me, canLogin } = useSession();
-  const canCreate = useFeature('event_create');
-  const { onBack } = useShell();
+  const navigate = useNavigate();
+  const { me, canLogin, city } = useSession();
+  const { onBack, toast } = useShell();
   if (me === undefined) return <Spinner />;
   return (
-    <ProfileScreen name={me?.user.first_name ?? null} host={!!me?.host_id || canCreate} onLogin={!me && canLogin ? () => startLogin('/my') : null} onBack={onBack}>
+    <ProfileScreen name={me?.user.first_name ?? null} hostId={me?.host_id ?? null} city={city} toast={toast}
+      onLogin={!me && canLogin ? () => startLogin('/my') : null} onBack={onBack}
+      onSettings={() => void navigate({ to: '/my/settings' })}
+      onOpenEvent={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })}
+      onOpenProduct={(product) => void navigate({ to: '/products/$id', params: { id: product.id } })}>
       {me && <MyEvents />}
     </ProfileScreen>
   );
 }
 const list = createRoute({ getParentRoute: () => app, path: '/my', component: ProfilePage });
+
+/** Настройки: город, темы, уведомления и выход. Открыты и гостю — ему город и вход. */
+function SettingsPage() {
+  const { me, canLogin } = useSession();
+  const canCreate = useFeature('event_create');
+  const { onBack } = useShell();
+  const logout = useLogout();
+  if (me === undefined) return <Spinner />;
+  return <SettingsScreen authed={!!me} host={!!me?.host_id || canCreate} onLogin={!me && canLogin ? () => startLogin('/my/settings') : null} onLogout={logout} onBack={onBack} />;
+}
+const settingsRoute = createRoute({ getParentRoute: () => app, path: '/my/settings', component: SettingsPage });
 
 /** Поиск людей — только подтверждённому организатору; остальным адрес ведёт в «Мои». */
 function PeoplePage() {
@@ -365,7 +383,7 @@ const edit = createRoute({ getParentRoute: () => personal, path: '/events/$id/ed
 const editSection = createRoute({ getParentRoute: () => personal, path: '/events/$id/edit/$section', component: () => <EditPage {...editSection.useParams()} /> });
 
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, allRoute, collected, hostsRoute, serviceGroupRoute, oldHostsRoute, hostRoute, productsRoute, productRoute, addRoute, searchRoute, list, personal.addChildren([people, create, event, edit, editSection])])]),
+  routeTree: root.addChildren([app.addChildren([feed, shelfRoute, directionRoute, allRoute, collected, hostsRoute, serviceGroupRoute, oldHostsRoute, hostRoute, productsRoute, productRoute, addRoute, searchRoute, list, settingsRoute, personal.addChildren([people, create, event, edit, editSection])])]),
   defaultNotFoundComponent: () => <Navigate to="/" replace />, // незнакомый адрес — на витрину
 });
 

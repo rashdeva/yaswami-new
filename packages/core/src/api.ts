@@ -149,6 +149,7 @@ export type CollectedEvent = z.infer<typeof CollectedEvent>;
  * в Luma API (`hosts`, `name`); `summary`, `channel_url` и `confirmed` — наши: у человека в Luma нет ни описания, ни ссылок.
  */
 export interface CollectedHost {
+  id: string; // страница организатора — /hosts/<id>: туда ведёт он же в «Участниках» события
   name: string;
   summary: string | null; // сводка ИИ по каналу и «о себе»
   channel_url: string | null;

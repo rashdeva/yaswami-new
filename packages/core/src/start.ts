@@ -3,12 +3,18 @@
 // Формат: <id события>[-r<кто позвал>][-s<метка>]; любая часть может отсутствовать. Telegram пускает в параметр только A-Z a-z 0-9 _ -.
 
 export interface Start {
-  /** Событие, которое нужно открыть: `e_…` — событие Ясвами, `c_…` — собранное. */
+  /** Что открыть: `e_…` — событие Ясвами, `c_…` — собранное, `h_<id без дефисов>` — страницу организатора. */
   param?: string;
   /** id пользователя, по чьей ссылке пришли: хвост `-r<id>` дописывает «Поделиться» (format.ts, eventLink). */
   ref?: number;
   /** Метка источника для аналитики: хвост `-s<метка>` дописывают руками в ссылку для поста или рекламы. Буквы, цифры и `_`. */
   tag?: string;
+}
+
+/** id организатора из параметра `h_<32 hex>` (hostLink в apps/web); null — параметр не про организатора. */
+export function startHostId(param: string | undefined): string | null {
+  const m = /^h_([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/i.exec(param ?? '');
+  return m ? m.slice(1).join('-').toLowerCase() : null;
 }
 
 export function parseStart(raw: string | undefined): Start {

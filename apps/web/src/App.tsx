@@ -1,5 +1,5 @@
 // Корневой layout приложения: цвет шаблона, тост, кнопка «назад» и то, что нужно нескольким страницам сразу.
-import { Outlet, useLocation, useMatchRoute, useNavigate } from '@tanstack/react-router';
+import { Outlet, useCanGoBack, useLocation, useMatchRoute, useNavigate, useRouter } from '@tanstack/react-router';
 import { createContext, useContext, useState } from 'react';
 import type { CollectedEventItem, Event } from '@yaswami/core';
 import { tint } from './format.ts';
@@ -27,6 +27,8 @@ export const useShell = () => useContext(ShellContext)!;
 export function App() {
   const navigate = useNavigate();
   const matchRoute = useMatchRoute();
+  const router = useRouter();
+  const canGoBack = useCanGoBack();
   const { pathname, search } = useLocation();
   const addKind = (search as { kind?: string }).kind; // «Добавить» возвращает туда, откуда пришли: товары, услуги или профиль
   const { hasEvents } = useMyEvents();
@@ -43,8 +45,13 @@ export function App() {
   const edit = matchRoute({ to: '/events/$id/edit', ...here });
   const back = matchRoute({ to: '/e/$id', ...here }) || matchRoute({ to: '/s/$id', ...here }) || matchRoute({ to: '/d/$slug', ...here }) || matchRoute({ to: '/all', ...here }) || matchRoute({ to: '/my', ...here })
     ? () => void navigate({ to: '/' })
-    : matchRoute({ to: '/hosts/$id', ...here }) || matchRoute({ to: '/services/$group', ...here })
+    // Организатор открывается и из события, и из услуг: «назад» — туда, откуда пришли; по прямой ссылке — в «Услуги».
+    : matchRoute({ to: '/hosts/$id', ...here })
+      ? canGoBack ? () => router.history.back() : () => void navigate({ to: '/services' })
+    : matchRoute({ to: '/services/$group', ...here })
       ? () => void navigate({ to: '/services' })
+    : matchRoute({ to: '/my/settings', ...here })
+      ? () => void navigate({ to: '/my' })
     : matchRoute({ to: '/products/$id', ...here })
       ? () => void navigate({ to: '/products' })
     : section

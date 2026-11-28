@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseStart, siteStart } from './start.ts';
+import { parseStart, siteStart, startHostId } from './start.ts';
 
 test('startapp: событие, кто позвал и метка источника — в любом сочетании', () => {
   assert.deepEqual(parseStart(undefined), { param: undefined, ref: undefined, tag: undefined });
@@ -23,4 +23,11 @@ test('ссылка прихода на сайт: startapp как есть, бе�
   assert.equal(parseStart(siteStart('?utm_source=ig.stories')).tag, 'ig_stories');
   assert.equal(siteStart('?startapp=<script>'), undefined);
   assert.equal(siteStart(''), undefined);
+});
+
+test('startapp организатора: h_<id без дефисов> — его id, хвосты прихода не мешают', () => {
+  const id = '7c2eb2aa-84ab-47e0-902a-1cda17980dae';
+  assert.equal(startHostId(parseStart(`h_${id.replaceAll('-', '')}-r5-sig`).param), id);
+  assert.equal(startHostId(parseStart('c_yoga-636-11').param), null);
+  assert.equal(startHostId('h_123'), null);
 });
