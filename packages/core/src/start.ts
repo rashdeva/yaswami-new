@@ -30,3 +30,31 @@ export function siteStart(search: string): string | undefined {
   const utm = params.get('utm_source')?.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 60);
   return utm ? `-s${utm}` : undefined;
 }
+
+// --- Намерение: зачем человек открывает бота (в Luma такого нет). Форм у нас нет — добавить событие, товар или услугу
+// и оставить отзыв можно только в переписке с ботом. Кнопка в приложении открывает бота ссылкой с параметром
+// (`t.me/<бот>?start=<намерение>`), и бот сразу спрашивает нужное, а не здоровается. Один механизм на все такие
+// кнопки: новое намерение — вариант в `BotIntent`, его запись в `botIntentParam` / `parseBotIntent` и ответ бота в `bot.ts`.
+
+/** Что можно добавить через бота. Порядок — порядок плашек на экране «Добавить». */
+export const ADD_KINDS = ['event', 'product', 'service'] as const;
+export type AddKind = (typeof ADD_KINDS)[number];
+
+export type BotIntent =
+  | { type: 'add'; kind: AddKind } // добавить своё событие, товар или услугу
+  | { type: 'feedback'; host_id: string }; // оставить отзыв о мастере (ссылку даёт сам мастер)
+
+/** Намерение как параметр `start`: `add_<что>` или `fb_<id мастера без дефисов>` — Telegram пускает только A-Z a-z 0-9 _ -. */
+export const botIntentParam = (intent: BotIntent): string =>
+  intent.type === 'add' ? `add_${intent.kind}` : `fb_${intent.host_id.replaceAll('-', '')}`;
+
+/** Ссылка, которая открывает бота с намерением. */
+export const botIntentUrl = (botUsername: string, intent: BotIntent): string => `https://t.me/${botUsername}?start=${botIntentParam(intent)}`;
+
+/** Намерение из параметра `start` (без хвостов `-r…`, `-s…`: их снимает `parseStart`). null — параметр не про намерение. */
+export function parseBotIntent(param: string | undefined): BotIntent | null {
+  const add = /^add_(\w+)$/.exec(param ?? '')?.[1];
+  if (add) return (ADD_KINDS as readonly string[]).includes(add) ? { type: 'add', kind: add as AddKind } : null;
+  const host = /^fb_([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/i.exec(param ?? '');
+  return host ? { type: 'feedback', host_id: host.slice(1).join('-').toLowerCase() } : null;
+}

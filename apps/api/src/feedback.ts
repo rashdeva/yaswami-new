@@ -4,7 +4,7 @@
 // Всё состояние — в таблице event_feedback, поэтому перезапуск сервера ничего не теряет.
 import { and, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { HostFeedbackEntry, HostFeedbackSummary } from '@yaswami/core';
-import { FEEDBACK_PUBLIC_RATING, shownAverage } from '@yaswami/core';
+import { botIntentUrl, FEEDBACK_PUBLIC_RATING, shownAverage } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import { eventFeedback, events, guests, hosts, practiceFeedback, practices, users } from './db/schema.ts';
 import { userIdByTelegram } from './auth.ts';
@@ -147,12 +147,9 @@ export async function hostFeedbackSummaries(db: Db, hostIds?: string[]): Promise
   }]));
 }
 
-/**
- * Где оставить отзыв о мастере: бот, открытый с параметром `fb_<id мастера без дефисов>` (Telegram пускает в параметр
- * только буквы, цифры, `_` и `-`). Пока имя бота неизвестно — страница мастера.
- */
+/** Где оставить отзыв о мастере: бот, открытый с намерением (BotIntent в core). Пока имя бота неизвестно — страница мастера. */
 export const hostFeedbackUrl = (hostId: string) =>
-  bot.username ? `https://t.me/${bot.username}?start=fb_${hostId.replaceAll('-', '')}` : `${settings.publicUrl}/hosts/${hostId}`;
+  bot.username ? botIntentUrl(bot.username, { type: 'feedback', host_id: hostId }) : `${settings.publicUrl}/hosts/${hostId}`;
 
 const ENTRIES_SHOWN = 20;
 

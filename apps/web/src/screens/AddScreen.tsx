@@ -25,7 +25,8 @@ const STEPS = [
 export function AddScreen({ kind: initial, onBack }: Props) {
   const demo = useParseDemo(ADD_EXAMPLE_LIST, ADD_KINDS.indexOf(initial));
   const kind = ADD_KINDS[demo.index]!;
-  const bot = botChatLink();
+  // Бот узнаёт, что именно человек добавляет: выбранная плашка уходит намерением в ссылке.
+  const bot = botChatLink({ type: 'add', kind });
   useViewed('add_viewed');
   useEffect(() => { document.title = 'Добавить через бота — Я с вами'; }, []);
 

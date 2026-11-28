@@ -1,9 +1,12 @@
 // Экран «Добавить» (AddScreen): форм нет, человек пишет боту, бот разбирает. Здесь — примеры для показа разбора
 // и чистая разметка сообщения: какие куски текста стали какими полями. Сам разбор делает роль поддержки Hermes.
 
-/** Что можно добавить через бота. Порядок — порядок плашек и показа. */
-export const ADD_KINDS = ['event', 'product', 'service'] as const;
-export type AddKind = (typeof ADD_KINDS)[number];
+import type { AddKind } from '@yaswami/core';
+import { ADD_KINDS } from '@yaswami/core';
+
+// Что можно добавить через бота — список в core: он же намерение в ссылке на бота (BotIntent).
+export { ADD_KINDS };
+export type { AddKind };
 export const isAddKind = (v: unknown): v is AddKind => ADD_KINDS.includes(v as AddKind);
 
 export interface DemoField {
