@@ -3,7 +3,8 @@
 import { and, eq, gt, gte, isNull, lt, sql } from 'drizzle-orm';
 import type { Db } from './db/client.ts';
 import { collectedEvents, subscriptions, users } from './db/schema.ts';
-import { DEFAULT_CITY_ID, nearbyCityIds } from '@yaswami/core';
+import { nearbyCityIds } from '@yaswami/core';
+import { settings } from './settings.ts';
 import { notify } from './notifications.ts';
 import { collectedSlug, listCities } from './services.ts';
 
@@ -40,7 +41,7 @@ export async function digestTopics(db: Db, now = new Date()): Promise<void> {
   const cities = await listCities(db);
   for (const { user_id, topics, notified_at, timezone, city_id } of due) {
     // Город не выбран — первый, как в витрине; события соседних городов — тоже, как в витрине.
-    const near = nearbyCityIds(cities, city_id ?? DEFAULT_CITY_ID);
+    const near = nearbyCityIds(cities, city_id ?? settings.defaultCityId);
     const items = fresh.filter((e) => near.includes(e.city_id) && e.published_at! > notified_at && topics.includes(e.event.topic ?? ''))
       .map(({ external_id, event: { title, starts_at, topic } }) => ({ id: collectedSlug(external_id), title, starts_at, topic }));
     const hour = hourIn(timezone, now);

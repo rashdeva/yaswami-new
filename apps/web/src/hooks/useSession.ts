@@ -2,12 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import type { Me } from '@yaswami/core';
-import { DEFAULT_CITY_ID, nearestCityId } from '@yaswami/core';
+import { nearestCityId } from '@yaswami/core';
 import { identify, track } from '../analytics.ts';
 import { api, hasCredentials } from '../api.ts';
 import { setLinkConfig } from '../format.ts';
 import { currentPosition } from '../tg.ts';
-import { served } from '../served.ts';
+import { defaultCityId, served } from '../served.ts';
 import { keys } from './keys.ts';
 
 /**
@@ -98,7 +98,7 @@ const storeCity = (id: string) => {
 /**
  * Город человека: его витрину, «Услуги» и поиск показывает приложение. `cities` — из чего выбрать; `set` —
  * сменить: вошедшему пишем на сервер (по нему же идёт сводка по темам), гостю — в браузер. `chosen`: false — ещё не
- * выбирал (витрина спросит), undefined — выясняем, кто это; до выбора всё идёт по первому городу.
+ * выбирал (витрина спросит), undefined — выясняем, кто это; до выбора всё идёт по городу по умолчанию.
  */
 export function useCity() {
   const client = useQueryClient();
@@ -109,7 +109,7 @@ export function useCity() {
   // Сохранённого города больше нет (команда его убрала) — спрашиваем заново, а не показываем пустую витрину.
   const known = (id: string | null | undefined) => id && (!cities.length || cities.some((c) => c.id === id)) ? id : null;
   const picked = known(me?.city_id) ?? known(guest);
-  const city_id = picked ?? DEFAULT_CITY_ID;
+  const city_id = picked ?? defaultCityId;
   const chosen = picked ? true : isPending ? undefined : false;
   useEffect(() => { if (me?.city_id) storeCity(me.city_id); }, [me?.city_id]);
   const set = useMutation({

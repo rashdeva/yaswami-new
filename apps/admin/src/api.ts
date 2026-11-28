@@ -1,7 +1,7 @@
 // Клиент API админки: единственное место, где есть fetch. Формы запросов и ответов — из @yaswami/core.
 import type {
   AccountCreateInput, AccountUpdateInput, AdminAction, AdminActionList, AdminActionListInput, AdminActivityList, AdminActivityListInput, AdminCollectedEvent, AdminCollectedEventView, AdminContact,
-  AdminEventCreateInput, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminShelf, AdminSource, AdminTopic, CollectedEventItem, ShelfCreateInput, ShelfUpdateInput, TopicCandidate, TopicCreateInput, TopicUpdateInput,
+  AdminEventCreateInput, AppConfig, AdminEventItem, AdminEventListInput, AdminEventUpdateInput, AdminEventView, City, CityCreateInput, CityUpdateInput, HostCreateInput, SourceCreateInput, AdminFeedback, AdminGuest, AdminGuestUpdateInput, AdminHostView, AdminOverview, AdminShelf, AdminSource, AdminTopic, CollectedEventItem, ShelfCreateInput, ShelfUpdateInput, TopicCandidate, TopicCreateInput, TopicUpdateInput,
   AdminUser, AdminUserView, CollectedListInput, CollectedUpdateInput, Conversation, ConversationUpdateInput, DraftSendInput, EventView, AdminHost, AdminHostListItem, AdminProduct, AdminProductList, AdminProductListInput, HostUpdateInput, Practice, PracticeUpdateInput, ProductUpdateInput, InboxConversation, SourceSearch, SourceSearchCreateInput, SourceUpdateInput,
   InboxFeed, InboxSendInput, Message, SseEvent, TgAccount, TicketType, TicketTypeCreateInput, TicketTypeUpdateInput, User, UserUpdateInput, Wire,
 } from '@yaswami/core';
@@ -118,6 +118,7 @@ const id = encodeURIComponent;
 
 export const api = {
   logout: () => request<void>('POST', '/auth/logout'),
+  config: () => request<AppConfig>('GET', '/config'),
   overview: () => request<Wire<AdminOverview>>('GET', '/admin/overview'),
 
   // Переписка

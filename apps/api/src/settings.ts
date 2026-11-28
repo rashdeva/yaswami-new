@@ -1,7 +1,14 @@
 // Настройки сервера из окружения. Отдельным объектом, чтобы тесты могли подменить значение.
+import { DEFAULT_CITY_ID } from '@yaswami/core';
+
 const { PORT = '3000', RAILWAY_PUBLIC_DOMAIN } = process.env;
 
 export const settings = {
+  /**
+   * Город по умолчанию: его получает всё, чему город не указан (и колонки city_id в базе — migrate.ts), его витрина на
+   * главной. У копии для другой страны свой, например tashkent; город должен быть в таблице cities.
+   */
+  defaultCityId: process.env.DEFAULT_CITY_ID || DEFAULT_CITY_ID,
   /** Адрес сайта без косой черты в конце: ссылки в разметке, в сообщении организатору, возврат после входа. */
   publicUrl: (process.env.PUBLIC_URL ?? (RAILWAY_PUBLIC_DOMAIN ? `https://${RAILWAY_PUBLIC_DOMAIN}` : `http://localhost:${PORT}`)).replace(/\/$/, ''),
   /** Токен командного бота Hermes (тот же, что TELEGRAM_BOT_TOKEN сервиса hermes): через него идут оповещения «ждёт человека». Пусто — их шлёт бот «Я с вами». */

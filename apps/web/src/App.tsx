@@ -9,7 +9,6 @@ import { useProductsTab } from './hooks/useProducts.ts';
 import { useSession } from './hooks/useSession.ts';
 import { useTelegramBack } from './hooks/useTelegramBack.ts';
 import { useToast } from './hooks/useToast.ts';
-import { Legal } from './components/Legal.tsx';
 import { ClaimBanner } from './screens/ClaimBanner.tsx';
 import type { Tab } from './components/TabBar.tsx';
 import { TabBar } from './components/TabBar.tsx';
@@ -65,7 +64,6 @@ export function App() {
       <div style={tint(kind)} className={withTabBar ? 'with-tabbar' : undefined}>
         <div className="air" />
         <Outlet />
-        {!inTelegram && <Legal />}
         {/* Таббар — на корневых разделах; у страниц события и организатора внизу своя кнопка действия и «назад». */}
         {withTabBar && <AppTabBar current={pathname === '/' ? 'feed' : pathname === '/services' ? 'hosts' : pathname === '/products' ? 'products' : null} />}
         {toast && <div className="toast" role="status">{toast}</div>}

@@ -2,6 +2,8 @@
 import type { AdminActionListInput, AdminActivityListInput } from '@yaswami/core';
 
 export const keys = {
+  /** Открытые настройки сервера: город по умолчанию этой копии. */
+  config: ['config'],
   /** Лента переписки: диалоги, последние сообщения, аккаунты. */
   inbox: ['inbox'],
   thread: (conversation: string) => ['thread', conversation],

@@ -8,7 +8,7 @@ import type {
   TicketTypeCreateInput, TicketTypeUpdateInput, User, UserSelfUpdateInput, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
-import { ADDRESS_MAX, collectedSlug, DEFAULT_CITY_ID, Feature, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, PRODUCT_CATEGORY_SLUGS, PRODUCT_TTL_DAYS, productContactUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, serviceCategoryBySlug, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
+import { ADDRESS_MAX, collectedSlug, Feature, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, PRODUCT_CATEGORY_SLUGS, PRODUCT_TTL_DAYS, productContactUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, serviceCategoryBySlug, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 // Цикл с auth.ts безопасен: обе стороны берут только функции и зовут их после загрузки.
 import { telegramIdOf } from './auth.ts';
@@ -164,7 +164,7 @@ export const nearbyCities = async (db: Db | Tx, city_id: string): Promise<string
 /** Город человека (`users.city_id`) целиком: название и часовой пояс нужны роли поддержки. Не выбрал — первый город. */
 export async function cityOf(db: Db | Tx, userId: number): Promise<City> {
   const [row] = await db.select({ city: cities }).from(users)
-    .innerJoin(cities, eq(cities.id, sql`coalesce(${users.city_id}, ${DEFAULT_CITY_ID})`)).where(eq(users.id, userId));
+    .innerJoin(cities, eq(cities.id, sql`coalesce(${users.city_id}, ${settings.defaultCityId})`)).where(eq(users.id, userId));
   if (!row) throw new AppError('not_found', 404);
   return row.city;
 }
@@ -178,9 +178,9 @@ export async function assertCity(db: Db | Tx, id: string | undefined): Promise<v
 }
 
 /**
- * Предстоящие собранные события города и его соседей для витрины; без города — первого (DEFAULT_CITY_ID). Открыты всем: это пересказ публичных анонсов.
+ * Предстоящие собранные события города и его соседей для витрины; без города — города по умолчанию (settings.defaultCityId). Открыты всем: это пересказ публичных анонсов.
  */
-export async function listCollectedEvents(db: Db | Tx, { city_id = DEFAULT_CITY_ID }: CityFilterInput = {}): Promise<CollectedEventItem[]> {
+export async function listCollectedEvents(db: Db | Tx, { city_id = settings.defaultCityId }: CityFilterInput = {}): Promise<CollectedEventItem[]> {
   const rows = await collectedWithCover(db)
     .where(and(notStarted, published, inArray(collectedEvents.city_id, await nearbyCities(db, city_id))))
     .orderBy(asc(collectedEvents.starts_at))
@@ -545,8 +545,8 @@ async function upcomingTopicsByHost(db: Db, username?: string): Promise<Map<stri
   return byHost;
 }
 
-/** Каталог организаторов города и его соседей (без города — первого): у кого есть предстоящие события или Practice. Открыт всем, как витрина событий. */
-export async function listHosts(db: Db, { city_id = DEFAULT_CITY_ID }: CityFilterInput = {}): Promise<HostListItem[]> {
+/** Каталог организаторов города и его соседей (без города — города по умолчанию): у кого есть предстоящие события или Practice. Открыт всем, как витрина событий. */
+export async function listHosts(db: Db, { city_id = settings.defaultCityId }: CityFilterInput = {}): Promise<HostListItem[]> {
   const [topics, offered, feedback] = await Promise.all([upcomingTopicsByHost(db), practicesByHost(db), hostFeedbackSummaries(db)]);
   // ponytail: все профили за раз, без постраничной выдачи, пока организаторов одного города — сотни
   return (await db.select().from(hosts).where(inArray(hosts.city_id, await nearbyCities(db, city_id))))
@@ -595,7 +595,7 @@ export async function productPage(db: Db, where: SQL | undefined, { pagination_c
 }
 
 /** Товары мастеров города и его соседей для гостя (без города — первого). Открыт всем, как витрина событий. */
-export async function listProducts(db: Db, { city_id = DEFAULT_CITY_ID, category, ...page }: ProductListInput): Promise<ProductList> {
+export async function listProducts(db: Db, { city_id = settings.defaultCityId, category, ...page }: ProductListInput): Promise<ProductList> {
   const inCity = and(liveProduct, visibleMaker, inArray(hosts.city_id, await nearbyCities(db, city_id)));
   const [result, [makers], present] = await Promise.all([
     productPage(db, and(inCity, category ? eq(products.category, category) : undefined), page),
@@ -647,9 +647,9 @@ const jsonText = (column: typeof collectedEvents.event, key: string) => sql`${co
 
 /**
  * Единый поиск по публичному каталогу: события из ленты, услуги из вкладки «Услуги», товары мастеров, самое подходящее первым. Открыт всем.
- * Ищет в городе и его соседях, как витрина: без `city_id` — в первом (DEFAULT_CITY_ID).
+ * Ищет в городе и его соседях, как витрина: без `city_id` — в городе по умолчанию.
  */
-export async function search(db: Db, { query, city_id = DEFAULT_CITY_ID, pagination_limit: limit = SEARCH_LIMIT }: SearchInput): Promise<SearchResult> {
+export async function search(db: Db, { query, city_id = settings.defaultCityId, pagination_limit: limit = SEARCH_LIMIT }: SearchInput): Promise<SearchResult> {
   const e = (key: string) => jsonText(collectedEvents.event, key);
   const event = searchMatch(query, e('title'), [e('place'), e('address'), e('tags'), e('topic'), e('for_whom')], [e('description'), e('what_happens'), e('takeaway')]);
   const practice = searchMatch(query, sql`${practices.title}`, [sql`${practices.topic}`], [sql`${practices.description}`]);

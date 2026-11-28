@@ -2,7 +2,7 @@
 // источники ему сборщик ищет сам (поиск источников), найденное, что не добавилось само, команда добавляет тут же.
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { City, CityCreateInput as CreateInput, CityUpdateInput as UpdateInput, Wire } from '@yaswami/core';
-import { CityCreateInput, CityUpdateInput, DEFAULT_CITY_ID } from '@yaswami/core';
+import { CityCreateInput, CityUpdateInput } from '@yaswami/core';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { SourceLink } from '@/components/EntityLink';
@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useCities } from '@/hooks/useCities';
+import { useCities, useDefaultCity } from '@/hooks/useCities';
 import { useSourceSearches } from '@/hooks/useSourceSearches';
 import { KIND_NAMES } from './SourcesScreen';
 
@@ -76,7 +76,8 @@ const ARCHIVED_HINT = 'На паузе: гости город не видят, �
 /** В архив и обратно; город по умолчанию в архив не уходит — на нём держится всё, у чего город не указан. */
 function LaunchToggle({ city }: { city: Wire<City> }) {
   const { update } = useCities();
-  if (city.id === DEFAULT_CITY_ID) return null;
+  const fallback = useDefaultCity();
+  if (city.id === fallback) return null;
   const archived = city.launch_status === 'archived';
   return (
     <Button size="sm" variant="outline" onClick={() => update({ id: city.id, launch_status: archived ? 'launched' : 'archived' })}>
