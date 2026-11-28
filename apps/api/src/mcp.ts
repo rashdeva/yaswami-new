@@ -158,7 +158,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
 
   tool('contacts_list', {
     title: 'List my audience', readOnly: true, asUser: true, shape: {},
-    description: 'People from the host\'s audience: those who opened or answered the user\'s events, with how many of them they attend.',
+    description: 'People from the host\'s audience: those who opened or answered the user\'s events (`event_approved_count` — how many of them they attend) and clients who signed up for the user\'s services (`practices` — titles of those services).',
   }, (_a, me, db) => s.listContacts(db, me));
 
   const host_search_id = z.string().describe('Host search id (uuid) from host_searches_list');

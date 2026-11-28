@@ -1,10 +1,14 @@
 // Все маршруты приложения. Страница здесь — тонкая связка: берёт адрес, вход и общие вещи layout и раздаёт экрану.
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect, useNavigate } from '@tanstack/react-router';
 import type { SearchEntry, Wire } from '@yaswami/core';
-import { App, Claims, useClaim, useLogout, useShell } from './App.tsx';
+import { App, Claims, useClaim, useClaimMany, useLogout, useShell } from './App.tsx';
 import { startLogin } from './api.ts';
 import { useMyEvents } from './hooks/useMyEvents.ts';
+import { useContacts } from './hooks/useContacts.ts';
+import { Audience } from './components/Audience.tsx';
+import { foundToAsk, skipFound, skippedFound } from './found.ts';
+import { FoundScreen } from './screens/FoundScreen.tsx';
 import { useFeature } from './hooks/useFeature.ts';
 import { contactMatch, useHostSearches } from './hooks/useHostSearches.ts';
 import { useCity, useSession } from './hooks/useSession.ts';
@@ -73,8 +77,27 @@ function useOpenEntry() {
 function FeedPage() {
   const { q = '' } = feed.useSearch();
   const navigate = useNavigate();
-  const { authed, canLogin } = useSession();
+  const { me, authed, canLogin } = useSession();
   const { city_id } = useCity();
+  const openEntry = useOpenEntry();
+  const claimMany = useClaimMany();
+  // Организатора, чьи события уже в афише, встречаем вопросом «это ваши?» — один раз на каждое событие (found.ts).
+  const [skipped, setSkipped] = useState(skippedFound);
+  const found = foundToAsk(me?.claimable ?? [], skipped);
+  if (me && found.length) {
+    return (
+      <FoundScreen
+        name={me.user.first_name} username={me.user.username} items={found}
+        onLater={() => setSkipped(skipFound(found.map((f) => f.id)))}
+        onConfirm={async (picked, rest) => {
+          // «Это не мои» и снятые отметки — больше не спрашиваем; подтверждённые открываются в «Моих событиях».
+          if (!picked.length) return setSkipped(skipFound(found.map((f) => f.id)));
+          await claimMany(picked);
+          setSkipped(skipFound(rest.map((f) => f.id)));
+        }}
+      />
+    );
+  }
   return (
     <FeedScreen
       lead={<Claims />}
@@ -85,7 +108,7 @@ function FeedPage() {
       onOpenAll={() => void navigate({ to: '/all' })}
       query={q}
       onQuery={(next) => void navigate({ to: '/', search: { q: next || undefined }, replace: true })}
-      onOpenEntry={useOpenEntry()}
+      onOpenEntry={openEntry}
     />
   );
 }
@@ -264,6 +287,8 @@ function MyEvents() {
   const { onKind } = useShell();
   const logout = useLogout();
   const { me } = useSession();
+  // Аудитория есть у того, кто ведёт события или услуги: у остальных запрос не делаем.
+  const audience = useContacts(!!me?.host_id || (events ?? []).some((e) => e.is_host));
   if (failed) return <Failed error={failed} />;
   if (total === null) return <Spinner />;
   return (
@@ -271,6 +296,7 @@ function MyEvents() {
       events={events ?? []}
       collected={seen}
       lead={<Claims />}
+      tail={audience && <Audience people={audience} />}
       onOpen={(id) => void navigate({ to: '/events/$id', params: { id } })}
       onOpenCollected={(item) => void navigate({ to: '/e/$id', params: { id: item.id } })}
       onLogout={logout}

@@ -16,7 +16,7 @@ const isUrl = (s: string) => /^https?:\/\//i.test(s);
 const makeSchema = (checkFuture: boolean) => z
   .object({
     kind: Event.shape.kind,
-    name: Event.shape.name,
+    name: z.string().trim().min(1).max(NAME_MAX, `Название длиннее ${NAME_MAX} символов — сократите`),
     place: z.string().trim().max(500),
     description: z.string().trim().max(DESCRIPTION_MAX),
     date: z.iso.date('Выберите дату'),
@@ -122,7 +122,7 @@ export function CreateScreen({ onBack, onCreated, onKind, toast, editing }: Prop
     }
   });
 
-  const error = errors.place?.message ?? errors.date?.message ?? errors.time?.message ?? errors.tickets?.find?.((t) => t?.name)?.name?.message;
+  const error = (errors.name?.type === 'too_big' ? errors.name.message : undefined) ?? errors.place?.message ?? errors.date?.message ?? errors.time?.message ?? errors.tickets?.find?.((t) => t?.name)?.name?.message;
 
   return (
     <form onSubmit={submit} noValidate>

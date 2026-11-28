@@ -619,3 +619,47 @@ h2.today { color: var(--btn); }
 /* Главная кнопка длинной шторки всегда на виду: показ и шаги прокручиваются под её подложкой. */
 .drawer-bar { position: sticky; bottom: 0; z-index: 1; margin: 0 -18px calc(-18px - var(--inset-bottom, env(safe-area-inset-bottom))); padding: 12px 18px calc(18px + var(--inset-bottom, env(safe-area-inset-bottom))); background: var(--bg); }
 .review-audio { display: block; width: 100%; height: 40px; margin: 8px 0 4px; }
+
+/* Организатору: кто видит событие (VisibilityCard, ADR-0014) — переключатель афиши, состояние и ссылка для своих. */
+.ev-body > .vis:first-child { margin-top: 12px; }
+.vis .row b { flex: 1; min-width: 0; font-weight: 600; }
+.vis-ico { flex: none; width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; color: #fff; background: linear-gradient(150deg, var(--a), var(--b)); }
+.vis-ico svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.vis .sw:disabled { opacity: .6; cursor: default; }
+.vis-state { padding: 2px 18px 14px; }
+.vis-state p { margin: 8px 0 0; font-size: 15px; color: var(--hint); }
+.badge.on { background: color-mix(in srgb, var(--ok) 18%, transparent); }
+.badge.wait { background: color-mix(in srgb, #ff9f0a 22%, transparent); }
+.badge.off { background: color-mix(in srgb, var(--hint) 16%, transparent); }
+.vis-link span { flex: 1; min-width: 0; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vis-link button, .guest .write, .group .row.more { border: 0; background: none; color: var(--btn); font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; }
+.vis-link button { flex: none; min-height: 44px; padding: 0 4px; }
+
+/* «Это ваши события?» (FoundScreen): первый экран организатора, чьи события уже в афише. */
+.found .top { padding-top: 22px; }
+.found-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.found-head .chip { margin: 0; cursor: default; }
+.found-head .quiet { padding: 0; min-height: 44px; }
+.found-stats { grid-template-columns: repeat(2, 1fr); margin: 20px 16px 12px; }
+.found .top + .group { margin-top: 20px; }
+.found-item { gap: 12px; padding: 10px 14px 10px 12px; border-left: 0; border-right: 0; border-bottom: 0; background: none; cursor: pointer; }
+.found-th { flex: none; width: 54px; height: 72px; border-radius: 12px; object-fit: cover; }
+.found-th.ico { object-fit: contain; padding: 10px; background: color-mix(in srgb, var(--c, var(--a)) 14%, transparent); }
+.found-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.found-text time { font-size: 14px; font-weight: 700; color: var(--c, var(--btn)); }
+.found-text b { font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.found-text small { font-size: 13px; color: var(--hint); }
+.found-item i { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--hint); display: grid; place-items: center; }
+.found-item[aria-checked='true'] i { border: 0; background: var(--btn); }
+.found-item[aria-checked='true'] i::after { content: ''; width: 11px; height: 6px; border-left: 2.5px solid #fff; border-bottom: 2.5px solid #fff; transform: translateY(-1px) rotate(-45deg); }
+.found-perks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 18px 16px 0; }
+.found-perks span { padding: 12px 10px; border-radius: 18px; font-size: 13px; line-height: 1.25; font-weight: 500; background: var(--glass); border: .5px solid var(--stroke); }
+
+/* «Гости и клиенты» в профиле организатора (Audience). */
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 28px 20px 10px; }
+.section-head h2 { margin: 0; }
+.section-head span { font-size: 14px; color: var(--hint); }
+.audience-stats { grid-template-columns: repeat(2, 1fr); margin: 0 16px 10px; }
+.audience .guest .write { margin-left: auto; flex: none; padding: 10px 0 10px 10px; }
+.group .row.more { min-height: 48px; border-left: 0; border-right: 0; border-bottom: 0; }
+.found-cta { margin: 18px 16px 0; }

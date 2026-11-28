@@ -832,12 +832,26 @@ async function referrerOf(db: Db, actor: User, ref: number | undefined): Promise
 const addContact = (tx: Db | Tx, hostUserId: number, userId: number) =>
   hostUserId === userId ? null : tx.insert(contacts).values({ host_user_id: hostUserId, user_id: userId }).onConflictDoNothing();
 
-/** Контакты организатора, новые сверху — форма как у `GET /v1/calendars/contacts/list` в Luma API. */
+/**
+ * Контакты организатора, новые сверху — форма как у `GET /v1/calendars/contacts/list` в Luma API. Сюда же входят клиенты:
+ * записавшиеся на его услуги (Practice). Их добавляем здесь, а не при записи: профиль мастера мог быть собран раньше,
+ * чем он вошёл в Ясвами, и его записи к тому времени уже лежали.
+ */
 export async function listContacts(db: Db, actor: User): Promise<{ entries: Contact[] }> {
+  await db.execute(sql`
+    insert into contacts (host_user_id, user_id)
+    select ${actor.id}, s.user_id from practice_signups s join hosts h on h.id = s.host_id
+    where h.user_id = ${actor.id} and s.user_id <> ${actor.id}
+    on conflict do nothing`);
   const entries = await db
     .select({
       id: contacts.id, user_id: contacts.user_id, created_at: contacts.created_at,
       first_name: users.first_name, username: users.username,
+      event_pending_count: sql<number>`(select count(*)::int from ${guests} join ${events} on ${events.id} = ${guests.event_id}
+        where ${guests.user_id} = ${contacts.user_id} and ${events.user_id} = ${contacts.host_user_id} and ${guests.approval_status} = 'pending_approval')`,
+      practices: sql<string[]>`coalesce((select array_agg(p.title order by s.created_at) from practice_signups s
+        join practices p on p.id = s.practice_id join hosts h on h.id = s.host_id
+        where s.user_id = ${contacts.user_id} and h.user_id = ${contacts.host_user_id}), '{}')`,
       event_approved_count: sql<number>`(select count(*)::int from ${guests} join ${events} on ${events.id} = ${guests.event_id}
         where ${guests.user_id} = ${contacts.user_id} and ${events.user_id} = ${contacts.host_user_id} and ${guests.approval_status} = 'approved')`,
     })
@@ -902,6 +916,15 @@ export async function myCollectedEvents(db: Db, actor: User): Promise<MyCollecte
   return rows.map((r) => ({ event: toCollectedItem(r), signed_up: signedIds.has(r.id) }));
 }
 
+/** Сколько человек нажали «Записаться» на каждое из событий: организатору это довод подтвердить событие как своё. */
+async function withSignups(db: Db, items: CollectedEventItem[]): Promise<CollectedEventItem[]> {
+  if (!items.length) return items;
+  const rows = await db.select({ id: guests.event_id, n: count() }).from(guests)
+    .where(and(inArray(guests.event_id, items.map((i) => i.id)), eq(guests.approval_status, 'pending_approval'))).groupBy(guests.event_id);
+  const byId = new Map(rows.map((r) => [r.id, r.n]));
+  return items.map((i) => ({ ...i, signups_count: byId.get(i.id) ?? 0 }));
+}
+
 export async function me(db: Db, actor: User): Promise<Me> {
   const signups = await pendingOf(db, actor);
   const claimable = actor.username
@@ -916,7 +939,7 @@ export async function me(db: Db, actor: User): Promise<Me> {
     user: { id: actor.id, first_name: actor.first_name, username: actor.username },
     features: featuresOf(actor),
     collected_signups: signups.map((r) => r.id),
-    claimable: claimable.map(toCollectedItem),
+    claimable: await withSignups(db, claimable.map(toCollectedItem)),
     host_id: (await db.select({ id: hosts.id }).from(hosts).where(eq(hosts.user_id, actor.id)))[0]?.id ?? null,
     subscribed_topics: (await db.select({ topics: subscriptions.topics }).from(subscriptions).where(eq(subscriptions.user_id, actor.id)))[0]?.topics ?? null,
     ...(await db.select({ city_id: users.city_id, muted_notifications: users.muted_notifications }).from(users).where(eq(users.id, actor.id)))[0]!,

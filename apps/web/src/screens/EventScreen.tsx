@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import type { Event, RsvpStatus } from '@yaswami/core';
 import { useEvent, useEventVisit } from '../hooks/useEvent.ts';
 import { useScrolledPast } from '../hooks/useScrolledPast.ts';
-import { hue, kindIcon, when } from '../format.ts';
+import { eventLink, kindIcon, when } from '../format.ts';
 import { haptic } from '../tg.ts';
 import { shareEvent } from '../share.ts';
 import { About } from '../components/About.tsx';
 import { GuestRow } from '../components/GuestRow.tsx';
 import { ShareButton } from '../components/ShareButton.tsx';
+import { VisibilityCard } from '../components/VisibilityCard.tsx';
 
 const ANSWERS: [RsvpStatus, string][] = [['approved', 'Пойду'], ['maybe', 'Думаю'], ['declined', 'Не пойду']];
 const GUEST_LABEL = { approved: 'пойдёт', maybe: 'думает', declined: 'не пойдёт', waitlist: 'в листе ожидания', pending_approval: 'записался' } as const;
@@ -24,8 +25,9 @@ interface Props {
 }
 
 export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props) {
-  const { view, failed, reload, rsvp } = useEvent(id);
+  const { view, failed, reload, rsvp, update } = useEvent(id);
   const [pending, setPending] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const [watch, barShown] = useScrolledPast();
 
@@ -49,6 +51,17 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
   const { event, ticket_types: types, guests, guest_counts: counts, me, is_host } = view;
   const open = event.status === 'published';
   const share = () => shareEvent(view.event, userId, toast);
+  const link = eventLink(event.id, userId);
+  const where = [event.place, event.geo_address_json?.address].filter(Boolean).join(', ');
+  // Видимость меняется сразу: ответ сервера говорит, ушло ли событие команде или вернулось в афишу.
+  const setVisibility = (visibility: 'public' | 'private') => {
+    setSaving(true);
+    update({ visibility })
+      .then((next) => { haptic.success(); toast(next.event.visibility === 'public' ? (next.event.showcase_status === 'published' ? 'Событие в афише' : 'Отправили команде на проверку') : 'Теперь только по ссылке'); })
+      .catch((e: Error) => { haptic.error(); toast(e.message); })
+      .finally(() => setSaving(false));
+  };
+  const copyLink = () => void navigator.clipboard.writeText(link).then(() => toast('Ссылка скопирована'), () => toast('Не получилось скопировать'));
   const price = types.length === 1 ? types[0]!.price_text : null;
   const selected = picked ?? me?.event_ticket_type_id ?? (types.length === 1 ? types[0]!.id : null);
   const taken = (typeId: string) =>
@@ -116,11 +129,12 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
           {event.status !== 'published' && <small>{event.status === 'cancelled' ? 'Отменено' : 'Черновик'}</small>}
           <h1>{event.name}</h1>
           <p className="when">{when(event.start_at, event.timezone)}</p>
-          {event.geo_address_json && <p className="where">📍 {event.geo_address_json.address}</p>}
+          {where && <p className="where">📍 {where}</p>}
         </div>
         <div className="acts" ref={watch}>{actions}</div>
       </div>
       <div className="ev-body">
+      {is_host && <VisibilityCard event={event} link={link} saving={saving} onChange={setVisibility} onCopy={copyLink} />}
 
       {(event.meeting_url || price) && <div className="group"><div className="meta">
         {event.meeting_url && <div><span>🔗</span><a href={event.meeting_url} target="_blank" rel="noreferrer">{event.meeting_url.replace(/^https?:\/\//, '')}</a></div>}
@@ -172,6 +186,13 @@ export function EventScreen({ id, userId, onBack, onKind, toast, onEdit }: Props
           <div className="guest empty">{is_host ? 'Пока никто не ответил. Отправьте событие в чат — ответы появятся здесь.' : 'Пока никто не ответил. Будьте первым.'}</div>
         )}
       </div>
+
+      {is_host && event.announcement && (
+        <div className="group"><div className="pad">
+          <p><b>Собрано из анонса{event.channel && !event.channel.startsWith('instagram:') ? ` в @${event.channel}` : ''}</b></p>
+          <p className="from">Вы подтвердили событие как своё: новые анонсы его больше не меняют, а записавшиеся раньше уже в списке гостей. <a href={event.announcement.url} target="_blank" rel="noreferrer">Открыть анонс</a></p>
+        </div></div>
+      )}
 
       {view.feedback.count > 0 && (
         <>

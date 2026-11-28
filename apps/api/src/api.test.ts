@@ -492,6 +492,8 @@ test('подтверждение владельцем: предлагается 
   assert.equal((await call(stranger, 'POST', '/collected-events/danangevent-5-0/signup')).status, 200);
   await call(tma(32, 'Вера'), 'POST', '/collected-events/danangevent-5-0/visit', {});
 
+  assert.deepEqual(((await (await call(owner, 'GET', '/me')).json()) as Me).claimable.map((c) => [c.id, c.signups_count]), [['danangevent-5-0', 1]], 'организатор видит, сколько человек уже хотят прийти');
+
   const res = await call(owner, 'POST', '/collected-events/danangevent-5-0/claim');
   assert.equal(res.status, 201);
   const view = (await res.json()) as EventView;
@@ -509,7 +511,7 @@ test('подтверждение владельцем: предлагается 
   // Нажавший «Записаться» — гость, которого организатор ещё не подтвердил; он и заходившая — уже контакты организатора.
   assert.deepEqual(view.guests.map((g) => [g.user_first_name, g.approval_status]), [['Олег', 'pending_approval']]);
   const audience = (await (await call(owner, 'GET', '/contacts')).json()) as { entries: Contact[] };
-  assert.deepEqual(audience.entries.map((c) => c.first_name).sort(), ['Вера', 'Олег']);
+  assert.deepEqual(audience.entries.map((c) => [c.first_name, c.event_pending_count]).sort(), [['Вера', 0], ['Олег', 1]]);
   // Организатор правит событие — афиша показывает его правку: строка одна.
   assert.equal((await call(owner, 'PATCH', '/events/danangevent-5-0', { name: 'Бачата с нуля' })).status, 200);
   assert.equal(((await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem).title, 'Бачата с нуля');
@@ -4044,4 +4046,18 @@ test('видимость (ADR-0014): приватное событие — то�
   // Событие с организатором и гостями модерация не удаляет: это делает admin_events_delete.
   assert.equal((await call(admin, 'DELETE', `/admin/collected-events/${open.event.id}`)).status, 404);
   await db.delete(eventsTable).where(eq(eventsTable.user_id, await uid(8101)));
+});
+
+test('контакты организатора: клиенты, записавшиеся на его услуги, входят в аудиторию с названиями услуг', async () => {
+  const master = tma(98201, 'Мастер');
+  const client = tma(98202, 'Клиент');
+  await call(client, 'GET', '/me');
+  // Профиль мастера собран сборщиком, запись клиента пришла раньше, чем мастер вошёл в Ясвами.
+  const [profile] = await db.insert(hosts).values({ telegram_id: 98201, username: 'u98201', name: 'Мастер', status: 'published' }).returning();
+  const [practice] = await db.insert(practicesTable).values({ host_id: profile!.id, title: 'Массаж спины', topic: 'телесные практики', status: 'published' }).returning();
+  await db.insert(practiceSignups).values({ practice_id: practice!.id, host_id: profile!.id, user_id: await uid(98202) });
+  await call(master, 'GET', '/me'); // вход привязывает профиль к пользователю по Telegram id
+  const { entries } = (await (await call(master, 'GET', '/contacts')).json()) as { entries: Contact[] };
+  assert.deepEqual(entries.map((c) => [c.first_name, c.practices, c.event_approved_count, c.event_pending_count]), [['Клиент', ['Массаж спины'], 0, 0]]);
+  await db.delete(hosts).where(eq(hosts.id, profile!.id));
 });

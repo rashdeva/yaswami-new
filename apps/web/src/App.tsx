@@ -109,6 +109,21 @@ export function useClaim() {
   };
 }
 
+/** «Да, все мои»: подтвердить несколько событий разом; что не удалось — скажем, остальное уже подтверждено. */
+export function useClaimMany() {
+  const { claimMany } = useSession();
+  const { toast } = useShell();
+  return async (items: CollectedEventItem[]) => {
+    try {
+      await claimMany(items.map((i) => i.id));
+      haptic.success();
+    } catch (e) {
+      haptic.error();
+      toast((e as Error).message);
+    }
+  };
+}
+
 /** Блок над списком: предложение организатору подтвердить свои события. */
 export function Claims() {
   const { me } = useSession();
