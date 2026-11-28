@@ -1,7 +1,5 @@
-import { Drawer } from 'vaul';
 import { useTopics } from '../hooks/useTopics.ts';
 import { useEffect, useState } from 'react';
-import type { CollectedHost } from '@yaswami/core';
 import { collectedIsPast, collectedPath, collectedWhen, topicIcon, topicSlug } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { startLogin } from '../api.ts';
@@ -29,22 +27,22 @@ interface Props {
   onClaim: (() => Promise<void>) | null;
   /** Организатор уже подтвердил событие: запись идёт через событие Ясвами. */
   onOpenEvent: (eventId: string) => void;
+  /** Организатор в «Участниках»: его страница. */
+  onOpenHost: (hostId: string) => void;
   onBack: (() => void) | null;
   toast: (text: string) => void;
 }
 
 /** Событие, собранное из открытого канала. Записывает на него организатор: мы фиксируем намерение и ведём к нему. */
-export function CollectedScreen({ id, authed, canLogin, signedUp, onClaim, onOpenEvent, onBack, toast }: Props) {
+export function CollectedScreen({ id, authed, canLogin, signedUp, onClaim, onOpenEvent, onOpenHost, onBack, toast }: Props) {
   useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const [claiming, setClaiming] = useState(false);
-  const [hostOpen, setHostOpen] = useState<CollectedHost | null>(null);
   const { event, failed, signUp: recordSignUp } = useCollectedEvent(id, authed, toast);
   // Город самого события, а не человека: в витрине есть и события соседних городов.
   const city = useCity().nameOf(event?.city_id ?? '');
   const [watch, barShown] = useScrolledPast();
   const heroVideo = useHeroVideo();
   const [viewing, setViewing] = useState<number | null>(null);
-  const [viewingShot, setViewingShot] = useState<number | null>(null); // фото сообщества из шторки организатора
 
   useEffect(() => {
     if (event) document.title = `${event.title} — ${collectedWhen(event.starts_at)}, ${city}`;
@@ -152,7 +150,7 @@ export function CollectedScreen({ id, authed, canLogin, signedUp, onClaim, onOpe
       <h2>Участники</h2>
       <div className="group">
         {event.hosts?.map((h) => (
-          <button key={h.name} className="plain" onClick={() => setHostOpen(h)}>
+          <button key={h.id} className="plain" onClick={() => onOpenHost(h.id)}>
             <GuestRow name={h.name} photo={h.photo_url} label="организатор ›" />
           </button>
         ))}
@@ -176,47 +174,6 @@ export function CollectedScreen({ id, authed, canLogin, signedUp, onClaim, onOpe
       </div>
 
       {actions && <div className="main" data-off={!barShown || undefined} inert={!barShown}><div>{actions}</div></div>}
-      <Drawer.Root open={!!hostOpen} onOpenChange={(o) => { if (!o) { setHostOpen(null); setViewingShot(null); } }}>
-        <Drawer.Portal>
-          <Drawer.Overlay className="drawer-overlay" />
-          {/* Esc при открытом просмотре закрывает только просмотр, шторка остаётся. */}
-          <Drawer.Content className="drawer" aria-describedby={undefined} onEscapeKeyDown={(e) => { if (viewingShot !== null) e.preventDefault(); }}>
-            <Drawer.Handle className="drawer-handle" />
-            {/* Заголовок нужен читалкам экрана; на экране имя организатора уже говорит, чей это канал. */}
-            <Drawer.Title className="sr">Канал организатора</Drawer.Title>
-            {hostOpen && (
-              <>
-                <p className="who">
-                  {/* фото нет или скрыто настройками приватности — Telegram отвечает 404, тогда просто имя */}
-                  <img className="ava" src={hostOpen.photo_url} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                  {hostOpen.name}
-                </p>
-                {hostOpen.summary && <p>{hostOpen.summary}</p>}
-                {hostOpen.photos.length > 0 && (
-                  <div className="shots" data-vaul-no-drag>
-                    {hostOpen.photos.map((p, i) => (
-                      <button key={p.url} onClick={() => setViewingShot(i)} aria-label="Открыть фото">
-                        <img src={p.url} alt="" loading="lazy" onError={(e) => { e.currentTarget.parentElement!.hidden = true; }} />
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {/* Внутри Drawer.Content: для шторки просмотр — её часть, щелчок по нему не закрывает шторку. */}
-                {viewingShot !== null && (
-                  <MediaViewer items={hostOpen.photos.map((p) => ({ type: 'photo', url: p.url }))} start={viewingShot} onClose={() => setViewingShot(null)} />
-                )}
-                {!past && !onClaim && <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>}
-                {(hostOpen.channel_url || hostOpen.instagram_handle) && (
-                  <div className="cta-row">
-                    {hostOpen.channel_url && <button className="cta alt" onClick={() => { track('host_channel_opened', { collected_event_id: id }); openExternal(hostOpen.channel_url!); }}>Канал</button>}
-                    {hostOpen.instagram_handle && <button className="cta alt" onClick={() => { track('host_instagram_opened', { collected_event_id: id }); openExternal(`https://instagram.com/${hostOpen.instagram_handle}`); }}>Instagram</button>}
-                  </div>
-                )}
-              </>
-            )}
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
     </>
   );
 }

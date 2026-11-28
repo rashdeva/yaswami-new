@@ -27,8 +27,6 @@ interface Props {
   tail?: ReactNode;
   onOpen: (id: string) => void;
   onOpenCollected: (event: CollectedEventItem) => void;
-  /** Выйти на сайте; null — в Telegram, там выходить не из чего. */
-  onLogout: (() => void) | null;
   /** Создать событие; null — человеку создание не открыто, кнопки нет. */
   onNew: (() => void) | null;
   /** Поиск людей под запросы организатора; null — человек не подтверждённый организатор, кнопки нет. */
@@ -39,7 +37,7 @@ interface Props {
 /** Строка списка: свои события и собранные выглядят одинаково. */
 interface Row { key: string; kind: Event['kind']; icon: string; topic?: string; cover?: string | null; title: string; note: string; start: string; /** Дата и время «на стене» в поясе события: по ним день и время в списке. */ wall: string; past: boolean; open: () => void }
 
-export function ListScreen({ events, collected, lead, tail, onOpen, onOpenCollected, onLogout, onNew, onPeople, onKind }: Props) {
+export function ListScreen({ events, collected, lead, tail, onOpen, onOpenCollected, onNew, onPeople, onKind }: Props) {
   useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   // Событие считается прошедшим через три часа после начала (или после конца, если он задан).
   const now = Date.now();
@@ -91,7 +89,6 @@ export function ListScreen({ events, collected, lead, tail, onOpen, onOpenCollec
       {past.length > 0 && <section><h2>Прошедшие</h2>{grid(past)}</section>}
       {rows.length === 0 && <div className="state"><b>🗓</b><p>Здесь появятся события, на которые вы записались.</p></div>}
       {tail}
-      {onLogout && <div className="group logout"><button className="row del" onClick={onLogout}>Выйти</button></div>}
       {onNew && <div className="main"><div><button className="cta" onClick={onNew}>Добавить событие, товар или услугу</button></div></div>}
     </>
   );

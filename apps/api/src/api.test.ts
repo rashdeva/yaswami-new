@@ -409,7 +409,9 @@ test('каталог организаторов: с событиями или Pr
   assert.deepEqual(club.events.map((e) => e.title), ['Мафия']); // неопубликованное не видно
   assert.equal((await app.request('/hosts/not-an-id')).status, 404);
   const [nobody] = await db.select().from(hosts).where(eq(hosts.username, 'nobody'));
-  assert.equal((await app.request(`/hosts/${nobody!.id}`)).status, 404);
+  // в каталоге его нет, но своя страница есть: на неё ведут прошедшие события и его профиль в приложении
+  const empty = (await (await app.request(`/hosts/${nobody!.id}`)).json()) as HostItem;
+  assert.deepEqual([empty.username, empty.events, empty.practices, empty.upcoming_count], ['nobody', [], [], 0]);
 
   // запись на Practice: намерение записано, человек получает ссылку на чат мастера; повтор ничего не меняет
   const dasha = list[1]!;
@@ -461,6 +463,8 @@ test('каталог организаторов: с событиями или Pr
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${list[0]!.id}`, { status: 'rejected' })).status, 200);
   assert.deepEqual(((await (await app.request('/hosts')).json()) as HostListItem[]).map((h) => h.username), ['dasha_yoga', 'new_master']);
   assert.equal((await app.request(`/hosts/${list[0]!.id}`)).status, 404);
+  // и в «Участниках» его события не показываем: ссылка вела бы на несуществующую страницу
+  assert.deepEqual(((await (await app.request(`/collected-events/${club.events[0]!.id}`)).json()) as CollectedEventItem).hosts, []);
   settings.adminIds = admins;
 });
 
@@ -479,7 +483,10 @@ test('подтверждение владельцем: предлагается 
   // профиль организатора собран сборщиком до его входа: привяжется к пользователю по Telegram id, когда тот войдёт
   await db.delete(hosts);
   await db.insert(hosts).values({ telegram_id: 30, username: 'u30', name: 'Ксения', channel: 'ksenia_dance', summary: 'Преподаёт бачату.' });
-  assert.equal(((await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem).hosts![0]!.confirmed, false);
+  const listedHost = ((await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem).hosts![0]!;
+  assert.equal(listedHost.confirmed, false);
+  // организатор в «Участниках» ведёт на свою страницу
+  assert.equal(((await (await app.request(`/hosts/${listedHost.id}`)).json()) as HostItem).name, 'Ксения');
   const owner = tma(30, 'Ксения');
   const stranger = tma(31, 'Олег');
 
@@ -521,7 +528,7 @@ test('подтверждение владельцем: предлагается 
 
   // витрина теперь ведёт на событие Ясвами, повторно подтвердить нельзя, предложение исчезло
   const item = (await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem;
-  assert.deepEqual(item.hosts, [{ name: 'Ксения', summary: 'Преподаёт бачату.', channel_url: 'https://t.me/ksenia_dance', instagram_handle: null, photo_url: 'https://t.me/i/userpic/320/u30.jpg', confirmed: true, photos: [] }]);
+  assert.deepEqual(item.hosts, [{ id: listedHost.id, name: 'Ксения', summary: 'Преподаёт бачату.', channel_url: 'https://t.me/ksenia_dance', instagram_handle: null, photo_url: 'https://t.me/i/userpic/320/u30.jpg', confirmed: true, photos: [] }]);
   assert.equal(item.claimed_event_id, view.event.id);
   assert.equal((await call(owner, 'POST', '/collected-events/danangevent-5-0/claim')).status, 409);
   assert.deepEqual(((await (await call(owner, 'GET', '/me')).json()) as Me).claimable, []);

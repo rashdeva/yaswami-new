@@ -54,6 +54,11 @@ export function collectedLink(id: string): string {
   return link.bot && /^[\w-]{1,60}$/.test(id) ? `https://t.me/${link.bot}/${link.app}?startapp=c_${id}` : location.origin + collectedPath(id);
 }
 
+/** Ссылка на страницу организатора: в мини-апке (startapp=h_<id без дефисов>, Telegram пускает до 64 знаков), иначе на сайт. */
+export function hostLink(id: string): string {
+  return link.bot ? `https://t.me/${link.bot}/${link.app}?startapp=h_${id.replaceAll('-', '')}` : `${location.origin}/hosts/${id}`;
+}
+
 /** Дата и время начала так, как они на стене в часовом поясе события: ['2026-11-20', '19:30']. */
 export function wallParts(iso: string, timeZone: string): [string, string] {
   const [date, time] = new Date(iso).toLocaleString('sv-SE', { timeZone, hour12: false }).split(' ');
