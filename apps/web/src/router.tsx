@@ -106,8 +106,19 @@ function DirectionPage() {
   const { slug } = directionRoute.useParams();
   const navigate = useNavigate();
   const { onBack } = useShell();
+  const { authed, canLogin } = useSession();
+  const { city_id } = useCity();
   const gone = useCallback(() => void navigate({ to: '/', replace: true }), [navigate]);
-  return <DirectionScreen key={slug} slug={slug} onBack={onBack} onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })} onGone={gone} />;
+  return (
+    <DirectionScreen
+      key={slug}
+      slug={slug}
+      onBack={onBack}
+      onOpen={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })}
+      onGone={gone}
+      empty={<SourceSuggest city_id={city_id} authed={authed} onLogin={canLogin ? () => startLogin(`/d/${slug}`) : null} />}
+    />
+  );
 }
 const directionRoute = createRoute({ getParentRoute: () => app, path: '/d/$slug', component: DirectionPage });
 

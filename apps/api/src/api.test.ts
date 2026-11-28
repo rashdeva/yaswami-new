@@ -2693,12 +2693,12 @@ test('направления: тема знает своё направлени�
   const list = async () => (await (await app.request('/topics')).json()) as TopicItem[];
   // Первые темы разложены миграцией.
   const yoga = (await list()).find((t) => t.name === 'йога');
-  assert.equal(yoga?.direction, 'body');
+  assert.equal(yoga?.direction, 'wellness');
   const before = (await list()).find((t) => t.name === 'кино')!.direction;
-  const moved = await call(admin, 'PATCH', `/admin/topics/${encodeURIComponent('кино')}`, { direction: 'growth' });
+  const moved = await call(admin, 'PATCH', `/admin/topics/${encodeURIComponent('кино')}`, { direction: 'learning' });
   assert.equal(moved.status, 200);
-  assert.equal(((await moved.json()) as AdminTopic).direction, 'growth');
-  assert.equal((await list()).find((t) => t.name === 'кино')!.direction, 'growth');
+  assert.equal(((await moved.json()) as AdminTopic).direction, 'learning');
+  assert.equal((await list()).find((t) => t.name === 'кино')!.direction, 'learning');
   assert.equal((await call(admin, 'PATCH', `/admin/topics/${encodeURIComponent('кино')}`, { direction: 'nowhere' })).status, 400);
   await call(admin, 'PATCH', `/admin/topics/${encodeURIComponent('кино')}`, { direction: before });
 });
