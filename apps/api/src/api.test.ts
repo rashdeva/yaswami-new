@@ -1936,6 +1936,7 @@ test('отзывы: запрос после события, оценка кно�
 });
 
 test('отзывы на услуги: вопрос через сутки после записи, «не дошёл», ссылка мастера в бота, текст, пересылка и ссылка, репутация и бонус', async () => {
+  settings.adminIds = [70]; // команда: ей приходит оповещение о ссылке, она же сверяет отзыв
   const [M, G1, G2, G3, G4, G5] = [9140, 9141, 9142, 9143, 9144, 9145];
   for (const id of [M, G1, G2, G3, G4, G5]) await call(tma(id, `P${id}`), 'GET', '/me');
   const [host] = await db.insert(hosts).values({ user_id: await uid(M), telegram_id: M, username: 'fb_master', name: 'Лена', status: 'published' }).returning();
@@ -1944,7 +1945,8 @@ test('отзывы на услуги: вопрос через сутки пос�
   const labels = () => sent.filter(([m]) => m === 'sendWidget').map(([, b]) => [b.chat_id, JSON.parse(b.public_data).l]).sort();
   const press = (id: number, n: number) => handleUpdate(db, { update_id: 1, callback_query: { id: 'q', from: { id, first_name: `P${id}` }, data: `pfb:${massage!.id}:${n}` } });
   const start = (id: number) => handleUpdate(db, botMessage(id, `/start fb_${host!.id.replaceAll('-', '')}`));
-  const said = () => sent.filter(([m]) => m === 'sendMessage').map(([, b]) => b.text);
+  // Что бот ответил этому человеку; оповещения команде (уходят тем же ботом в другие чаты) сюда не попадают.
+  const said = (id: number) => sent.filter(([m, b]) => m === 'sendMessage' && b.chat_id === id).map(([, b]) => b.text);
   assert.deepEqual((await page()).feedback, { count: 0, average: null, attended_count: 0 });
 
   // Бонус за отзыв назначает сам мастер; у него же ссылка для клиентов. Не мастеру — отказ.
@@ -1991,14 +1993,14 @@ test('отзывы на услуги: вопрос через сутки пос�
   assert.deepEqual(labels(), [[G2, 'Вы были у мастера?']]);
   sent.length = 0;
   await start(M);
-  assert.match(said()[0], /для ваших клиентов/);
+  assert.match(said(M)[0], /для ваших клиентов/);
   assert.deepEqual(labels(), []);
 
   // Низкая оценка; текст — просто следующим сообщением, не ответом.
   await press(G2, 2);
   sent.length = 0;
   await handleUpdate(db, botMessage(G2, 'Опоздала на час'));
-  assert.deepEqual(said(), ['Спасибо! Отзыв сохранён.']);
+  assert.deepEqual(said(G2), ['Спасибо! Отзыв сохранён.']);
   assert.deepEqual((await page()).feedback, { count: 2, average: null, attended_count: 2 }, 'средняя — от трёх оценок');
 
   // Ссылка на сообщение с отзывом: прочитать её мы не можем — ждёт команду и до того не видна.
@@ -2006,14 +2008,15 @@ test('отзывы на услуги: вопрос через сутки пос�
   await press(G3, 5);
   sent.length = 0;
   await handleUpdate(db, botMessage(G3, 'Вот мой отзыв t.me/danang_chat/123'));
-  assert.deepEqual(said(), ['Спасибо! Проверим отзыв по ссылке и покажем его на странице мастера.']);
+  assert.deepEqual(said(G3), ['Спасибо! Проверим отзыв по ссылке и покажем его на странице мастера.']);
+  assert.ok(sent.some(([m, b]) => m === 'sendMessage' && b.chat_id !== G3 && /сверьте: https:\/\/t\.me\/danang_chat\/123/.test(b.text)), 'команда узнала о ссылке');
 
   // Пересланное из канала — подлинное: видно сразу, со ссылкой на публикацию.
   await start(G4);
   await press(G4, 4);
   sent.length = 0;
   await handleUpdate(db, botMessage(G4, 'Хожу третий месяц', { forward_origin: { type: 'channel', date: 1794000000, chat: { id: -1001, username: 'lena_massage' }, message_id: 7 } }));
-  assert.deepEqual(said(), ['Спасибо! Отзыв сохранён.']);
+  assert.deepEqual(said(G4), ['Спасибо! Отзыв сохранён.']);
 
   // Страница мастера: оценки — все, тексты — только «рекомендую» (4–5) и не ждущие проверки; в каталоге — та же репутация.
   const entries = async () => (await page()).feedback_entries.map((f) => [f.rating, f.comment, f.via, f.source_url, f.practice_title]);
@@ -2065,7 +2068,7 @@ test('отзывы на услуги: вопрос через сутки пос�
   const [stone] = await db.insert(practicesTable).values({ host_id: host!.id, title: 'Стоун-массаж', topic: 'телесные практики', category: 'body', status: 'published', position: 1 }).returning();
   sent.length = 0;
   await start(G5);
-  const choice = sent.find(([m]) => m === 'sendMessage')![1];
+  const choice = sent.find(([m, b]) => m === 'sendMessage' && b.chat_id === G5)![1];
   assert.deepEqual(choice.reply_markup.inline_keyboard.map((r: { text: string }[]) => r[0]!.text), ['Тайский массаж', 'Стоун-массаж']);
   await handleUpdate(db, { update_id: 1, callback_query: { id: 'q', from: { id: G5, first_name: 'G5' }, data: `pfa:${stone!.id}` } });
   assert.deepEqual(labels(), [[G5, 'Вы были у мастера?']]);
