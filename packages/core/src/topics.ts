@@ -36,16 +36,16 @@ export interface TopicItem extends TopicGuide {
  * его правят команда и хранитель тем (ADR-0010).
  *
  * Образец — категории витрины Luma (Discover): slug и название берём оттуда — Wellness, Fitness, Arts & Culture,
- * Games, Family, Food & Drink, Tech. В публичном API Luma категорий нет, так что это имена с их сайта.
- * `social`, `learning` и `travel` — наши: в Luma такого нет.
+ * Family, Food & Drink, Tech. В публичном API Luma категорий нет, так что это имена с их сайта.
+ * `parties`, `social` и `travel` — наши: в Luma такого нет. Игры у Luma отдельно (Games); у нас они в `social`:
+ * на игру приходят за компанией, как на своп или разговорный клуб, и событие вроде «своп-квиза» не приходится делить.
  */
 export const DIRECTIONS = [
   { slug: 'arts', name: 'Искусство и культура', emoji: '🎨' }, // и делают сами (рисуют, лепят), и смотрят (концерт, кино)
   { slug: 'fitness', name: 'Фитнес', emoji: '🏃' }, // спорт и танцы
-  { slug: 'games', name: 'Игры', emoji: '🎲' },
   { slug: 'wellness', name: 'Здоровье', emoji: '🧘' }, // тело и духовные практики: йога, баня, медитация, ретриты
-  { slug: 'social', name: 'Встречи и общение', emoji: '☕' }, // в Luma такого нет
-  { slug: 'learning', name: 'Обучение', emoji: '🎓' }, // в Luma такого нет
+  { slug: 'parties', name: 'Вечеринки', emoji: '🪩' }, // в Luma такого нет: диджей-сеты, опен-эйры, рейвы, фестивали
+  { slug: 'social', name: 'Игры и общение', emoji: '🎲' }, // в Luma такого нет: игры, встречи, свопы, клубы и лекции
   { slug: 'family', name: 'Семья', emoji: '👶' },
   { slug: 'travel', name: 'Туры и походы', emoji: '🧭' }, // в Luma такого нет
   { slug: 'food', name: 'Еда и напитки', emoji: '🍜' },

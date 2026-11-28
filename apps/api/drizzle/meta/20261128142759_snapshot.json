@@ -1,6 +1,6 @@
 {
-  "id": "6dcd0a58-3a03-49a5-b64a-dd3a2d43ab03",
-  "prevId": "617511a8-c6c4-44d1-b60a-6e85b70f8c0c",
+  "id": "efa18b38-61aa-4340-a14f-832c41a52271",
+  "prevId": "c49d2af1-ae2e-453a-8b55-0a7b0289ce06",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -284,285 +284,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.collected_event_signups": {
-      "name": "collected_event_signups",
-      "schema": "",
-      "columns": {
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "collected_event_signups_user_idx": {
-          "name": "collected_event_signups_user_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "collected_event_signups_external_id_collected_events_external_id_fk": {
-          "name": "collected_event_signups_external_id_collected_events_external_id_fk",
-          "tableFrom": "collected_event_signups",
-          "tableTo": "collected_events",
-          "columnsFrom": [
-            "external_id"
-          ],
-          "columnsTo": [
-            "external_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "collected_event_signups_user_id_users_id_fk": {
-          "name": "collected_event_signups_user_id_users_id_fk",
-          "tableFrom": "collected_event_signups",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {
-        "collected_event_signups_external_id_user_id_pk": {
-          "name": "collected_event_signups_external_id_user_id_pk",
-          "columns": [
-            "external_id",
-            "user_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.collected_events": {
-      "name": "collected_events",
-      "schema": "",
-      "columns": {
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "city_id": {
-          "name": "city_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'danang'"
-        },
-        "announcement": {
-          "name": "announcement",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event": {
-          "name": "event",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "starts_at": {
-          "name": "starts_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ends_at": {
-          "name": "ends_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "telegram_username": {
-          "name": "telegram_username",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signup_url": {
-          "name": "signup_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claimed_event_id": {
-          "name": "claimed_event_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "views": {
-          "name": "views",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reactions": {
-          "name": "reactions",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cover_checked_at": {
-          "name": "cover_checked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "video_url": {
-          "name": "video_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "video_at": {
-          "name": "video_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "video_tries": {
-          "name": "video_tries",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "published_at": {
-          "name": "published_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "collected_events_starts_idx": {
-          "name": "collected_events_starts_idx",
-          "columns": [
-            {
-              "expression": "starts_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "collected_events_username_idx": {
-          "name": "collected_events_username_idx",
-          "columns": [
-            {
-              "expression": "telegram_username",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "collected_events_city_id_cities_id_fk": {
-          "name": "collected_events_city_id_cities_id_fk",
-          "tableFrom": "collected_events",
-          "tableTo": "cities",
-          "columnsFrom": [
-            "city_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "collected_events_claimed_event_id_events_id_fk": {
-          "name": "collected_events_claimed_event_id_events_id_fk",
-          "tableFrom": "collected_events",
-          "tableTo": "events",
-          "columnsFrom": [
-            "claimed_event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -926,7 +647,7 @@
           "name": "user_id",
           "type": "bigint",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "kind": {
           "name": "kind",
@@ -1079,6 +800,124 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "place": {
+          "name": "place",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "time_tbd": {
+          "name": "time_tbd",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "display_price": {
+          "name": "display_price",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tags": {
+          "name": "tags",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telegram_username": {
+          "name": "telegram_username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "whatsapp_phone": {
+          "name": "whatsapp_phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "instagram_username": {
+          "name": "instagram_username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "announcement": {
+          "name": "announcement",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "views": {
+          "name": "views",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reactions": {
+          "name": "reactions",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cover_checked_at": {
+          "name": "cover_checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "video_url": {
+          "name": "video_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "video_at": {
+          "name": "video_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "video_tries": {
+          "name": "video_tries",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {
@@ -1087,6 +926,36 @@
           "columns": [
             {
               "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_start_idx": {
+          "name": "events_start_idx",
+          "columns": [
+            {
+              "expression": "start_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_username_idx": {
+          "name": "events_username_idx",
+          "columns": [
+            {
+              "expression": "telegram_username",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1127,7 +996,15 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "events_external_id_unique": {
+          "name": "events_external_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "external_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "events_kind_check": {
@@ -1271,7 +1148,7 @@
       "checkConstraints": {
         "guests_approval_status_check": {
           "name": "guests_approval_status_check",
-          "value": "approval_status in ('approved', 'maybe', 'declined', 'waitlist')"
+          "value": "approval_status in ('approved', 'maybe', 'declined', 'waitlist', 'pending_approval')"
         },
         "guests_plus_ones_check": {
           "name": "guests_plus_ones_check",
@@ -1811,12 +1688,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "collected_external_id": {
-          "name": "collected_external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "event_id": {
           "name": "event_id",
           "type": "text",
@@ -1864,19 +1735,6 @@
           "onDelete": "cascade",
           "onUpdate": "cascade"
         },
-        "photos_collected_external_id_collected_events_external_id_fk": {
-          "name": "photos_collected_external_id_collected_events_external_id_fk",
-          "tableFrom": "photos",
-          "tableTo": "collected_events",
-          "columnsFrom": [
-            "collected_external_id"
-          ],
-          "columnsTo": [
-            "external_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "photos_event_id_events_id_fk": {
           "name": "photos_event_id_events_id_fk",
           "tableFrom": "photos",
@@ -1900,13 +1758,6 @@
             "user_id"
           ]
         },
-        "photos_collected_external_id_unique": {
-          "name": "photos_collected_external_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "collected_external_id"
-          ]
-        },
         "photos_event_id_unique": {
           "name": "photos_event_id_unique",
           "nullsNotDistinct": false,
@@ -1919,7 +1770,7 @@
       "checkConstraints": {
         "photos_owner_check": {
           "name": "photos_owner_check",
-          "value": "num_nonnulls(\"photos\".\"user_id\", \"photos\".\"collected_external_id\", \"photos\".\"event_id\") = 1"
+          "value": "num_nonnulls(\"photos\".\"user_id\", \"photos\".\"event_id\") = 1"
         },
         "photos_place_check": {
           "name": "photos_place_check",
@@ -3653,13 +3504,7 @@
           "name": "event_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
-        },
-        "collected_external_id": {
-          "name": "collected_external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "referrer_id": {
           "name": "referrer_id",
@@ -3681,21 +3526,6 @@
           "columns": [
             {
               "expression": "event_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "visits_collected_idx": {
-          "name": "visits_collected_idx",
-          "columns": [
-            {
-              "expression": "collected_external_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3764,19 +3594,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "visits_collected_external_id_collected_events_external_id_fk": {
-          "name": "visits_collected_external_id_collected_events_external_id_fk",
-          "tableFrom": "visits",
-          "tableTo": "collected_events",
-          "columnsFrom": [
-            "collected_external_id"
-          ],
-          "columnsTo": [
-            "external_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "visits_referrer_id_users_id_fk": {
           "name": "visits_referrer_id_users_id_fk",
           "tableFrom": "visits",
@@ -3794,12 +3611,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "visits_target_check": {
-          "name": "visits_target_check",
-          "value": "num_nonnulls(\"visits\".\"event_id\", \"visits\".\"collected_external_id\") = 1"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

@@ -1,5 +1,11 @@
 -- ADR-0014: собранные события переезжают в events. Порядок важен: колонки → перенос строк и ссылок → удаление старого.
 -- Блоки переноса написаны руками поверх сгенерированной схемы.
+ALTER TABLE "events" ADD COLUMN "platform" text DEFAULT 'yaswami' NOT NULL;--> statement-breakpoint
+ALTER TABLE "events" ADD COLUMN "visibility" text DEFAULT 'private' NOT NULL;--> statement-breakpoint
+ALTER TABLE "events" ADD COLUMN "showcase_status" text;--> statement-breakpoint
+ALTER TABLE "events" ADD CONSTRAINT "events_platform_check" CHECK (platform in ('yaswami', 'external'));--> statement-breakpoint
+ALTER TABLE "events" ADD CONSTRAINT "events_visibility_check" CHECK (visibility in ('public', 'private'));--> statement-breakpoint
+ALTER TABLE "events" ADD CONSTRAINT "events_showcase_status_check" CHECK (showcase_status in ('pending', 'approved', 'published', 'rejected'));--> statement-breakpoint
 ALTER TABLE "events" ALTER COLUMN "user_id" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "events" ADD COLUMN "place" text;--> statement-breakpoint
 ALTER TABLE "events" ADD COLUMN "time_tbd" boolean DEFAULT false NOT NULL;--> statement-breakpoint
