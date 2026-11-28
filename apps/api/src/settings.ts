@@ -8,6 +8,11 @@ export const settings = {
   teamBotToken: process.env.TEAM_BOT_TOKEN ?? '',
   /** Возможности, открытые всем без личного включения (имена из Feature в core), через запятую. */
   featuresOn: (process.env.FEATURES_ON ?? '').split(',').map((f) => f.trim()).filter(Boolean),
+  /**
+   * Слать уведомления виджетом (sendWidget, Bot API 10.4). Выключено: клиенты Telegram виджеты пока не показывают, и карточка
+   * уходит обычным сообщением с кнопками. Включить — BOT_WIDGETS=1.
+   */
+  botWidgets: process.env.BOT_WIDGETS === '1',
   /** Сколько событий организатор создаёт бесплатно; дальше — по подписке (её пока нет). */
   freeEventsLimit: Number(process.env.FREE_EVENTS_LIMIT ?? 10),
   /** Сколько ждать перед уведомлением о записи: за это время гость может передумать, а записи — собраться в сводку. */

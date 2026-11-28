@@ -73,6 +73,8 @@ bot.call = async (method, body) => (sent.push([method, body]), { ok: true, resul
 Object.assign(bot.pace, { globalMs: 0, chatMs: 0 });
 // В тестах создание событий открыто всем, как было до возможностей; сам запрет проверяет тест «возможность event_create».
 settings.featuresOn = ['event_create'];
+// Карточки уведомлений тесты читают из состояния виджета (public_data); путь без виджетов — в notifications.test.ts.
+settings.botWidgets = true;
 // Лимит запросов в минуту тестам мешал бы: один «пользователь» делает их сотни. Сам лимит проверяет тест «безопасность».
 settings.requestsPerMinute = Infinity;
 // Адрес тестового бакета (setBucket ниже): расшифровка качает вложения только оттуда.

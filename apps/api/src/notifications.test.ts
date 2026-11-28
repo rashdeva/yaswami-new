@@ -6,7 +6,11 @@ import type { CollectedEventItem, Event } from '@yaswami/core';
 import { ADDRESS_MAX, NAME_MAX } from '@yaswami/core';
 import type { Card } from './notifications.ts';
 import { sendCard, templates, toWidget, widgetHtml } from './notifications.ts';
+import { settings } from './settings.ts';
 import { bot, parseIncoming } from './telegram.ts';
+
+// Шаблоны проверяются по состоянию виджета; путь без виджетов — свой тест.
+settings.botWidgets = true;
 
 const realCall = bot.call;
 Object.assign(bot.pace, { globalMs: 0, chatMs: 0 }); // паузы очереди проверяет отдельный тест
@@ -124,6 +128,20 @@ test('размер: код виджета ≤ 4096 байт после сжат�
     assert.ok([...widget.caption].length <= 1024, `${moment}: подпись`);
     for (const [b] of widget.reply_markup.inline_keyboard) assert.ok([...b!.text].length <= 64 && ('url' in b! ? URL.canParse(b.url) : Buffer.byteLength(b!.callback_data) <= 64), `${moment}: кнопка`);
   }
+});
+
+test('карточка: без виджетов — обычное сообщение с кнопками', async () => {
+  const calls: [string, any][] = [];
+  bot.call = async (method, body) => (calls.push([method, body]), { ok: true });
+  settings.botWidgets = false;
+  try {
+    await sendCard(5, 'rsvp_confirmed', { event });
+  } finally {
+    settings.botWidgets = true;
+  }
+  assert.deepEqual(calls.map(([m]) => m), ['sendMessage']);
+  assert.equal(calls[0]![1].text, '✅ Вы записаны: Йога на пляже\n🗓 сб, 14 ноября, 19:00\n📍 Пляж Микхе');
+  assert.ok(calls[0]![1].reply_markup.inline_keyboard.length);
 });
 
 test('карточка: виджет, при отказе — обычное сообщение; сбой Telegram не бросает', async () => {

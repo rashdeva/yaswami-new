@@ -1,4 +1,4 @@
-// Уведомления бота: момент → шаблон → виджет. Новый момент — это новая запись в `templates`; отправка (`notify`)
+// Уведомления бота: момент → шаблон → сообщение с кнопками (или виджет, settings.botWidgets). Новый момент — это новая запись в `templates`; отправка (`notify`)
 // про моменты ничего не знает.
 import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
@@ -169,10 +169,18 @@ export async function notify<K extends Moment & Notification>(db: Db, userId: nu
   }
 }
 
-/** Карточка в чат Telegram: виджет, при отказе — обычное сообщение. Не бросает. */
+/**
+ * Карточка в чат Telegram: обычное сообщение с кнопками, а с включёнными виджетами (settings.botWidgets) — виджет, при
+ * отказе — то же сообщение. Не бросает.
+ */
 export async function sendCard<K extends Moment>(chatId: number, moment: K, payload: MomentPayload<K>): Promise<void> {
   try {
     const { caption, reply_markup, ...widget } = toWidget((templates[moment] as (p: MomentPayload<K>) => Card)(payload));
+    if (!settings.botWidgets) {
+      const sent = await bot.send('sendMessage', { chat_id: chatId, text: caption, reply_markup });
+      if (!sent.ok) console.error(`notify ${moment} → ${chatId}: ${sent.description}`);
+      return;
+    }
     let sent = await bot.send('sendWidget', { chat_id: chatId, caption, reply_markup, ...widget });
     // Виджет не прошёл (метод недоступен, старый сервер) — то же самое обычным сообщением с кнопками.
     // 403 (человек не открывал или заблокировал бота) и 429 (лимит) вторым сообщением не лечатся.
