@@ -229,6 +229,8 @@ h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 28px 20p
 
 /* состояния целого экрана: загрузка, ошибка, «откройте в Telegram» */
 .state { min-height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 32px; gap: 10px; }
+/* Пустое направление: под словами сразу блок «Предложить канал», поэтому не на весь экран. */
+.state.short { min-height: 0; padding-top: 48px; }
 .state b { font-size: 48px; font-weight: 400; }
 .state p { margin: 0; color: var(--hint); }
 .state .chip { margin-top: 10px; }

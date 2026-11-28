@@ -205,10 +205,13 @@ test('полки: период по календарю города, прави�
 
 test('направления: темы по направлениям в их порядке, тема без направления — отдельно в конце', async () => {
   const { topicsByDirection, directionBySlug } = await import('./index.ts');
-  const t = (name: string, direction: 'body' | 'creative' | 'kids' | null) => ({ name, direction });
-  const groups = topicsByDirection([t('музыка', 'creative'), t('йога', 'body'), t('новая', null), t('баня', 'body')]);
-  assert.deepEqual(groups.map((g) => [g.direction?.slug ?? null, g.topics.map((x) => x.name)]), [['body', ['йога', 'баня']], ['creative', ['музыка']], [null, ['новая']]]);
-  assert.equal(directionBySlug('kids')?.name, 'Детям');
+  const t = (name: string, direction: 'wellness' | 'arts' | 'family' | null) => ({ name, direction });
+  const topics = [t('йога', 'wellness'), t('музыка', 'arts'), t('новая', null), t('баня', 'wellness')];
+  const slugs = (groups: ReturnType<typeof topicsByDirection<(typeof topics)[number]>>) => groups.map((g) => [g.direction?.slug ?? null, g.topics.map((x) => x.name)]);
+  assert.deepEqual(slugs(topicsByDirection(topics)), [['arts', ['музыка']], ['wellness', ['йога', 'баня']], [null, ['новая']]]);
+  assert.deepEqual(slugs(topicsByDirection(topics, true)), [['arts', ['музыка']], ['wellness', ['йога', 'баня']], ['food', []], ['tech', []], [null, ['новая']]],
+    '«Еда и напитки» и «Технологии» стоят на витрине и пустыми');
+  assert.equal(directionBySlug('family')?.name, 'Семья');
   assert.equal(directionBySlug('nope'), undefined);
 });
 
