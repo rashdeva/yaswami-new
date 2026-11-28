@@ -68,9 +68,11 @@ export function HostFeedback({ host, own }: Props) {
             <ol className="group add-steps">
               {STEPS.map((s) => <li key={s.emoji} className="row"><span aria-hidden="true">{s.emoji}</span><span>{s.text}</span></li>)}
             </ol>
-            {own
-              ? <button className="cta" onClick={() => setHow(false)}>Понятно</button>
-              : <button className="cta" onClick={() => { track('host_feedback_bot_opened', { host_id: host.id }); openExternal(host.feedback_url); }}>Открыть бота</button>}
+            <div className="drawer-bar">
+              {own
+                ? <button className="cta" onClick={() => setHow(false)}>Понятно</button>
+                : <button className="cta" onClick={() => { track('host_feedback_bot_opened', { host_id: host.id }); openExternal(host.feedback_url); }}>Открыть бота</button>}
+            </div>
           </Drawer.Content>
         </Drawer.Portal>
       </Drawer.Root>
