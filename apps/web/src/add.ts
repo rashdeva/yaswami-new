@@ -13,18 +13,26 @@ export interface DemoField {
   source?: string;
 }
 
-export interface AddExample {
-  kind: AddKind;
-  chip: string; // подпись плашки
+/** Один показ разбора для `ParseDemo`: что человек пишет боту и что бот из этого собирает. */
+export interface DemoExample {
+  key: string; // отличает примеры друг от друга: по нему сцена начинается заново
   emoji: string;
   title: string; // заголовок карточки, которую собрал бот
+  badge: string; // плашка на готовой карточке: что будет дальше
   message: string; // что человек пишет боту
   fields: DemoField[];
+  /** Что бот «говорит», пока собирает и когда собрал; нет — «раскладывает по полям» и «готово, проверьте». */
+  status?: { parsing: string; done: string };
+}
+
+export interface AddExample extends DemoExample {
+  kind: AddKind;
+  chip: string; // подпись плашки
 }
 
 export const ADD_EXAMPLES: Record<AddKind, AddExample> = {
   event: {
-    kind: 'event', chip: 'Событие', emoji: '🗓', title: 'Событие',
+    kind: 'event', key: 'event', badge: 'Добавляем?', chip: 'Событие', emoji: '🗓', title: 'Событие',
     message: 'Йога на закате в субботу в 18:00, Green One на My Khe. 150k, коврики дадим, ведёт @anya_yoga 🧘',
     fields: [
       { label: 'Что', value: 'Йога на закате', source: 'Йога на закате' },
@@ -35,7 +43,7 @@ export const ADD_EXAMPLES: Record<AddKind, AddExample> = {
     ],
   },
   product: {
-    kind: 'product', chip: 'Товар', emoji: '🛍', title: 'Товар',
+    kind: 'product', key: 'product', badge: 'Добавляем?', chip: 'Товар', emoji: '🛍', title: 'Товар',
     message: 'Пеку медовик порционно 🍯 Кусочек 100 г — 55k, можно с доставкой по Сон Чя',
     fields: [
       { label: 'Товар', value: 'Медовик порционно', source: 'медовик порционно' },
@@ -46,7 +54,7 @@ export const ADD_EXAMPLES: Record<AddKind, AddExample> = {
     ],
   },
   service: {
-    kind: 'service', chip: 'Услуга', emoji: '💆', title: 'Услуга',
+    kind: 'service', key: 'service', badge: 'Добавляем?', chip: 'Услуга', emoji: '💆', title: 'Услуга',
     message: 'Делаю массаж спины и шеи, 60 минут — 400k. Приезжаю к вам домой 🌿',
     fields: [
       { label: 'Услуга', value: 'Массаж спины и шеи', source: 'массаж спины и шеи' },
@@ -57,6 +65,24 @@ export const ADD_EXAMPLES: Record<AddKind, AddExample> = {
     ],
   },
 };
+
+/** Примеры экрана «Добавить» в порядке плашек — список для `useParseDemo`. */
+export const ADD_EXAMPLE_LIST: readonly AddExample[] = ADD_KINDS.map((k) => ADD_EXAMPLES[k]);
+
+/**
+ * Показ отзыва о мастере: оценку человек ставит кнопкой, мастера и услугу бот знает по ссылке — из сообщения берётся
+ * только сам текст. Поэтому у первых полей источника в сообщении нет.
+ */
+export const FEEDBACK_EXAMPLES: readonly DemoExample[] = [{
+  key: 'feedback', emoji: '⭐', title: 'Отзыв', badge: 'Опубликован',
+  message: 'Спина прошла за один сеанс, приду ещё 🙌',
+  fields: [
+    { label: 'Мастер', value: 'Лена · массаж' },
+    { label: 'Оценка', value: '★★★★★' },
+    { label: 'Отзыв', value: 'Спина прошла за один сеанс', source: 'Спина прошла за один сеанс' },
+  ],
+  status: { parsing: 'собирает отзыв', done: 'готово — на странице мастера' },
+}];
 
 /** Кусок сообщения; `field` — номер поля, которое из него взято. */
 export interface Segment {
