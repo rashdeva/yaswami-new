@@ -44,6 +44,7 @@ export function CollectedScreen({ id, authed, canLogin, signedUp, onClaim, onOpe
   const [watch, barShown] = useScrolledPast();
   const heroVideo = useHeroVideo();
   const [viewing, setViewing] = useState<number | null>(null);
+  const [viewingShot, setViewingShot] = useState<number | null>(null); // фото сообщества из шторки организатора
 
   useEffect(() => {
     if (event) document.title = `${event.title} — ${collectedWhen(event.starts_at)}, ${city}`;
@@ -175,10 +176,11 @@ export function CollectedScreen({ id, authed, canLogin, signedUp, onClaim, onOpe
       </div>
 
       {actions && <div className="main" data-off={!barShown || undefined} inert={!barShown}><div>{actions}</div></div>}
-      <Drawer.Root open={!!hostOpen} onOpenChange={(o) => { if (!o) setHostOpen(null); }}>
+      <Drawer.Root open={!!hostOpen} onOpenChange={(o) => { if (!o) { setHostOpen(null); setViewingShot(null); } }}>
         <Drawer.Portal>
           <Drawer.Overlay className="drawer-overlay" />
-          <Drawer.Content className="drawer" aria-describedby={undefined}>
+          {/* Esc при открытом просмотре закрывает только просмотр, шторка остаётся. */}
+          <Drawer.Content className="drawer" aria-describedby={undefined} onEscapeKeyDown={(e) => { if (viewingShot !== null) e.preventDefault(); }}>
             <Drawer.Handle className="drawer-handle" />
             {/* Заголовок нужен читалкам экрана; на экране имя организатора уже говорит, чей это канал. */}
             <Drawer.Title className="sr">Канал организатора</Drawer.Title>
@@ -192,12 +194,16 @@ export function CollectedScreen({ id, authed, canLogin, signedUp, onClaim, onOpe
                 {hostOpen.summary && <p>{hostOpen.summary}</p>}
                 {hostOpen.photos.length > 0 && (
                   <div className="shots" data-vaul-no-drag>
-                    {hostOpen.photos.map((p) => (
-                      <a key={p.url} href={p.source_url} target="_blank" rel="noreferrer" aria-label="Публикация в канале организатора">
+                    {hostOpen.photos.map((p, i) => (
+                      <button key={p.url} onClick={() => setViewingShot(i)} aria-label="Открыть фото">
                         <img src={p.url} alt="" loading="lazy" onError={(e) => { e.currentTarget.parentElement!.hidden = true; }} />
-                      </a>
+                      </button>
                     ))}
                   </div>
+                )}
+                {/* Внутри Drawer.Content: для шторки просмотр — её часть, щелчок по нему не закрывает шторку. */}
+                {viewingShot !== null && (
+                  <MediaViewer items={hostOpen.photos.map((p) => ({ type: 'photo', url: p.url }))} start={viewingShot} onClose={() => setViewingShot(null)} />
                 )}
                 {!past && !onClaim && <button className="cta" onClick={signUp}>{signedUp && !event.claimed_event_id ? 'Написать организатору' : 'Записаться'}</button>}
                 {(hostOpen.channel_url || hostOpen.instagram_handle) && (

@@ -267,7 +267,7 @@ a.item { text-decoration: none; color: inherit; }
 .pad p + p { margin-top: 10px; }
 /* фото сообщества организатора: лента, листается вбок */
 .shots { display: flex; gap: 6px; margin-top: 12px; overflow-x: auto; scrollbar-width: none; }
-.shots a { flex: none; }
+.shots a, .shots button { flex: none; padding: 0; border: 0; background: none; cursor: pointer; }
 .shots img { display: block; width: 104px; height: 104px; object-fit: cover; border-radius: 14px; }
 .media { display: flex; gap: 8px; margin: 10px 0; padding: 0 16px; scroll-padding-inline: 16px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; }
 .media > button { flex: none; position: relative; padding: 0; border: 0; background: none; cursor: pointer; scroll-snap-align: start; }
@@ -275,12 +275,27 @@ a.item { text-decoration: none; color: inherit; }
 .media .video::after { content: '▶'; position: absolute; inset: 0; margin: auto; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; color: #fff; font-size: 16px; background: rgba(0, 0, 0, .45); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .hero .vctl { position: absolute; top: calc(16px + var(--inset-top, 0px)); right: 60px; display: flex; gap: 8px; }
 .hero .vctl button { width: 38px; height: 38px; border-radius: 50%; border: .5px solid rgba(255, 255, 255, .4); background: rgba(255, 255, 255, .22); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); color: #fff; font-size: 14px; cursor: pointer; }
-.viewer { position: fixed; inset: 0; z-index: 20; background: #000; color: #fff; }
-.viewer-bar { position: absolute; z-index: 1; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: calc(12px + var(--inset-top, 0px)) 16px 12px; background: linear-gradient(rgba(0, 0, 0, .6), transparent); font-size: 15px; }
+/* Просмотр фото и видео. --dy — куда утянули пальцем, --shade — насколько погас фон (useSwipeToClose). */
+.viewer { position: fixed; inset: 0; z-index: 20; color: #fff; background: rgb(0 0 0 / var(--shade, 1)); pointer-events: auto; overscroll-behavior: contain; animation: fade .18s ease-out; }
+.viewer[data-leaving] { opacity: 0; transition: opacity .2s ease-in; }
+.viewer-bar { position: absolute; z-index: 1; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: calc(12px + var(--inset-top, env(safe-area-inset-top))) 16px 12px; background: linear-gradient(rgba(0, 0, 0, .6), transparent); font-size: 15px; opacity: var(--shade, 1); }
 .viewer-bar button { width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .16); color: #fff; font-size: 18px; cursor: pointer; }
-.viewer-track { display: flex; height: 100%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior: contain; }
-.viewer-slide { flex: none; width: 100%; height: 100%; display: grid; place-items: center; scroll-snap-align: center; scroll-snap-stop: always; }
-.viewer-slide img, .viewer-slide video { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* pan-x: вбок листает браузер, вверх-вниз жест отдаётся нам — и страница под просмотром не едет. */
+.viewer-track { display: flex; height: 100%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior: contain; touch-action: pan-x; transform: translateY(var(--dy, 0)); }
+.viewer-track::-webkit-scrollbar { display: none; }
+.viewer[data-settling] .viewer-track { transition: transform .2s cubic-bezier(.2, .8, .2, 1); }
+.viewer[data-settling] { transition: background-color .2s; }
+.viewer-slide { flex: none; width: 100%; height: 100%; box-sizing: border-box; padding: var(--inset-top, env(safe-area-inset-top)) 0 var(--inset-bottom, env(safe-area-inset-bottom)); display: grid; place-items: center; scroll-snap-align: center; scroll-snap-stop: always; }
+.viewer-slide img, .viewer-slide video { max-width: 100%; max-height: 100%; object-fit: contain; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* Стрелки — только там, где есть мышь: на телефоне листают пальцем. */
+.viewer-nav { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .viewer-nav { display: grid; place-items: center; position: absolute; top: 50%; translate: 0 -50%; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .16); color: #fff; font-size: 26px; line-height: 1; cursor: pointer; opacity: var(--shade, 1); }
+  .viewer-nav.prev { left: 16px; }
+  .viewer-nav.next { right: 16px; }
+  .viewer-nav:disabled { opacity: 0; pointer-events: none; }
+}
+@media (prefers-reduced-motion: reduce) { .viewer, .viewer[data-settling], .viewer[data-settling] .viewer-track { animation: none; transition: none; } }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .pad .who { display: flex; align-items: center; gap: 12px; font-weight: 600; }
 .pad .who .ava { width: 48px; height: 48px; object-fit: cover; }

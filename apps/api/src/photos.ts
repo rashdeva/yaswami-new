@@ -1,4 +1,4 @@
-// Аватары и фото сообщества — в Postgres (ADR-0003): готовые превью Telegram, оригиналов нет.
+// Аватары — в Postgres (ADR-0003): готовые превью Telegram, оригиналов нет. Фото сообщества — в бакете (ADR-0006).
 // Обложки событий — в бакете R2 (ADR-0011), в базе только их адрес; без бакета — тоже в Postgres.
 import { createHash } from 'node:crypto';
 import { and, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';

@@ -146,9 +146,12 @@ export interface CollectedHost {
   instagram_handle: string | null; // ник в Instagram без @, как у Host в Luma: страница — instagram.com/<ник>
   photo_url: string; // аватарка прямо с серверов Telegram, у себя не храним; если фото нет или оно скрыто — по адресу 404
   confirmed: boolean; // человек вошёл в Ясвами; иначе профиль собран без его участия
-  /** Фото сообщества: последние картинки из канала, сохранённые у нас; новые сверху. `source_url` — публикация, из которой взято фото. */
+  /** Фото сообщества: последние картинки из канала (800px), лежат в нашем бакете (ADR-0006); новые сверху. `source_url` — публикация, из которой взято фото. */
   photos: { url: string; source_url: string }[];
 }
+
+/** Публикация, из которой взято фото сообщества: источник `telegram:<канал>/<публикация>` → ссылка t.me. */
+export const hostPhotoSourceUrl = (source: string) => source.replace(/^telegram:/, 'https://t.me/');
 
 /**
  * Practice: устойчивое предложение организатора без даты — регулярные занятия, услуга мастера (CONTEXT.md).

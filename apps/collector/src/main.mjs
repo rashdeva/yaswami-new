@@ -8,7 +8,7 @@ import { refreshOld } from './refresh.mjs';
 import { createBucket } from './bucket.mjs';
 import { curateTopics, syncTopics } from './topics.mjs';
 import { createStore } from './store.mjs';
-import { contactFor, fetchChannelPhotos, fetchProfile } from './host.mjs';
+import { contactFor, fetchProfile, syncHostPhotos } from './host.mjs';
 import { backfillTopics, classifyPractices } from './backfill.mjs';
 import { createSender } from './sender.mjs';
 import { fetchLeads } from './lead.mjs';
@@ -97,11 +97,12 @@ const PHOTOS_REFRESH_DAYS = Number(env.PHOTOS_REFRESH_DAYS ?? 7);
 const PHOTO_HOSTS_PER_PASS = 5;
 
 async function refreshPhotos() {
+  if (!bucket) return; // фото сообщества лежат в бакете: без него класть некуда
   for (const host of await store.stalePhotos(PHOTOS_REFRESH_DAYS, PHOTO_HOSTS_PER_PASS)) {
-    const latest = await fetchChannelPhotos(userbot, host.channel, await store.photoSources(host.id));
-    if (latest) await store.savePhotos(host.id, latest.sources, latest.added);
+    const photos = await syncHostPhotos(userbot, bucket, host.channel, host.photos);
+    if (photos) await store.savePhotos(host.id, photos);
     await store.photosChecked(host.id); // и когда канал недоступен: иначе спрашивали бы его каждый проход
-    console.log(`@${host.channel}: ${latest ? `фото ${latest.sources.length}, новых ${latest.added.length}` : 'канал недоступен'}`);
+    console.log(`@${host.channel}: ${photos ? `фото ${photos.length}` : 'канал недоступен'}`);
     await sleep(2000);
   }
 }

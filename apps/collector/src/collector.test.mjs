@@ -188,7 +188,7 @@ assert.deepEqual(refreshed['c/3#0'].media, [], 'удалённая публик�
 assert.equal('c/4#0' in refreshed, false, 'сбой ИИ — повторим в следующий проход');
 console.log('refresh ok');
 
-const { channelFromBio, contactFor, fetchChannelPhotos, pickThumb } = await import('./host.mjs');
+const { channelFromBio, contactFor, fetchChannelPhotos, pickThumb, syncHostPhotos } = await import('./host.mjs');
 const noContact = { telegram_username: null, whatsapp_phone: null };
 assert.equal(contactFor({ ...noContact, telegram_username: '@Anna' }, 'yoga_news', null), '@Anna');
 assert.equal(contactFor({ ...noContact, telegram_username: '@Yoga_News' }, 'yoga_news', null), null, 'канал-источник — не контакт');
@@ -209,7 +209,8 @@ assert.equal(channelFromBio(null, 'anna_yoga'), null);
 console.log('host ok');
 
 const sizes = [{ type: 'i' }, { type: 'm', w: 320, h: 213 }, { type: 'x', w: 800, h: 533 }, { type: 'y', w: 1280, h: 853 }];
-assert.equal(pickThumb(sizes), 'm', 'самое маленькое превью от 320px');
+assert.equal(pickThumb(sizes), 'x', 'самое маленькое превью от 800px: его открывают на весь экран');
+assert.equal(pickThumb(sizes.slice(0, 2)), 'm', 'крупнее нет — берём самое большое');
 assert.equal(pickThumb([{ type: 'i' }, { type: 's', w: 100, h: 67 }]), 's', 'мелкая картинка — берём что есть');
 assert.equal(pickThumb([{ type: 'i' }]), null, 'размеров нет');
 const jpeg = Buffer.from([0xff, 0xd8, 1, 2]);
@@ -218,13 +219,20 @@ const photo = { className: 'MessageMediaPhoto', photo: { sizes } };
 const fake = {
   connected: true,
   getMessages: async () => [post(9, photo), post(8, { className: 'MessageMediaWebPage' }), post(7, photo), post(6, null), post(5, photo)],
-  downloadMedia: async (m, { thumb }) => (assert.equal(thumb, 'm'), m.id === 5 ? Buffer.from('<html>') : jpeg),
+  downloadMedia: async (m, { thumb }) => (assert.equal(thumb, 'x'), m.id === 5 ? Buffer.from('<html>') : jpeg),
 };
 assert.deepEqual(await fetchChannelPhotos(fake, 'anna', ['telegram:anna/9']), {
   sources: ['telegram:anna/9', 'telegram:anna/7', 'telegram:anna/5'],
   added: [{ source: 'telegram:anna/7', data: jpeg }],
 }, 'только фото публикаций; известное не качаем, не-JPEG не сохраняем');
 assert.equal(await fetchChannelPhotos({ ...fake, getMessages: async () => { throw new Error('CHANNEL_PRIVATE'); } }, 'anna'), null);
+const put = [];
+const bucket = { put: async (key) => (put.push(key), `https://media/${key}`) };
+assert.deepEqual(await syncHostPhotos(fake, bucket, 'anna', [{ source: 'telegram:anna/9', url: 'https://media/old9' }, { source: 'telegram:anna/1', url: 'https://media/old1' }]), [
+  { source: 'telegram:anna/9', url: 'https://media/old9' },
+  { source: 'telegram:anna/7', url: 'https://media/hosts/telegram/anna/7.jpg' },
+], 'новые сверху; выпавшее из канала убираем, не-JPEG пропускаем, известное не перезаливаем');
+assert.deepEqual(put, ['hosts/telegram/anna/7.jpg']);
 console.log('photos ok');
 
 const { toStats } = await import('./mtproto.mjs');
