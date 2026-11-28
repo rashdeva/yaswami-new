@@ -26,7 +26,7 @@ before(async () => {
   await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
   await db.$client.end();
   sql = postgres(url.href, { max: 1, onnotice: () => {} });
-  await sql`truncate users, collected_events, hosts, tg_accounts, conversations, collector_cursors, tg_peers cascade`;
+  await sql`truncate users, events, hosts, tg_accounts, conversations, collector_cursors, tg_peers cascade`;
   await sql`delete from sources`;
   await sql`delete from cities where id <> 'danang'`; // города из прошлого запуска
   store = createStore(url.href);
@@ -59,16 +59,16 @@ test('сборщик: события, источники и отметки', asy
   assert.deepEqual(await store.cursors(), { danang: 42 });
 
   const external_id = 'telegram:danang/42#0';
-  const row = { external_id, channel: 'danang', city_id: 'danang', announcement: { id: 'danang/42', url: 'https://t.me/danang/42', text: 'Йога' }, event, signup_url: 'https://t.me/anna_yoga' };
+  const row = { external_id, channel: 'danang', city_id: 'danang', announcement: { id: 'danang/42', url: 'https://t.me/danang/42', text: 'Йога' }, event };
   await store.upsert(row);
   await store.upsert({ ...row, event: { ...event, price: '100k' } });
   const [known] = await store.upcoming();
   assert.deepEqual([known.external_id, known.event.price, known.status, known.has_cover], [external_id, '100k', 'pending', false]);
-  assert.equal((await sql`select telegram_username from collected_events`)[0]!.telegram_username, 'anna_yoga', 'контакт — без @ и в нижнем регистре');
+  assert.equal((await sql`select telegram_username from events`)[0]!.telegram_username, 'anna_yoga', 'контакт — без @ и в нижнем регистре');
   // Команда поправила событие посреди прохода: дополнение по снятой в начале версии её правку не затирает.
   assert.ok(await store.upsert({ ...row, event: { ...event, price: '100k', place: 'Пляж' }, loaded_at: known.loaded_at }), 'версия та же — пишем');
   const [fresh] = await store.upcoming();
-  await sql`update collected_events set event = event || '{"title":"Йога (правка)"}', updated_at = now() where external_id = ${external_id}`;
+  await sql`update events set name = 'Йога (правка)', updated_at = now() where external_id = ${external_id}`;
   assert.equal(await store.upsert({ ...row, event: { ...event, price: '200k' }, loaded_at: fresh.loaded_at }), null, 'строку поменяли — пропуск');
   const [edited] = await store.upcoming();
   assert.deepEqual([edited.event.title, edited.event.price, edited.event.place], ['Йога (правка)', '100k', 'Пляж']);
@@ -77,7 +77,7 @@ test('сборщик: события, источники и отметки', asy
   await store.setStats('telegram:danang/42#', { views: 100, reactions: 5 });
   await store.saveCover(external_id, 'telegram:danang/42', { url: 'https://media.test/covers/collected/danang-42-0-ab.jpg' });
   await store.saveCover(external_id, 'telegram:danang/42', { data: Buffer.from([0xff, 0xd8, 2]) }); // обложка уже есть — не трогаем
-  assert.deepEqual((await sql`select url, data from photos where collected_external_id = ${external_id}`).map((r) => [r.url, r.data]), [['https://media.test/covers/collected/danang-42-0-ab.jpg', null]], 'файл в бакете — в базе только адрес');
+  assert.deepEqual((await sql`select url, data from photos where event_id = 'danang-42-0'`).map((r) => [r.url, r.data]), [['https://media.test/covers/collected/danang-42-0-ab.jpg', null]], 'файл в бакете — в базе только адрес');
   assert.deepEqual((await store.upcoming()).map((e: any) => e.has_cover), [true]);
   assert.deepEqual((await store.withoutTopic()).map((e: any) => [e.external_id, e.city, e.timezone]), [[external_id, 'Дананг', 'Asia/Ho_Chi_Minh']], 'повторный разбор — в городе и поясе события');
   await store.setEvent(external_id, { ...event, topic: 'йога' });
@@ -87,12 +87,12 @@ test('сборщик: события, источники и отметки', asy
   assert.deepEqual((await store.withoutMedia()).map((e: any) => [e.external_id, e.city, e.timezone]), [[external_id, 'Дананг', 'Asia/Ho_Chi_Minh']]);
   await store.refreshed(external_id, { ...event, topic: 'йога', description: 'Полное описание' }, [{ type: 'photo', url: 'https://m/1.jpg' }]);
   assert.equal((await store.withoutMedia()).length, 0);
-  const [again] = await sql`select event->>'description' as description, announcement->'media' as media, announcement->>'url' as url from collected_events`;
+  const [again] = await sql`select description, announcement->'media' as media, announcement->>'url' as url from events`;
   assert.deepEqual([again!.description, again!.media, again!.url], ['Полное описание', [{ type: 'photo', url: 'https://m/1.jpg' }], 'https://t.me/danang/42']);
 
   // Профиль собираем только по одобренным событиям.
   assert.equal((await store.unprofiled()).length, 0);
-  await sql`update collected_events set status = 'approved'`;
+  await sql`update events set showcase_status = 'approved'`;
   assert.deepEqual((await store.unprofiled()).map((r: any) => [r.username, r.city_id]), [['anna_yoga', 'danang']]);
 
   // Доверенный источник: одобренных не меньше порога и ни одного отклонённого. Статус пишется только при вставке.
@@ -101,10 +101,21 @@ test('сборщик: события, источники и отметки', asy
   const second = { ...row, external_id: 'telegram:danang/43#0', status: 'approved' };
   await store.upsert(second);
   await store.upsert({ ...second, status: 'pending' });
-  assert.equal((await sql`select status from collected_events where external_id = ${second.external_id}`)[0]!.status, 'approved');
+  assert.equal((await sql`select showcase_status from events where external_id = ${second.external_id}`)[0]!.showcase_status, 'approved');
   assert.deepEqual(await store.trustedChannels(2), ['danang']);
-  await sql`update collected_events set status = 'rejected' where external_id = ${second.external_id}`;
+  await sql`update events set showcase_status = 'rejected' where external_id = ${second.external_id}`;
   assert.deepEqual(await store.trustedChannels(1), []);
+
+  // Организатор подтвердил событие как своё (ADR-0014): новый анонс его больше не меняет, а отклик и медиа — обновляет.
+  await sql`insert into users (id, first_name, lang, timezone) values (900, 'Анна', 'ru', 'UTC')`;
+  await sql`update events set user_id = 900, platform = 'yaswami', name = 'Йога от Анны' where external_id = ${external_id}`;
+  assert.equal(await store.upsert({ ...row, event: { ...event, title: 'Йога из анонса' } }), null, 'у события есть хозяин — анонс его не трогает');
+  await store.setEvent(external_id, { ...event, title: 'Йога из анонса' });
+  await store.refreshed(external_id, { ...event, title: 'Йога из анонса' }, [{ type: 'photo', url: 'https://m/2.jpg' }]);
+  await store.setStats('telegram:danang/42#', { views: 200, reactions: 9 });
+  const [owned] = await sql`select name, views, announcement->'media' as media from events where external_id = ${external_id}`;
+  assert.deepEqual([owned!.name, owned!.views, owned!.media], ['Йога от Анны', 200, [{ type: 'photo', url: 'https://m/2.jpg' }]]);
+  assert.ok((await store.upcoming()).some((e: any) => e.external_id === external_id), 'подтверждённое остаётся в известных: повтор анонса склеится с ним, а не создаст второе');
 });
 
 test('сборщик: организаторы, их услуги и фото', async () => {
@@ -216,13 +227,13 @@ test('сборщик: Запросы организаторов и Находк�
 });
 
 test('сборщик: темы из базы, кандидаты из меток, новая тема переводит события без темы', async () => {
-  await sql`delete from collected_events`;
+  await sql`delete from events`;
   await sql`delete from topics where origin <> 'built_in'`;
   assert.deepEqual([(await store.topics()).length, (await store.topics())[0].name], [12, 'баня']);
 
-  const add = (n: number, tag: string, host: string, topic = 'другое') => sql`
-    insert into collected_events (external_id, channel, announcement, event, starts_at, signup_url, telegram_username)
-    values (${`telegram:t/${n}#0`}, 't', ${sql.json({ url: 'https://t.me/t/1' })}, ${sql.json({ ...event, title: `Событие ${n}`, tags: [tag], topic })}, ${starts}, '', ${host})`;
+  const add = async (n: number, tag: string, host: string, topic = 'другое') => {
+    await store.upsert({ external_id: `telegram:t/${n}#0`, channel: 't', city_id: 'danang', announcement: { url: 'https://t.me/t/1' }, event: { ...event, title: `Событие ${n}`, tags: [tag], topic, telegram_username: host } });
+  };
   await add(1, 'Падел', 'a');
   await add(2, 'падел', 'b');
   await add(3, 'падел', 'b');
@@ -236,7 +247,7 @@ test('сборщик: темы из базы, кандидаты из меток
   assert.equal(await store.addTopic(topic), true);
   assert.equal(await store.addTopic({ ...topic, slug: 'racket2' }), false, 'имя занято');
   assert.deepEqual((await sql`select origin, color, position from topics where name = ${topic.name}`).map((r) => ({ ...r })), [{ origin: 'collector', color: '#0ea5e9', position: 13 }]);
-  assert.deepEqual((await sql`select event->>'topic' as topic from collected_events order by external_id`).map((r) => r.topic), ['ракеточный спорт', 'ракеточный спорт', 'ракеточный спорт', 'другое', 'спорт']);
+  assert.deepEqual((await sql`select topic from events order by external_id`).map((r) => r.topic), ['ракеточный спорт', 'ракеточный спорт', 'ракеточный спорт', 'другое', 'спорт']);
   assert.deepEqual((await store.topicCandidates(limits(1, 1))).map((c: any) => c.tag), ['свечи']);
 
   // Метка внутри широкой темы: кандидат со своим порогом; выделенная тема забирает события только с этой меткой
@@ -248,7 +259,7 @@ test('сборщик: темы из базы, кандидаты из меток
   await sql`insert into subscriptions (user_id, topics) values (901, ${sql.json(['игры'])}), (902, ${sql.json(['йога'])})`;
   assert.deepEqual((await store.topicCandidates(limits(5, 5))).map((c: any) => [c.tag, c.inside, c.events_count, c.inside_events_count]), [['мафия', 'игры', 2, 3]]);
   assert.equal(await store.addTopic({ ...topic, name: 'мафия', slug: 'mafia', tags: ['мафия', 'игра'] }, { from: 'игры', tag: 'мафия' }), true);
-  assert.deepEqual((await sql`select event->>'topic' as topic from collected_events where external_id in ('telegram:t/6#0', 'telegram:t/7#0', 'telegram:t/8#0') order by external_id`).map((r) => r.topic), ['мафия', 'мафия', 'игры']);
+  assert.deepEqual((await sql`select topic from events where external_id in ('telegram:t/6#0', 'telegram:t/7#0', 'telegram:t/8#0') order by external_id`).map((r) => r.topic), ['мафия', 'мафия', 'игры']);
   assert.deepEqual((await sql`select topics from subscriptions order by user_id`).map((r) => r.topics), [['игры', 'мафия'], ['йога']]);
   assert.deepEqual((await store.topics()).slice(-2).map((t: any) => t.name), ['ракеточный спорт', 'мафия']);
   await sql`delete from topics where origin <> 'built_in'`;
@@ -328,17 +339,16 @@ test('сборщик: профили Instagram — свой список, Instag
   assert.equal((await store.instagramSources()).find((s: any) => s.channel === 'instagram:Found.By.Tag').host_username, 'ig_found');
 
   const event = { title: 'Йога', description: '', starts_at: new Date(Date.now() + 86_400_000).toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, instagram_username: 'anna.yoga', url: null };
-  await store.upsert({ external_id: 'instagram:C1#0', channel: 'instagram:anna.yoga', city_id: 'danang', announcement: { id: 'C1', url: 'https://www.instagram.com/p/C1/', text: '' }, event, signup_url: 'https://ig.me/m/anna.yoga' });
+  await store.upsert({ external_id: 'instagram:C1#0', channel: 'instagram:anna.yoga', city_id: 'danang', announcement: { id: 'C1', url: 'https://www.instagram.com/p/C1/', text: '' }, event });
   await store.setStats('instagram:C1#', { views: 5, reactions: 7 });
   assert.deepEqual([...await store.instagramWithoutCover()], [], 'без фото в бакете — нечем');
-  await sql`update collected_events set announcement = announcement || ${sql.json({ media: [{ type: 'video', url: 'https://m/v.mp4' }, { type: 'photo', url: 'https://m/1.jpg' }, { type: 'photo', url: 'https://m/2.jpg' }] })} where external_id = 'instagram:C1#0'`;
+  await sql`update events set announcement = announcement || ${sql.json({ media: [{ type: 'video', url: 'https://m/v.mp4' }, { type: 'photo', url: 'https://m/1.jpg' }, { type: 'photo', url: 'https://m/2.jpg' }] })} where external_id = 'instagram:C1#0'`;
   assert.deepEqual((await store.instagramWithoutCover()).map((r: any) => [r.external_id, r.url]), [['instagram:C1#0', 'https://m/1.jpg']], 'первое фото, а не ролик');
   await store.saveCover('instagram:C1#0', 'instagram:C1', { data: Buffer.from([0xff, 0xd8]) });
   assert.deepEqual([...await store.instagramWithoutCover()], [], 'обложка уже есть');
-  assert.deepEqual((await sql`select views, reactions from collected_events where external_id = 'instagram:C1#0'`).map((r) => [r.views, r.reactions]), [[5, 7]]);
+  assert.deepEqual((await sql`select views, reactions from events where external_id = 'instagram:C1#0'`).map((r) => [r.views, r.reactions]), [[5, 7]]);
   assert.ok(!(await store.withoutMedia()).some((e: any) => e.external_id === 'instagram:C1#0'));
-  await sql`delete from photos where collected_external_id = 'instagram:C1#0'`;
-  await sql`delete from collected_events where external_id = 'instagram:C1#0'`;
+  await sql`delete from events where external_id = 'instagram:C1#0'`;
   await sql`delete from sources`;
   await sql`delete from hosts where username in ('ig_anna', 'ig_spam', 'ig_found')`;
 });

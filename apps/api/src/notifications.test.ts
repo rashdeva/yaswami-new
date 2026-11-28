@@ -21,7 +21,7 @@ const event: Event = {
   start_at: new Date('2026-11-14T19:00:00+07:00'), end_at: null, timezone: 'Asia/Ho_Chi_Minh', city_id: 'danang',
   geo_address_json: { address: 'Пляж Микхе' }, meeting_url: null, max_capacity: 10, allow_plus_one: false,
   topic: null, what_happens: [], for_whom: null, beginner_friendly: null, takeaway: null, guide: null,
-  status: 'published', widget_id: null, rev: 0, created_at: new Date(),
+  status: 'published', platform: 'yaswami', visibility: 'private', showcase_status: null, widget_id: null, rev: 0, place: null, time_tbd: false, display_price: null, tags: [], url: null, telegram_username: null, whatsapp_phone: null, instagram_username: null, external_id: null, channel: null, announcement: null, views: null, reactions: null, cover_checked_at: null, video_url: null, video_at: null, video_tries: 0, published_at: null, updated_at: new Date(0), created_at: new Date(),
 };
 const item: CollectedEventItem = {
   id: 'danangevent-7-0', city_id: 'danang', title: 'Йога на пляже', description: '', starts_at: '2026-11-14T19:00:00+07:00', ends_at: null, place: null,

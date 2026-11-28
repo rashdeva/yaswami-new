@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, FeedbackVia, Guest, Guide, Host, HostSearch, HostSearchMatch, JoinedVia, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeFormat, PracticeStatus, ServiceCategory, Product, ProductStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, JOINED_VIA, PRODUCT_CATEGORY_SLUGS, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
+import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_PLATFORMS, EVENT_STATUSES, EVENT_VISIBILITIES, SHOWCASE_STATUSES,IDENTITY_PROVIDERS, JOINED_VIA, PRODUCT_CATEGORY_SLUGS, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -100,7 +100,8 @@ export const events = pgTable(
   'events',
   {
     id: text().primaryKey(),
-    user_id: userId('user_id').notNull().references(() => users.id, { onUpdate: 'cascade' }), // организатор
+    // Организатор. null — внешнее событие (platform = external), которое никто не подтвердил как своё (ADR-0014).
+    user_id: userId('user_id').references(() => users.id, { onUpdate: 'cascade' }),
     kind: text({ enum: EVENT_KINDS }).notNull(),
     name: text().notNull(),
     description: text(),
@@ -119,14 +120,55 @@ export const events = pgTable(
     takeaway: text(),
     guide: jsonb().$type<Guide>(),
     status: text({ enum: EVENT_STATUSES }).notNull().default('draft'),
+    // ADR-0014: событие одно; собранное сборщиком из анонса — `external`, запись на него идёт у организатора.
+    platform: text({ enum: EVENT_PLATFORMS }).notNull().default('yaswami'),
+    // До видимости событие открывалось только по ссылке — поэтому у прежних строк `private`.
+    visibility: text({ enum: EVENT_VISIBILITIES }).notNull().default('private'),
+    // Решение команды об афише города: null — событие в афишу не просилось. В афише — только published.
+    // Отклонённое внешнее событие остаётся строкой: повторный анонс не создаст его заново.
+    showcase_status: text({ enum: SHOWCASE_STATUSES }),
     widget_id: text(),
     rev: integer().notNull().default(0),
     created_at: at('created_at').notNull().defaultNow(),
+    // --- Ниже — то, что знает сборщик о событии из анонса (ADR-0014). У события, созданного организатором, пусто.
+    place: text(), // название площадки из анонса («Баня на Сон Тра»); адрес — в geo_address_json. В Luma такого нет
+    time_tbd: boolean().notNull().default(false), // время в анонсе не указано: start_at — полночь того дня по часам города
+    display_price: text(), // цена словами, как в анонсе; имя — как у события в Luma
+    tags: jsonb().$type<string[]>().notNull().default([]),
+    url: text(), // ссылка на регистрацию у организатора — как `url` внешнего события в Luma
+    // Контакт для записи. По telegram_username вошедшему организатору предлагают подтвердить событие. Без @, в нижнем регистре.
+    telegram_username: text(),
+    whatsapp_phone: text(),
+    instagram_username: text(),
+    external_id: text().unique(), // telegram:<канал>/<публикация>#<номер события в ней>; по нему сборщик узнаёт своё событие
+    channel: text(), // источник: sources.channel
+    announcement: jsonb().$type<NonNullable<Event['announcement']>>(), // публикация-источник: ссылка, текст, медиа в бакете (ADR-0006)
+    // Отклик на публикацию-источник: сборщик обновляет каждый проход, пока событие не прошло. null — ещё не смотрел;
+    // views у публикаций в группах нет вовсе. По ним считается «популярное» (popularIds в @yaswami/core).
+    views: integer(),
+    reactions: integer(),
+    // Обложку (photos.event_id) посмотрел иллюстратор: оставил фото анонса или нарисовал свою. null — ещё не смотрел.
+    cover_checked_at: at('cover_checked_at'),
+    // Короткий ролик-история о событии: рисует роль illustrator в Hermes (support.ts), лежит в хранилище xAI.
+    // ponytail: храним только ссылку — файл в 6–12 МБ в Postgres класть не стоит.
+    video_url: text(),
+    // Когда ролик заказали: по этой отметке считается дневной лимит (генерация платная), и второй раз не заказываем.
+    video_at: at('video_at'),
+    // Сколько раз ролик заказывали: оборванный перезапуском заказ повторяем, но не больше VIDEO_TRIES раз.
+    video_tries: integer().notNull().default(0),
+    // Когда событие впервые вышло в афишу: по нему сводка подписчикам отличает новое. Ставит сама сводка (subscriptions.ts).
+    published_at: at('published_at'),
+    updated_at: at('updated_at').notNull().defaultNow(),
   },
   (t) => [
     index('events_user_idx').on(t.user_id),
+    index('events_start_idx').on(t.start_at),
+    index('events_username_idx').on(t.telegram_username),
     check('events_kind_check', oneOf('kind', EVENT_KINDS)),
     check('events_status_check', oneOf('status', EVENT_STATUSES)),
+    check('events_platform_check', oneOf('platform', EVENT_PLATFORMS)),
+    check('events_visibility_check', oneOf('visibility', EVENT_VISIBILITIES)),
+    check('events_showcase_status_check', oneOf('showcase_status', SHOWCASE_STATUSES)),
     check('events_max_capacity_check', sql`${t.max_capacity} > 0`),
   ],
 );
@@ -204,54 +246,6 @@ export const apiTokens = pgTable(
   (t) => [index('api_tokens_user_idx').on(t.user_id)],
 );
 
-// События, собранные из Telegram-каналов (apps/collector). Это ещё не события Ясвами: хозяина нет,
-// данные извлечены ИИ. Пишет сюда только сборщик; форма `event` и `announcement` — в apps/collector/README.md.
-export const collectedEvents = pgTable(
-  'collected_events',
-  {
-    external_id: text().primaryKey(), // telegram:<канал>/<публикация>#<номер события в ней>
-    channel: text().notNull(),
-    city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
-    announcement: jsonb().$type<{ url: string; text?: string; media?: CollectedMedia[] }>().notNull(), // media — фото и видео публикации в бакете (ADR-0006)
-    event: jsonb().$type<CollectedEvent>().notNull(),
-    starts_at: at('starts_at').notNull(),
-    ends_at: at('ends_at'),
-    // Контакт для записи. По нему вошедшему организатору предлагают подтвердить событие.
-    telegram_username: text(),
-    // ponytail: больше не читается — ссылку записи API собирает сам (collectedSignupUrl). Сборщик ещё пишет её;
-    // убрать колонку вместе с apps/collector/src/signup.mjs.
-    signup_url: text().notNull(),
-    // Организатор подтвердил, что событие его: из него создано настоящее событие.
-    claimed_event_id: text().references(() => events.id, { onDelete: 'set null' }),
-    // Отклик на публикацию-источник: сборщик обновляет каждый проход, пока событие не прошло. null — ещё не смотрел;
-    // views у публикаций в группах нет вовсе. По ним считается «популярное» (popularIds в @yaswami/core).
-    views: integer(),
-    reactions: integer(),
-    // Обложку (photos.collected_external_id) посмотрел иллюстратор: оставил фото анонса или нарисовал свою.
-    // null — ещё не смотрел; такие события отдаёт covers_pending в MCP.
-    cover_checked_at: at('cover_checked_at'),
-    // Короткий ролик-история о событии: рисует роль illustrator в Hermes (support.ts), лежит в хранилище xAI.
-    // ponytail: храним только ссылку — файл в 6–12 МБ в Postgres класть не стоит; если xAI начнёт брать деньги
-    // за хранение или ссылки протухнут, переносить в объектное хранилище.
-    video_url: text(),
-    // Когда ролик заказали: по этой отметке считается дневной лимит (генерация платная), и второй раз не заказываем.
-    video_at: at('video_at'),
-    // Сколько раз ролик заказывали. Заказ живёт в памяти процесса API: перезапуск (выкладка) обрывает его,
-    // и результат теряется — такой заказ повторяем, но не больше VIDEO_TRIES раз, чтобы не рисовать по кругу.
-    video_tries: integer().notNull().default(0),
-    // Модерация (CollectedStatus в @yaswami/core): pending — ждёт решения в админке, approved — одобрено и ждёт
-    // обработки иллюстратором, published — в ленте, rejected — отклонено или снято с публикации. В ленту и на
-    // страницу события попадает только published. Отклонённое остаётся в базе: повторный анонс не создаст его заново.
-    status: text().$type<CollectedStatus>().notNull().default('pending'),
-    // Когда событие впервые вышло в ленту: по нему сводка подписчикам отличает новое. Ставит сама сводка
-    // (subscriptions.ts) — путей в published несколько; повторная публикация после снятия отметку не меняет.
-    published_at: at('published_at'),
-    created_at: at('created_at').notNull().defaultNow(),
-    updated_at: at('updated_at').notNull().defaultNow(),
-  },
-  (t) => [index('collected_events_starts_idx').on(t.starts_at), index('collected_events_username_idx').on(t.telegram_username)],
-);
-
 // Организатор собранного события (Host в Luma API). Профиль собирает сборщик: по контакту из анонса находит человека
 // в Telegram, берёт имя и «о себе», его канал и сводку ИИ по каналу.
 export const hosts = pgTable(
@@ -264,7 +258,7 @@ export const hosts = pgTable(
     // пользователи со временем будут не только из Telegram.
     // null — организатора добавила команда по username (admin_hosts_create), сборщик ещё не нашёл его в Telegram.
     telegram_id: telegramId('telegram_id').unique(),
-    username: text().notNull(), // без @, в нижнем регистре; по нему профиль находится от collected_events.telegram_username
+    username: text().notNull(), // без @, в нижнем регистре; по нему профиль находится от events.telegram_username
     name: text().notNull(),
     city_id: text().notNull().default(DEFAULT_CITY_ID).references(() => cities.id),
     bio: text(),
@@ -296,9 +290,7 @@ export const photos = pgTable(
   {
     id: uuid().primaryKey().defaultRandom(),
     user_id: userId('user_id').unique().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
-    // Обложка собранного события, одна на событие: фото анонса или картинка, нарисованная иллюстратором.
-    collected_external_id: text().unique().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
-    // Обложка события «Я с вами», одна на событие: нарисованная иллюстратором, когда организатор свою не дал.
+    // Обложка события, одна на событие: фото анонса или картинка, нарисованная иллюстратором.
     event_id: text().unique().references(() => events.id, { onDelete: 'cascade' }),
     source: text().notNull(), // откуда взято: адрес аватара или telegram:<канал>/<публикация>; по нему не качаем повторно
     // Байты лежат либо здесь, либо в бакете R2 (url — открытый адрес файла). Обложки уходят в бакет, аватары — здесь (ADR-0011).
@@ -307,20 +299,9 @@ export const photos = pgTable(
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [
-    check('photos_owner_check', sql`num_nonnulls(${t.user_id}, ${t.collected_external_id}, ${t.event_id}) = 1`),
+    check('photos_owner_check', sql`num_nonnulls(${t.user_id}, ${t.event_id}) = 1`),
     check('photos_place_check', sql`num_nonnulls(${t.data}, ${t.url}) = 1`),
   ],
-);
-
-// «Записаться» на собранное событие: фиксируем намерение и отправляем человека к организатору.
-export const collectedEventSignups = pgTable(
-  'collected_event_signups',
-  {
-    external_id: text().notNull().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
-    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
-    created_at: at('created_at').notNull().defaultNow(),
-  },
-  (t) => [primaryKey({ columns: [t.external_id, t.user_id] }), index('collected_event_signups_user_idx').on(t.user_id)],
 );
 
 // Practice (@yaswami/core): что организатор ведёт без даты — занятия, услуга мастера. Сборщик берёт их из его
@@ -463,26 +444,23 @@ export const contacts = pgTable(
   (t) => [uniqueIndex('contacts_host_user_idx').on(t.host_user_id, t.user_id)],
 );
 
-// Заход вошедшего пользователя на событие — своё или собранное. Строка на каждый заход: по ним считается аудитория
-// организатора (events.user_id; у собранных — hosts по telegram_username) и кто кого привёл (referrer_id).
+// Заход вошедшего пользователя на событие. Строка на каждый заход: по ним считается аудитория
+// организатора (events.user_id; у внешних — hosts по telegram_username) и кто кого привёл (referrer_id).
 // ponytail: журнал без свёртки; когда вырастет — сворачивать в (user, событие, первый/последний заход).
 export const visits = pgTable(
   'visits',
   {
     id: uuid().primaryKey().defaultRandom(),
     user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
-    event_id: text().references(() => events.id, { onDelete: 'cascade' }),
-    collected_external_id: text().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
+    event_id: text().notNull().references(() => events.id, { onDelete: 'cascade' }),
     // Кто позвал: пользователь, чьей ссылкой «Позвать друзей» открыли событие.
     referrer_id: userId('referrer_id').references(() => users.id, { onDelete: 'set null', onUpdate: 'cascade' }),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [
     index('visits_event_idx').on(t.event_id),
-    index('visits_collected_idx').on(t.collected_external_id),
     index('visits_user_idx').on(t.user_id),
     index('visits_referrer_idx').on(t.referrer_id),
-    check('visits_target_check', sql`num_nonnulls(${t.event_id}, ${t.collected_external_id}) = 1`),
   ],
 );
 
@@ -517,7 +495,7 @@ export const topics = pgTable('topics', {
 export const sources = pgTable(
   'sources',
   {
-    channel: text().primaryKey(), // как в collected_events.channel и collector_cursors: username без @ или id закрытого чата (-100…)
+    channel: text().primaryKey(), // как в events.channel и collector_cursors: username без @ или id закрытого чата (-100…)
     // Организатор источника: сборщик ставит его, когда берёт канал из профиля, команда — в админке; null — не указан.
     host_id: uuid().references(() => hosts.id, { onDelete: 'set null' }),
     // Выключенный источник сборщик не читает. Строку не удаляем: иначе канал организатора добавился бы снова.

@@ -68,7 +68,7 @@ export function guestRegistered(db: Db, event: { id: string; user_id: number }, 
     hostBatches.delete(event.id);
     const now = await goingNow(db, event.id);
     const stayed = batch.filter((g) => now.ids.has(g.id));
-    if (!now.event || !stayed.length) return;
+    if (!now.event?.user_id || !stayed.length) return;
     if (hostSent.size >= MAX_KEYS) hostSent.delete(hostSent.keys().next().value!); // самое старое событие
     hostSent.set(event.id, sentBefore + 1);
     await notify(db, now.event.user_id, 'guest_registered', { event: now.event, guests: stayed, going: now.going });

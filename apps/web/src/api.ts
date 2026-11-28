@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, City, CollectedEventItem, EventCreateInput, HostSelf, HostSelfUpdateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, ProductItem, ProductList, ProductListInput, RsvpInput, SearchResult, Showcase, SourceAddInput, SourceSubmission, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
+import type { AppConfig, City, CollectedEventItem, Contact, EventCreateInput, HostSelf, HostSelfUpdateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, ProductItem, ProductList, ProductListInput, RsvpInput, SearchResult, Showcase, SourceAddInput, SourceSubmission, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
 import { track } from './analytics.ts';
 import { inTelegram, siteArrival, tg } from './tg.ts';
 
@@ -91,6 +91,7 @@ export const api = {
   visitCollected: (id: string) => request<void>('POST', `/collected-events/${encodeURIComponent(id)}/visit`, {} satisfies VisitInput),
   visit: (id: string, ref?: number) => request<void>('POST', `/events/${encodeURIComponent(id)}/visit`, { ref } satisfies VisitInput),
   events: () => request<EventListData[]>('GET', '/events'),
+  contacts: () => request<{ entries: Wire<Contact>[] }>('GET', '/contacts'),
   myCollected: () => request<MyCollectedItem[]>('GET', '/me/collected'),
   event: (id: string) => request<EventData>('GET', `/events/${encodeURIComponent(id)}`),
   createEvent: (input: EventCreateInput) => request<EventData>('POST', '/events', input),

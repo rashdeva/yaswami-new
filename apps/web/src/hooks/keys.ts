@@ -28,6 +28,8 @@ export const keys = {
   /** «Мои события»: свои и собранные, куда заходил. */
   mine: ['mine'],
   event: (id: string) => ['event', id],
+  /** Аудитория организатора: гости событий и клиенты услуг. */
+  contacts: ['contacts'],
   /** Запросы организатора и Находки по ним. */
   hostSearches: ['host-searches'],
   hostSearchMatches: ['host-search-matches'],

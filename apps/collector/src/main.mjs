@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createExtractor, createOfferExtractor, createPracticeClassifier, createProductExtractor, createSearchMatcher, createSummarizer, createTopicProposer, looksLikeEvent, mergeEvents, pairEvents } from '@yaswami/extract';
-import { signupUrl } from './signup.mjs';
 import { connect, goneReason, loadPeers, newPeers, downloadCover, photoFits, downloadPhotos, downloadVideos, fetchAlbum, fetchChatAnnouncements, fetchPosts, toStats } from './mtproto.mjs';
 import { refreshOld } from './refresh.mjs';
 import { createBucket } from './bucket.mjs';
@@ -14,7 +13,7 @@ import { createSender } from './sender.mjs';
 import { fetchLeads } from './lead.mjs';
 import { resolveAuthor, saveOffers } from './offers.mjs';
 import { pickProducts, saveProducts, uploadFirstPhoto } from './products.mjs';
-import { collectedCoverKey, PRODUCT_TTL_DAYS } from '@yaswami/core';
+import { collectedCoverKey, PRODUCT_TTL_DAYS, sameExtracted } from '@yaswami/core';
 import { searchChannels, TOPICS } from './find-sources.mjs';
 import { cityMatcher } from './city.mjs';
 import { candidatesFrom, cityHashtags, createInstagram, download, mediaOf, toAnnouncement as fromInstagram, toJpeg, toStats as instagramStats } from './instagram.mjs';
@@ -35,7 +34,6 @@ if (!bucket) console.log('Фото и видео анонсов не сохра�
 const llmPauseMs = Number(env.LLM_PAUSE_MS ?? 4500); // ≈13 запросов в минуту при лимите 15
 const maxAgeMs = Number(env.MAX_AGE_DAYS ?? 14) * 86_400_000; // старые публикации в ИИ не отправляем
 const pollMinutes = Number(env.POLL_MINUTES ?? 15);
-const signupMessage = env.SIGNUP_MESSAGE ?? 'Привет! Я нашёл событие «{title}» на Ясвами, хочу записаться.';
 // Разбор анонса — свой на каждый город источника: ИИ знает название города и пишет время в его часовом поясе.
 const extractors = new Map();
 const extractFor = ({ city, timezone }) => extractors.get(`${city}|${timezone}`)
@@ -381,14 +379,14 @@ async function saveEvents(source, announcement, photos, upload, known, trusted, 
     const merged = !same ? event : decided
       ? { ...mergeEvents(same.event, event), telegram_username: same.event.telegram_username, whatsapp_phone: same.event.whatsapp_phone, instagram_username: same.event.instagram_username ?? null, url: same.event.url }
       : mergeEvents(same.event, event);
-    if (same && JSON.stringify(merged) === JSON.stringify(same.event)) continue; // повтор без новых сведений
+    if (same && sameExtracted(merged, same.event)) continue; // повтор без новых сведений
     // Дубль дополняет запись первого анонса, а не создаёт вторую.
     const external_id = same?.external_id ?? `${prefix}${i}`;
     if (!same && bucket) media ??= await upload();
     const status = trusted.has(channel) ? 'approved' : 'pending'; // у известного события upsert статус не меняет
     const loaded_at = await store.upsert({
       external_id, channel, city_id, announcement: media ? { ...announcement, media } : announcement, event: merged,
-      signup_url: signupUrl(merged, announcement, signupMessage), status, loaded_at: same?.loaded_at ?? null,
+      status, loaded_at: same?.loaded_at ?? null,
     });
     // `known` снят в начале прохода; команда могла поправить событие или решить его судьбу — её правку не затираем.
     // Повтор анонса после прохода склеится уже со свежей версией.

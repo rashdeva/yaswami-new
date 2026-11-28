@@ -2,19 +2,19 @@
 import assert from 'node:assert/strict';
 import { createDecipheriv, createHash, createHmac, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { after, before, beforeEach, mock, test } from 'node:test';
-import { asc, desc, eq, sql } from 'drizzle-orm';
+import { asc, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import type { AdminHostFeedback, AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Me, Message, Practice, PracticeSignup, PracticeSubmission, AdminProduct, AdminProductList, ProductSubmission, ProductItem, ProductList, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, resetBotLimits, welcomePhotoUrl } from './bot.ts';
-import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
+import { collectedSlug, collectedWhen, externalEventColumns, isoInZone, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
 import { bot } from './telegram.ts';
-import type { CollectedEvent } from '@yaswami/core';
+import type { CollectedEvent, CollectedMedia } from '@yaswami/core';
 import { issueToken, signInWith, telegramIdOf, userIdByTelegram, verifyInitData } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { createDb } from './db/client.ts';
-import { adminActions, collectedEvents, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, messages, photos, practices as practicesTable, practiceSignups, products, shelves, sources, sourceSearches, ticketTypes, topics as topicsTable, users, userActivity, visits, tgAccounts } from './db/schema.ts';
+import { adminActions, collectorCursors, contacts, conversations, guests, hostSearchMatches, hosts, messages, photos, practices as practicesTable, practiceSignups, products, shelves, sources, sourceSearches, ticketTypes, topics as topicsTable, users, userActivity, visits, tgAccounts } from './db/schema.ts';
 import { afterCommit, audited } from './audit.ts';
 import { AppError, updateEvent } from './services.ts';
 import { notify } from './notifications.ts';
@@ -27,6 +27,27 @@ import { digestPracticeFeedback, requestPracticeFeedback } from './practice-feed
 import { digestTopics } from './subscriptions.ts';
 import { refreshTopics, requestNextTopicIcon } from './topics.ts';
 import { eventFeedback, events as eventsTable, practiceFeedback } from './db/schema.ts';
+
+/**
+ * Событие из анонса в форме, которой его знает сборщик (`event` — что извлёк ИИ, `status` — решение команды об афише),
+ * → строка `events` с `platform: external` (ADR-0014). Так же пишет сборщик (store.mjs, upsert).
+ */
+interface CollectedSeed {
+  external_id: string; channel: string; city_id?: string; announcement: { url: string; text?: string; media?: CollectedMedia[] }; event: CollectedEvent;
+  starts_at?: Date; ends_at?: Date | null; status?: 'pending' | 'approved' | 'published' | 'rejected'; telegram_username?: string | null; signup_url?: string;
+  views?: number | null; reactions?: number | null; video_url?: string | null; video_at?: Date | null; video_tries?: number; cover_checked_at?: Date | null;
+  published_at?: Date | null; created_at?: Date; updated_at?: Date;
+}
+const collectedValues = ({ external_id, channel, city_id = 'danang', announcement, event, starts_at, ends_at, status = 'pending', telegram_username, signup_url: _, ...rest }: CollectedSeed) => {
+  const columns = externalEventColumns(event);
+  return {
+    id: collectedSlug(external_id), external_id, channel, city_id, announcement, kind: 'o' as const, status: 'published' as const, platform: 'external' as const,
+    visibility: 'public' as const, showcase_status: status, timezone: sql<string>`(select timezone from cities where id = ${city_id})`,
+    ...columns, start_at: starts_at ?? columns.start_at, end_at: ends_at === undefined ? columns.end_at : ends_at,
+    ...(telegram_username === undefined ? {} : { telegram_username }), ...rest,
+  };
+};
+const insertCollected = (rows: CollectedSeed | CollectedSeed[]) => db.insert(eventsTable).values([rows].flat().map(collectedValues));
 
 import sharp from 'sharp';
 import { transcriber } from './media.ts';
@@ -57,7 +78,7 @@ before(async () => {
   url.pathname = `/${TEST_DB}`;
   db = createDb(url.href);
   await migrate(db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
-  await db.execute(sql`truncate users, admin_actions, collected_events, hosts, products, tg_accounts, conversations, shelves cascade`);
+  await db.execute(sql`truncate users, admin_actions, events, hosts, products, tg_accounts, conversations, shelves cascade`);
   // Города из прошлого запуска: Дананг создан миграцией, остальное добавляют тесты.
   await db.execute(sql`delete from sources where city_id <> 'danang'`);
   await db.execute(sql`delete from cities where id <> 'danang'`);
@@ -295,7 +316,7 @@ test('MCP: список инструментов, создание событи�
 });
 
 test('собранные события: витрина без входа, запись — после входа, вход по cookie сайта', async () => {
-  await db.delete(collectedEvents);
+  await db.delete(eventsTable).where(isNotNull(eventsTable.external_id));
   const row = (external_id: string, starts_at: Date) => ({
     external_id, channel: 'danangevent', starts_at, signup_url: 'https://t.me/anna_yoga?text=hi', status: 'published' as const,
     announcement: { url: 'https://t.me/danangevent/1' },
@@ -304,7 +325,7 @@ test('собранные события: витрина без входа, за�
       address: null, price: '100k', tags: ['йога'], telegram_username: 'anna_yoga', whatsapp_phone: null, url: null,
     },
   });
-  await db.insert(collectedEvents).values([
+  await insertCollected([
     row('telegram:danangevent/1#0', new Date(Date.now() + 86_400_000)),
     row('telegram:danangevent/2#0', new Date(Date.now() - 86_400_000)),
     // Началось час назад и идёт ещё два часа: гостю его уже не показываем — не успеть.
@@ -352,14 +373,14 @@ test('собранные события: витрина без входа, за�
 });
 
 test('каталог организаторов: с событиями или Practice из наших тем, страница с событиями', async () => {
-  await db.delete(collectedEvents);
+  await db.delete(eventsTable).where(isNotNull(eventsTable.external_id));
   await db.delete(hosts);
   const starts_at = new Date(Date.now() + 86_400_000);
   const event = (title: string, topic: string, username: string) => ({
     title, description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [],
     telegram_username: username, whatsapp_phone: null, url: null, topic,
   });
-  await db.insert(collectedEvents).values([
+  await insertCollected([
     { external_id: 'telegram:mafia/1#0', channel: 'mafia', status: 'published' as const, starts_at, signup_url: '', announcement: { url: 'https://t.me/mafia/1' }, event: event('Мафия', 'игры', 'club'), telegram_username: 'club' },
     { external_id: 'telegram:mafia/2#0', channel: 'mafia', status: 'pending' as const, starts_at, signup_url: '', announcement: { url: 'https://t.me/mafia/2' }, event: event('Скрытое', 'игры', 'club'), telegram_username: 'club' },
   ]);
@@ -444,9 +465,9 @@ test('каталог организаторов: с событиями или Pr
 });
 
 test('подтверждение владельцем: предлагается по username, создаёт событие, второй раз и чужим — нельзя', async () => {
-  await db.delete(collectedEvents);
+  await db.delete(eventsTable).where(isNotNull(eventsTable.external_id));
   const starts_at = new Date(Date.now() + 86_400_000);
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id: 'telegram:danangevent/5#0', channel: 'danangevent', status: 'published' as const, starts_at, signup_url: '',
     announcement: { url: 'https://t.me/danangevent/5' },
     event: {
@@ -467,15 +488,36 @@ test('подтверждение владельцем: предлагается 
   assert.deepEqual(((await (await call(stranger, 'GET', '/me')).json()) as Me).claimable, []);
   assert.equal((await call(stranger, 'POST', '/collected-events/danangevent-5-0/claim')).status, 403);
 
+  // Олег нажал «Записаться» и зашёл на событие до того, как у него появился хозяин.
+  assert.equal((await call(stranger, 'POST', '/collected-events/danangevent-5-0/signup')).status, 200);
+  await call(tma(32, 'Вера'), 'POST', '/collected-events/danangevent-5-0/visit', {});
+
+  assert.deepEqual(((await (await call(owner, 'GET', '/me')).json()) as Me).claimable.map((c) => [c.id, c.signups_count]), [['danangevent-5-0', 1]], 'организатор видит, сколько человек уже хотят прийти');
+
   const res = await call(owner, 'POST', '/collected-events/danangevent-5-0/claim');
   assert.equal(res.status, 201);
   const view = (await res.json()) as EventView;
   assert.equal(view.is_host, true);
-  assert.equal(view.event.name.length, 60); // длинное название обрезано до лимита события
+  // ADR-0014: копии нет — та же строка получила хозяина и запись в Ясвами, адрес и решение об афише прежние.
   assert.deepEqual(
-    { status: view.event.status, timezone: view.event.timezone, address: view.event.geo_address_json, price: view.ticket_types[0]!.price_text },
-    { status: 'published', timezone: 'Asia/Ho_Chi_Minh', address: { address: 'Studio, An Thuong 4' }, price: '150k' },
+    { id: view.event.id, platform: view.event.platform, visibility: view.event.visibility, showcase: view.event.showcase_status, user_id: view.event.user_id },
+    { id: 'danangevent-5-0', platform: 'yaswami', visibility: 'public', showcase: 'published', user_id: await uid(30) },
   );
+  assert.deepEqual(
+    { status: view.event.status, timezone: view.event.timezone, place: view.event.place, address: view.event.geo_address_json, price: view.ticket_types[0]!.price_text },
+    { status: 'published', timezone: 'Asia/Ho_Chi_Minh', place: 'Studio', address: { address: 'An Thuong 4' }, price: '150k' },
+  );
+  assert.equal((await db.select().from(eventsTable).where(eq(eventsTable.external_id, 'telegram:danangevent/5#0'))).length, 1);
+  // Нажавший «Записаться» — гость, которого организатор ещё не подтвердил; он и заходившая — уже контакты организатора.
+  assert.deepEqual(view.guests.map((g) => [g.user_first_name, g.approval_status]), [['Олег', 'pending_approval']]);
+  const audience = (await (await call(owner, 'GET', '/contacts')).json()) as { entries: Contact[] };
+  assert.deepEqual(audience.entries.map((c) => [c.first_name, c.event_pending_count]).sort(), [['Вера', 0], ['Олег', 1]]);
+  // Организатор правит событие — афиша показывает его правку: строка одна.
+  assert.equal((await call(owner, 'PATCH', '/events/danangevent-5-0', { name: 'Бачата с нуля' })).status, 200);
+  assert.equal(((await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem).title, 'Бачата с нуля');
+  // Гость отвечает «Пойду» — из «записался» он становится идущим.
+  const going = (await (await call(stranger, 'POST', '/events/danangevent-5-0/rsvp', { approval_status: 'approved' })).json()) as EventView;
+  assert.deepEqual([going.me!.approval_status, going.guest_counts.approved], ['approved', 1]);
 
   // витрина теперь ведёт на событие Ясвами, повторно подтвердить нельзя, предложение исчезло
   const item = (await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem;
@@ -826,7 +868,7 @@ test('сообщение боту: /start — приветствие с карт
 test('соседние города: витрина, услуги и поиск города показывают и соседей в 25 км; координаты задаёт команда', async () => {
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
-  await db.delete(collectedEvents);
+  await db.delete(eventsTable).where(isNotNull(eventsTable.external_id));
   await db.delete(hosts);
   // Велигама и Мирисса — 5 км, Хирикетия — 30 км от Велигамы. Координаты — и в REST, и в MCP.
   assert.equal((await call(admin, 'POST', '/admin/cities', { id: 'weligama', name: 'Велигама', timezone: 'Asia/Colombo', latitude: 5.9746, longitude: 80.4297 })).status, 201);
@@ -841,7 +883,7 @@ test('соседние города: витрина, услуги и поиск 
     announcement: { url: `https://t.me/${city_id}/1` },
     event: { title: `Сёрфинг: ${city_id}`, description: '', starts_at: day.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null },
   });
-  await db.insert(collectedEvents).values([row('weligama'), row('mirissa'), row('hiriketiya')]);
+  await insertCollected([row('weligama'), row('mirissa'), row('hiriketiya')]);
   await insertHosts([{ telegram_id: 9601, username: 'mirissa_surf', name: 'Сёрф-школа', city_id: 'mirissa', status: 'published' as const, practices: [{ title: 'Урок сёрфинга', topic: 'спорт', description: null, price: null, status: 'published' as const }] }]);
   const feed = async (city: string) => ((await (await app.request(`/collected-events?city_id=${city}`)).json()) as CollectedEventItem[]).map((e) => e.city_id).sort();
   assert.deepEqual(await feed('weligama'), ['mirissa', 'weligama']);
@@ -857,14 +899,14 @@ test('соседние города: витрина, услуги и поиск 
   assert.equal(((await (await call(newcomer, 'GET', '/me')).json()) as Me).city_id, null);
   assert.equal(((await (await call(newcomer, 'PATCH', '/me', { city_id: 'weligama' })).json()) as Me).city_id, 'weligama');
 
-  await db.delete(collectedEvents);
+  await db.delete(eventsTable).where(isNotNull(eventsTable.external_id));
   await db.delete(hosts);
   await db.execute(sql`delete from users where city_id in ('weligama', 'mirissa', 'hiriketiya')`);
   await db.execute(sql`delete from cities where id in ('weligama', 'mirissa', 'hiriketiya')`);
 });
 
 test('поиск: события и Practice одним запросом; формы слова, начало слова, опечатки; только публичное', async () => {
-  await db.delete(collectedEvents);
+  await db.delete(eventsTable).where(isNotNull(eventsTable.external_id));
   await db.delete(hosts);
   const day = (n: number) => new Date(Date.now() + n * 86_400_000);
   const row = (n: number, title: string, more: { description?: string; status?: 'published' | 'pending'; days?: number; tags?: string[] } = {}) => ({
@@ -875,7 +917,7 @@ test('поиск: события и Practice одним запросом; фор
       tags: more.tags ?? [], telegram_username: null, whatsapp_phone: null, url: null,
     },
   });
-  await db.insert(collectedEvents).values([
+  await insertCollected([
     row(1, 'Йога на рассвете', { days: 10 }),
     row(2, 'Ещё одна йога', { days: 2 }),
     row(3, 'Ретрит в горах', { description: 'Три дня тишины, утром йога и чай.', tags: ['медитация'] }),
@@ -906,13 +948,13 @@ test('поиск: события и Practice одним запросом; фор
   assert.deepEqual(names(await find('масаж')), ['Тайский массаж @dasha_yoga']);
   // другой город: ни его событий, ни услуг его мастеров в поиске нет — как в витрине
   await db.execute(sql`insert into cities (id, name, timezone) values ('nhatrang', 'Нячанг', 'Asia/Ho_Chi_Minh')`);
-  await db.insert(collectedEvents).values({ ...row(6, 'Сёрфинг в Нячанге'), city_id: 'nhatrang' });
+  await insertCollected({ ...row(6, 'Сёрфинг в Нячанге'), city_id: 'nhatrang' });
   await insertHosts([{ telegram_id: 54, username: 'surf_nt', name: 'Сёрф-школа', city_id: 'nhatrang', status: 'published' as const, practices: [{ title: 'Урок сёрфинга', topic: 'спорт', description: null, price: null, status: 'published' as const }] }]);
   assert.deepEqual(names(await find('серфинг')), []);
   // …а с city_id — поиск по тому городу: и событие, и услуга его мастера
   const nhatrang = ((await (await app.request(`/search?query=${encodeURIComponent('сёрфинг')}&city_id=nhatrang`)).json()) as SearchResult).entries;
   assert.deepEqual(names(nhatrang).sort(), ['Сёрфинг в Нячанге', 'Урок сёрфинга @surf_nt']);
-  await db.execute(sql`delete from collected_events where city_id = 'nhatrang'`);
+  await db.execute(sql`delete from events where city_id = 'nhatrang'`);
   await db.execute(sql`delete from hosts where city_id = 'nhatrang'`);
   await db.execute(sql`delete from cities where id = 'nhatrang'`);
   // самих организаторов поиск не выдаёт — только события и услуги
@@ -933,7 +975,7 @@ test('товары: гость видит одобренные и свежие �
   settings.adminIds = [70];
   const admin = tma(70, 'Админ');
   const guest = tma(85, 'Оля');
-  await db.delete(collectedEvents);
+  await db.delete(eventsTable).where(isNotNull(eventsTable.external_id));
   await db.delete(hosts);
   // Велигама и Мирисса — соседи (5 км), Хирикетия — 30 км, Ахангама рядом, но в архиве.
   await db.execute(sql`insert into cities (id, name, timezone, latitude, longitude, launch_status) values
@@ -1176,7 +1218,7 @@ test('фото: аватар гостя и фото сообщества орг�
 
   // Фото сообщества кладёт сборщик; API отдаёт не больше шести, новые сверху.
   const [h] = await db.insert(hosts).values({ telegram_id: 9104, username: 'photo_host', name: 'Студия' }).returning();
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id: 'telegram:photochan/1#0', channel: 'photochan', status: 'published' as const, announcement: { url: 'https://t.me/photochan/1' }, signup_url: 'https://t.me/photochan/1',
     event: { title: 'Йога', starts_at: '2030-01-01T10:00:00+07:00' } as CollectedEvent, starts_at: new Date('2030-01-01T03:00:00Z'), telegram_username: 'photo_host',
   });
@@ -1253,13 +1295,13 @@ test('переписка: бот пишет всё в базу, админ от�
   await tool('admin_messages_send', { conversation_id: id, text: 'Сегодня в 19:00 покер, записать?' });
   assert.deepEqual(sent.map(([, b]) => b.text), ['Сегодня в 19:00 покер, записать?']);
   // Обложки: иллюстратор видит события без проверки, оставляет фото анонса; чужой адрес картинки не скачиваем.
-  await db.delete(collectedEvents);
+  await db.delete(eventsTable).where(isNotNull(eventsTable.external_id));
   const starts_at = new Date(Date.now() + 86_400_000);
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id: 'telegram:danangevent/5#0', channel: 'danangevent', status: 'published' as const, starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/5' },
     event: { title: 'Баня', description: 'Парим', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: ['баня'], telegram_username: 'igor', whatsapp_phone: null, url: null, topic: 'баня' },
   });
-  const [photo] = await db.insert(photos).values({ collected_external_id: 'telegram:danangevent/5#0', source: 'telegram:danangevent/5', data: Buffer.from([0xff, 0xd8, 1]) }).returning();
+  const [photo] = await db.insert(photos).values({ event_id: 'danangevent-5-0', source: 'telegram:danangevent/5', data: Buffer.from([0xff, 0xd8, 1]) }).returning();
   const cover = `${settings.publicUrl}/api/photos/${photo!.id}`;
   assert.deepEqual(await tool('admin_covers_list', {}), [{ id: 'danangevent-5-0', title: 'Баня', description: 'Парим', topic: 'баня', tags: ['баня'], place: null, photo_url: cover }]);
   assert.deepEqual(await tool('admin_covers_set', { id: 'danangevent-5-0', image_url: 'https://evil.example/x.png' }), { error: 'bad_image_url' });
@@ -1282,7 +1324,7 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.equal(((await (await app.request('/collected-events/danangevent-5-0')).json()) as CollectedEventItem).video_url, 'https://files-cdn.x.ai/abc/file_1.mp4');
   assert.deepEqual(await tool('admin_videos_request', { id: 'danangevent-5-0' }), { error: 'video_exists' });
   settings.illustratorDailyLimit = 1;
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id: 'telegram:danangevent/6#0', channel: 'danangevent', status: 'published' as const, starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/6' },
     event: { title: 'Йога', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'anna', whatsapp_phone: null, url: null },
   });
@@ -1295,7 +1337,7 @@ test('переписка: бот пишет всё в базу, админ от�
   const moderated = { ...{ channel: 'danangevent', starts_at, signup_url: 'https://t.me/x', announcement: { url: 'https://t.me/danangevent/7' } },
     external_id: 'telegram:danangevent/7#0',
     event: { title: 'Чай', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'tea', whatsapp_phone: null, url: null } };
-  await db.insert(collectedEvents).values(moderated);
+  await insertCollected(moderated);
   const inFeed = async () => ((await (await app.request('/collected-events')).json()) as CollectedEventItem[]).some((e) => e.id === 'danangevent-7-0');
   const adminEvents = async () => (await (await call(admin, 'GET', '/admin/collected-events')).json()) as { id: string; status: string }[];
   assert.equal((await adminEvents())[0]!.id, 'danangevent-7-0', 'ждущие решения — сверху');
@@ -1304,7 +1346,7 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.equal((await call(tma(71, 'Аня'), 'GET', '/admin/collected-events')).status, 403);
   // Прошедшие не удаляются: в общем списке их нет, с `before` — есть.
   const past = new Date(Date.now() - 86_400_000);
-  await db.insert(collectedEvents).values({ ...moderated, external_id: 'telegram:danangevent/70#0', starts_at: past, event: { ...moderated.event, starts_at: past.toISOString() } });
+  await insertCollected({ ...moderated, external_id: 'telegram:danangevent/70#0', starts_at: past, event: { ...moderated.event, starts_at: past.toISOString() } });
   assert.ok(!(await adminEvents()).some((e) => e.id === 'danangevent-70-0'));
   const pastList = (await (await call(admin, 'GET', `/admin/collected-events?before=${encodeURIComponent(new Date().toISOString())}`)).json()) as { id: string }[];
   assert.deepEqual(pastList.map((e) => e.id), ['danangevent-70-0']);
@@ -1312,9 +1354,11 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.equal((await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { title: '' })).status, 400);
   const later = new Date(starts_at.getTime() + 3600_000).toISOString().replace('Z', '+00:00');
   const edited = (await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { title: 'Чайная церемония', place: null, starts_at: later, telegram_username: '@TeaMaster' })).json()) as AdminCollectedEvent;
-  assert.deepEqual([edited.status, edited.title, edited.telegram_username, edited.description, edited.starts_at], ['pending', 'Чайная церемония', 'teamaster', '', later]);
-  const [stored] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
-  assert.deepEqual([stored!.telegram_username, stored!.starts_at.toISOString()], ['teamaster', new Date(later).toISOString()]);
+  // Время события отдаётся в поясе города, до секунды.
+  assert.deepEqual([edited.status, edited.title, edited.telegram_username, edited.description, Math.floor(Date.parse(edited.starts_at) / 1000)],
+    ['pending', 'Чайная церемония', 'teamaster', '', Math.floor(Date.parse(later) / 1000)]);
+  const [stored] = await db.select().from(eventsTable).where(eq(eventsTable.external_id, 'telegram:danangevent/7#0'));
+  assert.deepEqual([stored!.telegram_username, stored!.start_at.toISOString()], ['teamaster', new Date(later).toISOString()]);
   // Одобренное ждёт проверки обложки — лимит роликов на неё не влияет — и выходит в ленту. Правка и решение — одним запросом.
   assert.equal(((await (await call(admin, 'PATCH', '/admin/collected-events/danangevent-7-0', { status: 'approved', price: '200 000 ₫' })).json()) as AdminCollectedEvent).status, 'approved');
   assert.equal(await inFeed(), false);
@@ -1322,12 +1366,12 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.equal(await requestNextCover(db), 'danangevent-7-0', 'сначала одобренные');
   assert.ok(task.startsWith('Проверь обложку') && task.includes('Чайная церемония'));
   assert.equal(await inFeed(), true);
-  const [checked] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
+  const [checked] = await db.select().from(eventsTable).where(eq(eventsTable.external_id, 'telegram:danangevent/7#0'));
   assert.ok(checked!.cover_checked_at, 'фото анонса годится — оставлено, обложка проверена');
   assert.equal(((await (await app.request('/collected-events/danangevent-7-0')).json()) as CollectedEventItem).price, '200 000 ₫');
   // Перерисовать: обложка удалена, обработка сброшена; очередь возьмёт событие только через 20 минут.
-  await db.update(collectedEvents).set({ video_url: 'https://files-cdn.x.ai/a/old.mp4', video_tries: 1 }).where(eq(collectedEvents.external_id, 'telegram:danangevent/7#0'));
-  await db.insert(photos).values({ collected_external_id: 'telegram:danangevent/7#0', source: 'x', data: Buffer.from([0xff, 0xd8]) });
+  await db.update(eventsTable).set({ video_url: 'https://files-cdn.x.ai/a/old.mp4', video_tries: 1 }).where(eq(eventsTable.external_id, 'telegram:danangevent/7#0'));
+  await db.insert(photos).values({ event_id: 'danangevent-7-0', source: 'x', data: Buffer.from([0xff, 0xd8]) });
   assert.equal((await call(admin, 'POST', '/admin/collected-events/danangevent-7-0/redo')).status, 204);
   const redone = (await adminEvents()).find((e) => e.id === 'danangevent-7-0') as unknown as CollectedEventItem;
   assert.deepEqual([redone.video_url, redone.cover_url], [null, null]);
@@ -1354,10 +1398,10 @@ test('переписка: бот пишет всё в базу, админ от�
   assert.equal(await requestNextVideo(db), null, 'событий без ролика не осталось');
   // Заказ, оборванный перезапуском API: через 20 минут без ролика повторяем, но только один раз.
   await new Promise((r) => setTimeout(r, 50));
-  await db.update(collectedEvents).set({ video_url: null, video_at: new Date(Date.now() - 21 * 60_000) }).where(eq(collectedEvents.external_id, 'telegram:danangevent/6#0'));
+  await db.update(eventsTable).set({ video_url: null, video_at: new Date(Date.now() - 21 * 60_000) }).where(eq(eventsTable.external_id, 'telegram:danangevent/6#0'));
   assert.equal(await requestNextVideo(db), 'danangevent-6-0', 'потерянный заказ повторяется');
   await new Promise((r) => setTimeout(r, 50));
-  await db.update(collectedEvents).set({ video_url: null, video_at: new Date(Date.now() - 21 * 60_000) }).where(eq(collectedEvents.external_id, 'telegram:danangevent/6#0'));
+  await db.update(eventsTable).set({ video_url: null, video_at: new Date(Date.now() - 21 * 60_000) }).where(eq(eventsTable.external_id, 'telegram:danangevent/6#0'));
   assert.equal(await requestNextVideo(db), null, 'третьей попытки нет');
   await new Promise((r) => setTimeout(r, 50));
   illustrator.ask = draw;
@@ -1425,7 +1469,7 @@ test('переписка: бот пишет всё в базу, админ от�
   // Событие роль показывает пометкой: человек получает текст без неё и карточку с кнопкой в мини-приложение;
   // неизвестный id пропускается, а не превращается в битую карточку.
   const starts = new Date(Date.now() + 86_400_000);
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id: 'telegram:cardchan/1#0', channel: 'cardchan', status: 'published' as const, starts_at: starts, signup_url: '',
     announcement: { url: 'https://t.me/cardchan/1' },
     event: { title: 'Вечер в баньке', description: '', starts_at: starts.toISOString(), ends_at: null, place: 'Банька', address: null, price: '450k', tags: [], telegram_username: null, whatsapp_phone: null, url: null },
@@ -1433,7 +1477,7 @@ test('переписка: бот пишет всё в базу, админ от�
   support.ask = async () => parseSupportReply('Привет! Вот что есть сегодня:\n[[событие: cardchan-1-0]]\n[[событие: nope-1-0]]');
   bot.username = 'yaswami_bot';
   try {
-    assert.deepEqual(await write('Куда сходить?'), ['Привет! Вот что есть сегодня:', `Вечер в баньке\n🗓 ${collectedWhen(starts.toISOString())}\n📍 Банька\n💸 450k`]);
+    assert.deepEqual(await write('Куда сходить?'), ['Привет! Вот что есть сегодня:', `Вечер в баньке\n🗓 ${collectedWhen(isoInZone(starts, 'Asia/Ho_Chi_Minh'))}\n📍 Банька\n💸 450k`]);
     const card = sent.filter(([m]) => m === 'sendMessage').at(-1)![1];
     assert.equal(card.reply_markup.inline_keyboard[0][0].url, 'https://t.me/yaswami_bot/app?startapp=c_cardchan-1-0', 'кнопка открывает мини-приложение');
   } finally {
@@ -1727,7 +1771,7 @@ test('темы: список из базы; команда добавляет, �
   assert.deepEqual((await mcpCall(guest, 'topics_list', {})).body, first);
 
   const starts_at = new Date(Date.now() + 86_400_000);
-  const add = (n: number, tag: string, topic = 'другое') => db.insert(collectedEvents).values({
+  const add = (n: number, tag: string, topic = 'другое') => insertCollected({
     external_id: `telegram:topicchan/${n}#0`, channel: 'topicchan', status: 'published', starts_at, signup_url: '', announcement: { url: `https://t.me/topicchan/${n}` }, telegram_username: `host${n}`,
     event: { title: `Событие ${n}`, description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [tag], telegram_username: `host${n}`, whatsapp_phone: null, url: null, topic },
   });
@@ -1803,7 +1847,7 @@ test('темы: список из базы; команда добавляет, �
   assert.equal((await call(guest, 'PATCH', '/me', { subscribed_topics: ['цигун'] })).status, 400);
   assert.equal((await call(admin, 'PATCH', '/admin/topics/нет такой', { enabled: false })).status, 404);
 
-  await db.execute(sql`delete from collected_events where channel = 'topicchan'`);
+  await db.execute(sql`delete from events where channel = 'topicchan'`);
   await db.execute(sql`delete from topics where origin <> 'built_in'`);
   await refreshTopics(db);
 });
@@ -1822,7 +1866,7 @@ test('подписка на темы: PATCH /me и MCP, сводка новых 
   t0.setUTCHours(12, 0, 0, 0);
   const at = (hours: number) => new Date(t0.getTime() + hours * 3600_000);
   const starts_at = at(24 * 30);
-  const add = (n: number, topic: string, status: 'published' | 'pending' = 'published') => db.insert(collectedEvents).values({
+  const add = (n: number, topic: string, status: 'published' | 'pending' = 'published') => insertCollected({
     external_id: `telegram:subchan/${n}#0`, channel: 'subchan', status, starts_at, signup_url: '', announcement: { url: `https://t.me/subchan/${n}` },
     event: { title: `Событие ${n}`, description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null, topic },
   });
@@ -1841,11 +1885,11 @@ test('подписка на темы: PATCH /me и MCP, сводка новых 
   assert.deepEqual(await step(at(72)), ['Событие 5']);
   // Сводка — только о событиях города человека: переехал — о событиях нового города.
   await db.execute(sql`insert into cities (id, name, timezone) values ('hanoi', 'Ханой', 'Asia/Ho_Chi_Minh') on conflict do nothing`);
-  await db.update(collectedEvents).set({ city_id: 'hanoi' }).where(eq(collectedEvents.external_id, (await add(7, 'йога').returning())[0]!.external_id));
+  await db.update(eventsTable).set({ city_id: 'hanoi' }).where(eq(eventsTable.external_id, (await add(7, 'йога').returning())[0]!.external_id!));
   await add(8, 'йога');
   assert.deepEqual(await step(at(96)), ['Событие 8']);
   assert.equal(((await (await call(user, 'PATCH', '/me', { city_id: 'hanoi' })).json()) as Me).city_id, 'hanoi');
-  await db.update(collectedEvents).set({ published_at: null }).where(eq(collectedEvents.external_id, 'telegram:subchan/7#0'));
+  await db.update(eventsTable).set({ published_at: null }).where(eq(eventsTable.external_id, 'telegram:subchan/7#0'));
   assert.deepEqual(await step(at(120)), ['Событие 7']);
   assert.deepEqual(await (await call(user, 'PATCH', '/me', { city_id: 'nowhere' })).json(), { error: 'city_not_found' });
   assert.equal((await mcpCall(user, 'users_update_self', { city_id: 'danang' })).body.city_id, 'danang');
@@ -1862,7 +1906,7 @@ test('подписка на темы: PATCH /me и MCP, сводка новых 
   assert.deepEqual(await me(call(user, 'PATCH', '/me', { subscribed_topics: [] })), []);
   await add(6, 'йога');
   assert.deepEqual(await step(at(192)), []);
-  await db.execute(sql`delete from collected_events where channel = 'subchan'`);
+  await db.execute(sql`delete from events where channel = 'subchan'`);
   await db.execute(sql`delete from cities where id = 'hanoi'`);
 });
 
@@ -2367,7 +2411,7 @@ test('охотник: вопрос из чата становится черно
 
 test('организаторы: запись на событие становится черновиком сообщения, ответ организатора — черновиком ответа', async () => {
   await db.execute(sql`truncate conversations, tg_accounts cascade`);
-  await db.execute(sql`delete from collected_events where channel = 'hostchan'`);
+  await db.execute(sql`delete from events where channel = 'hostchan'`);
   await db.execute(sql`delete from hosts where username = 'marina_yoga'`);
   settings.adminIds = [70];
   settings.collectorSecret = 'collector-secret';
@@ -2375,7 +2419,7 @@ test('организаторы: запись на событие станови�
   const inbox = async () => (await (await call(admin, 'GET', '/admin/inbox')).json()) as InboxFeed;
   const starts_at = new Date(Date.now() + 3 * 86_400_000);
   const external_id = 'telegram:hostchan/7#0';
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id, channel: 'hostchan', status: 'published' as const, starts_at, signup_url: '', announcement: { url: 'https://t.me/hostchan/7' },
     event: { title: 'Йога на рассвете', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: 'Ми Кхе', address: null, price: null, tags: [], telegram_username: 'marina_yoga', whatsapp_phone: null, url: null },
     telegram_username: 'marina_yoga',
@@ -2386,17 +2430,17 @@ test('организаторы: запись на событие станови�
 
   // Гость записывается; роль выключена — ничего не происходит.
   assert.equal((await call(tma(71, 'Аня'), 'POST', '/collected-events/hostchan-7-0/signup')).status, 200);
-  await recordHostLead(db, external_id);
+  await recordHostLead(db, collectedSlug(external_id));
   assert.equal((await inbox()).conversations.length, 0);
 
   // Роль включена, но профиль организатора сборщик ещё не собрал — писать некому.
   settings.hostUrl = 'http://host.test';
-  await recordHostLead(db, external_id);
+  await recordHostLead(db, collectedSlug(external_id));
   assert.equal((await inbox()).conversations.length, 0);
 
   await db.insert(hosts).values({ telegram_id: 9300, username: 'marina_yoga', name: 'Марина' });
   sent.length = 0;
-  await recordHostLead(db, external_id);
+  await recordHostLead(db, collectedSlug(external_id));
   assert.match(asked[0]!.content, /«Йога на рассвете»[^\n]*записались: 1\. Страница: \S+\/e\/hostchan-7-0[\s\S]*«Это моё»/);
   assert.match(asked[1]!.content, /Марина \(@marina_yoga\)/);
   let feed = await inbox();
@@ -2407,7 +2451,7 @@ test('организаторы: запись на событие станови�
   assert.deepEqual(sent.map(([, b]) => b.chat_id), [70], 'оповещение нам, организатору пока ничего');
 
   // Вторая запись на то же событие, пока черновик ждёт, — второго черновика нет.
-  await recordHostLead(db, external_id);
+  await recordHostLead(db, collectedSlug(external_id));
   assert.equal((await inbox()).messages.length, 1);
 
   // Отправляем: сообщение уходит в личку (без адреса в чате), диалог остаётся за ролью.
@@ -2468,20 +2512,20 @@ test('организаторы: запись на событие станови�
   // Организатор вошёл в сервис — агент своего добился: неотправленное предложение пропадает, новых не будет.
   await db.execute(sql`truncate conversations cascade`);
   host.ask = async () => parseSupportReply('Марина, здравствуйте. На вашу йогу записался один человек.');
-  await recordHostLead(db, external_id);
+  await recordHostLead(db, collectedSlug(external_id));
   assert.equal((await inbox()).messages.filter((m) => m.status === 'draft').length, 1);
   assert.equal((await call(tma(9300, 'Марина'), 'GET', '/me')).status, 200); // вход организатора
   feed = await inbox();
   assert.deepEqual([feed.messages.filter((m) => m.status === 'draft').length, feed.conversations[0]!.attention], [0, null]);
   await db.execute(sql`truncate conversations cascade`);
-  await recordHostLead(db, external_id);
+  await recordHostLead(db, collectedSlug(external_id));
   assert.equal((await inbox()).conversations.length, 0, 'вошедшему не пишем');
   await db.update(hosts).set({ user_id: null }).where(eq(hosts.telegram_id, 9300));
 
   // Событие уже подтверждено организатором — писать незачем.
   await db.execute(sql`truncate conversations cascade`);
-  await db.update(collectedEvents).set({ claimed_event_id: (await newEvent(tma(70, 'Админ'))).event.id }).where(eq(collectedEvents.external_id, external_id));
-  await recordHostLead(db, external_id);
+  await db.update(eventsTable).set({ user_id: await uid(70), platform: 'yaswami' }).where(eq(eventsTable.external_id, external_id));
+  await recordHostLead(db, collectedSlug(external_id));
   assert.equal((await inbox()).conversations.length, 0);
 
   host.ask = ask;
@@ -2525,9 +2569,9 @@ test('MCP для оператора: любое событие сервиса, �
   assert.deepEqual(forged, { error: 'forbidden' }, 'гость не может действовать за другого');
 
   // Каталог из анонсов: кто записался, убрать событие по просьбе организатора.
-  await db.execute(sql`delete from collected_events where channel = 'opchan'`);
+  await db.execute(sql`delete from events where channel = 'opchan'`);
   const starts_at = new Date(Date.now() + 86_400_000);
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id: 'telegram:opchan/1#0', channel: 'opchan', status: 'published' as const, starts_at, signup_url: '', announcement: { url: 'https://t.me/opchan/1' },
     event: { title: 'Баня', description: '', starts_at: starts_at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'banya', whatsapp_phone: null, url: null },
     telegram_username: 'banya',
@@ -2559,7 +2603,7 @@ test('витрина: полки по умолчанию, полки коман�
   };
   const showcase = async () => ((await (await app.request('/showcase?city_id=danang')).json()) as Showcase).shelves;
   await db.delete(shelves);
-  await db.execute(sql`delete from collected_events where channel = 'shelftest'`);
+  await db.execute(sql`delete from events where channel = 'shelftest'`);
   // Дананг — UTC+7 без перехода на летнее время: время события записываем по его часам, как сборщик.
   const at = (days: number) => {
     const t = new Date(Date.now() + days * 86_400_000);
@@ -2573,7 +2617,7 @@ test('витрина: полки по умолчанию, полки коман�
       event: { title, description: '', starts_at: iso, ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null, topic: 'танцы', beginner_friendly: true, ...more },
     };
   };
-  await db.insert(collectedEvents).values([
+  await insertCollected([
     row(1, 'Бачата', 2), row(2, 'Сальса', 3), row(3, 'Кизомба', 4),
     row(4, 'Покер', 2, { topic: 'игры', beginner_friendly: false }),
   ]);
@@ -2655,7 +2699,7 @@ test('витрина: полки по умолчанию, полки коман�
   assert.equal((await call(admin, 'PATCH', '/admin/shelves/nope', { title: 'Х' })).status, 404);
 
   // Событие ручной полки прошло — полку всё равно можно править тем же списком; новое неизвестное — отказ.
-  await db.execute(sql`update collected_events set starts_at = now() - interval '2 days' where external_id = 'telegram:shelftest/1#0'`);
+  await db.execute(sql`update events set start_at = now() - interval '2 days' where external_id = 'telegram:shelftest/1#0'`);
   const kept = await call(admin, 'PATCH', `/admin/shelves/${picked.id}`, { title: 'Выбор недели', event_ids: [ids[2], ids[0], ids[3]] });
   assert.equal(kept.status, 200);
   assert.deepEqual(((await kept.json()) as AdminShelf).events.map((e) => e.title), ['Кизомба', 'Покер']);
@@ -2668,7 +2712,7 @@ test('витрина: полки по умолчанию, полки коман�
 
   await call(admin, 'PATCH', '/admin/cities/danang', { showcase_mode: 'draft' });
   await db.delete(shelves);
-  await db.execute(sql`delete from collected_events where channel = 'shelftest'`);
+  await db.execute(sql`delete from events where channel = 'shelftest'`);
 });
 
 test('куратор: задание раз в день в его час по времени города, с режимом витрины', async () => {
@@ -2700,9 +2744,9 @@ test('хранитель тем: переносит и снимает событ
     const res = await call(keeper, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
     return JSON.parse(((await res.json()) as { result: { content: { text: string }[] } }).result.content[0]!.text);
   };
-  await db.execute(sql`delete from collected_events where channel = 'keepertest'`);
+  await db.execute(sql`delete from events where channel = 'keepertest'`);
   const starts = new Date(Date.now() + 2 * 86_400_000);
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id: 'telegram:keepertest/1#0', channel: 'keepertest', status: 'published', city_id: 'danang', starts_at: starts, signup_url: '', announcement: { url: 'https://t.me/keepertest/1' },
     event: { title: 'Мастер-класс по свечам', description: '', starts_at: starts.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null, topic: 'обучение' },
   });
@@ -2741,7 +2785,7 @@ test('хранитель тем: переносит и снимает событ
   assert.equal((await call(admin, 'PATCH', `/admin/topics/${encodeURIComponent('керамика')}`, { emoji: '🫖' })).status, 200, 'команду лимит хранителя не касается');
 
   await db.execute(sql`delete from admin_actions where input->>'scope' = 'librarian'`);
-  await db.execute(sql`delete from collected_events where channel = 'keepertest'`);
+  await db.execute(sql`delete from events where channel = 'keepertest'`);
   await db.execute(sql`delete from topics where name = 'керамика'`);
   await refreshTopics(db);
 });
@@ -2873,7 +2917,7 @@ test('источники: команда добавляет и выключае�
   const [h] = await db.insert(hosts).values({ telegram_id: 9400, username: 'lena_tea', name: 'Лена', channel: 'lena_tea_club' }).returning();
   await db.insert(sources).values({ channel: 'lena_tea_club', host_id: h!.id });
   const at = new Date(Date.now() + 86_400_000);
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id: 'telegram:lena_tea_club/1#0', channel: 'lena_tea_club', starts_at: at, signup_url: '', announcement: { url: 'https://t.me/lena_tea_club/1' },
     event: { title: 'Чай', description: '', starts_at: at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'lena_tea', whatsapp_phone: null, url: null },
   });
@@ -3068,7 +3112,7 @@ test('источники: профиль Instagram — по ссылке, у о�
 
   // Событие из профиля (так его пишет сборщик): контакта в Telegram нет — «Записаться» ведёт в директ.
   const at = new Date(Date.now() + 86_400_000);
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id: 'instagram:C1x-Ab#0', channel: 'instagram:anna.yoga', starts_at: at, signup_url: '', status: 'published', announcement: { url: 'https://www.instagram.com/p/C1x-Ab/' },
     event: { title: 'Йога', description: '', starts_at: at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, instagram_username: 'anna.yoga', url: null },
   });
@@ -3077,7 +3121,7 @@ test('источники: профиль Instagram — по ссылке, у о�
   // Команда указала Telegram — он важнее директа.
   const edited = (await (await call(admin, 'PATCH', '/admin/collected-events/ig.C1x-Ab-0', { telegram_username: '@Anna_TG', instagram_username: '@Anna.Yoga' })).json()) as AdminCollectedEvent;
   assert.deepEqual([edited.instagram_username, edited.signup_url.split('?')[0]], ['anna.yoga', 'https://t.me/anna_tg']);
-  await db.delete(collectedEvents).where(eq(collectedEvents.channel, 'instagram:anna.yoga'));
+  await db.delete(eventsTable).where(eq(eventsTable.channel, 'instagram:anna.yoga'));
   await db.delete(sources);
 });
 
@@ -3111,11 +3155,12 @@ test('города: всё прежнее — Дананг; новый горо�
   const store = createStore(url.href);
   const at = new Date(Date.now() + 86_400_000);
   const event = { title: 'Хинкали', description: '', starts_at: at.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: 'gio_host', whatsapp_phone: null, url: null };
+  await db.execute(sql`delete from events where channel = 'danangevent'`); // события прошлых тестов: у них тоже есть контакт без профиля
   try {
     const [src] = (await store.sources()).filter((x: { channel: string }) => x.channel === 'tbilisi_chat');
     assert.deepEqual([src.city_id, src.city, src.timezone], ['tbilisi', 'Тифлис', 'Asia/Tbilisi']);
     await store.upsert({ external_id: 'telegram:tbilisi_chat/1#0', channel: 'tbilisi_chat', city_id: src.city_id, announcement: { url: 'https://t.me/tbilisi_chat/1' }, event, signup_url: '' });
-    await db.update(collectedEvents).set({ status: 'published' }).where(eq(collectedEvents.external_id, 'telegram:tbilisi_chat/1#0'));
+    await db.update(eventsTable).set({ showcase_status: 'published' }).where(eq(eventsTable.external_id, 'telegram:tbilisi_chat/1#0'));
     // Организатор, найденный по событию, получает его город; его канал становится источником того же города.
     assert.deepEqual([...(await store.unprofiled())].map((r: { username: string; city_id: string }) => [r.username, r.city_id]), [['gio_host', 'tbilisi']]);
     await store.saveHost({ telegram_id: 9500, username: 'gio_host', name: 'Гио', bio: null, channel: 'gio_supra', summary: null, city_id: 'tbilisi' });
@@ -3411,7 +3456,7 @@ async function world() {
   await db.insert(eventFeedback).values({ event_id: eventId, user_id: guestId, rating: 5, comment: 'Отлично' });
   const [contact] = await db.insert(contacts).values({ host_user_id: hostId, user_id: guestId }).returning();
   const starts = new Date(Date.now() + 86_400_000);
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id: `telegram:auditchan/${n}#0`, channel: 'auditchan', status: 'approved', starts_at: starts, signup_url: '', announcement: { url: `https://t.me/auditchan/${n}` },
     event: { title: 'Баня', description: '', starts_at: starts.toISOString(), ends_at: null, place: null, address: null, price: null, tags: [], telegram_username: null, whatsapp_phone: null, url: null },
   });
@@ -3569,6 +3614,8 @@ test('отмена: правка и удаление возвращаются ц
   const admin = tma(ADMIN, 'Админ');
   const undo = (id: string) => call(admin, 'POST', `/admin/actions/${id}/undo`);
   const eventOf = async (id: string) => (await call(admin, 'GET', `/admin/events/${id}`)).json() as Promise<EventView>;
+  // updated_at в снимок не входит (его сдвигает любое обновление): после отмены это время восстановления.
+  const stable = ({ updated_at: _, ...event }: EventView['event']) => event;
 
   // Правка события → отмена возвращает поля.
   const w = await world();
@@ -3580,7 +3627,7 @@ test('отмена: правка и удаление возвращаются ц
   assert.equal(res.status, 201);
   const undone = (await res.json()) as AdminAction;
   assert.deepEqual([undone.action, undone.undo_of, undone.entity_id], ['admin_actions_undo', edit.id, w.eventId]);
-  assert.deepEqual((await eventOf(w.eventId)).event, before.event);
+  assert.deepEqual(stable((await eventOf(w.eventId)).event), stable(before.event));
   assert.equal(((await (await call(admin, 'GET', `/admin/actions/${edit.id}`)).json()) as AdminAction).undone_by, undone.id);
 
   // Повторно — нельзя; отмена отмены возвращает правку.
@@ -3607,23 +3654,23 @@ test('отмена: правка и удаление возвращаются ц
   assert.equal((await call(admin, 'GET', `/admin/events/${v.eventId}`)).status, 404);
   assert.equal((await undo((await lastAction())!.id)).status, 201);
   const back = await eventOf(v.eventId);
-  assert.deepEqual([back.event, back.ticket_types, back.guest_counts, back.feedback], [full.event, full.ticket_types, full.guest_counts, full.feedback]);
+  assert.deepEqual([stable(back.event), back.ticket_types, back.guest_counts, back.feedback], [stable(full.event), full.ticket_types, full.guest_counts, full.feedback]);
   assert.deepEqual(await (await call(admin, 'GET', `/admin/events/${v.eventId}/guests`)).json(), guestsBefore);
 
   // Удаление пользователя возвращается с его ответами; собранное событие — с обложкой.
   const u = await world();
-  await db.insert(photos).values({ collected_external_id: `telegram:auditchan/${u.n}#0`, source: 'x', data: Buffer.from([0xff, 0xd8, 9]) });
+  await db.insert(photos).values({ event_id: `auditchan-${u.n}-0`, source: 'x', data: Buffer.from([0xff, 0xd8, 9]) });
   assert.deepEqual(await (await call(admin, 'DELETE', `/admin/users/${u.hostId}`)).json(), { error: 'user_has_events' });
   assert.equal((await call(admin, 'DELETE', `/admin/users/${u.guestId}`)).status, 204);
   assert.equal((await undo((await lastAction())!.id)).status, 201);
   assert.deepEqual(((await (await call(admin, 'GET', `/admin/events/${u.eventId}/guests`)).json()) as AdminGuest[]).map((g) => g.user_id), [u.guestId]);
   // Сборщик обновил отклик на публикацию — это не правка: отмена по-прежнему проходит.
   await call(admin, 'PATCH', `/admin/collected-events/${u.slug}`, { title: 'Поправили' });
-  await db.update(collectedEvents).set({ views: 100, reactions: 5 }).where(eq(collectedEvents.external_id, `telegram:auditchan/${u.n}#0`));
+  await db.update(eventsTable).set({ views: 100, reactions: 5 }).where(eq(eventsTable.external_id, `telegram:auditchan/${u.n}#0`));
   assert.equal((await undo((await lastAction())!.id)).status, 201);
   assert.equal((await call(admin, 'DELETE', `/admin/collected-events/${u.slug}`)).status, 204);
   assert.equal((await undo((await lastAction())!.id)).status, 201);
-  const [cover] = await db.select().from(photos).where(eq(photos.collected_external_id, `telegram:auditchan/${u.n}#0`));
+  const [cover] = await db.select().from(photos).where(eq(photos.event_id, `auditchan-${u.n}-0`));
   assert.deepEqual(cover!.data, Buffer.from([0xff, 0xd8, 9]));
 
   // Организатор удаляется и возвращается вместе с Practice и записями на них; решение по одной Practice отменяется.
@@ -3674,9 +3721,9 @@ test('обложки — в бакете R2: в базе только адрес
     const res = await call(tma(ADMIN, 'Админ'), 'POST', `/admin/covers/${w.slug}`, { image_url: png });
     const { cover_url } = (await res.json()) as { cover_url: string };
     assert.equal(res.status, 200);
-    assert.match(cover_url, new RegExp(`^https://media\\.test/covers/collected/${w.slug}-[0-9a-f]{16}\\.jpg$`));
+    assert.match(cover_url, new RegExp(`^https://media\\.test/covers/event/${w.slug}-[0-9a-f]{16}\\.jpg$`));
     assert.deepEqual([puts.length, puts[0]!.type, puts[0]!.data[0], puts[0]!.data[1]], [1, 'image/jpeg', 0xff, 0xd8], 'в бакет ушёл пережатый JPEG');
-    const [row] = await db.select().from(photos).where(eq(photos.collected_external_id, `telegram:auditchan/${w.n}#0`));
+    const [row] = await db.select().from(photos).where(eq(photos.event_id, `auditchan-${w.n}-0`));
     assert.deepEqual([row!.data, row!.url], [null, cover_url], 'байтов в базе нет');
     const old = await app.request(`/photos/${row!.id}`);
     assert.deepEqual([old.status, old.headers.get('location')], [301, cover_url], 'ссылка /api/photos/<id> ведёт в бакет');
@@ -3725,16 +3772,16 @@ test('журнал: упавшее действие не оставляет ни
 
 test('безопасность: чужой контакт не даёт права на событие, токен роли ограничен, сессия истекает, лимиты', async () => {
   // Опубликованное событие без личного контакта: посторонний подтвердить его не может.
-  await db.delete(collectedEvents);
+  await db.delete(eventsTable).where(isNotNull(eventsTable.external_id));
   const e = extracted({ title: 'Экстатик у моря' });
-  await db.insert(collectedEvents).values({
+  await insertCollected({
     external_id: 'telegram:danangyoga/100#0', channel: 'danangyoga', announcement: { url: 'https://t.me/danangyoga/100' }, event: e,
     starts_at: new Date(e.starts_at), signup_url: '', status: 'published',
   });
   const bob = tma(7002, 'Боб');
   assert.equal((await call(bob, 'POST', '/collected-events/danangyoga-100-0/claim')).status, 403);
   // Контакт в анонсе, который команда ещё не проверила, права на событие не даёт.
-  await db.update(collectedEvents).set({ status: 'pending', telegram_username: 'u7002' });
+  await db.update(eventsTable).set({ showcase_status: 'pending', telegram_username: 'u7002' });
   assert.equal((await call(bob, 'POST', '/collected-events/danangyoga-100-0/claim')).status, 404);
   assert.deepEqual(((await (await call(bob, 'GET', '/me')).json()) as Me).claimable, []);
 
@@ -3936,4 +3983,81 @@ test('китайский спам боту: молча, без пользова�
   await handleUpdate(db, botMessage(9605, 'ヨガのイベントはありますか'));
   assert.ok(await userIdByTelegram(db, 9605));
   assert.ok(sent.length > 0);
+});
+
+test('видимость (ADR-0014): приватное событие — только по ссылке; публичное выходит в афишу после решения команды, доверенный организатор — сразу', async () => {
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const host = tma(8101, 'Хозяин');
+  const guest = tma(8102, 'Гость');
+  const soon = new Date(Date.now() + 3 * 86_400_000).toISOString().replace(/\.\d+Z$/, '+00:00');
+  const feed = async () => ((await (await app.request('/collected-events')).json()) as CollectedEventItem[]).map((e) => e.id);
+  const tool = async (auth: string, name: string, args: object) =>
+    JSON.parse(((await (await call(auth, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })).json()) as { result: any }).result.content[0].text);
+
+  // Без ответа о видимости событие приватное: в афише его нет, решение команды не нужно.
+  const hidden = await newEvent(host, { name: 'Ужин для своих', start_at: soon });
+  assert.deepEqual([hidden.event.platform, hidden.event.visibility, hidden.event.showcase_status], ['yaswami', 'private', null]);
+  assert.ok(!(await feed()).includes(hidden.event.id));
+  assert.equal((await app.request(`/collected-events/${hidden.event.id}`)).status, 404, 'страницы в афише нет');
+  assert.equal((await call(guest, 'GET', `/events/${hidden.event.id}`)).status, 200, 'по ссылке открывается');
+
+  // Публичное — заявка в афишу: ждёт команду, в ленте его ещё нет.
+  const open = await newEvent(host, { name: 'Банный день у океана', start_at: soon, visibility: 'public', geo_address_json: { address: 'Son Tra' }, ticket_types: [{ price_text: '450k' }] });
+  assert.deepEqual([open.event.visibility, open.event.showcase_status], ['public', 'pending']);
+  assert.ok(!(await feed()).includes(open.event.id));
+  const queue = (await (await call(admin, 'GET', '/admin/collected-events?status=pending')).json()) as AdminCollectedEvent[];
+  assert.deepEqual(queue.filter((e) => e.id === open.event.id).map((e) => [e.title, e.price, e.claimed_event_id]), [['Банный день у океана', '450k', open.event.id]]);
+
+  // Команда одобрила — событие в афише, карточка ведёт на его страницу в Ясвами, запись — ответом «Пойду».
+  assert.equal((await call(admin, 'PATCH', `/admin/collected-events/${open.event.id}`, { status: 'approved' })).status, 200);
+  assert.ok((await feed()).includes(open.event.id), 'иллюстратор выключен — одобренное выходит сразу');
+  const card = (await (await app.request(`/collected-events/${open.event.id}`)).json()) as CollectedEventItem;
+  assert.deepEqual([card.title, card.address, card.price, card.claimed_event_id, card.signup_url.endsWith(`/e/${open.event.id}`)], ['Банный день у океана', 'Son Tra', '450k', open.event.id, true]);
+  assert.equal((await call(guest, 'POST', `/collected-events/${open.event.id}/signup`)).status, 200);
+  assert.deepEqual((await (await call(guest, 'GET', `/events/${open.event.id}`)).json() as EventView).guests, [], '«Записаться» на событие с записью ничего не пишет: отвечают «Пойду»');
+  assert.equal((await call(guest, 'POST', `/events/${open.event.id}/rsvp`, { approval_status: 'approved' })).status, 200);
+  // Гость видит событие без контакта организатора и без отклика на публикацию — как на витрине.
+  const seen = ((await (await call(guest, 'GET', `/events/${open.event.id}`)).json()) as EventView).event;
+  assert.deepEqual([seen.telegram_username, seen.views, (await (await call(host, 'GET', `/events/${open.event.id}`)).json() as EventView).event.telegram_username], [null, null, 'u8101']);
+
+  // Организатор снимает событие с афиши и возвращает: решение команды остаётся, проверка заново не нужна.
+  const viaMcp = (await tool(host, 'events_update', { event_id: open.event.id, visibility: 'private' })) as EventView;
+  assert.deepEqual([viaMcp.event.visibility, viaMcp.event.showcase_status], ['private', 'published']);
+  assert.ok(!(await feed()).includes(open.event.id));
+  assert.equal((await call(host, 'PATCH', `/events/${open.event.id}`, { visibility: 'public' })).status, 200);
+  assert.ok((await feed()).includes(open.event.id));
+  assert.equal((await call(guest, 'PATCH', `/events/${open.event.id}`, { visibility: 'private' })).status, 403, 'видимость меняет только организатор');
+
+  // Организатору, чьё событие команда уже одобрила, доверяют: следующее публичное выходит без проверки.
+  const next = await newEvent(host, { name: 'Парение для новичков', start_at: soon, visibility: 'public' });
+  assert.ok(['approved', 'published'].includes(next.event.showcase_status!));
+  await new Promise((r) => setTimeout(r, 50)); // публикация идёт после ответа (afterCommit)
+  assert.ok((await feed()).includes(next.event.id));
+  // Черновик в афишу не просится, пока не опубликован.
+  const draft = await newEvent(host, { name: 'Черновик', start_at: soon, visibility: 'public', status: 'draft' });
+  assert.equal(draft.event.showcase_status, null);
+  assert.ok(['approved', 'published'].includes(((await (await call(host, 'PATCH', `/events/${draft.event.id}`, { status: 'published' })).json()) as EventView).event.showcase_status!));
+
+  // Отклонённое команда снимает; одно отклонение — и доверия нет.
+  assert.equal((await call(admin, 'PATCH', `/admin/collected-events/${next.event.id}`, { status: 'rejected' })).status, 200);
+  assert.ok(!(await feed()).includes(next.event.id));
+  assert.equal((await newEvent(host, { name: 'Ещё одно', start_at: soon, visibility: 'public' })).event.showcase_status, 'pending');
+  // Событие с организатором и гостями модерация не удаляет: это делает admin_events_delete.
+  assert.equal((await call(admin, 'DELETE', `/admin/collected-events/${open.event.id}`)).status, 404);
+  await db.delete(eventsTable).where(eq(eventsTable.user_id, await uid(8101)));
+});
+
+test('контакты организатора: клиенты, записавшиеся на его услуги, входят в аудиторию с названиями услуг', async () => {
+  const master = tma(98201, 'Мастер');
+  const client = tma(98202, 'Клиент');
+  await call(client, 'GET', '/me');
+  // Профиль мастера собран сборщиком, запись клиента пришла раньше, чем мастер вошёл в Ясвами.
+  const [profile] = await db.insert(hosts).values({ telegram_id: 98201, username: 'u98201', name: 'Мастер', status: 'published' }).returning();
+  const [practice] = await db.insert(practicesTable).values({ host_id: profile!.id, title: 'Массаж спины', topic: 'телесные практики', status: 'published' }).returning();
+  await db.insert(practiceSignups).values({ practice_id: practice!.id, host_id: profile!.id, user_id: await uid(98202) });
+  await call(master, 'GET', '/me'); // вход привязывает профиль к пользователю по Telegram id
+  const { entries } = (await (await call(master, 'GET', '/contacts')).json()) as { entries: Contact[] };
+  assert.deepEqual(entries.map((c) => [c.first_name, c.practices, c.event_approved_count, c.event_pending_count]), [['Клиент', ['Массаж спины'], 0, 0]]);
+  await db.delete(hosts).where(eq(hosts.id, profile!.id));
 });

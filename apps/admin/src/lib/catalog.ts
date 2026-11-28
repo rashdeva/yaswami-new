@@ -13,7 +13,9 @@ export function sourceName(channel: string): string {
   return ig ? `@${ig}` : channel.startsWith('-') ? channel : `@${channel}`;
 }
 /** Источник одной строкой, где значка нет (подзаголовки, подсказки): «Instagram @ник» или «Telegram @канал». */
-export const sourcePlatform = (channel: string): string => `${instagramOf(channel) ? 'Instagram' : 'Telegram'} ${sourceName(channel)}`;
+export const sourcePlatform = (channel: string): string =>
+  // Пустой источник — событие создал организатор (ADR-0014).
+  (channel ? `${instagramOf(channel) ? 'Instagram' : 'Telegram'} ${sourceName(channel)}` : 'создал организатор');
 
 /** Модерация организатора (HOST_STATUSES в core). */
 /** Способы входа человека (user_identities, ADR-0008). */
@@ -62,7 +64,7 @@ export const EVENT_STATUS_LABELS = { draft: 'Черновик', published: 'Оп
 /** Возможности, которые команда включает человеку лично. */
 export const FEATURE_LABELS: Record<Feature, string> = { event_create: 'Создавать события (организатор)' };
 
-export const APPROVAL_LABELS: Record<Guest['approval_status'], string> = { approved: 'Пойдёт', maybe: 'Думает', declined: 'Не пойдёт', waitlist: 'Лист ожидания' };
+export const APPROVAL_LABELS: Record<Guest['approval_status'], string> = { approved: 'Пойдёт', maybe: 'Думает', declined: 'Не пойдёт', waitlist: 'Лист ожидания', pending_approval: 'Записался, ждёт организатора' };
 
 /**
  * Контакт для записи, который виден по `signup_url`: сервер отдаёт только эту ссылку, а сами поля

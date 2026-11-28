@@ -12,7 +12,8 @@ import { refreshTopics, setTopicIcon, topicFields, toTopicItem } from '../topics
 
 const selectTopics = (db: Db | Tx) => db.select({
   ...topicFields,
-  events_count: sql<number>`(select count(*) from collected_events e where e.event->>'topic' = ${topics.name})::int`,
+  // Имя таблицы — словами: drizzle пишет колонку без таблицы («name»), а у events есть своя `name`.
+  events_count: sql<number>`(select count(*) from events e where e.showcase_status is not null and e.topic = "topics"."name")::int`,
 }).from(topics);
 type Row = Awaited<ReturnType<typeof selectTopics>>[number];
 const toAdminTopic = (r: Row): AdminTopic => ({
@@ -35,8 +36,8 @@ export const listAllTopics = async (db: Db): Promise<AdminTopic[]> => (await sel
  * как «другое»; вернуть — правкой события.
  */
 const retag = (tx: Db | Tx, name: string, tags: string[], from?: string) => (tags.length
-  ? tx.execute(sql`update collected_events set event = jsonb_set(event, '{topic}', to_jsonb(${name}::text))
-      where event->>'topic' in ${[OTHER_TOPIC, ...(from ? [from] : [])]} and exists (select 1 from jsonb_array_elements_text(event->'tags') t where lower(t) in ${tags})`)
+  ? tx.execute(sql`update events set topic = ${name}
+      where showcase_status is not null and topic in ${[OTHER_TOPIC, ...(from ? [from] : [])]} and exists (select 1 from jsonb_array_elements_text(tags) t where lower(t) in ${tags})`)
   : null);
 
 /** Подписанные на широкую тему получают и выделенную из неё: иначе они молча перестали бы слышать о части событий. */
@@ -87,13 +88,13 @@ const CANDIDATE_DAYS = 90;
 export async function listTopicCandidates(db: Db, { min_events }: TopicCandidateListInput): Promise<TopicCandidate[]> {
   const rows = await db.execute<TopicCandidate & Record<string, unknown>>(sql`
     with recent as (
-      select event, created_at, event->>'topic' as topic, coalesce(telegram_username, channel) as host
-      from collected_events where event ? 'topic' and created_at > now() - make_interval(days => ${CANDIDATE_DAYS})
+      select name, tags, created_at, topic, coalesce(telegram_username, channel) as host
+      from events where showcase_status is not null and topic is not null and created_at > now() - make_interval(days => ${CANDIDATE_DAYS})
     ), totals as (select topic, count(*)::int as n from recent group by 1)
     select lower(t) as tag, nullif(r.topic, ${OTHER_TOPIC}) as inside, max(totals.n) as inside_events_count,
       count(*)::int as events_count, count(distinct r.host)::int as hosts_count,
-      (array_agg(r.event->>'title' order by r.created_at desc))[1:3] as examples
-    from recent r join totals using (topic), jsonb_array_elements_text(r.event->'tags') t
+      (array_agg(r.name order by r.created_at desc))[1:3] as examples
+    from recent r join totals using (topic), jsonb_array_elements_text(r.tags) t
     where lower(t) not in (select name from topics union all select jsonb_array_elements_text(tags) from topics)
     group by 1, r.topic
     having case when r.topic = ${OTHER_TOPIC} then count(*) >= ${min_events}

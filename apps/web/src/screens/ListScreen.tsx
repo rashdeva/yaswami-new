@@ -9,7 +9,7 @@ import type { EventListData } from '../api.ts';
 import { dayLabel, kindIcon, wallParts } from '../format.ts';
 import { EventRow } from '../components/EventRow.tsx';
 
-const MY_STATUS = { approved: 'вы идёте', maybe: 'вы думаете', declined: 'вы не идёте', waitlist: 'вы в листе ожидания' } as const;
+const MY_STATUS = { approved: 'вы идёте', maybe: 'вы думаете', declined: 'вы не идёте', waitlist: 'вы в листе ожидания', pending_approval: 'вы записались' } as const;
 
 function note({ event, is_host, my_approval_status }: EventListData): string {
   if (event.status === 'cancelled') return 'отменено';
@@ -23,6 +23,8 @@ interface Props {
   /** Собранные события, куда человек заходил или нажимал «Записаться». */
   collected: MyCollectedItem[];
   lead?: ReactNode;
+  /** Под событиями: аудитория организатора. */
+  tail?: ReactNode;
   onOpen: (id: string) => void;
   onOpenCollected: (event: CollectedEventItem) => void;
   /** Выйти на сайте; null — в Telegram, там выходить не из чего. */
@@ -37,7 +39,7 @@ interface Props {
 /** Строка списка: свои события и собранные выглядят одинаково. */
 interface Row { key: string; kind: Event['kind']; icon: string; topic?: string; cover?: string | null; title: string; note: string; start: string; /** Дата и время «на стене» в поясе события: по ним день и время в списке. */ wall: string; past: boolean; open: () => void }
 
-export function ListScreen({ events, collected, lead, onOpen, onOpenCollected, onLogout, onNew, onPeople, onKind }: Props) {
+export function ListScreen({ events, collected, lead, tail, onOpen, onOpenCollected, onLogout, onNew, onPeople, onKind }: Props) {
   useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   // Событие считается прошедшим через три часа после начала (или после конца, если он задан).
   const now = Date.now();
@@ -45,7 +47,9 @@ export function ListScreen({ events, collected, lead, onOpen, onOpenCollected, o
     ...events.map((item): Row => {
       const { event } = item;
       return {
-        key: event.id, kind: event.kind, icon: kindIcon(event.kind), cover: item.cover_url, title: event.name,
+        key: event.id, kind: event.kind, cover: item.cover_url, title: event.name,
+        // У события с темой (в том числе подтверждённого из анонса) — её иконка и цвет, как в афише.
+        ...(event.topic ? { icon: topicIcon(event.topic), topic: topicSlug(event.topic) } : { icon: kindIcon(event.kind) }),
         note: [event.geo_address_json?.address, note(item)].filter(Boolean).join(' · '),
         start: event.start_at, wall: wallParts(event.start_at, event.timezone).join('T'), past: new Date(event.end_at ?? event.start_at).getTime() + (event.end_at ? 0 : 3 * 3600e3) < now, open: () => { onOpen(event.id); },
       };
@@ -86,6 +90,7 @@ export function ListScreen({ events, collected, lead, onOpen, onOpenCollected, o
       })}
       {past.length > 0 && <section><h2>Прошедшие</h2>{grid(past)}</section>}
       {rows.length === 0 && <div className="state"><b>🗓</b><p>Здесь появятся события, на которые вы записались.</p></div>}
+      {tail}
       {onLogout && <div className="group logout"><button className="row del" onClick={onLogout}>Выйти</button></div>}
       {onNew && <div className="main"><div><button className="cta" onClick={onNew}>Добавить событие, товар или услугу</button></div></div>}
     </>

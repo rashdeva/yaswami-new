@@ -1,6 +1,7 @@
 // Формы запросов и ответов. Одни и те же схемы проверяют REST-запросы, описывают инструменты MCP и формы на фронте.
 import * as z from 'zod';
-import type { Event, Feature, Guest, TicketType, User } from './schema.ts';
+import type { CollectedMedia, Event, Feature, Guest, TicketType, User } from './schema.ts';
+export type { CollectedMedia };
 import type { HostFeedbackEntry, HostFeedbackSummary } from './feedback.ts';
 import { Event as EventSchema, Notification, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
 import { OTHER_TOPIC, isTopic } from './topics.ts';
@@ -23,14 +24,18 @@ export const timeZone = z.string().refine(isTimeZone, 'unknown time zone').descr
 const eventFields = EventSchema.pick({
   kind: true, name: true, description: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true,
   topic: true, what_happens: true, for_whom: true, beginner_friendly: true, takeaway: true, guide: true,
-}).extend({ start_at: dateTime, end_at: dateTime.nullable(), timezone: timeZone });
+}).extend({
+  start_at: dateTime, end_at: dateTime.nullable(), timezone: timeZone,
+  // Имя и значения — как `visibility` в Luma (ADR-0014).
+  visibility: EventSchema.shape.visibility.describe('Who sees the event. public — everyone in the city showcase and search, after the team approves it (organizers the team already approved go straight in); private — only people who have the link. Ask the organizer, never guess: default private'),
+});
 
 const ticketTypeFields = TicketTypeSchema.omit({ id: true, event_id: true });
 
 export const EventCreateInput = eventFields
   .partial({
     description: true, end_at: true, geo_address_json: true, meeting_url: true, max_capacity: true, allow_plus_one: true,
-    topic: true, what_happens: true, for_whom: true, beginner_friendly: true, takeaway: true, guide: true,
+    topic: true, what_happens: true, for_whom: true, beginner_friendly: true, takeaway: true, guide: true, visibility: true,
   })
   .extend({
     status: z.enum(['draft', 'published']).optional(),
@@ -85,9 +90,12 @@ export interface GuestView {
   is_me: boolean;
 }
 
+/** Событие, у которого есть организатор: на него отвечают, его правят, у него есть гости (ADR-0014). */
+export type HostedEvent = Event & { user_id: User['id'] };
+
 /** Событие целиком для одного зрителя. Скрытые типы билетов видит организатор и тот, кому тип назначен. */
 export interface EventView {
-  event: Event;
+  event: HostedEvent;
   cover_url: string | null; // в Luma — event.cover_url; у нас картинка хранится отдельно от строки события, поэтому рядом с ним
   cover_pending: boolean; // в Luma нет: обложку сейчас рисует иллюстратор, через минуту-другую появится cover_url
   ticket_types: TicketType[];
@@ -101,7 +109,7 @@ export interface EventView {
 }
 
 export interface EventListItem {
-  event: Event;
+  event: HostedEvent;
   cover_url: string | null; // как в EventView: в Luma — event.cover_url
   is_host: boolean;
   my_approval_status: Guest['approval_status'] | null;
@@ -294,14 +302,6 @@ export type SearchEntry =
   | { type: 'product'; product: ProductItem };
 export interface SearchResult { entries: SearchEntry[] } // самые подходящие первыми
 
-/** Фото или видео из публикации-источника; лежит в нашем бакете (ADR-0006). В Luma такого нет. */
-export interface CollectedMedia {
-  type: 'photo' | 'video';
-  url: string;
-  width?: number | null; // в пикселях; по ним страница решает, годится ли ролик в обложку. У файлов до размеров — нет
-  height?: number | null;
-}
-
 /** Карточка собранного события для витрины. */
 export interface CollectedEventItem extends Omit<CollectedEvent, 'telegram_username' | 'whatsapp_phone' | 'instagram_username' | 'url'> {
   id: string; // годится для адреса страницы: <канал>-<публикация>-<номер события в ней>, из Instagram — ig.<публикация>-<номер>
@@ -488,8 +488,12 @@ export interface Contact {
   user_id: User['id'];
   created_at: Date;
   event_approved_count: number; // на сколько событий организатора человек идёт
+  /** На сколько событий человек нажал «Записаться», а организатор его ещё не подтвердил (`pending_approval`). В Luma такого нет. */
+  event_pending_count: number;
   first_name: string;
   username: string | null;
+  /** Услуги организатора (Practice), на которые человек записался, — их названия. Непусто — это его клиент. В Luma такого нет. */
+  practices: string[];
 }
 
 /** Кто вошёл и на какие собранные события он уже записывался. */
@@ -498,7 +502,7 @@ export interface Me {
   /** Возможности, открытые человеку: включённые лично и включённые всем. */
   features: Feature[];
   collected_signups: CollectedEventItem['id'][];
-  /** Предстоящие собранные события, где контактом указан этот человек: их можно подтвердить как свои. */
+  /** Предстоящие события афиши, где контактом указан этот человек: их можно подтвердить как свои. У каждого — `signups_count`. */
   claimable: CollectedEventItem[];
   /** Профиль организатора, который человек подтвердил входом; null — он не организатор каталога. В Luma такого нет. */
   host_id: string | null;

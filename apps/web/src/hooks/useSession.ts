@@ -53,6 +53,26 @@ export function useSession() {
       void client.invalidateQueries({ queryKey: keys.collectedEvent(id) });
     },
   });
+  // «Да, все мои»: подтверждаем события по очереди и открываем «Мои события» — там они уже с гостями.
+  const claimMany = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const done: string[] = [];
+      try {
+        for (const id of ids) {
+          const view = await api.claim(id);
+          client.setQueryData(keys.event(view.event.id), view);
+          done.push(id);
+        }
+      } finally {
+        // Что успели подтвердить — уже не предлагаем, даже если следующее не прошло.
+        client.setQueryData<Me | null>(keys.me, (m) => m && { ...m, features: done.length ? [...new Set([...m.features, 'event_create' as const])] : m.features, claimable: m.claimable.filter((c) => !done.includes(c.id)) });
+        void client.invalidateQueries({ queryKey: keys.mine });
+        void client.invalidateQueries({ queryKey: keys.contacts });
+        for (const id of done) { track('event_claimed', { collected_event_id: id }); void client.invalidateQueries({ queryKey: keys.collectedEvent(id) }); }
+      }
+      if (done.length) await navigate({ to: '/my' });
+    },
+  });
   const logout = useMutation({
     // Выход ведёт на витрину; сначала переход, чтобы личная страница не мигнула приглашением войти.
     mutationFn: async () => {
@@ -75,6 +95,7 @@ export function useSession() {
     // Войти на сайте можно, когда сервер это умеет, а человек открыл страницу не из Telegram.
     canLogin: !!config?.web_login && !hasCredentials,
     claim: claim.mutateAsync,
+    claimMany: claimMany.mutateAsync,
     logout: logout.mutateAsync,
   };
 }

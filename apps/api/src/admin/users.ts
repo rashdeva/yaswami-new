@@ -6,7 +6,7 @@ import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
 import { revokeTokens, telegramIdOf } from '../auth.ts';
 import type { Db } from '../db/client.ts';
-import { collectedEventSignups, contacts, conversations, events, guests, practiceSignups, userActivity, userIdentities, users } from '../db/schema.ts';
+import { contacts, conversations, events, guests, practiceSignups, userActivity, userIdentities, users } from '../db/schema.ts';
 import { isAdmin } from '../inbox.ts';
 import * as s from '../services.ts';
 import { verifyTicket } from '../support.ts';
@@ -24,10 +24,9 @@ export async function userByTicket(db: Db, ticket: string): Promise<User> {
   return user;
 }
 
-/** Сколько раз человек записывался: ответы на события Ясвами, записи на собранные события и на услуги. */
+/** Сколько раз человек записывался: ответы на события (и «Записаться» на внешние — тоже строка гостя) и записи на услуги. */
 const registrations = sql<number>`(
   (select count(*) from ${guests} where ${guests.user_id} = ${users.id})
-  + (select count(*) from ${collectedEventSignups} where ${collectedEventSignups.user_id} = ${users.id})
   + (select count(*) from ${practiceSignups} where ${practiceSignups.user_id} = ${users.id})
 )::int`;
 
@@ -67,12 +66,11 @@ export async function getUser(db: Db, id: number): Promise<AdminUserView> {
   const user = await userById(db, id);
   const answers = await db.select({ guest: guests, event_name: events.name }).from(guests).innerJoin(events, eq(events.id, guests.event_id))
     .where(eq(guests.user_id, id)).orderBy(desc(guests.registered_at));
-  const signups = await db.select({ external_id: collectedEventSignups.external_id }).from(collectedEventSignups).where(eq(collectedEventSignups.user_id, id));
   return {
     user: (await withIdentities(db, await userRows(db).where(eq(users.id, user.id))))[0]!,
     events: await db.select().from(events).where(eq(events.user_id, id)).orderBy(desc(events.start_at)),
     guests: answers.map((r) => ({ ...r.guest, event_name: r.event_name })),
-    collected_signups: signups.map((r) => s.collectedSlug(r.external_id)),
+    collected_signups: answers.filter((r) => r.guest.approval_status === 'pending_approval').map((r) => r.guest.event_id),
   };
 }
 
@@ -148,16 +146,16 @@ export async function listActivity(db: Db, input: AdminActivityListInput): Promi
   const parts = [
     want('user_joined') && sql`select 'user_joined', a.created_at, a.user_id, null, null, null, a.joined_via, a.start_param, null::bigint
       from user_activity a`,
-    want('signup') && sql`select 'guest_registered', g.registered_at, g.user_id, 'event', e.id, e.name, null, null, null::bigint
+    // «Записаться» на внешнее событие — гость, которого организатор ещё не подтвердил.
+    want('signup') && sql`select case when g.approval_status = 'pending_approval' then 'collected_signup' else 'guest_registered' end,
+        g.registered_at, g.user_id, case when g.approval_status = 'pending_approval' then 'collected_event' else 'event' end,
+        e.id, e.name, null, null, null::bigint
       from guests g join events e on e.id = g.event_id`,
-    want('signup') && sql`select 'collected_signup', c.created_at, c.user_id, 'collected_event', c.external_id, ce.event->>'title', null, null, null
-      from collected_event_signups c join collected_events ce on ce.external_id = c.external_id`,
     want('signup') && sql`select 'practice_signup', p.created_at, p.user_id, 'host', p.host_id::text, pr.title, null, null, null
       from practice_signups p join practices pr on pr.id = p.practice_id`,
     want('visit') && sql`select 'visit', v.created_at, v.user_id,
-        case when v.event_id is null then 'collected_event' else 'event' end, coalesce(v.event_id, v.collected_external_id),
-        coalesce(e.name, ce.event->>'title'), null, null, v.referrer_id
-      from visits v left join events e on e.id = v.event_id left join collected_events ce on ce.external_id = v.collected_external_id`,
+        case when e.user_id is null then 'collected_event' else 'event' end, e.id, e.name, null, null, v.referrer_id
+      from visits v join events e on e.id = v.event_id`,
   ].filter((p) => p !== false);
   // Имена колонок — у подзапроса: первой в объединении может оказаться любая часть, а Postgres берёт имена из первой.
   const rows = await db.execute<{
@@ -180,7 +178,7 @@ export async function listActivity(db: Db, input: AdminActivityListInput): Promi
       created_at: new Date(r.created_at),
       user,
       target: entity && r.target_id
-        ? { entity, id: entity === 'collected_event' ? s.collectedSlug(r.target_id) : r.target_id, name: r.target_name ?? r.target_id }
+        ? { entity, id: r.target_id, name: r.target_name ?? r.target_id }
         : null,
       joined_via: r.joined_via,
       start_param: r.start_param,

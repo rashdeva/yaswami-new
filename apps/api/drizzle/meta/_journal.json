@@ -554,6 +554,13 @@
       "when": 1795875198948,
       "tag": "20261128141318_parties_direction",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1795876079720,
+      "tag": "20261128142759_events_one_table",
+      "breakpoints": true
     }
   ]
 }

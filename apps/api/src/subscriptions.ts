@@ -2,11 +2,11 @@
 // Сама подписка меняется операцией users/update-self (services.ts); здесь — только сводка.
 import { and, eq, gt, gte, isNull, lt, sql } from 'drizzle-orm';
 import type { Db } from './db/client.ts';
-import { collectedEvents, subscriptions, users } from './db/schema.ts';
-import { nearbyCityIds } from '@yaswami/core';
+import { events, subscriptions, users } from './db/schema.ts';
+import { isoInZone, nearbyCityIds } from '@yaswami/core';
 import { settings } from './settings.ts';
 import { notify } from './notifications.ts';
-import { collectedSlug, listCities } from './services.ts';
+import { inShowcase, listCities } from './services.ts';
 
 /** Не чаще одной сводки за это время: бота, который пишет о каждом событии, выключают. */
 const DIGEST_EVERY_MS = 20 * 3600_000;
@@ -24,7 +24,7 @@ const hourIn = (timeZone: string, now: Date) => {
 /** Шаг сводки: отмечает вышедшее в ленту и пишет тем, кому пора и есть о чём. */
 export async function digestTopics(db: Db, now = new Date()): Promise<void> {
   // Момент выхода ставим здесь, а не там, где меняется статус: путей в published несколько (очередь, команда).
-  await db.update(collectedEvents).set({ published_at: now }).where(and(eq(collectedEvents.status, 'published'), isNull(collectedEvents.published_at)));
+  await db.update(events).set({ published_at: now }).where(and(inShowcase, isNull(events.published_at)));
 
   const due = await db
     .select({ user_id: subscriptions.user_id, topics: subscriptions.topics, notified_at: subscriptions.notified_at, timezone: users.timezone, city_id: users.city_id })
@@ -33,17 +33,17 @@ export async function digestTopics(db: Db, now = new Date()): Promise<void> {
   if (!due.length) return;
   // ponytail: все предстоящие события в память и фильтр на каждого подписчика; при тысячах подписчиков — один запрос с join по теме.
   const fresh = await db
-    .select({ external_id: collectedEvents.external_id, city_id: collectedEvents.city_id, event: collectedEvents.event, published_at: collectedEvents.published_at })
-    .from(collectedEvents)
-    .where(and(eq(collectedEvents.status, 'published'), gt(collectedEvents.starts_at, now), gte(collectedEvents.published_at, new Date(Math.min(...due.map((d) => d.notified_at.getTime()))))))
-    .orderBy(collectedEvents.starts_at);
+    .select({ id: events.id, city_id: events.city_id, name: events.name, start_at: events.start_at, timezone: events.timezone, topic: events.topic, published_at: events.published_at })
+    .from(events)
+    .where(and(inShowcase, gt(events.start_at, now), gte(events.published_at, new Date(Math.min(...due.map((d) => d.notified_at.getTime()))))))
+    .orderBy(events.start_at);
 
   const cities = await listCities(db);
   for (const { user_id, topics, notified_at, timezone, city_id } of due) {
     // Город не выбран — первый, как в витрине; события соседних городов — тоже, как в витрине.
     const near = nearbyCityIds(cities, city_id ?? settings.defaultCityId);
-    const items = fresh.filter((e) => near.includes(e.city_id) && e.published_at! > notified_at && topics.includes(e.event.topic ?? ''))
-      .map(({ external_id, event: { title, starts_at, topic } }) => ({ id: collectedSlug(external_id), title, starts_at, topic }));
+    const items = fresh.filter((e) => near.includes(e.city_id) && e.published_at! > notified_at && topics.includes(e.topic ?? ''))
+      .map(({ id, name, start_at, timezone, topic }) => ({ id, title: name, starts_at: isoInZone(start_at, timezone), topic: topic ?? undefined }));
     const hour = hourIn(timezone, now);
     if (!items.length || hour < DAY_HOURS[0] || hour >= DAY_HOURS[1]) continue;
     // Сначала отметка, потом отправка: сбой Telegram не должен приводить к повторной сводке каждые пять минут.
