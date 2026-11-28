@@ -59,7 +59,9 @@ export function CatalogItemScreen({ id, onDeleted }: { id: string; onDeleted: ()
       }
     >
       <div className="flex flex-wrap items-center gap-3">
-        <span className="inline-flex items-center gap-1"><ExternalLink href={e.source_url} icon>анонс</ExternalLink> в <SourceLink channel={e.channel} /></span>
+        {e.channel
+          ? <span className="inline-flex items-center gap-1"><ExternalLink href={e.source_url} icon>анонс</ExternalLink> в <SourceLink channel={e.channel} /></span>
+          : <span className="inline-flex items-center gap-1"><ExternalLink href={e.source_url} icon>страница события</ExternalLink> · <SourceLink channel={e.channel} /></span>}
         <CityBadge id={e.city_id} />
         {/* Страница события — на сайте, вне админки: обычная ссылка, не маршрут. */}
         {e.status === 'published' && <ExternalLink href={collectedPath(e.id)} icon>страница события</ExternalLink>}

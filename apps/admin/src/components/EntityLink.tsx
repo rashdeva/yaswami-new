@@ -53,6 +53,8 @@ export const InstagramLink = ({ handle }: { handle: string }) => (
 
 /** Источник со значком площадки: канал Telegram или профиль Instagram. `href` — куда вести (анонс), иначе — сам источник. */
 export function SourceLink({ channel, href }: { channel: string; href?: string }) {
+  // Источника нет у события, которое организатор создал сам и выставил в афишу (ADR-0014).
+  if (!channel) return <span className="text-muted-foreground">создал организатор</span>;
   const url = href ?? sourceLink(channel);
   const label = <><PlatformIcon instagram={!!instagramOf(channel)} />{sourceName(channel)}</>;
   return url ? <ExternalLink href={url}>{label}</ExternalLink> : <span className="inline-flex items-center gap-1">{label}</span>;

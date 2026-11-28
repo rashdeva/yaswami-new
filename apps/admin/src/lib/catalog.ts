@@ -13,7 +13,9 @@ export function sourceName(channel: string): string {
   return ig ? `@${ig}` : channel.startsWith('-') ? channel : `@${channel}`;
 }
 /** Источник одной строкой, где значка нет (подзаголовки, подсказки): «Instagram @ник» или «Telegram @канал». */
-export const sourcePlatform = (channel: string): string => `${instagramOf(channel) ? 'Instagram' : 'Telegram'} ${sourceName(channel)}`;
+export const sourcePlatform = (channel: string): string =>
+  // Пустой источник — событие создал организатор (ADR-0014).
+  (channel ? `${instagramOf(channel) ? 'Instagram' : 'Telegram'} ${sourceName(channel)}` : 'создал организатор');
 
 /** Модерация организатора (HOST_STATUSES в core). */
 /** Способы входа человека (user_identities, ADR-0008). */
