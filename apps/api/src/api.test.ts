@@ -1723,7 +1723,7 @@ test('темы: список из базы; команда добавляет, �
   const guest = tma(1300, 'Гость');
   const listed = async () => (await (await app.request('/topics')).json()) as TopicItem[];
   const first = await listed();
-  assert.deepEqual([first.length, first[0]!.name, first[0]!.slug, first[0]!.color, first[0]!.icon_url], [13, 'баня', 'banya', '#e0442e', null], 'первые темы завела миграция (12) и «вечеринки» — следом');
+  assert.deepEqual([first.length, first[0]!.name, first[0]!.slug, first[0]!.color, first[0]!.icon_url], [12, 'баня', 'banya', '#e0442e', null], 'первые темы завела миграция');
   assert.deepEqual((await mcpCall(guest, 'topics_list', {})).body, first);
 
   const starts_at = new Date(Date.now() + 86_400_000);
@@ -1751,7 +1751,7 @@ test('темы: список из базы; команда добавляет, �
   assert.equal(((await (await app.request('/collected-events/topicchan-1-0')).json()) as CollectedEventItem).topic, 'цигун');
   assert.equal((await call(guest, 'PATCH', '/me', { subscribed_topics: ['цигун'] })).status, 200);
   assert.deepEqual(await candidates(), [['падел', 3, 3]], 'метка темы больше не кандидат');
-  assert.equal(((await mcpCall(admin, 'admin_topics_list', {})).body as AdminTopic[]).length, 14);
+  assert.equal(((await mcpCall(admin, 'admin_topics_list', {})).body as AdminTopic[]).length, 13);
 
   // Иконка: предмет на белом фоне → PNG 192×192 с прозрачным фоном, адрес меняется вместе с ней.
   const red = await sharp({ create: { width: 32, height: 32, channels: 3, background: '#ff0000' } }).png().toBuffer();
@@ -1799,7 +1799,7 @@ test('темы: список из базы; команда добавляет, �
   // Выключенная тема уходит из списка и подписок; событие хранит её имя.
   const off = (await mcpCall(admin, 'admin_topics_update', { name: 'цигун', enabled: false })).body as AdminTopic;
   assert.equal(off.enabled, false);
-  assert.equal((await listed()).length, 14);
+  assert.equal((await listed()).length, 13);
   assert.equal((await call(guest, 'PATCH', '/me', { subscribed_topics: ['цигун'] })).status, 400);
   assert.equal((await call(admin, 'PATCH', '/admin/topics/нет такой', { enabled: false })).status, 404);
 
