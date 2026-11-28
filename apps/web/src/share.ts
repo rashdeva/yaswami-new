@@ -16,6 +16,8 @@ export function shareLink(link: string, text: string, toast: (text: string) => v
   // когда у бота появится шаринг (savePreparedInlineMessage + shareMessage).
   track('link_shared', { link });
   if (inTelegram) tg!.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
-  else if (navigator.share) void navigator.share({ text, url: link }).catch(() => {});
+  // Ссылка — последней строкой текста, а не отдельным полем `url`: «Скопировать» в системном «Поделиться» склеивает
+  // `url` и `text` в один адрес, и текст попадал в параметр ссылки (`startapp=c_…%20YOGA%20Hatha…`).
+  else if (navigator.share) void navigator.share({ text: `${text}\n${link}` }).catch(() => {});
   else navigator.clipboard.writeText(link).then(() => toast('Ссылка скопирована'), () => toast('Не получилось скопировать'));
 }
