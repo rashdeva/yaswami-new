@@ -102,7 +102,7 @@ export function HostProfile({ host, loaded, city, own, back, tools, lead, events
       <p className="note">Профиль собран из открытых каналов и чатов{host.instagram_handle ? ' и Instagram' : ''}{host.confirmed ? ' и подтверждён организатором' : ''}.</p>
 
       {/* Мастер в шторке — этот же: нажатие на него просто закрывает шторку. */}
-      <PracticeSheet open={sheet.open} onClose={sheet.close} onPick={sheet.pick} onSignUp={sheet.signUp} onOpenHost={sheet.close} />
+      <PracticeSheet open={sheet.open} onClose={sheet.close} onPick={sheet.pick} onSignUp={own ? null : sheet.signUp} onOpenHost={sheet.close} />
     </>
   );
 }

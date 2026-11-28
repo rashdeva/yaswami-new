@@ -534,7 +534,8 @@ export async function getCollectedEvent(db: Db, slug: string, anyStatus = false)
     ...toCollectedItem(row),
     popular: popular(upcoming).has(row.id),
     signups_count,
-    hosts: h ? [{ ...hostCard(h), photos: hostPhotos(h) }] : [],
+    // Отклонённого организатора не показываем: его страницы нет, ссылка из «Участников» вела бы в пустоту.
+    hosts: h && h.status !== 'rejected' ? [{ ...hostCard(h), photos: hostPhotos(h) }] : [],
   };
 }
 

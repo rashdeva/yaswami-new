@@ -463,6 +463,8 @@ test('каталог организаторов: с событиями или Pr
   assert.equal((await call(admin, 'PATCH', `/admin/hosts/${list[0]!.id}`, { status: 'rejected' })).status, 200);
   assert.deepEqual(((await (await app.request('/hosts')).json()) as HostListItem[]).map((h) => h.username), ['dasha_yoga', 'new_master']);
   assert.equal((await app.request(`/hosts/${list[0]!.id}`)).status, 404);
+  // и в «Участниках» его события не показываем: ссылка вела бы на несуществующую страницу
+  assert.deepEqual(((await (await app.request(`/collected-events/${club.events[0]!.id}`)).json()) as CollectedEventItem).hosts, []);
   settings.adminIds = admins;
 });
 

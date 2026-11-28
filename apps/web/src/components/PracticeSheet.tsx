@@ -10,7 +10,8 @@ interface Props {
   onClose: () => void;
   /** Другая услуга того же мастера — шторка показывает её. */
   onPick: (practice: Practice) => void;
-  onSignUp: (host: HostListItem, practice: Practice) => void;
+  /** null — своя услуга в своём профиле: записываться к себе незачем, кнопки нет. */
+  onSignUp: ((host: HostListItem, practice: Practice) => void) | null;
   onOpenHost: (host: HostListItem) => void;
 }
 
@@ -62,8 +63,12 @@ export function PracticeSheet({ open, onClose, onPick, onSignUp, onOpenHost }: P
                   </div>
                 </>
               )}
-              <button className="cta" onClick={() => onSignUp(open.host, open.practice)}>Записаться в Telegram</button>
-              <p className="note">Откроется чат с мастером. Время подтверждает он сам.</p>
+              {onSignUp && (
+                <>
+                  <button className="cta" onClick={() => onSignUp(open.host, open.practice)}>Записаться в Telegram</button>
+                  <p className="note">Откроется чат с мастером. Время подтверждает он сам.</p>
+                </>
+              )}
             </>
           )}
         </Drawer.Content>
