@@ -69,6 +69,7 @@
 | Направление — над Topic (образец — категории витрины Luma; в их API категорий нет) | список — `DIRECTIONS` в `packages/core/src/topics.ts`, в коде; у темы поле `direction` (slug направления) в `topics_list` и `admin_topics_create/update` | `PATCH /admin/topics/<name>` `{ "direction": "wellness" }` |
 | Товар мастера — Product (в Luma такого нет) | `products_*`, `/products`; для команды `admin_products_*`, `/admin/products`; ссылка «Написать» — `contact_url` | `PATCH /admin/products/<id>` `{ "status": "published" }` |
 | Предложенный источник — Source от человека (в Luma так добавляют событие в чужой календарь: `calendars/events/add` с `submission_mode: pending`, затем approve/reject) | человек — `sources_add`, `POST /sources`; роль support за собеседника — `person_sources_add`; решение команды — поле `approval_status` (`approved`, `declined`) в `admin_sources_update`; ждёт — `pending_approval`, кто прислал — `submitted_by` в `admin_sources_list` | `POST /sources` `{ "channel": "t.me/danang_party" }` |
+| Отзыв на услугу и Репутация организатора (в Luma такого нет: там у события только `feedback_email`) | гость оставляет отзыв только в боте (`practice-feedback.ts`; операции и формы нет), ссылка на бота — `feedback_url` у организатора; репутация — поле `feedback` (`count`, `average`, `attended_count`) в `hosts_list` и `hosts_get`, тексты — `feedback_entries`; мастер о себе — `hosts_get_self`, `hosts_update_self`, `/me/host` (в пару к `users_get_self`), поле `feedback_bonus`; команде — `admin_hosts_feedback_list`, `admin_hosts_feedback_update` (сверить отзыв, присланный ссылкой: `verified`, `comment`), `admin_hosts_feedback_delete`. Правила видимости — `packages/core/src/feedback.ts` | `PATCH /admin/hosts/<id>/feedback/<practice_id>/<user_id>` `{ "verified": true }` |
 | Единый поиск по каталогу: события, услуги и товары (в Luma такого нет) | `search`, `/search`; вход `query`, как у `places/search`; у находки `type` | `GET /search?query=йога` |
 | Приход и активность (в Luma такого нет; там у гостя только `utm_source`) | команде — `admin_activity_list`, `GET /admin/activity`, вход `type` (`user_joined`, `signup`, `visit`) и `user_id`; у `AdminUser` поля `created_at`, `joined_via` (`JOINED_VIA`), `start_param`, `last_seen_at`, `registrations` | `GET /admin/activity?type=signup` |
 
@@ -88,6 +89,12 @@
 - **Ошибки MCP:** кроме `AppError` и ошибок схемы наружу уходит только `{ error: 'internal' }`, подробности — в лог: текст ошибки базы несёт SQL.
 - **Заголовки безопасности** ставит `main.ts` (`secureHeaders`); фрейм запрещён только `/admin`: мини-приложение Telegram открывает во фрейме.
 - **Собранное событие, по которому команда приняла решение**, меняет только команда и источники, которые она добавила сама: анонс, присланный боту или взятый из источника, у которого указан организатор (сборщик взял канал из профиля или организатора указала команда), такое событие не трогает (`addCollectedEvent`, `pollChannel` сборщика). Анонс из источника, который добавила команда, сведения дописывает, но контакт для записи (`telegram_username`, `whatsapp_phone`, `url`) не меняет: иначе чужой пост с похожим названием увёл бы запись к своему автору. Подтвердить событие как своё можно только одобренное.
+
+## Намерение в ссылке на бота
+
+Форм у нас нет: добавить событие, товар или услугу и оставить отзыв можно только в переписке с ботом. Кнопка в приложении открывает бота с **Намерением** — `t.me/<бот>?start=<намерение>`; схема одна на всех, в `packages/core/src/start.ts`: тип `BotIntent`, запись `botIntentParam` / `botIntentUrl`, разбор `parseBotIntent` (после `parseStart`: хвосты `-r…` и `-s…` с Намерением уживаются). Бот разбирает его в одном месте — `handleUpdate` в `bot.ts` — и вместо приветствия спрашивает нужное.
+
+Новое действие «через бота» добавляется так же, а не своим параметром: вариант в `BotIntent`, ветка в `handleUpdate`, ссылка через `botIntentUrl` (на фронте — `botChatLink(intent)`), случаи в тесте «намерение в ссылке на бота» (`core.test.ts`, `api.test.ts`). Вопрос бота остаётся в переписке, и роль поддержки по нему понимает, что следующее сообщение — добавление, а не поиск.
 
 ## Возможности
 

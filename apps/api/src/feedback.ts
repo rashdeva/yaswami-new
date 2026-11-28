@@ -2,9 +2,11 @@
 // от 1 до 5 (кнопки под сообщением). После оценки просит пару слов — ответ на это сообщение становится текстом
 // отзыва: полей ввода в виджетах Telegram нет. Организатору отзывы приходят сводкой, а не по одному.
 // Всё состояние — в таблице event_feedback, поэтому перезапуск сервера ничего не теряет.
-import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import type { HostFeedbackEntry, HostFeedbackSummary } from '@yaswami/core';
+import { botIntentUrl, FEEDBACK_PUBLIC_RATING, shownAverage } from '@yaswami/core';
 import type { Db } from './db/client.ts';
-import { eventFeedback, events, guests, users } from './db/schema.ts';
+import { eventFeedback, events, guests, hosts, practiceFeedback, practices, users } from './db/schema.ts';
 import { userIdByTelegram } from './auth.ts';
 import { notify } from './notifications.ts';
 import { settings } from './settings.ts';
@@ -123,6 +125,43 @@ export async function eventFeedbackView(db: Db, eventId: string, forHost: boolea
     average: rows.length ? rows.reduce((n, r) => n + r.rating!, 0) / rows.length : null,
     items: forHost ? rows.map((r) => ({ ...r, rating: r.rating! })) : [],
   };
+}
+
+export const NO_FEEDBACK: HostFeedbackSummary = { count: 0, average: null, attended_count: 0 };
+
+/**
+ * Репутация организаторов (всех или перечисленных): оценки их услуг и — у тех, кто вошёл в Ясвами, — их событий, вместе.
+ * У кого оценок нет, того в ответе нет.
+ */
+export async function hostFeedbackSummaries(db: Db, hostIds?: string[]): Promise<Map<string, HostFeedbackSummary>> {
+  if (hostIds && !hostIds.length) return new Map();
+  const [offered, hosted] = await Promise.all([
+    db.select({ host_id: practiceFeedback.host_id, user_id: practiceFeedback.user_id, rating: practiceFeedback.rating }).from(practiceFeedback)
+      .where(and(isNotNull(practiceFeedback.rating), hostIds ? inArray(practiceFeedback.host_id, hostIds) : undefined)),
+    db.select({ host_id: hosts.id, user_id: eventFeedback.user_id, rating: eventFeedback.rating }).from(eventFeedback)
+      .innerJoin(events, eq(events.id, eventFeedback.event_id)).innerJoin(hosts, eq(hosts.user_id, events.user_id))
+      .where(and(isNotNull(eventFeedback.rating), hostIds ? inArray(hosts.id, hostIds) : undefined)),
+  ]);
+  return new Map([...Map.groupBy([...offered, ...hosted], (r) => r.host_id)].map(([id, rows]) => [id, {
+    count: rows.length, average: shownAverage(rows.map((r) => r.rating!)), attended_count: new Set(rows.map((r) => r.user_id)).size,
+  }]));
+}
+
+/** Где оставить отзыв о мастере: бот, открытый с намерением (BotIntent в core). Пока имя бота неизвестно — страница мастера. */
+export const hostFeedbackUrl = (hostId: string) =>
+  bot.username ? botIntentUrl(bot.username, { type: 'feedback', host_id: hostId }) : `${settings.publicUrl}/hosts/${hostId}`;
+
+const ENTRIES_SHOWN = 20;
+
+/** Отзывы на услуги организатора, которые видят все (isPublicFeedback в core); свежие сверху. */
+export async function hostFeedbackEntries(db: Db, hostId: string): Promise<HostFeedbackEntry[]> {
+  const rows = await db
+    .select({ user_first_name: users.first_name, practice_title: practices.title, rating: practiceFeedback.rating, comment: practiceFeedback.comment, via: practiceFeedback.via, source_url: practiceFeedback.source_url, updated_at: practiceFeedback.updated_at })
+    .from(practiceFeedback).innerJoin(users, eq(users.id, practiceFeedback.user_id)).innerJoin(practices, eq(practices.id, practiceFeedback.practice_id))
+    .where(and(eq(practiceFeedback.host_id, hostId), gte(practiceFeedback.rating, FEEDBACK_PUBLIC_RATING), isNotNull(practiceFeedback.comment),
+      or(isNull(practiceFeedback.source_url), isNotNull(practiceFeedback.verified_at))))
+    .orderBy(desc(practiceFeedback.updated_at)).limit(ENTRIES_SHOWN);
+  return rows.map((r) => ({ ...r, rating: r.rating!, comment: r.comment! }));
 }
 
 /** Раз в пять минут: запросы отзывов и сводки организаторам. Один сбой не останавливает цикл. */

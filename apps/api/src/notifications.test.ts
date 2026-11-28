@@ -93,6 +93,14 @@ test('шаблоны: у каждого момента своя карточка
   const lots = templates.feedback_received({ event, count: 5, average: 5, fresh: Array.from({ length: 5 }, () => ({ first_name: 'Аня', rating: 5, comment: null })) });
   assert.deepEqual(lots.rows.at(-1), ['…', 'и ещё 2 — все отзывы на странице события']);
 
+  // Услуга мастера: оценки в ряд и отдельным рядом «Не дошёл»; бонус мастера — строкой. Сводка мастеру ведёт на его страницу.
+  const practice = { id: '0f8fad5b-d9cb-469f-a165-70867728950e', title: 'Тайский массаж' };
+  const visit = templates.feedback_request({ practice, host: { name: 'Лена', feedback_bonus: '−10% на следующий визит' } });
+  assert.deepEqual([visit.label, visit.title, visit.rows], ['Вы были у мастера?', 'Тайский массаж', [['👤', 'Лена'], ['⭐', 'Оцените, если были, — это займёт секунду'], ['🎁', 'За отзыв: −10% на следующий визит']]]);
+  assert.deepEqual(toWidget(visit).reply_markup.inline_keyboard.map((row) => row.map((b) => 'callback_data' in b && b.callback_data.split(':')[2])), [['1', '2', '3', '4', '5'], ['0']]);
+  const toMaster = templates.feedback_received({ host: { id: practice.id }, count: 3, average: 4, fresh: Array.from({ length: 5 }, () => ({ first_name: 'Аня', rating: 5, comment: null })) });
+  assert.deepEqual([toMaster.title, toMaster.rows.at(-1), toMaster.buttons[0]!.url.endsWith(`/hosts/${practice.id}`)], ['Ваши услуги', ['…', 'и ещё 2'], true]);
+
   const confirmed = templates.rsvp_confirmed({ event: { ...event, start_at: new Date('2026-11-14T00:00:00+07:00'), geo_address_json: null } });
   assert.equal(confirmed.label, 'Вы записаны');
   assert.deepEqual(confirmed.rows, [['🗓', 'сб, 14 ноября']], 'время не указано — только день');
@@ -121,7 +129,12 @@ test('размер: код виджета ≤ 4096 байт после сжат�
       fresh: Array.from({ length: 50 }, () => ({ first_name: 'Щ'.repeat(64), rating: 5, comment: 'Щ'.repeat(1000) })),
     }),
   };
-  for (const [moment, card] of Object.entries(cards)) {
+  const practice = { id: '0f8fad5b-d9cb-469f-a165-70867728950e' };
+  const more: Record<string, Card> = {
+    practice_feedback_request: templates.feedback_request({ practice: { id: practice.id, title: 'Щ'.repeat(500) }, host: { name: 'Щ'.repeat(200), feedback_bonus: 'Щ'.repeat(120) } }),
+    practice_feedback_received: templates.feedback_received({ host: { id: practice.id }, count: 100000, average: 4.25, fresh: Array.from({ length: 50 }, () => ({ first_name: 'Щ'.repeat(64), rating: 5, comment: 'Щ'.repeat(1000) })) }),
+  };
+  for (const [moment, card] of Object.entries({ ...cards, ...more })) {
     const widget = toWidget(card);
     assert.equal(widget.html, widgetHtml);
     assert.ok(Buffer.byteLength(widget.public_data) <= 1024, `${moment}: состояние ${Buffer.byteLength(widget.public_data)} байт`);

@@ -27,7 +27,7 @@ const source = inTelegram ? 'telegram' : 'web';
 type Action =
   | 'app_opened' | 'login_started' | 'logged_in' | 'logged_out'
   | 'feed_viewed' | 'feed_filtered' | 'shelf_viewed' | 'shelf_opened' | 'shelf_item_opened' | 'direction_opened' | 'direction_filtered' | 'all_events_opened' | 'all_events_day' | 'source_suggest_opened' | 'source_added' | 'topics_subscribed' | 'topics_skipped' | 'collected_event_viewed' | 'signup_clicked' | 'collected_signed_up' | 'host_contacted' | 'host_channel_opened' | 'host_instagram_opened'
-  | 'hosts_viewed' | 'hosts_filtered' | 'host_viewed' | 'practice_opened' | 'practice_signup_clicked'
+  | 'hosts_viewed' | 'hosts_filtered' | 'host_viewed' | 'practice_opened' | 'practice_signup_clicked' | 'host_feedback_opened' | 'host_feedback_bot_opened' | 'host_feedback_link_copied' | 'host_bonus_saved'
   | 'products_viewed' | 'products_filtered' | 'product_viewed' | 'product_contact_clicked'
   | 'search_used' | 'search_result_opened'
   | 'event_viewed' | 'rsvp_submitted' | 'link_shared'

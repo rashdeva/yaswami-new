@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, exists, getTableColumns, gte, inArray, isNot
 import type { SQL } from 'drizzle-orm';
 import type {
   AdminCollectedEvent, CollectedListInput, CollectedStatus, CollectedUpdateInput,
-  City, CityFilterInput, CollectedEventItem, CollectedHost, Contact, HostItem, HostListItem, MyCollectedItem, Practice, Product, ProductItem, ProductList, ProductListInput, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
+  City, CityFilterInput, CollectedEventItem, CollectedHost, Contact, HostFeedbackSummary, HostItem, HostListItem, MyCollectedItem, Practice, Product, ProductItem, ProductList, ProductListInput, PracticeSignup, PracticeSignupInput, Event, Me, EventCreateInput, EventListItem, EventUpdateInput, EventView, RsvpInput, SearchEntry, SearchInput, SearchResult, TicketType,
   TicketTypeCreateInput, TicketTypeUpdateInput, User, UserSelfUpdateInput, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
@@ -13,10 +13,10 @@ import { afterCommit } from './audit.ts';
 // Цикл с auth.ts безопасен: обе стороны берут только функции и зовут их после загрузки.
 import { telegramIdOf } from './auth.ts';
 import type { Db, Tx } from './db/client.ts';
-import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, photos, practices, practiceSignups, products, sources, subscriptions, ticketTypes, userActivity, userIdentities, users, visits } from './db/schema.ts';
+import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, photos, practiceFeedback, practices, practiceSignups, products, sources, subscriptions, ticketTypes, userActivity, userIdentities, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl, saveCover, storedPhotoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
-import { eventFeedbackView } from './feedback.ts';
+import { eventFeedbackView, hostFeedbackEntries, hostFeedbackSummaries, hostFeedbackUrl, NO_FEEDBACK } from './feedback.ts';
 import { recordHostLead } from './inbox.ts';
 import { guestRegistered } from './rsvp-notices.ts';
 import { settings } from './settings.ts';
@@ -519,7 +519,7 @@ export async function practicesByHost(db: Db | Tx, hostId?: string): Promise<Map
  * список категорий — контент-политика каталога услуг (ADR-0012).
  * `all` — все его Practice; `eventTopics` — темы его предстоящих опубликованных событий, по одной на событие.
  */
-function toHostListItem(h: HostRecord, all: Practice[], eventTopics: (string | undefined)[], sells = false): HostListItem | null {
+function toHostListItem(h: HostRecord, all: Practice[], eventTopics: (string | undefined)[], feedback: HostFeedbackSummary = NO_FEEDBACK, sells = false): HostListItem | null {
   // Отклонённого организатора не показываем целиком. Остальное решается по отдельности: события — своим статусом,
   // Practice — своим (PRACTICE_STATUSES), товары — своим (PRODUCT_STATUSES).
   if (h.status === 'rejected') return null;
@@ -530,6 +530,7 @@ function toHostListItem(h: HostRecord, all: Practice[], eventTopics: (string | u
   return {
     ...hostCard(h), id: h.id, username: h.username, contact_url: `https://t.me/${h.username}`, url: `${settings.publicUrl}/hosts/${h.id}`,
     topics: Object.keys(TOPIC_GUIDES).filter((t) => mentioned.has(t)), practices, upcoming_count: eventTopics.length,
+    feedback, feedback_bonus: h.feedback_bonus, feedback_url: hostFeedbackUrl(h.id),
   };
 }
 
@@ -544,10 +545,10 @@ async function upcomingTopicsByHost(db: Db, username?: string): Promise<Map<stri
 
 /** Каталог организаторов города и его соседей (без города — города по умолчанию): у кого есть предстоящие события или Practice. Открыт всем, как витрина событий. */
 export async function listHosts(db: Db, { city_id = settings.defaultCityId }: CityFilterInput = {}): Promise<HostListItem[]> {
-  const [topics, offered] = await Promise.all([upcomingTopicsByHost(db), practicesByHost(db)]);
+  const [topics, offered, feedback] = await Promise.all([upcomingTopicsByHost(db), practicesByHost(db), hostFeedbackSummaries(db)]);
   // ponytail: все профили за раз, без постраничной выдачи, пока организаторов одного города — сотни
   return (await db.select().from(hosts).where(inArray(hosts.city_id, await nearbyCities(db, city_id))))
-    .flatMap((h) => toHostListItem(h, offered.get(h.id) ?? [], topics.get(h.username) ?? []) ?? [])
+    .flatMap((h) => toHostListItem(h, offered.get(h.id) ?? [], topics.get(h.username) ?? [], feedback.get(h.id)) ?? [])
     .sort((a, b) => b.upcoming_count - a.upcoming_count || b.practices.length - a.practices.length || a.name.localeCompare(b.name));
 }
 
@@ -556,10 +557,10 @@ export async function getHost(db: Db, id: string): Promise<HostItem> {
   if (!UUID.test(id)) throw new AppError('not_found', 404);
   const [h] = await db.select().from(hosts).where(eq(hosts.id, id));
   const sold = h ? await db.select().from(products).where(and(eq(products.host_id, h.id), liveProduct)).orderBy(desc(products.posted_at), desc(products.id)) : [];
-  const item = h && toHostListItem(h, (await practicesByHost(db, h.id)).get(h.id) ?? [], (await upcomingTopicsByHost(db, h.username)).get(h.username) ?? [], sold.length > 0);
+  const item = h && toHostListItem(h, (await practicesByHost(db, h.id)).get(h.id) ?? [], (await upcomingTopicsByHost(db, h.username)).get(h.username) ?? [], (await hostFeedbackSummaries(db, [h.id])).get(h.id), sold.length > 0);
   if (!item) throw new AppError('not_found', 404);
   const rows = await collectedWithCover(db).where(and(notStarted, published, eq(collectedEvents.telegram_username, h!.username))).orderBy(asc(collectedEvents.starts_at));
-  return { ...item, photos: hostPhotos(h!), events: rows.map(toCollectedItem), products: sold.map((p) => toProductItem(p, h!)) };
+  return { ...item, photos: hostPhotos(h!), events: rows.map(toCollectedItem), products: sold.map((p) => toProductItem(p, h!)), feedback_entries: await hostFeedbackEntries(db, h!.id) };
 }
 
 // --- Товары мастеров (Product в CONTEXT.md). Пишет их сборщик; здесь — что видит гость.
@@ -657,7 +658,7 @@ export async function search(db: Db, { query, city_id = settings.defaultCityId, 
   // ponytail: среди одинаково подходящих событий ближайшее чуть выше — надбавка на глаз, до 0.1 и тает за недели
   const eventScore = sql<number>`${event.score} + 0.1 / (1 + greatest(0, extract(epoch from ${collectedEvents.starts_at} - now())) / 604800)`;
 
-  const [events, offers, goods, topics, offered] = await Promise.all([
+  const [events, offers, goods, topics, offered, feedback] = await Promise.all([
     db.select({ ...getTableColumns(collectedEvents), cover_id: photos.id, cover_file: photos.url, score: eventScore })
       .from(collectedEvents).leftJoin(photos, eq(photos.collected_external_id, collectedEvents.external_id))
       .where(and(notStarted, published, inArray(collectedEvents.city_id, near), event.where)).orderBy(desc(eventScore)).limit(limit),
@@ -669,8 +670,9 @@ export async function search(db: Db, { query, city_id = settings.defaultCityId, 
       .where(and(liveProduct, visibleMaker, inArray(hosts.city_id, near), product.where)).orderBy(desc(product.score)).limit(limit),
     upcomingTopicsByHost(db),
     practicesByHost(db),
+    hostFeedbackSummaries(db),
   ]);
-  const hostItem = (h: HostRecord) => toHostListItem(h, offered.get(h.id) ?? [], topics.get(h.username) ?? []);
+  const hostItem = (h: HostRecord) => toHostListItem(h, offered.get(h.id) ?? [], topics.get(h.username) ?? [], feedback.get(h.id));
   const found: (SearchEntry & { score: number })[] = [
     ...events.map((r) => ({ type: 'event' as const, event: toCollectedItem(r), score: r.score })),
     ...offers.flatMap((r) => {
@@ -902,7 +904,7 @@ export const deleteSelf = (db: Db, actor: User): Promise<void> =>
     await tx.update(hosts).set({ user_id: null }).where(eq(hosts.user_id, id));
     await tx.delete(contacts).where(or(eq(contacts.user_id, id), eq(contacts.host_user_id, id)));
     // То же, что сделал бы каскад при удалении строки.
-    for (const t of [apiTokens, userIdentities, photos, collectedEventSignups, practiceSignups, visits, eventFeedback, subscriptions, userActivity]) await tx.delete(t).where(eq(t.user_id, id));
+    for (const t of [apiTokens, userIdentities, photos, collectedEventSignups, practiceSignups, practiceFeedback, visits, eventFeedback, subscriptions, userActivity]) await tx.delete(t).where(eq(t.user_id, id));
   });
 
 /** `city_id` передаёт только команда (admin/events.ts): в схемах организатора его нет, его событие получает город по умолчанию. */

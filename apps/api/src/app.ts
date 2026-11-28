@@ -9,7 +9,7 @@ import type { AppConfig, User } from '@yaswami/core';
 import {
   AccountCreateInput, AccountLoginInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminActionListInput, AdminActivityListInput, AdminContactListInput, AdminEventCreateInput, AdminEventListInput, AdminEventUpdateInput, CityCreateInput, CityUpdateInput,
   AdminGuestUpdateInput, CollectedListInput, CollectedUpdateInput, ConversationUpdateInput, CoverSetInput, DraftSendInput, DraftUpdateInput, EventCreateInput,
-  CityFilterInput, EventUpdateInput, HostCreateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, AdminProductListInput, ProductCreateInput, PracticeCreateInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceAddInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
+  CityFilterInput, EventUpdateInput, HostCreateInput, HostFeedbackUpdateInput, HostSelfUpdateInput, HostSearchCreateInput, HostSearchMatchListInput, HostSearchUpdateInput, HostUpdateInput, InboxSendInput, LeadInput, AdminProductListInput, ProductCreateInput, PracticeCreateInput, PracticeSignupInput, PracticeUpdateInput, ProductListInput, ProductUpdateInput, RsvpInput, SearchInput, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, SourceAddInput, SourceCreateInput, SourceSearchCreateInput, SourceUpdateInput, TicketTypeCreateInput, TicketTypeUpdateInput, TopicCandidateListInput, TopicCreateInput, TopicUpdateInput, UserSearchInput, UserSelfUpdateInput, UserUpdateInput, VisitInput,
 } from '@yaswami/core';
 import * as admin from './admin.ts';
 import type { Ctx } from './audit.ts';
@@ -29,6 +29,7 @@ import { createPractice, createProduct } from './maker.ts';
 import { handleMcp } from './mcp.ts';
 import { getPhoto } from './photos.ts';
 import * as hs from './host-searches.ts';
+import * as pf from './practice-feedback.ts';
 import { addSource } from './sources.ts';
 import * as s from './services.ts';
 import { createShelf, deleteShelf, getShowcase, listShelves, updateShelf } from './shelves.ts';
@@ -111,6 +112,18 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .post('/', json(ProductCreateInput), async (c) => c.json(await createProduct(db, c.var.actor, c.req.valid('json')), 201));
   const userPractices: Hono<Env> = new Hono<Env>()
     .post('/', json(PracticeCreateInput), async (c) => c.json(await createPractice(db, c.var.actor, c.req.valid('json')), 201));
+  // Бонус мастера за отзыв и отзывы на его услуги для команды (practice-feedback.ts) — по той же причине отдельно. Сам отзыв гость оставляет в боте.
+  const selfHost: Hono<Env> = new Hono<Env>()
+    .get('/', async (c) => c.json(await pf.getHostSelf(db, c.var.actor)))
+    .patch('/', json(HostSelfUpdateInput), async (c) => c.json(await pf.updateHostSelf(db, c.var.actor, c.req.valid('json'))));
+  const adminHostFeedback: Hono<Env> = new Hono<Env>()
+    .get('/:id/feedback', async (c) => c.json(await pf.listHostFeedback(db, c.req.param('id'))))
+    .patch('/:id/feedback/:practice_id/:user_id', json(HostFeedbackUpdateInput), async (c) =>
+      c.json(await pf.updateHostFeedback(db, ctx(c), c.req.param('id'), c.req.param('practice_id'), userId.parse(c.req.param('user_id')), c.req.valid('json'))))
+    .delete('/:id/feedback/:practice_id/:user_id', async (c) => {
+      await pf.deleteHostFeedback(db, ctx(c), c.req.param('id'), c.req.param('practice_id'), userId.parse(c.req.param('user_id')));
+      return c.body(null, 204);
+    });
   // Поиск источников для города (admin/sources.ts) — по той же причине отдельно.
   const adminSourceSearches: Hono<Env> = new Hono<Env>()
     .get('/', async (c) => c.json(await admin.listSourceSearches(db, c.req.query('city_id'))))
@@ -415,6 +428,8 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     });
   app.route('/products', userProducts); // после входа и запрета токенам ролей, как /sources
   app.route('/practices', userPractices);
+  app.route('/me/host', selfHost);
+  app.route('/admin/hosts', adminHostFeedback);
   app.route('/sources', userSources); // после входа и запрета токенам ролей: только вошедшему человеку
   app.route('/admin/topics', adminTopics); // после `.use('/admin/*')`: только команде
   app.route('/admin/source-searches', adminSourceSearches);
