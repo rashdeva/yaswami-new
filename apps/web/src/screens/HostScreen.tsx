@@ -7,9 +7,10 @@ import { EventRow } from '../components/EventRow.tsx';
 import { MediaViewer } from '../components/MediaViewer.tsx';
 import { PracticeRow } from '../components/PracticeRow.tsx';
 import { ProductCard } from '../components/ProductCard.tsx';
-import { dayLabel } from '../format.ts';
+import { dayLabel, reputation } from '../format.ts';
 import { useHost, usePracticeSheet } from '../hooks/useHosts.ts';
 import { PracticeSheet } from '../components/PracticeSheet.tsx';
+import { HostFeedback } from './HostFeedback.tsx';
 import { useViewed } from '../hooks/useViewed.ts';
 import { openExternal } from '../tg.ts';
 
@@ -19,10 +20,12 @@ interface Props {
   onOpenEvent: (event: CollectedEventItem) => void;
   onOpenProduct: (product: ProductItem) => void;
   onBack: (() => void) | null;
+  /** Человек смотрит собственную страницу: вместо «Оставить отзыв» — ссылка для клиентов и бонус за отзыв. */
+  own: boolean;
 }
 
 /** Страница организатора или мастера: кто это, что ведёт, что продаёт, ближайшие события и как ему написать. */
-export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack }: Props) {
+export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack, own }: Props) {
   useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const { host, loaded, failed } = useHost(id);
   const sheet = usePracticeSheet();
@@ -52,6 +55,7 @@ export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack }: Pro
           onError={(e) => { e.currentTarget.src = topicIcon(topic); e.currentTarget.style.borderRadius = '0'; }} />
         <small>{[city, ...host.topics].join(' · ')}</small>
         <h1>{host.name}</h1>
+        {reputation(host.feedback) && <small className="rating">{reputation(host.feedback)}</small>}
       </div>
 
       {host.summary && <div className="group"><div className="meta"><div className="text">{host.summary}</div></div></div>}
@@ -87,6 +91,8 @@ export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack }: Pro
         </>
       )}
       {loaded && !host.events.length && !host.products.length && host.upcoming_count === 0 && <p className="note">Ближайших событий нет — напишите, чтобы узнать расписание.</p>}
+
+      {loaded && <HostFeedback host={host} own={own} />}
 
       {host.photos.length > 0 && (
         <div className="shots" style={{ margin: '16px 16px 0' }}>

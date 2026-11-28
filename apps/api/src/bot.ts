@@ -5,6 +5,7 @@ import { collectedWhen } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import { isBannedTelegram, setBotBlocked, touchUser, upsertUser } from './auth.ts';
 import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
+import { handlePracticeFeedbackCallback, startHostFeedback, takePracticeFeedbackText } from './practice-feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { writing } from './live.ts';
 import { windowCounter } from './limits.ts';
@@ -184,6 +185,7 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   const senderId = from?.message?.from?.id ?? from?.callback_query?.from?.id;
   if (senderId !== undefined && await isBannedTelegram(db, senderId)) return;
   if (await handleFeedbackCallback(db, update)) return; // оценка события кнопкой под карточкой
+  if (await handlePracticeFeedbackCallback(db, update)) return; // об услуге мастера: выбор услуги, оценка, «не дошёл»
   const m = parseIncoming(update);
   if (!m) return;
   // Китайский спам молча пропускаем: ни ответа, ни ИИ, ни пользователя, ни строки в переписке.
@@ -213,6 +215,16 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   // Ответ на «что понравилось и что улучшить?» — текст отзыва о событии, а не вопрос.
   if (m.replyTo && said && await saveFeedbackComment(db, actor.id, m.replyTo, said)) {
     return void (await bot.send('sendMessage', { chat_id: m.chatId, text: 'Спасибо! Отзыв сохранён, организатор его увидит.' }));
+  }
+  // Ссылка мастера «оставьте отзыв обо мне»: t.me/<бот>?start=fb_<мастер> — бот спрашивает оценку.
+  const started = /^\/start\s+(\S+)/.exec(m.text)?.[1];
+  if (started && await startHostFeedback(db, actor, m.chatId, started)) return;
+  // Отзыв об услуге после оценки: написан, переслан или прислан ссылкой — а не анонс и не вопрос.
+  const feedback = m.text.startsWith('/') ? null : await takePracticeFeedbackText(db, actor, { text: said, replyTo: m.replyTo, forwarded: m.origin });
+  if (feedback) {
+    return void (await bot.send('sendMessage', {
+      chat_id: m.chatId, text: feedback === 'link' ? 'Спасибо! Проверим отзыв по ссылке и покажем его на странице мастера.' : 'Спасибо! Отзыв сохранён.',
+    }));
   }
   // Команда — приветствие, без пометки: иначе каждый /start ждал бы нас.
   if (m.text.startsWith('/')) return sendWelcome(m.chatId);

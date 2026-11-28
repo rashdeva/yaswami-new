@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ADD_EXAMPLES, ADD_KINDS, segments } from './add.ts';
+import { ADD_EXAMPLE_LIST, FEEDBACK_EXAMPLES, segments } from './add.ts';
 
 test('разметка примера: куски складываются в сообщение, каждое поле с источником найдено ровно раз', () => {
-  for (const kind of ADD_KINDS) {
-    const { message, fields } = ADD_EXAMPLES[kind];
+  for (const { key: kind, message, fields } of [...ADD_EXAMPLE_LIST, ...FEEDBACK_EXAMPLES]) {
     const parts = segments(message, fields);
     assert.equal(parts.map((p) => p.text).join(''), message, kind);
     const found = parts.flatMap((p) => (p.field === undefined ? [] : [p.field]));

@@ -1,6 +1,7 @@
 // Формы запросов и ответов. Одни и те же схемы проверяют REST-запросы, описывают инструменты MCP и формы на фронте.
 import * as z from 'zod';
 import type { Event, Feature, Guest, TicketType, User } from './schema.ts';
+import type { HostFeedbackEntry, HostFeedbackSummary } from './feedback.ts';
 import { Event as EventSchema, Notification, RsvpInput, TicketType as TicketTypeSchema } from './schema.ts';
 import { OTHER_TOPIC, isTopic } from './topics.ts';
 import type { ProductItem } from './products.ts';
@@ -255,6 +256,9 @@ export interface HostListItem extends Omit<CollectedHost, 'photos'> {
   topics: string[]; // темы его Practice и предстоящих событий, порядок — как в TOPIC_GUIDES
   practices: Practice[];
   upcoming_count: number; // предстоящих опубликованных событий
+  feedback: HostFeedbackSummary; // репутация: оценки его событий и услуг вместе (feedback.ts); в Luma такого нет
+  feedback_bonus: string | null; // что мастер обещает гостю за отзыв, его словами; null — ничего
+  feedback_url: string; // где оставить отзыв о мастере: бот с вопросом об этом мастере (форм у нас нет)
 }
 
 /** Страница организатора: то же, что в каталоге, плюс фото сообщества, предстоящие события и товары. */
@@ -262,6 +266,7 @@ export interface HostItem extends HostListItem {
   photos: CollectedHost['photos'];
   events: CollectedEventItem[];
   products: ProductItem[]; // что мастер продаёт и что видит гость (как в products/list), свежие сверху
+  feedback_entries: HostFeedbackEntry[]; // отзывы на услуги, которые видят все (оценка 4–5 с текстом), свежие сверху
 }
 
 /**

@@ -41,8 +41,8 @@ export const Notification = z.enum([
   'topic_digest', // сводка новых событий по его темам
   'rsvp_confirmed', // гостю: он записан
   'guest_registered', // организатору: новый гость
-  'feedback_request', // гостю после события: как прошло
-  'feedback_received', // организатору: сводка отзывов
+  'feedback_request', // гостю после события или через сутки после записи на услугу: как прошло
+  'feedback_received', // организатору: сводка отзывов на событие или на его услуги
 ]);
 export type Notification = z.infer<typeof Notification>;
 

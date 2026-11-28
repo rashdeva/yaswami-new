@@ -176,10 +176,11 @@ const oldHostsRoute = createRoute({ getParentRoute: () => app, path: '/hosts', b
 function HostPage() {
   const { id } = hostRoute.useParams();
   const navigate = useNavigate();
-  const { city } = useSession();
+  const { city, me } = useSession();
   const { onBack } = useShell();
   return (
     <HostScreen key={id} id={id} city={city} onBack={onBack}
+      own={me?.host_id === id}
       onOpenEvent={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })}
       onOpenProduct={(product) => void navigate({ to: '/products/$id', params: { id: product.id } })} />
   );

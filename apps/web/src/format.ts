@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import type { AppConfig, Event } from '@yaswami/core';
+import type { AppConfig, Event, HostFeedbackSummary } from '@yaswami/core';
 import { collectedDay, collectedDayKey, collectedPath, TEMPLATES } from '@yaswami/core';
 
 /** «пт, 20 ноября, 19:00» — во времени самого события, а не устройства. */
@@ -82,3 +82,14 @@ export function eventsCount(n: number): string {
   return `${n} ${d === 1 && h !== 11 ? 'событие' : d >= 2 && d <= 4 && (h < 12 || h > 14) ? 'события' : 'событий'}`;
 }
 
+
+export const starsOf = (rating: number) => '★'.repeat(rating) + '☆'.repeat(5 - rating);
+
+/**
+ * Репутация организатора одной строкой: «★ 4,7 · оценок: 12 · были: 10». Пока оценок меньше трёх, средней нет
+ * (FEEDBACK_AVERAGE_MIN в core) — тогда только «Были: 2». null — никто ещё не был.
+ */
+export function reputation({ count, average, attended_count }: HostFeedbackSummary): string | null {
+  if (!attended_count) return null;
+  return average === null ? `Были: ${attended_count}` : `★ ${average.toFixed(1).replace('.', ',')} · оценок: ${count} · были: ${attended_count}`;
+}

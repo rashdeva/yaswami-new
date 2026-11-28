@@ -15,9 +15,9 @@ import { useViewed } from '../hooks/useViewed.ts';
 const NOTIFICATIONS: { kind: Notification; title: string; host?: boolean }[] = [
   { kind: 'topic_digest', title: 'Новые события по моим темам' },
   { kind: 'rsvp_confirmed', title: 'Подтверждение записи' },
-  { kind: 'feedback_request', title: 'Вопрос «как прошло» после события' },
+  { kind: 'feedback_request', title: 'Вопрос «как прошло» после события или услуги' },
   { kind: 'guest_registered', title: 'Новые гости на моих событиях', host: true },
-  { kind: 'feedback_received', title: 'Отзывы на мои события', host: true },
+  { kind: 'feedback_received', title: 'Отзывы на мои события и услуги', host: true },
 ];
 
 interface Props {

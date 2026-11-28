@@ -5,7 +5,7 @@ import { after, before, beforeEach, mock, test } from 'node:test';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import type { AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Me, Message, Practice, PracticeSignup, PracticeSubmission, AdminProduct, AdminProductList, ProductSubmission, ProductItem, ProductList, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
+import type { AdminHostFeedback, AdminShelf, Showcase, AdminTopic, TopicCandidate, TopicItem, AdminHostListItem, AdminHostView, AdminAction, AdminActionList, AdminCollectedEvent, AdminGuest, AdminOverview, AdminSource, City, CollectedEventItem, Contact, Conversation, EventView, Host, HostItem, HostSearch, HostSearchList, HostSearchMatchList, HostListItem, InboxFeed, Me, Message, Practice, PracticeSignup, PracticeSubmission, AdminProduct, AdminProductList, ProductSubmission, ProductItem, ProductList, SearchEntry, SearchResult, SourceSearch, TgAccount } from '@yaswami/core';
 import { createApp } from './app.ts';
 import { DRAFT_PLACEHOLDER, handleUpdate, REPLIES, resetBotLimits, welcomePhotoUrl } from './bot.ts';
 import { collectedWhen, sseEvents, TOPIC_GUIDES } from '@yaswami/core';
@@ -23,9 +23,10 @@ import { bucket, setBucket } from './bucket.ts';
 import { listCollectedForAdmin, requestNextCover, requestNextVideo } from './services.ts';
 import { settings } from './settings.ts';
 import { digestFeedback, requestFeedback } from './feedback.ts';
+import { digestPracticeFeedback, requestPracticeFeedback } from './practice-feedback.ts';
 import { digestTopics } from './subscriptions.ts';
 import { refreshTopics, requestNextTopicIcon } from './topics.ts';
-import { eventFeedback, events as eventsTable } from './db/schema.ts';
+import { eventFeedback, events as eventsTable, practiceFeedback } from './db/schema.ts';
 
 import sharp from 'sharp';
 import { transcriber } from './media.ts';
@@ -271,7 +272,7 @@ test('MCP: список инструментов, создание событи�
     'cities_list', 'collected_events_claim', 'collected_events_get', 'collected_events_list', 'collected_events_signup', 'contacts_list',
     'events_create', 'events_get', 'events_list', 'events_rsvp', 'events_ticket_types_create', 'events_ticket_types_delete',
     'events_ticket_types_update', 'events_update', 'host_searches_create', 'host_searches_delete', 'host_searches_list', 'host_searches_matches_list', 'host_searches_update',
-    'hosts_get', 'hosts_list', 'hosts_practices_signup', 'me_collected_list', 'practices_create', 'products_create', 'products_get', 'products_list', 'search', 'showcase_get', 'sources_add', 'topics_list', 'users_get_self', 'users_update_self',
+    'hosts_get', 'hosts_get_self', 'hosts_list', 'hosts_practices_signup', 'hosts_update_self', 'me_collected_list', 'practices_create', 'products_create', 'products_get', 'products_list', 'search', 'showcase_get', 'sources_add', 'topics_list', 'users_get_self', 'users_update_self',
   ]);
   const create = tools.find((t: { name: string }) => t.name === 'events_create');
   assert.deepEqual(create.inputSchema.required.sort(), ['kind', 'name', 'start_at', 'timezone']);
@@ -1934,6 +1935,147 @@ test('отзывы: запрос после события, оценка кно�
   assert.deepEqual(await feedback(82), { count: 2, average: 4, items: [] });
 });
 
+test('отзывы на услуги: вопрос через сутки после записи, «не дошёл», ссылка мастера в бота, текст, пересылка и ссылка, репутация и бонус', async () => {
+  settings.adminIds = [70]; // команда: ей приходит оповещение о ссылке, она же сверяет отзыв
+  const [M, G1, G2, G3, G4, G5] = [9140, 9141, 9142, 9143, 9144, 9145];
+  for (const id of [M, G1, G2, G3, G4, G5]) await call(tma(id, `P${id}`), 'GET', '/me');
+  const [host] = await db.insert(hosts).values({ user_id: await uid(M), telegram_id: M, username: 'fb_master', name: 'Лена', status: 'published' }).returning();
+  const [massage] = await db.insert(practicesTable).values({ host_id: host!.id, title: 'Тайский массаж', topic: 'телесные практики', category: 'body', status: 'published' }).returning();
+  const page = async () => (await (await app.request(`/hosts/${host!.id}`)).json()) as HostItem;
+  const labels = () => sent.filter(([m]) => m === 'sendWidget').map(([, b]) => [b.chat_id, JSON.parse(b.public_data).l]).sort();
+  const press = (id: number, n: number) => handleUpdate(db, { update_id: 1, callback_query: { id: 'q', from: { id, first_name: `P${id}` }, data: `pfb:${massage!.id}:${n}` } });
+  const start = (id: number) => handleUpdate(db, botMessage(id, `/start fb_${host!.id.replaceAll('-', '')}`));
+  // Что бот ответил этому человеку; оповещения команде (уходят тем же ботом в другие чаты) сюда не попадают.
+  const said = (id: number) => sent.filter(([m, b]) => m === 'sendMessage' && b.chat_id === id).map(([, b]) => b.text);
+  assert.deepEqual((await page()).feedback, { count: 0, average: null, attended_count: 0 });
+
+  // Бонус за отзыв назначает сам мастер; у него же ссылка для клиентов. Не мастеру — отказ.
+  const self = await call(tma(M, `P${M}`), 'PATCH', '/me/host', { feedback_bonus: '−10% на следующий визит' });
+  assert.deepEqual(await self.json(), { host_id: host!.id, feedback_bonus: '−10% на следующий визит', feedback_url: (await page()).feedback_url });
+  assert.ok((await page()).feedback_url.endsWith(bot.username ? `?start=fb_${host!.id.replaceAll('-', '')}` : `/hosts/${host!.id}`));
+  assert.deepEqual(await (await call(tma(M, `P${M}`), 'GET', '/me/host')).json(), await (await call(tma(M, `P${M}`), 'PATCH', '/me/host', { feedback_bonus: '−10% на следующий визит' })).json());
+  assert.deepEqual([(await call(tma(G1, `P${G1}`), 'PATCH', '/me/host', { feedback_bonus: 'x' })).status, (await call(tma(G1, `P${G1}`), 'GET', '/me/host')).status], [403, 403]);
+  assert.equal((await page()).feedback_bonus, '−10% на следующий визит');
+
+  // Записался только что — не спрашиваем; через сутки — один раз.
+  await call(tma(G1, `P${G1}`), 'POST', `/hosts/${host!.id}/practices/signup`, { practice_id: massage!.id });
+  sent.length = 0;
+  await requestPracticeFeedback(db);
+  assert.deepEqual(labels(), []);
+  await db.update(practiceSignups).set({ created_at: new Date(Date.now() - 25 * 3600e3) }).where(eq(practiceSignups.user_id, await uid(G1)));
+  await requestPracticeFeedback(db);
+  await requestPracticeFeedback(db);
+  assert.deepEqual(labels(), [[G1, 'Вы были у мастера?']]);
+  assert.deepEqual(sent.find(([m]) => m === 'sendWidget')![1].reply_markup.inline_keyboard.map((r: unknown[]) => r.length), [5, 1]);
+
+  // «Не дошёл» — ответ без оценки и без просьбы о тексте; чужое нажатие ничего не меняет.
+  sent.length = 0;
+  await press(G1, 0);
+  await press(G2, 5);
+  assert.deepEqual(sent.map(([m, b]) => [m, b.text]), [['answerCallbackQuery', 'Понятно, спасибо за ответ!'], ['answerCallbackQuery', 'Этот запрос уже не действует']]);
+  const mine = async () => (await db.select().from(practiceFeedback).where(eq(practiceFeedback.user_id, await uid(G1))))[0]!;
+  assert.deepEqual([(await mine()).attended, (await mine()).rating, (await mine()).via], [false, null, 'signup']);
+  assert.equal((await page()).feedback.count, 0);
+
+  // Передумал и оценил: одна просьба о тексте с правилом видимости и бонусом мастера; текст — ответом на неё.
+  sent.length = 0;
+  await press(G1, 4);
+  await press(G1, 5);
+  assert.deepEqual(sent.map(([m]) => m), ['answerCallbackQuery', 'sendMessage', 'answerCallbackQuery']);
+  assert.match(sent[1]![1].text, /перешлите сюда[\s\S]*Копировать ссылку[\s\S]*с оценкой 4–5 появится на странице мастера[\s\S]*−10% на следующий визит/);
+  sent.length = 0;
+  await handleUpdate(db, botMessage(G1, 'Спина прошла за один сеанс', { reply_to_message: { message_id: (await mine()).prompt_message_id } }));
+  assert.deepEqual(sent.map(([m, b]) => [m, b.text]), [['sendMessage', 'Спасибо! Отзыв сохранён.']]);
+
+  // По ссылке мастера человек попадает в бота, без записи у нас: `via: invite`. Мастеру — подсказка, а не вопрос.
+  sent.length = 0;
+  await start(G2);
+  assert.deepEqual(labels(), [[G2, 'Вы были у мастера?']]);
+  sent.length = 0;
+  await start(M);
+  assert.match(said(M)[0], /для ваших клиентов/);
+  assert.deepEqual(labels(), []);
+
+  // Низкая оценка; текст — просто следующим сообщением, не ответом.
+  await press(G2, 2);
+  sent.length = 0;
+  await handleUpdate(db, botMessage(G2, 'Опоздала на час'));
+  assert.deepEqual(said(G2), ['Спасибо! Отзыв сохранён.']);
+  assert.deepEqual((await page()).feedback, { count: 2, average: null, attended_count: 2 }, 'средняя — от трёх оценок');
+
+  // Ссылка на сообщение с отзывом: прочитать её мы не можем — ждёт команду и до того не видна.
+  await start(G3);
+  await press(G3, 5);
+  sent.length = 0;
+  await handleUpdate(db, botMessage(G3, 'Вот мой отзыв t.me/danang_chat/123'));
+  assert.deepEqual(said(G3), ['Спасибо! Проверим отзыв по ссылке и покажем его на странице мастера.']);
+  assert.ok(sent.some(([m, b]) => m === 'sendMessage' && b.chat_id !== G3 && /сверьте: https:\/\/t\.me\/danang_chat\/123/.test(b.text)), 'команда узнала о ссылке');
+
+  // Пересланное из канала — подлинное: видно сразу, со ссылкой на публикацию.
+  await start(G4);
+  await press(G4, 4);
+  sent.length = 0;
+  await handleUpdate(db, botMessage(G4, 'Хожу третий месяц', { forward_origin: { type: 'channel', date: 1794000000, chat: { id: -1001, username: 'lena_massage' }, message_id: 7 } }));
+  assert.deepEqual(said(G4), ['Спасибо! Отзыв сохранён.']);
+
+  // Страница мастера: оценки — все, тексты — только «рекомендую» (4–5) и не ждущие проверки; в каталоге — та же репутация.
+  const entries = async () => (await page()).feedback_entries.map((f) => [f.rating, f.comment, f.via, f.source_url, f.practice_title]);
+  assert.deepEqual((await page()).feedback, { count: 4, average: 4, attended_count: 4 });
+  assert.deepEqual(await entries(), [
+    [4, 'Хожу третий месяц', 'invite', 'https://t.me/lena_massage/7', 'Тайский массаж'], [5, 'Спина прошла за один сеанс', 'signup', null, 'Тайский массаж'],
+  ]);
+  const listed = ((await (await app.request('/hosts')).json()) as HostListItem[]).find((h) => h.id === host!.id)!;
+  assert.deepEqual(listed.feedback, (await page()).feedback);
+
+  // Команда видит всё, сверяет ссылку и переписывает текст — отзыв появляется; удалённый уходит из репутации.
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const all = (await (await call(admin, 'GET', `/admin/hosts/${host!.id}/feedback`)).json()) as AdminHostFeedback[];
+  assert.deepEqual(all.map((f) => [f.user_id, f.rating, f.via, f.attended, f.source_url, !!f.verified_at]).sort(), [
+    [await uid(G1), 5, 'signup', true, null, false], [await uid(G2), 2, 'invite', true, null, false],
+    [await uid(G3), 5, 'invite', true, 'https://t.me/danang_chat/123', false], [await uid(G4), 4, 'invite', true, 'https://t.me/lena_massage/7', true],
+  ].sort());
+  assert.equal((await call(tma(G1, `P${G1}`), 'GET', `/admin/hosts/${host!.id}/feedback`)).status, 403);
+  const one = `/admin/hosts/${host!.id}/feedback/${massage!.id}`;
+  const checked = (await (await call(admin, 'PATCH', `${one}/${await uid(G3)}`, { verified: true, comment: 'Лучший массаж в городе' })).json()) as AdminHostFeedback;
+  assert.deepEqual([checked.comment, !!checked.verified_at], ['Лучший массаж в городе', true]);
+  assert.deepEqual((await entries()).map((e) => e[1]), ['Хожу третий месяц', 'Лучший массаж в городе', 'Спина прошла за один сеанс']);
+  assert.equal((await call(admin, 'PATCH', `${one}/${await uid(G5)}`, { verified: true })).status, 404);
+
+  // Оценки событий мастера входят в ту же репутацию.
+  const { event } = await newEvent(tma(M, `P${M}`));
+  await db.insert(eventFeedback).values({ event_id: event.id, user_id: await uid(G2), rating: 3 });
+  assert.deepEqual((await page()).feedback, { count: 5, average: 3.8, attended_count: 4 });
+
+  // Сводка мастеру — одна, со всеми новыми отзывами, и с низкой оценкой тоже.
+  const settle = settings.feedbackSettleMs;
+  try {
+    settings.feedbackSettleMs = 0;
+    sent.length = 0;
+    await digestPracticeFeedback(db);
+    await digestPracticeFeedback(db);
+    assert.deepEqual(labels(), [[M, 'Новые отзывы']]);
+    assert.deepEqual(JSON.parse(sent.find(([m]) => m === 'sendWidget')![1].public_data).m[0], ['⭐', '4,0 из 5 · оценок: 4']);
+  } finally {
+    settings.feedbackSettleMs = settle;
+  }
+
+  assert.equal((await call(admin, 'DELETE', `${one}/${await uid(G2)}`)).status, 204);
+  assert.equal((await call(admin, 'DELETE', `${one}/${await uid(G2)}`)).status, 404);
+  assert.deepEqual((await page()).feedback, { count: 4, average: 4.25, attended_count: 4 });
+
+  // Услуг несколько — бот сначала спрашивает, о какой отзыв; выбор кнопкой присылает вопрос с оценками.
+  const [stone] = await db.insert(practicesTable).values({ host_id: host!.id, title: 'Стоун-массаж', topic: 'телесные практики', category: 'body', status: 'published', position: 1 }).returning();
+  sent.length = 0;
+  await start(G5);
+  const choice = sent.find(([m, b]) => m === 'sendMessage' && b.chat_id === G5)![1];
+  assert.deepEqual(choice.reply_markup.inline_keyboard.map((r: { text: string }[]) => r[0]!.text), ['Тайский массаж', 'Стоун-массаж']);
+  await handleUpdate(db, { update_id: 1, callback_query: { id: 'q', from: { id: G5, first_name: 'G5' }, data: `pfa:${stone!.id}` } });
+  assert.deepEqual(labels(), [[G5, 'Вы были у мастера?']]);
+  const [asked] = await db.select().from(practiceFeedback).where(eq(practiceFeedback.user_id, await uid(G5)));
+  assert.deepEqual([asked!.practice_id, asked!.via, asked!.rating], [stone!.id, 'invite', null]);
+});
+
 test('охотник: старое сообщение из чата — черновик в личку, а не ответ в чат', async () => {
   await db.execute(sql`truncate conversations, tg_accounts cascade`);
   settings.adminIds = [70];
@@ -2602,6 +2744,9 @@ const ADMIN_PAIRS: Record<string, string> = {
   admin_shelves_update: 'PATCH /admin/shelves/:id',
   admin_shelves_delete: 'DELETE /admin/shelves/:id',
   admin_hosts_delete: 'DELETE /admin/hosts/:id',
+  admin_hosts_feedback_list: 'GET /admin/hosts/:id/feedback',
+  admin_hosts_feedback_update: 'PATCH /admin/hosts/:id/feedback/:practice_id/:user_id',
+  admin_hosts_feedback_delete: 'DELETE /admin/hosts/:id/feedback/:practice_id/:user_id',
   admin_users_search: 'GET /admin/users',
   admin_activity_list: 'GET /admin/activity',
   admin_users_get: 'GET /admin/users/:id',
@@ -3101,6 +3246,8 @@ test('парность: у каждого инструмента MCP есть м
     products_get: 'GET /products/:id',
     showcase_get: 'GET /showcase',
     hosts_practices_signup: 'POST /hosts/:id/practices/signup',
+    hosts_get_self: 'GET /me/host',
+    hosts_update_self: 'PATCH /me/host',
     collected_events_claim: 'POST /collected-events/:id/claim',
     collected_events_signup: 'POST /collected-events/:id/signup',
     topics_list: 'GET /topics',
@@ -3176,6 +3323,7 @@ async function world() {
   });
   const [profile] = await db.insert(hosts).values({ telegram_id: base + 5, username: `host${n}`, name: 'Орг' }).returning();
   const [practice] = await db.insert(practicesTable).values({ host_id: profile!.id, title: 'Массаж', topic: 'телесные практики' }).returning();
+  await db.insert(practiceFeedback).values({ practice_id: practice!.id, host_id: profile!.id, user_id: guestId, via: 'signup', attended: true, rating: 5, comment: 'Отлично' });
   const [product] = await db.insert(products).values({ host_id: profile!.id, title: 'Медовик', title_key: 'медовик', category: 'bakery', announcement: { url: `https://t.me/auditfood/${n}`, text: 'Медовик 55k' } }).returning();
   const [account] = await db.insert(tgAccounts).values({ label: 'Основной', phone: `+7900${base}` }).returning();
   const [shelf] = await db.insert(shelves).values({ city_id: 'danang', title: `Полка ${n}`, rule: { period: 'week' }, author: 'team', position: 1000 + n }).returning();
@@ -3224,6 +3372,13 @@ const CASES: Record<string, (w: World) => Case | Promise<Case>> = {
   admin_shelves_update: (w) => ({ args: { shelf_id: w.shelfId, title: 'Другая' }, params: { id: w.shelfId }, body: { title: 'Другая' }, entity_id: w.shelfId }),
   admin_shelves_delete: (w) => ({ args: { shelf_id: w.shelfId }, params: { id: w.shelfId }, entity_id: w.shelfId }),
   admin_hosts_delete: (w) => ({ args: { host_id: w.profileId }, params: { id: w.profileId }, entity_id: w.profileId }),
+  admin_hosts_feedback_update: (w) => ({
+    args: { host_id: w.profileId, practice_id: w.practiceId, user_id: w.guestId, verified: true }, params: { id: w.profileId, practice_id: w.practiceId, user_id: w.guestId },
+    body: { verified: true }, entity_id: w.profileId,
+  }),
+  admin_hosts_feedback_delete: (w) => ({
+    args: { host_id: w.profileId, practice_id: w.practiceId, user_id: w.guestId }, params: { id: w.profileId, practice_id: w.practiceId, user_id: w.guestId }, entity_id: w.profileId,
+  }),
   admin_users_update: (w) => ({ args: { user_id: w.otherId, first_name: 'Иван' }, params: { id: w.otherId }, body: { first_name: 'Иван' }, entity_id: String(w.otherId) }),
   admin_users_delete: (w) => ({ args: { user_id: w.guestId }, params: { id: w.guestId }, entity_id: String(w.guestId) }),
   admin_users_tokens_revoke: (w) => ({ args: { user_id: w.otherId }, params: { id: w.otherId }, entity_id: String(w.otherId) }),

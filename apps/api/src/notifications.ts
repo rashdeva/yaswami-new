@@ -2,7 +2,7 @@
 // про моменты ничего не знает.
 import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
-import type { CollectedEventItem, Event, Notification, User } from '@yaswami/core';
+import type { CollectedEventItem, Event, Notification, Practice, User } from '@yaswami/core';
 import { ADDRESS_MAX, collectedPath, collectedWhen, instagramOf, NAME_MAX, TOPIC_GUIDES } from '@yaswami/core';
 import { botChatIdOf } from './auth.ts';
 import type { Db } from './db/client.ts';
@@ -18,7 +18,7 @@ export interface Card {
   title: string;
   rows: [icon: string, text: string][];
   buttons: { text: string; url: string }[]; // ссылки, по одной в ряд
-  actions?: { text: string; callback_data: string }[]; // ряд кнопок-ответов над ссылками; нажатие приходит боту
+  actions?: { text: string; callback_data: string }[]; // кнопки-ответы над ссылками, по пять в ряд; нажатие приходит боту
 }
 
 // По символам, а не по UTF-16: не режем эмодзи пополам.
@@ -55,26 +55,35 @@ const DIGEST_TITLE = 40;
 /** Лента: мини-приложение в Telegram, а пока имя бота неизвестно — сайт. */
 const feedUrl = () => (bot.username ? `https://t.me/${bot.username}/${bot.appName}` : settings.publicUrl);
 
+/** Вопрос об услуге: что за услуга и чья. */
+type PracticeAsk = { practice: Pick<Practice, 'id' | 'title'>; host: { name: string; feedback_bonus: string | null } };
+
 export const templates = {
   /** Гостю после события: как прошло? Оценка — кнопками под сообщением, текст — ответом на следующее сообщение бота. */
-  feedback_request: ({ event }: { event: Event }): Card => ({
-    emoji: '💬', colors: ['#db2777', '#7c3aed'], label: 'Как всё прошло?', title: event.name,
-    rows: [['🗓', when(event)], ['⭐', 'Оцените событие — это займёт секунду']],
+  feedback_request: (p: { event: Event } | PracticeAsk): Card => 'practice' in p ? {
+    // Через сутки после «Записаться» на услугу: был ли визит, мы не знаем, поэтому «не дошёл» — тоже ответ.
+    emoji: '💬', colors: ['#db2777', '#7c3aed'], label: 'Вы были у мастера?', title: cut(p.practice.title, NAME_MAX),
+    rows: [['👤', cut(p.host.name, GUEST_NAME_MAX)], ['⭐', 'Оцените, если были, — это займёт секунду'], ...(p.host.feedback_bonus ? [['🎁', `За отзыв: ${p.host.feedback_bonus}`] as [string, string]] : [])],
     buttons: [],
-    actions: [1, 2, 3, 4, 5].map((n) => ({ text: `${n} ⭐`, callback_data: `fb:${event.id}:${n}` })),
-  }),
+    actions: [...[1, 2, 3, 4, 5].map((n) => ({ text: `${n} ⭐`, callback_data: `pfb:${p.practice.id}:${n}` })), { text: 'Не дошёл', callback_data: `pfb:${p.practice.id}:0` }],
+  } : {
+    emoji: '💬', colors: ['#db2777', '#7c3aed'], label: 'Как всё прошло?', title: p.event.name,
+    rows: [['🗓', when(p.event)], ['⭐', 'Оцените событие — это займёт секунду']],
+    buttons: [],
+    actions: [1, 2, 3, 4, 5].map((n) => ({ text: `${n} ⭐`, callback_data: `fb:${p.event.id}:${n}` })),
+  },
   /** Организатору: сводка отзывов. `fresh` — новые с прошлой сводки, `count` и `average` — по всем отзывам события. */
   feedback_received: (
-    { event, count, average, fresh }: { event: Event; count: number; average: number; fresh: { first_name: string; rating: number; comment: string | null }[] },
+    { count, average, fresh, ...of }: ({ event: Event } | { host: { id: string } }) & { count: number; average: number; fresh: { first_name: string; rating: number; comment: string | null }[] },
   ): Card => ({
-    emoji: '⭐', colors: ['#db2777', '#7c3aed'], label: fresh.length > 1 ? 'Новые отзывы' : 'Новый отзыв', title: event.name,
+    emoji: '⭐', colors: ['#db2777', '#7c3aed'], label: fresh.length > 1 ? 'Новые отзывы' : 'Новый отзыв', title: 'event' in of ? of.event.name : 'Ваши услуги',
     rows: [
       ['⭐', `${average.toFixed(1).replace('.', ',')} из 5 · оценок: ${count}`],
       ...fresh.slice(0, FRESH_SHOWN).map((f): [string, string] =>
         ['💬', `${cut(f.first_name, GUEST_NAME_SHORT)}: ${starsOf(f.rating)}${f.comment ? ` ${cut(f.comment, COMMENT_SHOWN)}` : ''}`]),
-      ...(fresh.length > FRESH_SHOWN ? [['…', `и ещё ${fresh.length - FRESH_SHOWN} — все отзывы на странице события`] as [string, string]] : []),
+      ...(fresh.length > FRESH_SHOWN ? [['…', `и ещё ${fresh.length - FRESH_SHOWN}${'event' in of ? ' — все отзывы на странице события' : ''}`] as [string, string]] : []),
     ],
-    buttons: [open(event)],
+    buttons: ['event' in of ? open(of.event) : { text: 'Открыть мою страницу', url: `${settings.publicUrl}/hosts/${of.host.id}` }],
   }),
   /** Организатору: событие создано из его сообщения боту. */
   event_created: ({ event }: { event: Event }): Card => ({
@@ -142,6 +151,8 @@ export const widgetHtml = readFileSync(new URL('./widgets/card.html', import.met
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
 
+const rowsOf = <T>(items: T[], n: number): T[][] => Array.from({ length: Math.ceil(items.length / n) }, (_, i) => items.slice(i * n, i * n + n));
+
 /** Параметры sendWidget для карточки. `public_data` — состояние виджета, не длиннее 1024 байт (тест). */
 export function toWidget(card: Card) {
   return {
@@ -149,7 +160,7 @@ export function toWidget(card: Card) {
     // Подпись обязательна: её видят клиенты, которые не умеют виджеты, и уведомление на заблокированном экране.
     caption: [`${card.emoji} ${card.label}: ${card.title}`, ...card.rows.map((r) => r.join(' '))].join('\n'),
     public_data: JSON.stringify({ e: card.emoji, c: card.colors, l: card.label, t: card.title, m: card.rows }),
-    reply_markup: { inline_keyboard: [...(card.actions ? [card.actions] : []), ...card.buttons.map((b) => [b])] },
+    reply_markup: { inline_keyboard: [...rowsOf(card.actions ?? [], 5), ...card.buttons.map((b) => [b])] },
   };
 }
 
