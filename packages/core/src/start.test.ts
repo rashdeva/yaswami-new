@@ -11,6 +11,9 @@ test('startapp: событие, кто позвал и метка источни
   assert.deepEqual(parseStart('e_0a1b2c3d4e-r42-sinsta'), { param: 'e_0a1b2c3d4e', ref: 42, tag: 'insta' });
   assert.deepEqual(parseStart('c_danangevent-5-0-r-7-sinsta'), { param: 'c_danangevent-5-0', ref: -7, tag: 'insta' }); // старые ссылки с отрицательным id до ADR-0008
   assert.deepEqual(parseStart('-sinsta_bio'), { param: undefined, ref: undefined, tag: 'insta_bio' }); // просто приложение, без события
+  // К адресу прилип текст из «Поделиться»: событие всё равно открывается.
+  assert.deepEqual(parseStart('c_yogaclubdanang-636-11 YOGA Hatha с Вильмой вс, 29 ноября, 10:00, Дананг'), { param: 'c_yogaclubdanang-636-11', ref: undefined, tag: undefined });
+  assert.deepEqual(parseStart('e_0a1b2c3d4e-r42\nБаня'), { param: 'e_0a1b2c3d4e', ref: 42, tag: undefined });
 });
 
 test('ссылка прихода на сайт: startapp как есть, без него utm_source — меткой', () => {
