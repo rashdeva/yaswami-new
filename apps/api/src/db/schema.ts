@@ -655,6 +655,9 @@ export const practiceFeedback = pgTable(
     attended: boolean(), // был ли у мастера: null — ответа нет, false — не дошёл; оценка есть только у того, кто был
     rating: integer(), // 1–5
     comment: text(),
+    // Голосовой отзыв: запись в бакете под своим адресом (не тем, что в переписке: там в адресе Telegram id) и её длительность.
+    audio_url: text(),
+    audio_duration: integer(),
     // Сообщение, где человек написал отзыв: прислал ссылкой (сверяет команда, до того verified_at null) или переслал из канала.
     source_url: text(),
     verified_at: at('verified_at'),

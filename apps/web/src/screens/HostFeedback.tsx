@@ -41,7 +41,9 @@ export function HostFeedback({ host, own }: Props) {
           {host.feedback_entries.map((f, i) => (
             <div className="review" key={i}>
               <b>{f.user_first_name} <span aria-label={`Оценка ${f.rating} из 5`}>{starsOf(f.rating)}</span></b>
-              <p>{f.comment}</p>
+              {/* Голосовой отзыв: запись и под ней её расшифровка. Не загружаем, пока не нажали: отзывов на странице много. */}
+              {f.audio_url && <audio className="review-audio" controls preload="none" src={f.audio_url} aria-label={`Голосовой отзыв: ${f.user_first_name}`} />}
+              {f.comment && <p>{f.comment}</p>}
               <small>
                 {f.practice_title}{f.via === 'invite' ? ' · по приглашению мастера' : ' · записывался через Я с вами'}
                 {f.source_url && <> · <a href={f.source_url} target="_blank" rel="noreferrer">источник</a></>}
@@ -82,8 +84,8 @@ export function HostFeedback({ host, own }: Props) {
 
 const STEPS = [
   { emoji: '⭐', text: 'Бот спросит, были ли вы у мастера. Поставьте оценку — одно нажатие.' },
-  { emoji: '💬', text: 'Напишите пару слов. Или перешлите своё сообщение с отзывом, или пришлите ссылку на него.' },
-  { emoji: '✅', text: `Отзыв с оценкой ${FEEDBACK_PUBLIC_RATING}–5 появится на странице мастера, с оценкой ниже — его увидит только мастер.` },
+  { emoji: '💬', text: 'Напишите пару слов или запишите голосовое. Или перешлите своё сообщение с отзывом, или пришлите ссылку на него.' },
+  { emoji: '✅', text: `Отзыв с оценкой ${FEEDBACK_PUBLIC_RATING}–5 появится на странице мастера: текст увидят, голосовое услышат все. С оценкой ниже — только мастер.` },
 ];
 
 /** Показ в шторке: живёт, пока шторка открыта, — таймеры не тикают на каждой странице мастера. */

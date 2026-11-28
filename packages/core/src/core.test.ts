@@ -251,6 +251,9 @@ test('репутация: средняя — от трёх оценок; тек�
   assert.ok(!isPublicFeedback({ rating: 3, comment: 'Так себе' }));
   assert.ok(!isPublicFeedback({ rating: 5, comment: null }));
   assert.ok(!isPublicFeedback({ rating: null, comment: 'Не был' }));
+  // Голосовой отзыв виден и без расшифровки: есть сама запись. Правило оценки то же.
+  assert.ok(isPublicFeedback({ rating: 5, comment: null, audio_url: 'https://media.test/feedback/a.ogg' }));
+  assert.ok(!isPublicFeedback({ rating: 2, comment: null, audio_url: 'https://media.test/feedback/a.ogg' }));
   // Отзыв ссылкой на сообщение виден после того, как команда сверила ссылку.
   assert.ok(!isPublicFeedback({ rating: 5, comment: 'Супер', source_url: 'https://t.me/chat/1', verified_at: null }));
   assert.ok(isPublicFeedback({ rating: 5, comment: 'Супер', source_url: 'https://t.me/chat/1', verified_at: new Date() }));

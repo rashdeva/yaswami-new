@@ -156,12 +156,12 @@ const ENTRIES_SHOWN = 20;
 /** Отзывы на услуги организатора, которые видят все (isPublicFeedback в core); свежие сверху. */
 export async function hostFeedbackEntries(db: Db, hostId: string): Promise<HostFeedbackEntry[]> {
   const rows = await db
-    .select({ user_first_name: users.first_name, practice_title: practices.title, rating: practiceFeedback.rating, comment: practiceFeedback.comment, via: practiceFeedback.via, source_url: practiceFeedback.source_url, updated_at: practiceFeedback.updated_at })
+    .select({ user_first_name: users.first_name, practice_title: practices.title, rating: practiceFeedback.rating, comment: practiceFeedback.comment, audio_url: practiceFeedback.audio_url, audio_duration: practiceFeedback.audio_duration, via: practiceFeedback.via, source_url: practiceFeedback.source_url, updated_at: practiceFeedback.updated_at })
     .from(practiceFeedback).innerJoin(users, eq(users.id, practiceFeedback.user_id)).innerJoin(practices, eq(practices.id, practiceFeedback.practice_id))
-    .where(and(eq(practiceFeedback.host_id, hostId), gte(practiceFeedback.rating, FEEDBACK_PUBLIC_RATING), isNotNull(practiceFeedback.comment),
+    .where(and(eq(practiceFeedback.host_id, hostId), gte(practiceFeedback.rating, FEEDBACK_PUBLIC_RATING), or(isNotNull(practiceFeedback.comment), isNotNull(practiceFeedback.audio_url)),
       or(isNull(practiceFeedback.source_url), isNotNull(practiceFeedback.verified_at))))
     .orderBy(desc(practiceFeedback.updated_at)).limit(ENTRIES_SHOWN);
-  return rows.map((r) => ({ ...r, rating: r.rating!, comment: r.comment! }));
+  return rows.map((r) => ({ ...r, rating: r.rating! }));
 }
 
 /** Раз в пять минут: запросы отзывов и сводки организаторам. Один сбой не останавливает цикл. */

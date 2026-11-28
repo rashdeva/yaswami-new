@@ -5,8 +5,10 @@
 // После оценки человек пишет отзыв боту, пересылает сообщение с отзывом или присылает на него ссылку — ссылку сверяет
 // команда. Отзывы на события — в feedback.ts.
 import { and, desc, eq, gt, isNotNull, isNull, ne, sql } from 'drizzle-orm';
-import type { AdminHostFeedback, HostFeedbackUpdateInput, HostSelf, HostSelfUpdateInput, Practice, User } from '@yaswami/core';
-import { FEEDBACK_COMMENT_MAX, FEEDBACK_PUBLIC_RATING, FEEDBACK_TEXT_MINUTES } from '@yaswami/core';
+import { randomUUID } from 'node:crypto';
+import type { AdminHostFeedback, HostFeedbackUpdateInput, HostSelf, HostSelfUpdateInput, MessageMedia, Practice, User } from '@yaswami/core';
+import { FEEDBACK_COMMENT_MAX, FEEDBACK_PUBLIC_RATING, FEEDBACK_TEXT_MINUTES, mediaExt } from '@yaswami/core';
+import { bucket } from './bucket.ts';
 import { telegramIdOf, userIdByTelegram } from './auth.ts';
 import type { Ctx } from './audit.ts';
 import { audited } from './audit.ts';
@@ -31,10 +33,11 @@ const bonusLine = (bonus: string | null) => (bonus ? `\n\n🎁 Мастер бл
 /** Что бот пишет после оценки: три способа оставить текст и кто его увидит. */
 const PROMPT = `Теперь сам отзыв — как удобнее:
 • напишите его прямо здесь;
+• запишите голосовое — на странице мастера будут и запись, и её текст;
 • перешлите сюда своё сообщение с отзывом, если уже писали его в чате или канале;
 • или пришлите ссылку на него: в Telegram нажмите на сообщение → «Копировать ссылку», в Instagram — «…» → «Скопировать ссылку». Ссылку мы проверим сами.
 
-Отзыв с оценкой ${FEEDBACK_PUBLIC_RATING}–5 появится на странице мастера, с оценкой ниже — его увидит только мастер. Можно и не отвечать: оценка уже сохранена.`;
+Отзыв с оценкой ${FEEDBACK_PUBLIC_RATING}–5 появится на странице мастера: текст увидят, а голосовое услышат все. С оценкой ниже — только мастер. Можно и не отвечать: оценка уже сохранена.`;
 
 /**
  * Спрашивает «вы были?» у тех, кто записался на услугу сутки назад (от суток до двух: первый запуск не должен
@@ -129,7 +132,7 @@ export async function handlePracticeFeedbackCallback(db: Db, update: unknown): P
   const rating = Number(m![2]) || null;
   const [row] = userId === null ? [] : await db.update(practiceFeedback)
     // «Не дошёл» после оценки стирает и отзыв: о визите, которого не было, показывать нечего.
-    .set({ attended: rating !== null, rating, ...(rating === null ? { comment: null, source_url: null, verified_at: null } : {}), updated_at: new Date(), host_notified_at: null })
+    .set({ attended: rating !== null, rating, ...(rating === null ? { comment: null, audio_url: null, audio_duration: null, source_url: null, verified_at: null } : {}), updated_at: new Date(), host_notified_at: null })
     .where(one(m![1]!, userId)).returning();
   answer(!row ? 'Этот запрос уже не действует' : rating ? `Спасибо! Ваша оценка: ${stars(rating)}` : 'Понятно, спасибо за ответ!');
   // Просим текст один раз: повторные нажатия меняют оценку, но не засыпают сообщениями.
@@ -148,25 +151,54 @@ export async function handlePracticeFeedbackCallback(db: Db, update: unknown): P
 // Ссылка на сообщение, где человек уже написал отзыв: Telegram или Instagram. Прочитать её сами мы не можем.
 const LINK = /(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me|instagram\.com)\/[^\s]+/i;
 
-/** Сообщение человека боту, которое может оказаться отзывом. `forwarded` — пересланное: `channel` — публикация канала, у неё есть адрес. */
+/**
+ * Сообщение человека боту, которое может оказаться отзывом. `text` — текст или расшифровка голосового;
+ * `forwarded` — пересланное: `channel` — публикация канала, у неё есть адрес; `media` — вложения сообщения (media.ts).
+ */
 interface Said {
   text: string;
   replyTo: number | null;
   forwarded: { channel?: { username?: string; number: number } } | null;
+  media?: MessageMedia[];
+}
+
+const isVoice = (m: MessageMedia) => (m.type === 'voice' || m.type === 'audio') && !!m.url;
+
+/**
+ * Запись голосового отзыва под своим адресом. В переписке файл лежит по адресу с Telegram id человека
+ * (`inbox/bot/<id>/…`) — показывать такой адрес всем нельзя, поэтому для страницы мастера файл кладётся ещё раз,
+ * в `feedback/`. null — переложить не вышло: отзыв останется текстом, если расшифровка есть.
+ */
+async function publishVoice(voice: MessageMedia): Promise<{ audio_url: string; audio_duration: number | null } | null> {
+  const b = bucket();
+  if (!b) return null;
+  try {
+    const res = await fetch(voice.url!, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const type = voice.mime_type ?? 'audio/ogg';
+    const audio_url = await b.put(`feedback/${randomUUID()}.${mediaExt(type, voice.type, voice.file_name)}`, Buffer.from(await res.arrayBuffer()), type);
+    return { audio_url, audio_duration: voice.duration };
+  } catch (e) {
+    console.error('голосовой отзыв в бакет:', e);
+    return null;
+  }
 }
 
 /**
  * Текст отзыва на услугу. Им считается ответ на вопрос бота «теперь сам отзыв…», а первые FEEDBACK_TEXT_MINUTES минут
  * после оценки — и просто следующее сообщение: написанное, пересланное или со ссылкой.
- * `saved` — текст сохранён; `link` — человек прислал ссылку на сообщение: её сверит команда, до того отзыв не показываем;
+ * `saved` — текст сохранён; `voice` — сохранён голосовой отзыв: запись и её расшифровка (без расшифровки — одна запись);
+ * `link` — человек прислал ссылку на сообщение: её сверит команда, до того отзыв не показываем;
  * null — это сообщение не про отзыв на услугу.
  */
-export async function takePracticeFeedbackText(db: Db, actor: User, { text, replyTo, forwarded }: Said): Promise<'saved' | 'link' | null> {
-  if (!text) return null;
+export async function takePracticeFeedbackText(db: Db, actor: User, { text, replyTo, forwarded, media }: Said): Promise<'saved' | 'voice' | 'link' | null> {
+  // Голосовой отзыв — только свой голос: пересланную чужую запись как голос человека не показываем.
+  const spoken = forwarded ? undefined : media?.find(isVoice);
+  if (!text && !spoken) return null;
   const [row] = await db.select().from(practiceFeedback)
     .where(and(eq(practiceFeedback.user_id, actor.id), isNotNull(practiceFeedback.rating), replyTo !== null
       ? eq(practiceFeedback.prompt_message_id, replyTo)
-      : and(isNotNull(practiceFeedback.prompt_message_id), isNull(practiceFeedback.comment), isNull(practiceFeedback.source_url),
+      : and(isNotNull(practiceFeedback.prompt_message_id), isNull(practiceFeedback.comment), isNull(practiceFeedback.audio_url), isNull(practiceFeedback.source_url),
         gt(practiceFeedback.updated_at, new Date(Date.now() - FEEDBACK_TEXT_MINUTES * 60_000)))))
     .orderBy(desc(practiceFeedback.updated_at)).limit(1);
   if (!row) return null;
@@ -174,9 +206,13 @@ export async function takePracticeFeedbackText(db: Db, actor: User, { text, repl
   const post = forwarded?.channel?.username ? `https://t.me/${forwarded.channel.username}/${forwarded.channel.number}` : null;
   const link = forwarded ? null : LINK.exec(text)?.[0].replace(/^(?!https?:\/\/)/i, 'https://') ?? null;
   const comment = (link ? text.replace(LINK, '') : text).trim().slice(0, FEEDBACK_COMMENT_MAX) || null;
+  const voice = spoken ? await publishVoice(spoken) : null;
+  if (!comment && !voice) return null; // ни расшифровки, ни записи — сохранять нечего
+  // Новый отзыв заменяет прежний целиком: текст после голосового убирает запись.
   await db.update(practiceFeedback)
-    .set({ comment, source_url: post ?? link, verified_at: post ? new Date() : null, updated_at: new Date(), host_notified_at: null })
+    .set({ comment, audio_url: voice?.audio_url ?? null, audio_duration: voice?.audio_duration ?? null, source_url: post ?? link, verified_at: post ? new Date() : null, updated_at: new Date(), host_notified_at: null })
     .where(one(row.practice_id, row.user_id));
+  if (voice) return 'voice';
   if (!link) return 'saved';
   const who = `${actor.first_name}${actor.username ? ` (@${actor.username})` : ''}`;
   await alertTeam(`${who} прислал отзыв о мастере ссылкой — сверьте: ${link}\n${settings.publicUrl}/hosts/${row.host_id}`, await telegramIdOf(db, actor.id)).catch(console.error);
@@ -224,8 +260,11 @@ export async function digestPracticeFeedback(db: Db, now = new Date()): Promise<
     if (host?.user_id == null) continue;
     await notify(db, host.user_id, 'feedback_received', {
       host: { id: host.id }, count: total!.count, average: total!.average,
-      // Отзыв ссылкой без текста: мастеру — сама ссылка, он её откроет.
-      fresh: rows.map((r) => ({ first_name: r.first_name, rating: r.feedback.rating!, comment: r.feedback.comment ?? r.feedback.source_url })),
+      // Отзыв ссылкой без текста: мастеру — сама ссылка, он её откроет. Голосовой помечен: запись — на его странице.
+      fresh: rows.map((r) => ({
+        first_name: r.first_name, rating: r.feedback.rating!,
+        comment: r.feedback.audio_url ? `🎤 ${r.feedback.comment ?? 'голосовой отзыв'}` : r.feedback.comment ?? r.feedback.source_url,
+      })),
     });
   }
 }
@@ -237,7 +276,7 @@ const adminRows = (db: Pick<Db, 'select'>) => db
   .from(practiceFeedback).innerJoin(users, eq(users.id, practiceFeedback.user_id)).innerJoin(practices, eq(practices.id, practiceFeedback.practice_id));
 const toAdmin = ({ f, ...names }: Awaited<ReturnType<typeof adminRows>>[number]): AdminHostFeedback => ({
   host_id: f.host_id, practice_id: f.practice_id, user_id: f.user_id, ...names, via: f.via, attended: f.attended, rating: f.rating, comment: f.comment,
-  source_url: f.source_url, verified_at: f.verified_at, requested_at: f.requested_at, updated_at: f.updated_at,
+  audio_url: f.audio_url, audio_duration: f.audio_duration, source_url: f.source_url, verified_at: f.verified_at, requested_at: f.requested_at, updated_at: f.updated_at,
 });
 
 /** Отзывы на услуги организатора глазами команды: все, и без ответа тоже; свежие сверху. */
