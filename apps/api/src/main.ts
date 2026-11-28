@@ -15,6 +15,7 @@ import { bot } from './telegram.ts';
 import { startCuratorLoop } from './curator.ts';
 import { startLibrarianLoop } from './librarian.ts';
 import { startFeedbackLoop } from './feedback.ts';
+import { startPracticeFeedbackLoop } from './practice-feedback.ts';
 import { startSubscriptionsLoop } from './subscriptions.ts';
 import { refreshTopics, startTopicsLoop } from './topics.ts';
 
@@ -49,6 +50,7 @@ const api = createApp({
 
 // После событий бот просит у гостей отзыв и шлёт организаторам сводки. Без токена отправлять нечем.
 if (BOT_TOKEN) startFeedbackLoop(db);
+if (BOT_TOKEN) startPracticeFeedbackLoop(db);
 // Подписчикам тем — сводка новых событий ленты, не чаще раза в сутки.
 if (BOT_TOKEN) startSubscriptionsLoop(db);
 // Темы живут в базе: реестр процесса обновляется раз в минуту, новым темам иллюстратор рисует иконку.

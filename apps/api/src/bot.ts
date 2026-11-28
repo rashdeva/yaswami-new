@@ -5,6 +5,7 @@ import { collectedWhen } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import { touchUser, upsertUser } from './auth.ts';
 import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
+import { handlePracticeFeedbackCallback, savePracticeFeedbackComment } from './practice-feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { writing } from './live.ts';
 import { windowCounter } from './limits.ts';
@@ -151,6 +152,7 @@ async function withDraft<T>(chatId: number, draftId: number, run: (show: (text: 
 /** Обрабатывает одно обновление вебхука. */
 export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   if (await handleFeedbackCallback(db, update)) return; // оценка события кнопкой под карточкой
+  if (await handlePracticeFeedbackCallback(db, update)) return; // ответ «вы были?» об услуге мастера
   const m = parseIncoming(update);
   if (!m) return;
   const n = inbound.hit(m.from.id);
@@ -176,6 +178,9 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   // Ответ на «что понравилось и что улучшить?» — текст отзыва о событии, а не вопрос.
   if (m.replyTo && said && await saveFeedbackComment(db, actor.id, m.replyTo, said)) {
     return void (await bot.send('sendMessage', { chat_id: m.chatId, text: 'Спасибо! Отзыв сохранён, организатор его увидит.' }));
+  }
+  if (m.replyTo && said && await savePracticeFeedbackComment(db, actor.id, m.replyTo, said)) {
+    return void (await bot.send('sendMessage', { chat_id: m.chatId, text: 'Спасибо! Отзыв сохранён.' }));
   }
   // Команда — приветствие, без пометки: иначе каждый /start ждал бы нас.
   if (m.text.startsWith('/')) return sendWelcome(m.chatId);

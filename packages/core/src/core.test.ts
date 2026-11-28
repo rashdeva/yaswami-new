@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Event, Guest, GuestWithName, TicketType } from './index.ts';
-import { collectedBadges, Event as EventSchema, nearbyCityIds, nearestCityId, popularIds, PUBLIC_STATE_MAX_BYTES, rsvp, ticketTypeRemovalError, toPublicState, SourceAddInput, submittedChannel } from './index.ts';
+import { collectedBadges, Event as EventSchema, nearbyCityIds, nearestCityId, popularIds, PUBLIC_STATE_MAX_BYTES, isPublicFeedback, shownAverage, rsvp, ticketTypeRemovalError, toPublicState, SourceAddInput, submittedChannel } from './index.ts';
 
 const now = new Date('2026-11-11T12:00:00Z');
 const event: Event = {
@@ -238,4 +238,14 @@ test('предложенный источник: только канал Telegra
   assert.equal(submittedChannel(' https://t.me/Danang_Party/ '), 'Danang_Party');
   assert.equal(submittedChannel('@danang_party'), 'danang_party');
   assert.equal(submittedChannel('https://www.instagram.com/Danang.Yoga/?igsh=abc'), 'instagram:danang.yoga');
+});
+
+test('репутация: средняя — от трёх оценок; текст отзыва виден всем только с оценкой 4–5', () => {
+  assert.equal(shownAverage([]), null);
+  assert.equal(shownAverage([5, 5]), null);
+  assert.equal(shownAverage([5, 4, 3]), 4);
+  assert.ok(isPublicFeedback({ rating: 4, comment: 'Хорошо' }));
+  assert.ok(!isPublicFeedback({ rating: 3, comment: 'Так себе' }));
+  assert.ok(!isPublicFeedback({ rating: 5, comment: null }));
+  assert.ok(!isPublicFeedback({ rating: null, comment: 'Не был' }));
 });

@@ -6,9 +6,10 @@ import { track } from '../analytics.ts';
 import { EventRow } from '../components/EventRow.tsx';
 import { PracticeRow } from '../components/PracticeRow.tsx';
 import { ProductCard } from '../components/ProductCard.tsx';
-import { dayLabel } from '../format.ts';
+import { dayLabel, reputation } from '../format.ts';
 import { useHost, usePracticeSheet } from '../hooks/useHosts.ts';
 import { PracticeSheet } from '../components/PracticeSheet.tsx';
+import { HostFeedback } from './HostFeedback.tsx';
 import { useViewed } from '../hooks/useViewed.ts';
 import { openExternal } from '../tg.ts';
 
@@ -18,10 +19,12 @@ interface Props {
   onOpenEvent: (event: CollectedEventItem) => void;
   onOpenProduct: (product: ProductItem) => void;
   onBack: (() => void) | null;
+  /** Отзывы: чья страница, вошёл ли человек, как войти и открыть ли форму сразу (ссылка мастера «оставьте отзыв»). */
+  feedback: { own: boolean; authed: boolean; onLogin: (() => void) | null; openForm: boolean };
 }
 
 /** Страница организатора или мастера: кто это, что ведёт, что продаёт, ближайшие события и как ему написать. */
-export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack }: Props) {
+export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack, feedback }: Props) {
   useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const { host, loaded, failed } = useHost(id);
   const sheet = usePracticeSheet();
@@ -50,6 +53,7 @@ export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack }: Pro
           onError={(e) => { e.currentTarget.src = topicIcon(topic); e.currentTarget.style.borderRadius = '0'; }} />
         <small>{[city, ...host.topics].join(' · ')}</small>
         <h1>{host.name}</h1>
+        {reputation(host.feedback) && <small className="rating">{reputation(host.feedback)}</small>}
       </div>
 
       {host.summary && <div className="group"><div className="meta"><div className="text">{host.summary}</div></div></div>}
@@ -85,6 +89,8 @@ export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack }: Pro
         </>
       )}
       {loaded && !host.events.length && !host.products.length && host.upcoming_count === 0 && <p className="note">Ближайших событий нет — напишите, чтобы узнать расписание.</p>}
+
+      {loaded && <HostFeedback host={host} {...feedback} />}
 
       {host.photos.length > 0 && (
         <div className="shots" style={{ margin: '16px 16px 0' }}>

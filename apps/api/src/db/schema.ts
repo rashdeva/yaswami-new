@@ -3,7 +3,7 @@
 import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, Guest, Guide, Host, HostSearch, HostSearchMatch, JoinedVia, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeFormat, PracticeStatus, ServiceCategory, Product, ProductStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
+import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, FeedbackVia, Guest, Guide, Host, HostSearch, HostSearchMatch, JoinedVia, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeFormat, PracticeStatus, ServiceCategory, Product, ProductStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
 import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, JOINED_VIA, PRODUCT_CATEGORY_SLUGS, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
@@ -268,6 +268,7 @@ export const hosts = pgTable(
     summary: text(),
     // Модерация (HOST_STATUSES): новые — pending; отклонённый не виден целиком. Что он ведёт без даты — в таблице practices.
     status: text().$type<HostStatus>().notNull().default('pending'),
+    feedback_bonus: text(), // что мастер обещает гостю за отзыв, его словами (hosts_update_self)
     offer_url: text(), // сообщение, из которого сборщик взял мастера
     // Когда сборщик последний раз смотрел фото в канале; null — ещё не смотрел. Фото может и не оказаться.
     photos_checked_at: at('photos_checked_at'),
@@ -344,7 +345,7 @@ export const practices = pgTable(
 
 // «Записаться» на Practice мастера: фиксируем намерение и отправляем человека к мастеру.
 // `host_id` повторяет practices.host_id: по нему записи входят в снимок организатора в журнале (audit.ts).
-// ponytail: без статуса и подтверждения — пока мастера не входят в Ясвами.
+// ponytail: без статуса и подтверждения — пока мастера не входят в Ясвами. Был ли визит, узнаём у гостя (practice_feedback).
 export const practiceSignups = pgTable(
   'practice_signups',
   {
@@ -634,6 +635,31 @@ export const eventFeedback = pgTable(
     updated_at: at('updated_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.event_id, t.user_id] }), check('event_feedback_rating_check', sql`${t.rating} between 1 and 5`)],
+);
+
+// Отзыв на услугу мастера (practice-feedback.ts; в Luma такого нет). Строка появляется, когда бот спросил «были?»
+// через сутки после записи (`via: signup`) или когда человек сам оставил отзыв по ссылке мастера (`via: invite`).
+// `host_id` повторяет practices.host_id: по нему отзывы входят в снимок организатора в журнале и считается репутация.
+export const practiceFeedback = pgTable(
+  'practice_feedback',
+  {
+    practice_id: uuid().notNull().references(() => practices.id, { onDelete: 'cascade' }),
+    host_id: uuid().notNull().references(() => hosts.id, { onDelete: 'cascade' }),
+    user_id: userId('user_id').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+    via: text().$type<FeedbackVia>().notNull(),
+    attended: boolean(), // был ли у мастера: null — ответа нет, false — не дошёл; оценка есть только у того, кто был
+    rating: integer(), // 1–5
+    comment: text(),
+    prompt_message_id: integer(), // сообщение бота «пара слов…»: ответ на него становится текстом отзыва
+    host_notified_at: at('host_notified_at'), // отзыв уже ушёл мастеру в сводке; новая оценка или текст сбрасывают отметку
+    requested_at: at('requested_at').notNull().defaultNow(),
+    updated_at: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.practice_id, t.user_id] }), index('practice_feedback_host_idx').on(t.host_id),
+    check('practice_feedback_rating_check', sql`${t.rating} between 1 and 5`),
+    check('practice_feedback_via_check', sql`${t.via} in ('signup', 'invite')`),
+  ],
 );
 
 // Журнал действий команды (audit.ts, ADR-0004): каждое изменение из админки и через admin_* в MCP, со снимками

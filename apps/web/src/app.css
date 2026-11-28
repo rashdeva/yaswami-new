@@ -582,3 +582,18 @@ h2.today { color: var(--btn); }
   .parse-msg, .parse-msg mark[data-lit], .parse-avatar, .parse-dots i, .parse-field[data-in], .parse-field[data-in] b, .parse-skel, .parse[data-phase] .parse-msg::after { animation: none !important; }
   .parse-card, .parse-badge { transition: none; }
 }
+
+/* Отзывы на странице мастера (HostFeedback) */
+.rating { font-variant-numeric: tabular-nums; }
+.hero small.rating { display: block; margin-top: 6px; }
+.review { padding: 12px 18px; border-top: .5px solid var(--line); }
+.review:first-child { border-top: 0; }
+.review b span { color: var(--btn); letter-spacing: 1px; margin-left: 4px; }
+.review p { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.review small { color: var(--hint); font-size: 12px; }
+.review-cta { margin: 0 16px; }
+.chips.wrap { flex-wrap: wrap; padding: 0 0 12px; }
+.stars { display: flex; justify-content: center; gap: 6px; margin: 4px 0 14px; }
+.stars button { border: 0; background: none; padding: 4px; font-size: 36px; line-height: 1; color: var(--line); cursor: pointer; }
+.stars button[data-on='true'] { color: var(--btn); }
+.suggest form { margin-top: 14px; text-align: left; }

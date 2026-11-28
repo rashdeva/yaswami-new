@@ -135,6 +135,7 @@ export interface Host {
   instagram_handle: string | null; // ник в Instagram без @; имя — как у Host в Luma
   summary: string | null;
   status: HostStatus;
+  feedback_bonus: string | null; // что мастер обещает гостю за отзыв; пишет сам мастер (hosts_update_self), команда может убрать
   offer_url: string | null; // сообщение в чате, из которого сборщик взял мастера: по нему модератор сверяет Practice
   photos_checked_at: Date | null;
   profiled_at: Date | null; // когда сборщик последний раз смотрел профиль в Telegram
@@ -190,6 +191,7 @@ export const HostUpdateInput = z
     instagram_handle: z.string().trim().regex(/^@?[\w.]{1,30}$/, 'instagram handle').nullable().describe('Instagram handle, without @'),
     summary: text(2000).nullable(),
     city_id: cityId,
+    feedback_bonus: text(120).min(1).nullable().describe('What the organizer promises a guest for feedback, written by the organizer; null removes it'),
     status: z.enum(HOST_STATUSES).describe('rejected — hide the organizer with all events and practices; published — checked by the team. Each practice is moderated by its own status'),
     // Список целиком: чего в нём нет — удалено вместе с записями на неё. Practice с `id` правится на месте, без `id` — добавляется.
     practices: z.array(PracticeInput).max(30)

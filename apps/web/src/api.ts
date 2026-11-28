@@ -1,5 +1,5 @@
 // Клиент API. Формы запросов и ответов — из @yaswami/core, те же, что проверяет бэк.
-import type { AppConfig, City, CollectedEventItem, EventCreateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, ProductItem, ProductList, ProductListInput, RsvpInput, SearchResult, Showcase, SourceAddInput, SourceSubmission, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
+import type { AppConfig, City, CollectedEventItem, EventCreateInput, HostFeedbackCreated, HostFeedbackCreateInput, HostSelf, HostSelfUpdateInput, HostItem, HostListItem, HostSearch, HostSearchCreateInput, HostSearchList, HostSearchMatchList, HostSearchUpdateInput, EventListItem, EventUpdateInput, EventView, Me, MyCollectedItem, PracticeSignup, ProductItem, ProductList, ProductListInput, RsvpInput, SearchResult, Showcase, SourceAddInput, SourceSubmission, TopicItem, UserSelfUpdateInput, VisitInput, Wire } from '@yaswami/core';
 import { track } from './analytics.ts';
 import { inTelegram, siteArrival, tg } from './tg.ts';
 
@@ -31,7 +31,9 @@ const MESSAGES: Record<string, string> = {
   unauthorized: 'Не получилось войти. Откройте приложение заново',
   invalid_input: 'Проверьте заполненные поля',
   too_many_requests: 'Слишком много запросов. Подождите минуту',
-  not_host: 'Поиск людей — для организаторов каталога',
+  not_host: 'Это доступно организаторам каталога',
+  own_host: 'Себе отзыв оставить нельзя',
+  feedback_limit: 'Слишком много отзывов за сутки. Попробуйте завтра',
   sources_limit: 'За сутки можно предложить три канала. Остальные пришлите завтра',
   source_exists: 'Этот канал у нас уже есть или мы его уже смотрели',
   not_a_channel: 'Это группа или чат, а мы читаем только каналы',
@@ -83,6 +85,9 @@ export const api = {
     request<Wire<ProductList>>('GET', `/products?${new URLSearchParams(Object.entries({ city_id, category, pagination_cursor, pagination_limit }).flatMap(([k, v]) => (v === undefined ? [] : [[k, String(v)]])))}`),
   getProduct: (id: string) =>
     request<Wire<ProductItem>>('GET', `/products/${encodeURIComponent(id)}`).catch((e: ApiError) => { throw e.code === 'not_found' ? new ApiError('product_not_found') : e; }),
+  createHostFeedback: (id: string, input: HostFeedbackCreateInput) => request<HostFeedbackCreated>('POST', `/hosts/${encodeURIComponent(id)}/feedback`, input),
+  getHostSelf: () => request<HostSelf>('GET', '/me/host'),
+  updateHostSelf: (input: HostSelfUpdateInput) => request<HostSelf>('PATCH', '/me/host', input),
   signUpForPractice: (id: string, practice_id: string) => request<PracticeSignup>('POST', `/hosts/${encodeURIComponent(id)}/practices/signup`, { practice_id }, true),
   claim: (id: string) => request<EventData>('POST', `/collected-events/${encodeURIComponent(id)}/claim`),
   signUp: (id: string) => request<CollectedEventItem>('POST', `/collected-events/${encodeURIComponent(id)}/signup`, undefined, true),
