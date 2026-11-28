@@ -17,8 +17,8 @@ export const OTHER_GROUP = 'other';
 
 /** Пока услуга не размечена (сборщик доберётся за проход-другой) — категория по направлению её темы. */
 const FROM_DIRECTION: Record<DirectionSlug, ServiceCategory> = {
-  wellness: 'body', fitness: 'sport', arts: 'classes', games: 'classes', social: 'classes', learning: 'lessons', travel: 'classes', family: 'kids',
-  food: 'classes', tech: 'lessons',
+  wellness: 'body', fitness: 'sport', arts: 'classes', social: 'classes', travel: 'classes', family: 'kids',
+  food: 'classes', tech: 'lessons', parties: 'classes',
 };
 /** Цвет шапки раздела — цвет похожей темы. */
 const TINT: Record<ServiceCategory, string> = {
