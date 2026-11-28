@@ -29,15 +29,20 @@ export const REPLIES = {
   unavailable: 'Сообщение получили, ответим здесь чуть позже.',
 };
 
-/** Кнопка под приветствием: приложение внутри Telegram, как ссылка на афишу у роли поддержки. */
-const APP_BUTTON = { inline_keyboard: [[{ text: 'Открыть афишу', url: 'https://t.me/yaswamibot/app' }]] };
+/**
+ * Кнопка под приветствием: приложение внутри Telegram, как ссылка на афишу у роли поддержки. Бот — тот, чей токен у
+ * сервера (bot.username): у копии для другой страны свой бот. Имя не узнали — ведём на сайт.
+ */
+const appButton = () => ({
+  inline_keyboard: [[{ text: 'Открыть афишу', url: bot.username ? `https://t.me/${bot.username}/${bot.appName}` : settings.publicUrl }]],
+});
 
 /** Картинка приветствия: лежит в мини-приложении (apps/web/public), Telegram забирает её по ссылке. */
 export const welcomePhotoUrl = () => `${settings.publicUrl}/welcome.jpg`;
 
 /** Приветствие: картинка с подписью. */
 async function sendWelcome(chatId: number): Promise<void> {
-  const body = { chat_id: chatId, reply_markup: APP_BUTTON };
+  const body = { chat_id: chatId, reply_markup: appButton() };
   const photo = await bot.send('sendPhoto', { ...body, photo: welcomePhotoUrl(), caption: REPLIES.welcome });
   // Telegram картинку не забрал (локальный адрес в разработке) — без приветствия человек всё равно не останется.
   if (!photo.ok) await bot.send('sendMessage', { ...body, text: REPLIES.welcome });

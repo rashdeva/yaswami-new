@@ -4,7 +4,7 @@
 // в «Каталоге» (`pending`), как собранное сборщиком; команда узнаёт о нём сразу.
 import { and, eq, gt, isNull, max, sql } from 'drizzle-orm';
 import type { PracticeCreateInput, PracticeSubmission, ProductCreateInput, ProductSubmission, User } from '@yaswami/core';
-import { DEFAULT_CITY_ID, OTHER_TOPIC, PRACTICES_PER_DAY, PRODUCTS_PER_DAY, productTitleKey } from '@yaswami/core';
+import { OTHER_TOPIC, PRACTICES_PER_DAY, PRODUCTS_PER_DAY, productTitleKey } from '@yaswami/core';
 import { telegramIdOf } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { hosts, practices, products } from './db/schema.ts';
@@ -33,7 +33,7 @@ async function ownHost(db: Db, actor: User, city_id: string | undefined): Promis
   const [draft] = await db.update(hosts).set({ user_id: actor.id, telegram_id })
     .where(and(eq(hosts.username, username), isNull(hosts.telegram_id), isNull(hosts.user_id))).returning();
   if (draft) return draft;
-  const city = city_id ?? actor.city_id ?? DEFAULT_CITY_ID;
+  const city = city_id ?? actor.city_id ?? settings.defaultCityId;
   await assertCity(db, city);
   const [made] = await db.insert(hosts).values({ user_id: actor.id, telegram_id, username, name: actor.first_name, city_id: city }).returning();
   return made!;

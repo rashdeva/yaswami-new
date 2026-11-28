@@ -3,7 +3,7 @@
 // инструментами admin_* со своим токеном (область librarian); здесь — что ей можно, её лимит и расписание.
 import { and, count, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { CollectedUpdateInput, TopicUpdateInput } from '@yaswami/core';
-import { DEFAULT_CITY_ID, LIBRARIAN_DAILY_CHANGES, cityNow } from '@yaswami/core';
+import { LIBRARIAN_DAILY_CHANGES, cityNow } from '@yaswami/core';
 import type { Ctx } from './audit.ts';
 import type { Db } from './db/client.ts';
 import { adminActions, collectedEvents } from './db/schema.ts';
@@ -71,7 +71,7 @@ let running = false;
 export async function requestLibrarian(db: Db, now = Date.now()): Promise<boolean> {
   if (!settings.librarianUrl || running) return false;
   const cities = await listCities(db);
-  const home = cities.find((c) => c.id === DEFAULT_CITY_ID) ?? cities[0];
+  const home = cities.find((c) => c.id === settings.defaultCityId) ?? cities[0];
   if (!home) return false;
   const { day, minutes } = cityNow(home.timezone, now);
   if (Math.floor(minutes / 60) !== settings.librarianHour || done === day) return false;

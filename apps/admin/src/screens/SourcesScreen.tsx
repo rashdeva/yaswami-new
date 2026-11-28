@@ -2,7 +2,7 @@
 // Каналы организаторов он добавляет сам; ненужный — выключить. Канал, которого больше нет в Telegram, сборщик выключает сам и пишет причину. У источника можно указать организатора — чей это канал —
 // и город: его получают события и мастера из этого источника. Наверху — источники, которые предложили люди: ждут решения.
 import type { AdminSource, SourceKind, Wire } from '@yaswami/core';
-import { DEFAULT_CITY_ID, instagramOf, SOURCE_KINDS } from '@yaswami/core';
+import { instagramOf, SOURCE_KINDS } from '@yaswami/core';
 import { useState } from 'react';
 import { CitySelect } from '@/components/City';
 import { Confirm } from '@/components/Confirm';
@@ -17,6 +17,7 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useDefaultCity } from '@/hooks/useCities';
 import { useHosts } from '@/hooks/useHosts';
 import { useSources } from '@/hooks/useSources';
 
@@ -93,7 +94,9 @@ export function SourcesScreen() {
   const sources = all?.filter((s) => s.approval_status !== 'pending_approval');
   const { data: hosts } = useHosts();
   const [channel, setChannel] = useState('');
-  const [city, setCity] = useState<string>(DEFAULT_CITY_ID);
+  const fallback = useDefaultCity();
+  const [picked, setCity] = useState<string | null>(null);
+  const city = picked ?? fallback;
   const [kind, setKind] = useState<SourceKind>('announcements');
   return (
     <Page title={<>Источники <Badge>{sources?.filter((s) => s.enabled).length ?? 0}</Badge></>} description={DESCRIPTION}>
