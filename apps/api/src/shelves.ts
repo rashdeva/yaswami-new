@@ -2,12 +2,13 @@
 // все полки и их правка через журнал. Куратор — токен с областью `curator` (роль agents/curator).
 import { and, asc, count, eq, gt, isNull, like, lte, max, or, sql } from 'drizzle-orm';
 import type { AdminShelf, CollectedEventItem, Shelf, ShelfCreateInput, ShelfListInput, ShelfUpdateInput, Showcase, ShowcaseShelf } from '@yaswami/core';
-import { CURATOR_DAILY_CHANGES, DEFAULT_CITY_ID, DEFAULT_SHELVES, MIN_SHELF_EVENTS, cityNow, shelfEvents } from '@yaswami/core';
+import { CURATOR_DAILY_CHANGES, DEFAULT_SHELVES, MIN_SHELF_EVENTS, cityNow, shelfEvents } from '@yaswami/core';
 import type { Ctx } from './audit.ts';
 import { audited } from './audit.ts';
 import type { Db, Tx } from './db/client.ts';
 import { adminActions, cities, shelves } from './db/schema.ts';
 import { AppError, listCollectedEvents } from './services.ts';
+import { settings } from './settings.ts';
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const PREVIEW = 5;
@@ -32,7 +33,7 @@ const live = (now = new Date()) => or(isNull(shelves.ends_at), gt(shelves.ends_a
  * Не набралось ни одной (своих полок нет, все предложены, сняты, истекли или полупустые) — полки по умолчанию
  * (DEFAULT_SHELVES): главная не должна оставаться пустой, пока команда не опубликует своё.
  */
-export async function getShowcase(db: Db, { city_id = DEFAULT_CITY_ID }: ShelfListInput = {}): Promise<Showcase> {
+export async function getShowcase(db: Db, { city_id = settings.defaultCityId }: ShelfListInput = {}): Promise<Showcase> {
   const { upcoming, today } = await cityEvents(db, city_id);
   const own = await db.select().from(shelves)
     .where(and(eq(shelves.city_id, city_id), eq(shelves.status, 'published'), live()))
@@ -52,7 +53,7 @@ const toAdmin = (s: Shelf, upcoming: CollectedEventItem[], today: string): Admin
 };
 
 /** Все полки города, с предложенными и снятыми, в порядке витрины. Пусто — гость видит полки по умолчанию. */
-export async function listShelves(db: Db, { city_id = DEFAULT_CITY_ID }: ShelfListInput = {}): Promise<AdminShelf[]> {
+export async function listShelves(db: Db, { city_id = settings.defaultCityId }: ShelfListInput = {}): Promise<AdminShelf[]> {
   const { upcoming, today } = await cityEvents(db, city_id);
   const rows = await db.select().from(shelves).where(eq(shelves.city_id, city_id)).orderBy(asc(shelves.position), asc(shelves.created_at));
   return rows.map((s) => toAdmin(s, upcoming, today));
