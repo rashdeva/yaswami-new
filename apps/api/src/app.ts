@@ -139,7 +139,7 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
       await next();
     })
     .get('/health', (c) => c.text('ok'))
-    .get('/config', (c) => c.json({ bot_username: null, app_name: 'app', ...config, web_login, free_events_limit: settings.freeEventsLimit } satisfies AppConfig))
+    .get('/config', (c) => c.json({ bot_username: null, app_name: 'app', ...config, web_login, free_events_limit: settings.freeEventsLimit, default_city_id: settings.defaultCityId } satisfies AppConfig))
     // До проверки входа: витрину собранных событий видит и анонимный посетитель.
     .get('/cities', async (c) => c.json(await s.listCities(db)))
     .get('/collected-events', async (c) => c.json(await s.listCollectedEvents(db, CityFilterInput.parse(c.req.query()))))

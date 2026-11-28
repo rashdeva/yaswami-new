@@ -86,7 +86,11 @@ export const City = z.object({
   created_at: z.date(),
 });
 export type City = z.infer<typeof City>;
-/** Город, с которого начали: он достаётся всему, чему город не указали, и его показывает витрина. */
+/**
+ * Город, с которого начали: он достаётся всему, чему город не указали, и его показывает витрина. Это запасное значение:
+ * копия для другой страны задаёт свой город переменной DEFAULT_CITY_ID у API (settings.defaultCityId), фронт узнаёт его
+ * из GET /config и со страницы (served.default_city_id).
+ */
 export const DEFAULT_CITY_ID = 'danang';
 
 /** Подмножество Address из Luma: пока только строка адреса. */

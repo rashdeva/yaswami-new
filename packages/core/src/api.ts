@@ -517,6 +517,7 @@ export interface AppConfig {
   app_name: string;
   web_login: boolean; // на сайте можно войти через Telegram (настроен Client Secret)
   free_events_limit: number; // сколько событий создаётся бесплатно
+  default_city_id: string; // город по умолчанию этой копии: его витрину видит тот, кто город ещё не выбрал
 }
 
 /** Тот же тип, каким он приходит по сети: даты в JSON — строки ISO. */

@@ -21,8 +21,11 @@ export function cityMatcher(names) {
   return { test: (text) => word.test(text) || text.toLowerCase().split(/[^a-z0-9_]+/).some((t) => t && inUsername(t)) };
 }
 
-/** Город разовых скриптов: CITY_ID (по умолчанию первый), его другие написания из базы и из CITY_ALIASES через запятую. */
-export async function scoutCity(store, { CITY_ID = DEFAULT_CITY_ID, CITY_ALIASES = '' } = process.env) {
+/**
+ * Город разовых скриптов: CITY_ID, без него — город по умолчанию этой копии (DEFAULT_CITY_ID, как у API), его другие
+ * написания из базы и из CITY_ALIASES через запятую.
+ */
+export async function scoutCity(store, { CITY_ID = process.env.DEFAULT_CITY_ID || DEFAULT_CITY_ID, CITY_ALIASES = '' } = process.env) {
   const city = (await store.cities()).find((c) => c.id === CITY_ID);
   if (!city) throw new Error(`Города ${CITY_ID} нет в таблице cities`);
   const names = [...new Set([city.name, ...city.aliases, ...CITY_ALIASES.split(',').map((a) => a.trim()).filter(Boolean)])];

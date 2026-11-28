@@ -4,7 +4,7 @@
 // (admin_sources_update, admin/sources.ts), там же видно, кто предложил.
 import { and, eq, gt, sql } from 'drizzle-orm';
 import type { SourceAddInput, SourceSubmission, User } from '@yaswami/core';
-import { DEFAULT_CITY_ID, SOURCES_PER_DAY, instagramOf, submittedChannel } from '@yaswami/core';
+import { SOURCES_PER_DAY, instagramOf, submittedChannel } from '@yaswami/core';
 import { telegramIdOf } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { sources } from './db/schema.ts';
@@ -41,7 +41,7 @@ export async function addSource(db: Db, actor: User, input: SourceAddInput): Pro
     .where(and(eq(sources.submitted_by, actor.id), gt(sources.created_at, new Date(Date.now() - DAY))));
   if (today!.n >= SOURCES_PER_DAY) throw new AppError('sources_limit', 429);
   if ((await db.select({ channel: sources.channel }).from(sources).where(sameChannel(channel))).length) throw new AppError('source_exists', 409);
-  const city_id = input.city_id ?? actor.city_id ?? DEFAULT_CITY_ID;
+  const city_id = input.city_id ?? actor.city_id ?? settings.defaultCityId;
   await assertCity(db, city_id);
   if (!instagramOf(channel)) await assertPublicChannel(channel);
   const added = await db.insert(sources)

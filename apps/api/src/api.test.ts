@@ -539,6 +539,17 @@ test('лимит бесплатных событий: сверх него соз
   assert.equal(((await (await app.request('/config')).json()) as { free_events_limit: number }).free_events_limit, limit);
 });
 
+test('город по умолчанию копии — из настроек: его отдаёт /config', async () => {
+  const before = settings.defaultCityId;
+  assert.equal(((await (await app.request('/config')).json()) as { default_city_id: string }).default_city_id, 'danang');
+  settings.defaultCityId = 'tashkent';
+  try {
+    assert.equal(((await (await app.request('/config')).json()) as { default_city_id: string }).default_city_id, 'tashkent');
+  } finally {
+    settings.defaultCityId = before;
+  }
+});
+
 test('вход с сайта: выключен без Client Secret, возврат — только на свой сайт, id_token проверяется', async () => {
   assert.equal(((await (await app.request('/config')).json()) as { web_login: boolean }).web_login, false);
   assert.equal((await app.request('/auth/telegram/login')).status, 503);

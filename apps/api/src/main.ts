@@ -5,7 +5,6 @@ import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { createApp } from './app.ts';
 import { createDb } from './db/client.ts';
-import { DEFAULT_CITY_ID } from '@yaswami/core';
 import { eventPage, feedPage, inject, notFoundPage, sitemap } from './pages.ts';
 import type { Page } from './pages.ts';
 import { AppError, getCollectedEvent, listAllCities, listCities, listCollectedEvents, startVideoLoop } from './services.ts';
@@ -84,18 +83,18 @@ const WEB = 'apps/web/dist'; // появляется после `pnpm build:web`
 if (existsSync(WEB)) {
   // Витрина и страница собранного события приходят с сервера уже с содержимым (pages.ts): их читают поисковики.
   const template = readFileSync(`${WEB}/index.html`, 'utf8');
-  // Города — в каждую страницу: приложение сразу знает название города, не дожидаясь GET /cities.
+  // Города и город по умолчанию — в каждую страницу: приложение сразу знает, чью витрину показать, не дожидаясь запросов.
   const html = async (page: Page) => {
-    const withCities = { ...page, initial: { ...page.initial, cities: await listCities(db) } };
+    const withCities = { ...page, initial: { ...page.initial, cities: await listCities(db), default_city_id: settings.defaultCityId } };
     return new Response(inject(template, withCities), { status: page.status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } });
   };
   const cityName = async (id: string) => (await listAllCities(db)).find((c) => c.id === id)?.name ?? '';
   // Витрина и sitemap открыты всем и стоят запроса по каждому городу: минута устаревания поисковикам и людям не мешает.
-  const firstFeed = cached(60_000, async () => feedPage(await listCollectedEvents(db), PUBLIC_URL, await cityName(DEFAULT_CITY_ID)));
+  const firstFeed = cached(60_000, async () => feedPage(await listCollectedEvents(db), PUBLIC_URL, await cityName(settings.defaultCityId)));
   const siteMap = cached(10 * 60_000, async () =>
     sitemap((await Promise.all((await listCities(db)).map((city) => listCollectedEvents(db, { city_id: city.id })))).flat(), PUBLIC_URL));
   server
-    // Витрина для поисковиков — первого города: её же приложение берёт как ленту первого города (served.feed).
+    // Витрина для поисковиков — города по умолчанию: её же приложение берёт как его ленту (served.feed).
     .get('/', async () => html(await firstFeed(null)))
     .get('/e/:id', async (c) => {
       try {

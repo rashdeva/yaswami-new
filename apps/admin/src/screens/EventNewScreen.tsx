@@ -1,8 +1,8 @@
 // Новое событие Ясвами от имени организатора: его лимит бесплатных событий действует.
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { AdminEventCreateInput, User, Wire } from '@yaswami/core';
-import { AdminEventCreateInput as Schema, DEFAULT_CITY_ID } from '@yaswami/core';
-import { useState } from 'react';
+import { AdminEventCreateInput as Schema } from '@yaswami/core';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { EventFields } from '@/components/EventFields';
 import { showIssues } from '@/components/Fields';
@@ -10,6 +10,7 @@ import { Page, Section } from '@/components/Page';
 import { UserPicker } from '@/components/UserPicker';
 import { Button } from '@/components/ui/button';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
+import { useDefaultCity } from '@/hooks/useCities';
 import { useCreateEvent } from '@/hooks/useEvents';
 
 /** Завтра в 19:00 по часам браузера. */
@@ -20,18 +21,23 @@ const tomorrowEvening = () => {
   return d.toISOString();
 };
 
-const defaults = (): Omit<AdminEventCreateInput, 'user_id'> => ({
+const defaults = (city_id: string): Omit<AdminEventCreateInput, 'user_id'> => ({
   kind: 'o', name: '', start_at: tomorrowEvening(), end_at: null, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: 'draft',
-  what_happens: [], allow_plus_one: false, city_id: DEFAULT_CITY_ID,
+  what_happens: [], allow_plus_one: false, city_id,
 });
 
 export function EventNewScreen({ onCreated }: { onCreated: (id: string) => void }) {
   const create = useCreateEvent();
   const [host, setHost] = useState<Wire<User> | null>(null);
+  const city = useDefaultCity();
   const form = useForm({
     resolver: zodResolver(Schema),
-    defaultValues: defaults() as AdminEventCreateInput, // организатора выбирают отдельно
+    defaultValues: defaults(city) as AdminEventCreateInput, // организатора выбирают отдельно
   });
+  // Город по умолчанию приходит с сервера (GET /config) и может опоздать к первому показу: подставляем, пока не выбрали свой.
+  useEffect(() => {
+    if (!form.getFieldState('city_id').isDirty) form.setValue('city_id', city);
+  }, [city, form]);
   const submit = form.handleSubmit((input) => create(input as AdminEventCreateInput, { onSuccess: (v) => onCreated(v.event.id), onError: (e) => showIssues(form, e) }));
   const hostError = form.formState.errors.user_id;
 
