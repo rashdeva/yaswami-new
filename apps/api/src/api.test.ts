@@ -2076,6 +2076,82 @@ test('отзывы на услуги: вопрос через сутки пос�
   assert.deepEqual([asked!.practice_id, asked!.via, asked!.rating], [stone!.id, 'invite', null]);
 });
 
+test('голосовой отзыв на услугу: запись под своим адресом и расшифровка; без расшифровки — одна запись; правило оценки то же', async () => {
+  settings.adminIds = [70];
+  const [M, V1, V2, V3] = [9160, 9161, 9162, 9163];
+  for (const id of [M, V1, V2, V3]) await call(tma(id, `V${id}`), 'GET', '/me');
+  const [host] = await db.insert(hosts).values({ user_id: await uid(M), telegram_id: M, username: 'voice_master', name: 'Ира', status: 'published' }).returning();
+  const [yoga] = await db.insert(practicesTable).values({ host_id: host!.id, title: 'Йога для спины', topic: 'телесные практики', category: 'body', status: 'published' }).returning();
+  const puts: string[] = [];
+  const ogg = Buffer.from('OggS-voice');
+  const realFetch = globalThis.fetch;
+  const realCall = bot.call;
+  const realTranscribe = transcriber.transcribe;
+  let transcript: string | null = 'Спина больше не болит, спасибо Ире';
+  setBucket({ put: async (key) => (puts.push(key), `https://media.test/${key}`) });
+  globalThis.fetch = async (input) => (String(input).startsWith('https://api.telegram.org/file/') || String(input).startsWith('https://media.test/') ? new Response(ogg) : realFetch(input));
+  bot.call = async (method, body) => (method === 'getFile' ? { ok: true, result: { file_path: 'voice/file_1.oga' } } : (sent.push([method, body]), { ok: true, result: { message_id: ++lastMessageId } }));
+  transcriber.transcribe = async () => transcript;
+  const said = (id: number) => sent.filter(([m, b]) => m === 'sendMessage' && b.chat_id === id).map(([, b]) => b.text);
+  const rate = async (id: number, n: number) => {
+    await handleUpdate(db, botMessage(id, `/start fb_${host!.id.replaceAll('-', '')}`));
+    await handleUpdate(db, { update_id: 1, callback_query: { id: 'q', from: { id, first_name: `V${id}` }, data: `pfb:${yoga!.id}:${n}` } });
+    sent.length = 0;
+  };
+  const speak = (id: number, extra: object = {}) =>
+    handleUpdate(db, botMessage(id, '', { text: undefined, voice: { file_id: 'v1', file_unique_id: 'u1', duration: 7, mime_type: 'audio/ogg', file_size: ogg.length }, ...extra }));
+  const entries = async () => ((await (await app.request(`/hosts/${host!.id}`)).json()) as HostItem).feedback_entries;
+  try {
+    // В вопросе бота прямо сказано, что голосовое услышат все.
+    await handleUpdate(db, botMessage(V1, `/start fb_${host!.id.replaceAll('-', '')}`));
+    sent.length = 0;
+    await handleUpdate(db, { update_id: 1, callback_query: { id: 'q', from: { id: V1, first_name: 'V1' }, data: `pfb:${yoga!.id}:5` } });
+    assert.match(said(V1)[0], /запишите голосовое[\s\S]*голосовое услышат все/);
+
+    // Голосовое после оценки: запись лежит отдельно от переписки — в её адресе нет Telegram id; текст — расшифровка.
+    sent.length = 0;
+    await speak(V1);
+    assert.deepEqual(said(V1), ['Спасибо! Голосовой отзыв сохранён: запись и её текст.']);
+    const published = puts.find((k) => k.startsWith('feedback/'))!;
+    assert.match(published, /^feedback\/[0-9a-f-]{36}\.ogg$/);
+    assert.ok(puts.some((k) => k.startsWith(`inbox/bot/${V1}/`)), 'в переписке файл остаётся по своему адресу');
+    assert.deepEqual((await entries()).map((f) => [f.rating, f.comment, f.audio_url, f.audio_duration]), [[5, 'Спина больше не болит, спасибо Ире', `https://media.test/${published}`, 7]]);
+
+    // Расшифровать не вышло — отзыв всё равно есть: одна запись.
+    transcript = null;
+    await rate(V2, 4);
+    await speak(V2);
+    assert.deepEqual(said(V2), ['Спасибо! Голосовой отзыв сохранён: запись и её текст.']);
+    const [silent] = await entries();
+    assert.deepEqual([silent!.rating, silent!.comment, !!silent!.audio_url], [4, null, true]);
+
+    // Команда слушает запись и вписывает текст.
+    const fixed = await call(tma(70, 'Админ'), 'PATCH', `/admin/hosts/${host!.id}/feedback/${yoga!.id}/${await uid(V2)}`, { comment: 'Занимаюсь второй месяц' });
+    assert.equal(((await fixed.json()) as AdminHostFeedback).audio_duration, 7);
+    assert.equal((await entries())[0]!.comment, 'Занимаюсь второй месяц');
+
+    // Низкая оценка: запись сохранена для мастера и команды, но всем не играет.
+    transcript = 'Было холодно в зале';
+    await rate(V3, 2);
+    await speak(V3);
+    assert.equal((await entries()).length, 2);
+    const [low] = await db.select().from(practiceFeedback).where(eq(practiceFeedback.user_id, await uid(V3)));
+    assert.deepEqual([low!.comment, !!low!.audio_url], ['Было холодно в зале', true]);
+
+    // Текст после голосового заменяет отзыв целиком: записи больше нет.
+    sent.length = 0;
+    const [mine] = await db.select().from(practiceFeedback).where(eq(practiceFeedback.user_id, await uid(V1)));
+    await handleUpdate(db, botMessage(V1, 'Передумал: напишу текстом', { reply_to_message: { message_id: mine!.prompt_message_id } }));
+    assert.deepEqual(said(V1), ['Спасибо! Отзыв сохранён.']);
+    assert.deepEqual((await entries()).find((f) => f.comment === 'Передумал: напишу текстом')!.audio_url, null);
+  } finally {
+    globalThis.fetch = realFetch;
+    bot.call = realCall;
+    transcriber.transcribe = realTranscribe;
+    setBucket(null);
+  }
+});
+
 test('намерение в ссылке на бота: «добавить» — бот вместо приветствия спрашивает о событии, товаре или услуге', async () => {
   const to = (id: number) => sent.filter(([m, b]) => b.chat_id === id && (m === 'sendMessage' || m === 'sendPhoto')).map(([m, b]) => [m, b.text ?? b.caption]);
   // Метка источника в хвосте (`-s…`) намерению не мешает.

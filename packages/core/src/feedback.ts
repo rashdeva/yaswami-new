@@ -22,11 +22,11 @@ export const shownAverage = (ratings: number[]): number | null =>
   ratings.length >= FEEDBACK_AVERAGE_MIN ? ratings.reduce((n, r) => n + r, 0) / ratings.length : null;
 
 /**
- * Текст отзыва виден всем: есть текст, оценка не ниже FEEDBACK_PUBLIC_RATING, а отзыв, присланный ссылкой на чужое
+ * Отзыв виден всем: есть текст или голосовая запись, оценка не ниже FEEDBACK_PUBLIC_RATING, а отзыв, присланный ссылкой на чужое
  * сообщение (`source_url`), команда уже сверила с этим сообщением (`verified_at`).
  */
-export const isPublicFeedback = (f: { rating: number | null; comment: string | null; source_url?: string | null; verified_at?: Date | null }): boolean =>
-  !!f.comment && (f.rating ?? 0) >= FEEDBACK_PUBLIC_RATING && (!f.source_url || !!f.verified_at);
+export const isPublicFeedback = (f: { rating: number | null; comment: string | null; audio_url?: string | null; source_url?: string | null; verified_at?: Date | null }): boolean =>
+  (!!f.comment || !!f.audio_url) && (f.rating ?? 0) >= FEEDBACK_PUBLIC_RATING && (!f.source_url || !!f.verified_at);
 
 /**
  * Сколько минут после оценки следующее сообщение человека боту считается отзывом, даже если это не ответ на вопрос
@@ -50,7 +50,9 @@ export interface HostFeedbackEntry {
   user_first_name: string;
   practice_title: string;
   rating: number;
-  comment: string;
+  comment: string | null; // текст; у голосового — расшифровка речи, null — расшифровать не вышло
+  audio_url: string | null; // голосовой отзыв: запись, которую человек прислал боту; null — отзыв текстом
+  audio_duration: number | null; // её длительность в секундах
   via: FeedbackVia;
   source_url: string | null; // сообщение, где человек написал этот отзыв (Telegram, Instagram); null — написал боту
   updated_at: Date;
@@ -82,6 +84,8 @@ export interface AdminHostFeedback {
   attended: boolean | null; // был ли у мастера: null — бот спросил, ответа нет; false — не дошёл
   rating: number | null;
   comment: string | null;
+  audio_url: string | null; // запись голосового отзыва; `comment` у него — расшифровка, её можно поправить
+  audio_duration: number | null;
   source_url: string | null; // ссылка на сообщение с отзывом, которую прислал человек: команда сверяет её сама
   verified_at: Date | null; // команда сверила ссылку; у пересланного из канала ставится сразу — пересылку не подделать
   requested_at: Date;
@@ -90,10 +94,11 @@ export interface AdminHostFeedback {
 
 /**
  * Решение команды по отзыву, присланному ссылкой: `verified: true` — ссылка ведёт на отзыв этого человека об этом
- * мастере, отзыв можно показывать; `comment` — его текст, переписанный из сообщения по ссылке (сами мы его не читаем).
+ * мастере, отзыв можно показывать; `comment` — его текст, переписанный из сообщения по ссылке (сами мы его не читаем),
+ * или поправленная расшифровка голосового отзыва.
  */
 export const HostFeedbackUpdateInput = z.object({
   verified: z.boolean().describe('true — the team checked the linked message: it is this person\'s feedback on this organizer; false — takes the check back'),
-  comment: z.string().trim().max(FEEDBACK_COMMENT_MAX).nullable().describe('Text of the feedback, copied from the linked message; null removes it'),
+  comment: z.string().trim().max(FEEDBACK_COMMENT_MAX).nullable().describe('Text of the feedback: copied from the linked message, or a corrected transcript of a voice feedback; null removes it'),
 }).partial();
 export type HostFeedbackUpdateInput = z.infer<typeof HostFeedbackUpdateInput>;

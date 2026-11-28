@@ -17,6 +17,12 @@ import { issueTicket, support } from './support.ts';
 import type { SupportTurn } from './support.ts';
 import { bot, parseIncoming } from './telegram.ts';
 
+const FEEDBACK_SAVED = {
+  saved: 'Спасибо! Отзыв сохранён.',
+  voice: 'Спасибо! Голосовой отзыв сохранён: запись и её текст.',
+  link: 'Спасибо! Проверим отзыв по ссылке и покажем его на странице мастера.',
+};
+
 export const REPLIES = {
   /** Подпись к картинке на /start: до 1024 знаков (лимит подписи Telegram). Про создание события не спрашиваем. */
   welcome: [
@@ -229,10 +235,10 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   if (intent?.type === 'feedback') return startHostFeedback(db, actor, m.chatId, intent.host_id);
   if (intent?.type === 'add') return void (await bot.send('sendMessage', { chat_id: m.chatId, text: REPLIES.add[intent.kind] }));
   // Отзыв об услуге после оценки: написан, переслан или прислан ссылкой — а не анонс и не вопрос.
-  const feedback = m.text.startsWith('/') ? null : await takePracticeFeedbackText(db, actor, { text: said, replyTo: m.replyTo, forwarded: m.origin });
+  const feedback = m.text.startsWith('/') ? null : await takePracticeFeedbackText(db, actor, { text: said, replyTo: m.replyTo, forwarded: m.origin, media });
   if (feedback) {
     return void (await bot.send('sendMessage', {
-      chat_id: m.chatId, text: feedback === 'link' ? 'Спасибо! Проверим отзыв по ссылке и покажем его на странице мастера.' : 'Спасибо! Отзыв сохранён.',
+      chat_id: m.chatId, text: FEEDBACK_SAVED[feedback],
     }));
   }
   // Команда — приветствие, без пометки: иначе каждый /start ждал бы нас.
