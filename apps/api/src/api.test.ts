@@ -1181,13 +1181,13 @@ test('фото: аватар гостя и фото сообщества орг�
   });
   const item = async () => (await (await app.request('/collected-events/photochan-1-0')).json()) as CollectedEventItem;
   assert.deepEqual((await item()).hosts![0]!.photos, [], 'без фото блок организатора прежний');
-  for (let i = 1; i <= 7; i++) {
-    await db.insert(photos).values({ host_id: h!.id, source: `telegram:photochan/${i}`, data: Buffer.from([0xff, 0xd8, i]), created_at: new Date(2026, 0, i) });
-  }
+  // Сборщик пишет список новыми сверху; файлы лежат в бакете, API отдаёт их адреса как есть.
+  const stored = [7, 6, 5, 4, 3, 2, 1].map((i) => ({ source: `telegram:photochan/${i}`, url: `https://media.example/hosts/telegram/photochan/${i}.jpg` }));
+  await db.update(hosts).set({ photos: stored }).where(eq(hosts.id, h!.id));
   const shown = (await item()).hosts![0]!.photos;
   assert.equal(shown.length, 6);
-  assert.deepEqual(shown.map((p) => p.source_url).slice(0, 2), ['https://t.me/photochan/7', 'https://t.me/photochan/6'], 'клик по фото ведёт на публикацию');
-  assert.deepEqual(Buffer.from(await (await app.request(shown[0]!.url.replace(/^.*\/api/, ''))).arrayBuffer()), Buffer.from([0xff, 0xd8, 7]));
+  assert.deepEqual(shown[0], { url: 'https://media.example/hosts/telegram/photochan/7.jpg', source_url: 'https://t.me/photochan/7' }, 'адрес в бакете и ссылка на публикацию');
+  assert.deepEqual((await (await app.request(`/hosts/${h!.id}`)).json() as HostItem).photos, shown, 'на странице организатора — те же фото');
 });
 
 test('переписка: бот пишет всё в базу, админ отвечает и берёт диалог на себя', async () => {

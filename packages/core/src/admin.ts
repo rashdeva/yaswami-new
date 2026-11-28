@@ -136,6 +136,7 @@ export interface Host {
   summary: string | null;
   status: HostStatus;
   offer_url: string | null; // сообщение в чате, из которого сборщик взял мастера: по нему модератор сверяет Practice
+  photos: { source: string; url: string }[]; // фото сообщества в бакете (ADR-0006), новые сверху; source — telegram:<канал>/<публикация>
   photos_checked_at: Date | null;
   profiled_at: Date | null; // когда сборщик последний раз смотрел профиль в Telegram
   created_at: Date;
@@ -147,7 +148,6 @@ export interface AdminHost extends Host {
 }
 
 export interface AdminHostView extends AdminHost {
-  photos: { url: string; source_url: string }[]; // фото сообщества, новые сверху
   practice_signups: { id: User['id']; first_name: string; username: string | null; practice_id: string; title: string; at: Date }[]; // кто нажал «Записаться» на Practice, новые сверху
 }
 
