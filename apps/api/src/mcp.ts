@@ -641,7 +641,7 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
 
     tool('admin_users_update', {
       title: 'Edit user', shape: { user_id, ...UserUpdateInput.shape },
-      description: `Change a user's name, username, language or time zone. Only passed fields change. ${ONLY_TEAM}`,
+      description: `Change a user's name, username, language, time zone or features, or ban them (is_banned). A banned person is ignored by the bot and gets nothing from it; the API answers them 403 banned; their bot conversation is hidden. The user's bot_blocked_at is set when they blocked the bot: notifications skip them until they write to the bot again. Only passed fields change. ${ONLY_TEAM}`,
     }, ({ user_id: id, ...input }) => admin.updateUser(db, ctx, id, input));
 
     tool('admin_users_delete', {

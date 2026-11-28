@@ -8,7 +8,7 @@ import type {
 } from '@yaswami/core';
 import { AGENTS, collectedPath, collectedWhen, LEAD_REPLY_HOURS, messageWithMedia } from '@yaswami/core';
 // Цикл с auth.ts (dropHostPitch) безопасен: обе стороны берут только функции и зовут их после загрузки.
-import { telegramIdOf, userIdByTelegram, usersByTelegram } from './auth.ts';
+import { setBotBlocked, telegramIdOf, userIdByTelegram, usersByTelegram } from './auth.ts';
 import type { Ctx } from './audit.ts';
 import { audited } from './audit.ts';
 import type { Db } from './db/client.ts';
@@ -330,12 +330,23 @@ export async function setAttention(db: Db, id: string, attention: string | null)
 export const logSent = (db: Db) => async (method: string, body: { chat_id: number; text?: unknown; caption?: unknown }, result: BotResult, author: string) => {
   // Виджет не прошёл — следом то же уходит обычным сообщением (notifications.ts); неудачную попытку не пишем.
   // Оповещение нам самим (alertTeam) — не переписка с человеком.
-  if ((method === 'sendWidget' && !result.ok) || author === 'alert') return;
+  if (author === 'alert') return;
+  // Telegram не доставил, потому что человек закрыл бота: отмечаем, и уведомления ему больше не уходят (botChatIdOf).
+  // До выхода ниже: уведомление идёт виджетом, и на 403 запасного сообщения не будет.
+  if (isBotBlocked(result)) await setBotBlocked(db, body.chat_id, true);
+  if (method === 'sendWidget' && !result.ok) return;
   const userId = await userIdByTelegram(db, body.chat_id); // chat_id — Telegram id собеседника, не users.id
   const [user] = userId === null ? [] : await db.select().from(users).where(eq(users.id, userId));
   const text = typeof body.text === 'string' ? body.text : typeof body.caption === 'string' ? body.caption : NO_TEXT;
   await record(db, { id: body.chat_id, name: user?.first_name, username: user?.username }, { direction: 'out', author, text, status: result.ok ? 'sent' : 'failed' });
 };
+
+/**
+ * Отказ Telegram «человек недоступен навсегда»: заблокировал бота или удалил аккаунт. Другие 403 — например, «бот не может
+ * начать разговор» с тем, кто его не открывал, — не блокировка: откроет бота — дойдёт.
+ */
+export const isBotBlocked = (result: BotResult) =>
+  result.error_code === 403 && /blocked by the user|user is deactivated/i.test(result.description ?? '');
 
 const ALERT_EVERY_MS = 10 * 60_000;
 const alerted = windowCounter<string>(ALERT_EVERY_MS);

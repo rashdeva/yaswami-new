@@ -137,6 +137,7 @@ export interface Host {
   status: HostStatus;
   feedback_bonus: string | null; // что мастер обещает гостю за отзыв; пишет сам мастер (hosts_update_self), команда может убрать
   offer_url: string | null; // сообщение в чате, из которого сборщик взял мастера: по нему модератор сверяет Practice
+  photos: { source: string; url: string }[]; // фото сообщества в бакете (ADR-0006), новые сверху; source — telegram:<канал>/<публикация>
   photos_checked_at: Date | null;
   profiled_at: Date | null; // когда сборщик последний раз смотрел профиль в Telegram
   created_at: Date;
@@ -148,7 +149,6 @@ export interface AdminHost extends Host {
 }
 
 export interface AdminHostView extends AdminHost {
-  photos: { url: string; source_url: string }[]; // фото сообщества, новые сверху
   practice_signups: { id: User['id']; first_name: string; username: string | null; practice_id: string; title: string; at: Date }[]; // кто нажал «Записаться» на Practice, новые сверху
 }
 
@@ -224,6 +224,7 @@ export const UserUpdateInput = z
     lang: text(10).min(2),
     timezone: timeZone,
     features: z.array(Feature).transform((f) => [...new Set(f)]).describe('Features enabled for this person, the whole list: event_create lets them create events'),
+    is_banned: z.boolean().describe('Ban the person (true) or lift the ban (false). A banned person is ignored by the bot, gets no messages from it, and the API refuses them'),
   })
   .partial();
 export type UserUpdateInput = z.infer<typeof UserUpdateInput>;

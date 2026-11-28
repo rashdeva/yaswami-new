@@ -32,6 +32,11 @@ export const users = pgTable('users', {
   city_id: text().references((): AnyPgColumn => cities.id),
   // Уведомления, которые человек выключил в профиле; новое уведомление приходит, пока его не выключат.
   muted_notifications: jsonb().$type<Notification[]>().notNull().default([]),
+  // Заблокировал бота: Telegram отказал в доставке (User.bot_blocked_at). Ставит журнал отправок (inbox.ts, logSent) и
+  // my_chat_member (bot.ts), снимает его следующее сообщение боту.
+  bot_blocked_at: at('bot_blocked_at'),
+  // Бан командой (User.banned_at): admin_users_update с is_banned.
+  banned_at: at('banned_at'),
 });
 
 
@@ -270,6 +275,8 @@ export const hosts = pgTable(
     status: text().$type<HostStatus>().notNull().default('pending'),
     feedback_bonus: text(), // что мастер обещает гостю за отзыв, его словами (hosts_update_self)
     offer_url: text(), // сообщение, из которого сборщик взял мастера
+    // Фото сообщества, новые сверху: последние картинки канала. Файлы — в бакете R2, здесь только адреса (ADR-0006).
+    photos: jsonb().$type<{ source: string; url: string }[]>().notNull().default([]),
     // Когда сборщик последний раз смотрел фото в канале; null — ещё не смотрел. Фото может и не оказаться.
     photos_checked_at: at('photos_checked_at'),
     // Когда сборщик последний раз смотрел профиль в Telegram (bio, канал); раз в PROFILE_REFRESH_DAYS смотрит снова.
@@ -282,27 +289,25 @@ export const hosts = pgTable(
 const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
 
 // Фото, которые храним у себя, — прямо в базе (ADR-0003). Только превью: JPEG ~320px, десятки килобайт, без оригиналов.
-// У пользователя фото одно (его аватар в Telegram), у организатора — несколько последних картинок из его канала.
+// У пользователя фото одно (его аватар в Telegram). Фото сообщества организатора — в бакете, адресами в hosts.photos.
 // Строка не меняется: новое фото — новая строка с новым id, поэтому адрес /photos/<id> кэшируется навсегда.
 export const photos = pgTable(
   'photos',
   {
     id: uuid().primaryKey().defaultRandom(),
     user_id: userId('user_id').unique().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
-    host_id: uuid().references(() => hosts.id, { onDelete: 'cascade' }),
     // Обложка собранного события, одна на событие: фото анонса или картинка, нарисованная иллюстратором.
     collected_external_id: text().unique().references(() => collectedEvents.external_id, { onDelete: 'cascade' }),
     // Обложка события «Я с вами», одна на событие: нарисованная иллюстратором, когда организатор свою не дал.
     event_id: text().unique().references(() => events.id, { onDelete: 'cascade' }),
     source: text().notNull(), // откуда взято: адрес аватара или telegram:<канал>/<публикация>; по нему не качаем повторно
-    // Байты лежат либо здесь, либо в бакете R2 (url — открытый адрес файла). Обложки уходят в бакет, аватары и фото сообщества — здесь (ADR-0011).
+    // Байты лежат либо здесь, либо в бакете R2 (url — открытый адрес файла). Обложки уходят в бакет, аватары — здесь (ADR-0011).
     data: bytea(),
     url: text(),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex('photos_host_source_idx').on(t.host_id, t.source),
-    check('photos_owner_check', sql`num_nonnulls(${t.user_id}, ${t.host_id}, ${t.collected_external_id}, ${t.event_id}) = 1`),
+    check('photos_owner_check', sql`num_nonnulls(${t.user_id}, ${t.collected_external_id}, ${t.event_id}) = 1`),
     check('photos_place_check', sql`num_nonnulls(${t.data}, ${t.url}) = 1`),
   ],
 );

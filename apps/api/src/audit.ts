@@ -63,12 +63,13 @@ const KINDS: Record<AdminEntity, Kind> = {
     children: { cover: photos.collected_external_id, signups: collectedEventSignups.external_id },
   },
   // Когда сборщик смотрел профиль и фото — его отметки, они меняются сами по себе и отмену не касаются.
-  host: { root: hosts, key: hosts.id, omit: ['profiled_at', 'photos_checked_at'], children: { photos: photos.host_id, practices: practices.host_id, practice_signups: practiceSignups.host_id, practice_feedback: practiceFeedback.host_id, host_searches: hostSearches.host_id, products: products.host_id } },
+  host: { root: hosts, key: hosts.id, omit: ['profiled_at', 'photos_checked_at'], children: { practices: practices.host_id, practice_signups: practiceSignups.host_id, practice_feedback: practiceFeedback.host_id, host_searches: hostSearches.host_id, products: products.host_id } },
   // Аватар не входит: он подтянется из Telegram при следующем входе. Токены не входят никогда. Приход (user_activity)
   // не входит: last_seen_at меняется на каждом заходе, и любая отмена отвечала бы «изменено с тех пор»; после отмены
-  // удаления приход неизвестен, последний заход появится со следующим входом.
+  // удаления приход неизвестен, последний заход появится со следующим входом. Отметку «заблокировал бота» ставит
+  // Telegram, а не команда: в снимке она делала бы любую отмену «изменено с тех пор», а отмена не должна её сбрасывать.
   user: {
-    root: users, key: users.id, toKey: Number,
+    root: users, key: users.id, toKey: Number, omit: ['bot_blocked_at'],
     children: { guests: guests.user_id, collected_signups: collectedEventSignups.user_id, contacts: contacts.user_id, audience: contacts.host_user_id, feedback: eventFeedback.user_id },
   },
   account: { root: tgAccounts, key: tgAccounts.id, omit: ['session', 'login'] },

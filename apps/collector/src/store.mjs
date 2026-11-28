@@ -370,20 +370,12 @@ export function createStore(url) {
      * с предстоящими событиями: добавленному командой фото нужны и до первого события.
      */
     stalePhotos: (days, limit) => sql`
-      select id, channel from hosts
+      select id, channel, photos from hosts
       where channel is not null and status <> 'rejected'
         and (photos_checked_at is null or photos_checked_at < now() - make_interval(days => ${days}))
       order by photos_checked_at nulls first limit ${limit}`,
-    photoSources: async (hostId) => (await sql`select source from photos where host_id = ${hostId}`).map((r) => r.source),
-    /** Фото сообщества: убираем те, которых в канале уже нет среди последних (`sources`), добавляем новые. */
-    savePhotos: (hostId, sources, added) => sql.begin(async (tx) => {
-      await tx`delete from photos where host_id = ${hostId} and source not in (select unnest(${sources}::text[]))`;
-      // clock_timestamp: у строк одной транзакции now() одинаковый, а по created_at API показывает новые сверху.
-      for (const { source, data } of added) {
-        await tx`insert into photos (host_id, source, data, created_at) values (${hostId}, ${source}, ${data}, clock_timestamp())
-          on conflict do nothing`;
-      }
-    }),
+    /** Фото сообщества `[{ source, url }]`, новые сверху: файлы в бакете, в базе только адреса (ADR-0006). */
+    savePhotos: (hostId, photos) => sql`update hosts set photos = ${sql.json(photos)} where id = ${hostId}`,
     photosChecked: (hostId) => sql`update hosts set photos_checked_at = now() where id = ${hostId}`,
     /** Предстоящие события без полей «что это мне даст»: собраны до их появления. */
     withoutTopic: () => sql`

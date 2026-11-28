@@ -74,6 +74,8 @@ bot.call = async (method, body) => (sent.push([method, body]), { ok: true, resul
 Object.assign(bot.pace, { globalMs: 0, chatMs: 0 });
 // В тестах создание событий открыто всем, как было до возможностей; сам запрет проверяет тест «возможность event_create».
 settings.featuresOn = ['event_create'];
+// Карточки уведомлений тесты читают из состояния виджета (public_data); путь без виджетов — в notifications.test.ts.
+settings.botWidgets = true;
 // Лимит запросов в минуту тестам мешал бы: один «пользователь» делает их сотни. Сам лимит проверяет тест «безопасность».
 settings.requestsPerMinute = Infinity;
 // Адрес тестового бакета (setBucket ниже): расшифровка качает вложения только оттуда.
@@ -1180,13 +1182,13 @@ test('фото: аватар гостя и фото сообщества орг�
   });
   const item = async () => (await (await app.request('/collected-events/photochan-1-0')).json()) as CollectedEventItem;
   assert.deepEqual((await item()).hosts![0]!.photos, [], 'без фото блок организатора прежний');
-  for (let i = 1; i <= 7; i++) {
-    await db.insert(photos).values({ host_id: h!.id, source: `telegram:photochan/${i}`, data: Buffer.from([0xff, 0xd8, i]), created_at: new Date(2026, 0, i) });
-  }
+  // Сборщик пишет список новыми сверху; файлы лежат в бакете, API отдаёт их адреса как есть.
+  const stored = [7, 6, 5, 4, 3, 2, 1].map((i) => ({ source: `telegram:photochan/${i}`, url: `https://media.example/hosts/telegram/photochan/${i}.jpg` }));
+  await db.update(hosts).set({ photos: stored }).where(eq(hosts.id, h!.id));
   const shown = (await item()).hosts![0]!.photos;
   assert.equal(shown.length, 6);
-  assert.deepEqual(shown.map((p) => p.source_url).slice(0, 2), ['https://t.me/photochan/7', 'https://t.me/photochan/6'], 'клик по фото ведёт на публикацию');
-  assert.deepEqual(Buffer.from(await (await app.request(shown[0]!.url.replace(/^.*\/api/, ''))).arrayBuffer()), Buffer.from([0xff, 0xd8, 7]));
+  assert.deepEqual(shown[0], { url: 'https://media.example/hosts/telegram/photochan/7.jpg', source_url: 'https://t.me/photochan/7' }, 'адрес в бакете и ссылка на публикацию');
+  assert.deepEqual((await (await app.request(`/hosts/${h!.id}`)).json() as HostItem).photos, shown, 'на странице организатора — те же фото');
 });
 
 test('переписка: бот пишет всё в базу, админ отвечает и берёт диалог на себя', async () => {
@@ -3744,4 +3746,97 @@ test('активность: кто пришёл, откуда, куда запи
   const viaMcp = JSON.parse((await (await call(admin, 'POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'admin_activity_list', arguments: { user_id: uid92 } } })).json() as any).result.content[0].text);
   assert.deepEqual(viaMcp.entries.map((e: any) => e.type), mine.entries.map((e: any) => e.type));
   assert.equal((await call(vera, 'GET', '/admin/activity')).status, 403);
+});
+
+test('блокировка бота и бан: отметка по 403 и my_chat_member, уведомления не уходят, бан — через admin_users_update', async () => {
+  const admins = settings.adminIds;
+  settings.adminIds = [70];
+  const admin = tma(70, 'Админ');
+  const tg = 9601;
+  await handleUpdate(db, botMessage(tg, '/start'));
+  const id = await uid(tg);
+  const user = async () => (await db.select().from(users).where(eq(users.id, id)))[0]!;
+  const digest = async () => {
+    sent.length = 0;
+    await notify(db, id, 'topic_digest', { items: [] });
+    return sent.length;
+  };
+  assert.equal(await digest(), 1);
+
+  // Telegram не доставил уведомление (оно идёт виджетом): человек заблокировал бота — отметка, и уведомления больше не уходят.
+  const ok = bot.call;
+  bot.call = async () => ({ ok: false, error_code: 403, description: 'Forbidden: bot was blocked by the user' });
+  await notify(db, id, 'topic_digest', { items: [] });
+  bot.call = ok;
+  const blockedAt = (await user()).bot_blocked_at;
+  assert.ok(blockedAt);
+  assert.equal(await digest(), 0);
+  // «Не открывал бота» — не блокировка.
+  bot.call = async () => ({ ok: false, error_code: 403, description: "Forbidden: bot can't initiate conversation with a user" });
+  await bot.send('sendMessage', { chat_id: tg, text: 'Ещё раз' });
+  bot.call = ok;
+  assert.equal((await user()).bot_blocked_at?.getTime(), blockedAt.getTime(), 'время первой блокировки не сдвигается');
+  // Написал боту — снова открыт.
+  await handleUpdate(db, botMessage(tg, '/start'));
+  assert.equal((await user()).bot_blocked_at, null);
+  assert.equal(await digest(), 1);
+  // Telegram сам сообщает о блокировке и разблокировке.
+  const member = (status: string) => ({ update_id: 2, my_chat_member: { chat: { id: tg, type: 'private' }, from: { id: tg }, date: 0, old_chat_member: { status: 'member' }, new_chat_member: { status } } });
+  await handleUpdate(db, member('kicked'));
+  assert.ok((await user()).bot_blocked_at);
+  await handleUpdate(db, member('member'));
+  assert.equal((await user()).bot_blocked_at, null);
+  // Отметку ставит Telegram, а не команда: она не мешает отменить правку и не сбрасывается отменой.
+  assert.equal((await call(admin, 'PATCH', `/admin/users/${id}`, { first_name: 'Анна' })).status, 200);
+  const rename = (await lastAction())!;
+  await handleUpdate(db, member('kicked'));
+  assert.equal((await call(admin, 'POST', `/admin/actions/${rename.id}/undo`)).status, 201);
+  assert.deepEqual([(await user()).first_name, !!(await user()).bot_blocked_at], ['Аня', true]);
+  await handleUpdate(db, member('member'));
+
+  // Бан командой: бот молчит и не пишет в переписку, уведомлений нет, API отказывает; диалог скрыт.
+  assert.equal((await call(tma(71, 'Аня'), 'PATCH', `/admin/users/${id}`, { is_banned: true })).status, 403, 'не админ');
+  const banned = await call(admin, 'PATCH', `/admin/users/${id}`, { is_banned: true });
+  assert.equal(banned.status, 200);
+  assert.ok(((await banned.json()) as { banned_at: string | null }).banned_at);
+  const [conversation] = await db.select().from(conversations).where(eq(conversations.peer_id, tg));
+  assert.ok(conversation!.hidden_at);
+  // Админа забанить нельзя: API его больше не пустил бы, и снять бан он не смог бы.
+  const adminBan = await call(admin, 'PATCH', `/admin/users/${await uid(70)}`, { is_banned: true });
+  assert.deepEqual([adminBan.status, await adminBan.json()], [409, { error: 'cannot_ban_admin' }]);
+  const before = (await db.select().from(messages).where(eq(messages.conversation_id, conversation!.id))).length;
+  sent.length = 0;
+  await handleUpdate(db, botMessage(tg, 'Привет, есть йога?'));
+  // Кнопка оценки отзыва тоже молчит.
+  await handleUpdate(db, { update_id: 3, callback_query: { id: 'q1', from: { id: tg }, data: 'fb:any-event:5' } });
+  assert.deepEqual(sent, []);
+  assert.equal((await db.select().from(messages).where(eq(messages.conversation_id, conversation!.id))).length, before);
+  assert.equal(await digest(), 0);
+  const me = await call(tma(tg, 'Аня'), 'GET', '/me');
+  assert.deepEqual([me.status, await me.json()], [403, { error: 'banned' }]);
+  // Снять бан — всё возвращается; бан отменяется и из журнала.
+  assert.equal((await call(admin, 'PATCH', `/admin/users/${id}`, { is_banned: false })).status, 200);
+  assert.equal((await db.select().from(conversations).where(eq(conversations.id, conversation!.id)))[0]!.hidden_at, null, 'диалог вернулся');
+  assert.equal((await call(tma(tg, 'Аня'), 'GET', '/me')).status, 200);
+  assert.equal(await digest(), 1);
+  const mcp = await mcpCall(admin, 'admin_users_update', { user_id: id, is_banned: true });
+  assert.ok(mcp.body.banned_at);
+  assert.equal((await call(admin, 'PATCH', `/admin/users/${id}`, { is_banned: false })).status, 200);
+  settings.adminIds = admins;
+});
+
+test('китайский спам боту: молча, без пользователя и переписки; русский текст с иероглифом — обычное сообщение', async () => {
+  sent.length = 0;
+  await handleUpdate(db, botMessage(9602, '你好，我们想合作推广'));
+  await handleUpdate(db, botMessage(9603, 'hello friend', { from: { id: 9603, first_name: 'Li', language_code: 'zh-hans' } }));
+  assert.deepEqual(sent, []);
+  assert.equal(await userIdByTelegram(db, 9602), null);
+  assert.equal(await userIdByTelegram(db, 9603), null);
+  assert.equal((await db.select().from(conversations).where(eq(conversations.peer_id, 9602))).length, 0);
+  await handleUpdate(db, botMessage(9604, 'Где купить чай 普洱?'));
+  assert.ok(await userIdByTelegram(db, 9604));
+  // Японский — с каной — тоже не спам.
+  await handleUpdate(db, botMessage(9605, 'ヨガのイベントはありますか'));
+  assert.ok(await userIdByTelegram(db, 9605));
+  assert.ok(sent.length > 0);
 });

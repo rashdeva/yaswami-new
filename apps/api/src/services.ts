@@ -8,7 +8,7 @@ import type {
   TicketTypeCreateInput, TicketTypeUpdateInput, User, UserSelfUpdateInput, VisitInput,
 } from '@yaswami/core';
 import type { CollectedEvent } from '@yaswami/core';
-import { ADDRESS_MAX, collectedSlug, Feature, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, PRODUCT_CATEGORY_SLUGS, PRODUCT_TTL_DAYS, productContactUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, serviceCategoryBySlug, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
+import { ADDRESS_MAX, collectedSlug, Feature, hostPhotoSourceUrl, nearbyCityIds, normalUsername, collectedPath, collectedSignupUrl, popularIds, practiceSignupUrl, PRODUCT_CATEGORY_SLUGS, PRODUCT_TTL_DAYS, productContactUrl, DESCRIPTION_MAX, NAME_MAX, rsvp, serviceCategoryBySlug, ticketTypeRemovalError, TOPIC_GUIDES } from '@yaswami/core';
 import { afterCommit } from './audit.ts';
 // Цикл с auth.ts безопасен: обе стороны берут только функции и зовут их после загрузки.
 import { telegramIdOf } from './auth.ts';
@@ -487,7 +487,7 @@ export async function getCollectedEvent(db: Db, slug: string, anyStatus = false)
     ...toCollectedItem(row),
     popular: popularIds(upcoming, (r) => r.external_id).has(row.external_id),
     signups_count,
-    hosts: h ? [{ ...hostCard(h), photos: await hostPhotos(db, h.id) }] : [],
+    hosts: h ? [{ ...hostCard(h), photos: hostPhotos(h) }] : [],
   };
 }
 
@@ -496,11 +496,9 @@ const hostCard = (h: HostRecord): Omit<CollectedHost, 'photos'> => ({
   name: h.name, summary: h.summary, channel_url: h.channel && `https://t.me/${h.channel}`, instagram_handle: h.instagram_handle,
   photo_url: `https://t.me/i/userpic/320/${h.username}.jpg`, confirmed: h.user_id !== null,
 });
-/** Фото сообщества, новые сверху. Источник — telegram:<канал>/<публикация>: из него же ссылка на публикацию. */
-async function hostPhotos(db: Db, hostId: string): Promise<CollectedHost['photos']> {
-  const shots = await db.select({ id: photos.id, source: photos.source }).from(photos).where(eq(photos.host_id, hostId)).orderBy(desc(photos.created_at)).limit(HOST_PHOTOS);
-  return shots.map((p) => ({ url: photoUrl(p.id), source_url: p.source.replace(/^telegram:/, 'https://t.me/') }));
-}
+/** Фото сообщества, новые сверху; лежат в бакете. Источник — telegram:<канал>/<публикация>: из него же ссылка на публикацию. */
+const hostPhotos = (h: HostRecord): CollectedHost['photos'] =>
+  h.photos.slice(0, HOST_PHOTOS).map((p) => ({ url: p.url, source_url: hostPhotoSourceUrl(p.source) }));
 
 const practiceFields = {
   id: practices.id, title: practices.title, topic: practices.topic, description: practices.description, price: practices.price, status: practices.status,
@@ -562,7 +560,7 @@ export async function getHost(db: Db, id: string): Promise<HostItem> {
   const item = h && toHostListItem(h, (await practicesByHost(db, h.id)).get(h.id) ?? [], (await upcomingTopicsByHost(db, h.username)).get(h.username) ?? [], (await hostFeedbackSummaries(db, [h.id])).get(h.id), sold.length > 0);
   if (!item) throw new AppError('not_found', 404);
   const rows = await collectedWithCover(db).where(and(notStarted, published, eq(collectedEvents.telegram_username, h!.username))).orderBy(asc(collectedEvents.starts_at));
-  return { ...item, photos: await hostPhotos(db, h!.id), events: rows.map(toCollectedItem), products: sold.map((p) => toProductItem(p, h!)), feedback_entries: await hostFeedbackEntries(db, h!.id) };
+  return { ...item, photos: hostPhotos(h!), events: rows.map(toCollectedItem), products: sold.map((p) => toProductItem(p, h!)), feedback_entries: await hostFeedbackEntries(db, h!.id) };
 }
 
 // --- Товары мастеров (Product в CONTEXT.md). Пишет их сборщик; здесь — что видит гость.

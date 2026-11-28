@@ -1,5 +1,5 @@
 {
-  "id": "7438ad33-b9ab-4d2b-b86b-55d6f988b3af",
+  "id": "5f45252f-e090-40d6-b449-c5b13f52e820",
   "prevId": "53e9a45f-b824-4e41-9a3a-614a6f91ef2f",
   "version": "7",
   "dialect": "postgresql",
@@ -1550,12 +1550,6 @@
           "notNull": true,
           "default": "'pending'"
         },
-        "feedback_bonus": {
-          "name": "feedback_bonus",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "offer_url": {
           "name": "offer_url",
           "type": "text",
@@ -1926,172 +1920,6 @@
         "photos_place_check": {
           "name": "photos_place_check",
           "value": "num_nonnulls(\"photos\".\"data\", \"photos\".\"url\") = 1"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.practice_feedback": {
-      "name": "practice_feedback",
-      "schema": "",
-      "columns": {
-        "practice_id": {
-          "name": "practice_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "host_id": {
-          "name": "host_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "via": {
-          "name": "via",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "attended": {
-          "name": "attended",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rating": {
-          "name": "rating",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "comment": {
-          "name": "comment",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_url": {
-          "name": "source_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_at": {
-          "name": "verified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prompt_message_id": {
-          "name": "prompt_message_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "host_notified_at": {
-          "name": "host_notified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requested_at": {
-          "name": "requested_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "practice_feedback_host_idx": {
-          "name": "practice_feedback_host_idx",
-          "columns": [
-            {
-              "expression": "host_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "practice_feedback_practice_id_practices_id_fk": {
-          "name": "practice_feedback_practice_id_practices_id_fk",
-          "tableFrom": "practice_feedback",
-          "tableTo": "practices",
-          "columnsFrom": [
-            "practice_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "practice_feedback_host_id_hosts_id_fk": {
-          "name": "practice_feedback_host_id_hosts_id_fk",
-          "tableFrom": "practice_feedback",
-          "tableTo": "hosts",
-          "columnsFrom": [
-            "host_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "practice_feedback_user_id_users_id_fk": {
-          "name": "practice_feedback_user_id_users_id_fk",
-          "tableFrom": "practice_feedback",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {
-        "practice_feedback_practice_id_user_id_pk": {
-          "name": "practice_feedback_practice_id_user_id_pk",
-          "columns": [
-            "practice_id",
-            "user_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "practice_feedback_rating_check": {
-          "name": "practice_feedback_rating_check",
-          "value": "\"practice_feedback\".\"rating\" between 1 and 5"
-        },
-        "practice_feedback_via_check": {
-          "name": "practice_feedback_via_check",
-          "value": "\"practice_feedback\".\"via\" in ('signup', 'invite')"
         }
       },
       "isRLSEnabled": false
@@ -3586,6 +3414,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "bot_blocked_at": {
+          "name": "bot_blocked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banned_at": {
+          "name": "banned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},

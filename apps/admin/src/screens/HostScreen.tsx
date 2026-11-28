@@ -1,7 +1,7 @@
 // Карточка организатора: профиль, фото сообщества, его события в каталоге, переход в диалог, история.
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { Host, HostUpdateInput as Input, Wire } from '@yaswami/core';
-import { collectedWhen, HostUpdateInput, INBOX_STAGES, OTHER_TOPIC, PRACTICE_STATUSES, TOPIC_GUIDES } from '@yaswami/core';
+import { collectedWhen, hostPhotoSourceUrl, HostUpdateInput, INBOX_STAGES, OTHER_TOPIC, PRACTICE_STATUSES, TOPIC_GUIDES } from '@yaswami/core';
 import { BanIcon, CheckIcon, MessagesSquareIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useMemo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
@@ -142,7 +142,7 @@ export function HostScreen({ id, onOpen, onDeleted }: { id: string; onOpen: (con
         <Section title="Фото сообщества">
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
             {h.photos.map((p) => (
-              <ExternalLink key={p.url} href={p.source_url}>
+              <ExternalLink key={p.url} href={hostPhotoSourceUrl(p.source)}>
                 <AspectRatio ratio={1} className="overflow-hidden rounded-md bg-muted"><img className="size-full object-cover" src={p.url} alt="" loading="lazy" /></AspectRatio>
               </ExternalLink>
             ))}

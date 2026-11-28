@@ -209,6 +209,8 @@ export function createApp({ db, botToken, config, webLogin: login, telegram }: O
     .use(async (c, next) => {
       const auth = await authenticate(db, botToken, c.req.header('authorization'), getCookie(c, SESSION_COOKIE));
       if (!auth) return c.json({ error: 'unauthorized' }, 401, { 'WWW-Authenticate': 'Bearer' });
+      // Забаненного командой (admin_users_update, is_banned) не пускаем ни в REST, ни в MCP.
+      if (auth.user.banned_at) return c.json({ error: 'banned' }, 403);
       if (hits.hit(auth.user.id) > settings.requestsPerMinute) return c.json({ error: 'too_many_requests' }, 429, { 'Retry-After': '60' });
       c.set('actor', auth.user);
       c.set('method', auth.method);

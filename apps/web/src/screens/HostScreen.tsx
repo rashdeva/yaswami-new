@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTopics } from '../hooks/useTopics.ts';
 import type { CollectedEventItem, ProductItem } from '@yaswami/core';
 import { collectedBadges, collectedPath, collectedTime, topicIcon, topicSlug } from '@yaswami/core';
 import { track } from '../analytics.ts';
 import { EventRow } from '../components/EventRow.tsx';
+import { MediaViewer } from '../components/MediaViewer.tsx';
 import { PracticeRow } from '../components/PracticeRow.tsx';
 import { ProductCard } from '../components/ProductCard.tsx';
 import { dayLabel, reputation } from '../format.ts';
@@ -29,6 +30,7 @@ export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack, own }
   const { host, loaded, failed } = useHost(id);
   const sheet = usePracticeSheet();
   useViewed('host_viewed', id);
+  const [viewing, setViewing] = useState<number | null>(null);
   useEffect(() => { if (host) document.title = `${host.name} — ${city}, Я с вами`; }, [host, city]);
 
   if (!host) {
@@ -94,13 +96,14 @@ export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack, own }
 
       {host.photos.length > 0 && (
         <div className="shots" style={{ margin: '16px 16px 0' }}>
-          {host.photos.map((p) => (
-            <a key={p.url} href={p.source_url} target="_blank" rel="noreferrer" aria-label="Публикация в канале организатора">
+          {host.photos.map((p, i) => (
+            <button key={p.url} onClick={() => setViewing(i)} aria-label="Открыть фото">
               <img src={p.url} alt="" loading="lazy" onError={(e) => { e.currentTarget.parentElement!.hidden = true; }} />
-            </a>
+            </button>
           ))}
         </div>
       )}
+      {viewing !== null && <MediaViewer items={host.photos.map((p) => ({ type: 'photo', url: p.url }))} start={viewing} onClose={() => setViewing(null)} />}
       <p className="note">Профиль собран из открытых каналов и чатов{host.instagram_handle ? ' и Instagram' : ''}{host.confirmed ? ' и подтверждён организатором' : ''}.</p>
 
       {/* Мастер в шторке — этот же: нажатие на него просто закрывает шторку. */}

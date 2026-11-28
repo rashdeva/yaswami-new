@@ -48,12 +48,14 @@ async function fetchChannel(client, username) {
 }
 
 export const HOST_PHOTOS = 6; // сколько последних фото канала храним у организатора; столько же показывает API
-const PHOTO_SIDE = 320; // длинная сторона превью. У Telegram готовые размеры — 320 (m), 800 (x), 1280 (y)
-const PHOTO_MAX_BYTES = 200_000;
+// Длинная сторона превью. У Telegram готовые размеры — 320 (m), 800 (x), 1280 (y). Фото открывают на весь экран,
+// 320 там мылится; 800 — как у фото анонсов (ADR-0006), 50–150 КБ.
+const PHOTO_SIDE = 800;
+const PHOTO_MAX_BYTES = 500_000;
 
 /**
- * Какое готовое превью Telegram скачать: самое маленькое с длинной стороной от PHOTO_SIDE, иначе самое большое.
- * Сами картинки не сжимаем — Telegram уже хранит уменьшенные JPEG, поэтому библиотека для сжатия не нужна (ADR-0003).
+ * Какое готовое превью Telegram скачать: самое маленькое с длинной стороной от `side`, иначе самое большое.
+ * Сами картинки не сжимаем — Telegram уже хранит уменьшенные JPEG, поэтому библиотека для сжатия не нужна.
  */
 export function pickThumb(sizes, side = PHOTO_SIDE) {
   const sized = (sizes ?? []).filter((s) => s.w && s.h).sort((a, b) => Math.max(a.w, a.h) - Math.max(b.w, b.h));
@@ -63,7 +65,7 @@ export function pickThumb(sizes, side = PHOTO_SIDE) {
 /**
  * Фото сообщества: картинки из последних 30 публикаций канала, не больше HOST_PHOTOS.
  * `known` — источники уже сохранённых фото: их не качаем заново.
- * { sources — что сейчас в канале, новые сверху; added — скачанные превью, старые сверху } или null, если канал недоступен.
+ * { sources — что сейчас в канале, новые сверху; added — скачанные превью } или null, если канал недоступен.
  */
 export async function fetchChannelPhotos(client, channel, known = []) {
   if (!client.connected) await client.connect();
@@ -75,12 +77,28 @@ export async function fetchChannelPhotos(client, channel, known = []) {
     .slice(0, HOST_PHOTOS)
     .map((m) => ({ source: `telegram:${channel}/${m.id}`, m }));
   const added = [];
-  for (const { source, m } of shots.filter((s) => !known.includes(s.source)).reverse()) {
+  for (const { source, m } of shots.filter((s) => !known.includes(s.source))) {
     const data = await client.downloadMedia(m, { thumb: pickThumb(m.media.photo.sizes) }).catch(orNull);
     const isJpeg = Buffer.isBuffer(data) && data[0] === 0xff && data[1] === 0xd8;
     if (isJpeg && data.length <= PHOTO_MAX_BYTES) added.push({ source, data });
   }
   return { sources: shots.map((s) => s.source), added };
+}
+
+/**
+ * Обновлённый список фото сообщества `[{ source, url }]`, новые сверху, или null, если канал недоступен.
+ * Новые превью заливаются в бакет (ADR-0006): ключ — канал/публикация, повторная заливка перезаписывает тот же файл.
+ * ponytail: файлы фото, выпавших из последних HOST_PHOTOS, в бакете остаются — по шесть небольших на организатора.
+ * Станет заметно — удалять их тут же, по тому же ключу.
+ */
+export async function syncHostPhotos(client, bucket, channel, known) {
+  const latest = await fetchChannelPhotos(client, channel, known.map((p) => p.source));
+  if (!latest) return null;
+  const urls = new Map(known.map((p) => [p.source, p.url]));
+  for (const { source, data } of latest.added) {
+    urls.set(source, await bucket.put(`hosts/${source.replace(':', '/')}.jpg`, data, 'image/jpeg'));
+  }
+  return latest.sources.filter((source) => urls.has(source)).map((source) => ({ source, url: urls.get(source) }));
 }
 
 /** { telegram_id, name, bio, channel: { username, title, about, posts } | null } или null, если под username не человек и не канал. */
