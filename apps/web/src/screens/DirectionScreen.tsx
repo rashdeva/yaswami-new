@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import type { CollectedEventItem } from '@yaswami/core';
 import { collectedBadges, collectedDayKey, collectedPath, collectedTime, directionBySlug, topicIcon, topicSlug } from '@yaswami/core';
@@ -15,15 +16,17 @@ interface Props {
   onOpen: (event: CollectedEventItem) => void;
   /** Такого направления нет — на витрину. */
   onGone: () => void;
+  /** Блок под «событий ещё нет»: предложить канал, где о таких событиях пишут. */
+  empty?: ReactNode;
 }
 
 const title = (t: string) => t[0]!.toUpperCase() + t.slice(1);
 
 /**
  * Направление (CONTEXT.md): его темы чипами сверху и события этих тем по дням. Чип — оставить одну тему, «Все» —
- * всё направление. Шапка — в цвет первой темы направления.
+ * всё направление. Шапка — в цвет первой темы направления. Событий нет — так и говорим и просим предложить канал.
  */
-export function DirectionScreen({ slug, onBack, onOpen, onGone }: Props) {
+export function DirectionScreen({ slug, onBack, onOpen, onGone, empty }: Props) {
   const direction = directionBySlug(slug);
   const city = useCity();
   const { items, failed } = useCollectedFeed();
@@ -67,7 +70,7 @@ export function DirectionScreen({ slug, onBack, onOpen, onGone }: Props) {
       )}
       {failed && <div className="state"><b>🌧</b><p>{failed.message}</p></div>}
       {!items && !failed && <div className="state"><div className="spinner" role="status" aria-label="Загрузка" /></div>}
-      {items && !events.length && <div className="state"><b>🌿</b><p>В этом направлении пока ничего не запланировано. Загляните позже.</p></div>}
+      {items && !events.length && <><div className="state short"><b>🌿</b><p>Событий в этом направлении ещё нет.</p></div>{empty}</>}
       {days.map((list) => (
         <section key={collectedDayKey(list[0]!.starts_at)}>
           <h2 className="cap">{dayLabel(list[0]!.starts_at)}</h2>

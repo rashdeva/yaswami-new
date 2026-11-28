@@ -67,9 +67,10 @@ export function FeedScreen({ lead, tail, onOpen, onOpenShelf, onOpenDirection, o
   // Фильтр предлагает только темы, по которым есть события; порядок — как в гиде.
   const allTopics = useTopics();
   const topics = allTopics.filter((t) => items?.some((e) => e.topic === t));
-  // Плитки — направления, где есть события (внутри — темы); тема без направления — своей плиткой-фильтром.
+  // Плитки — направления, где есть события (внутри — темы), и те, что стоят на витрине и пустыми (DIRECTIONS_SHOWN_EMPTY);
+  // тема без направления — своей плиткой-фильтром.
   const topicItems = useTopicItems();
-  const groups = topicsByDirection(topicItems.filter((t) => topics.includes(t.name)));
+  const groups = topicsByDirection(topicItems.filter((t) => topics.includes(t.name)), true);
   // Есть полки и тема не выбрана — внизу не список, а кнопка «Все события» (экран /all): витрина остаётся короткой.
   // Полок нет или выбрана тема — список по дням прямо здесь.
   const compact = !topic && !!shelves?.length;
@@ -106,7 +107,7 @@ export function FeedScreen({ lead, tail, onOpen, onOpenShelf, onOpenDirection, o
     <>
       {top}
       {searchField}
-      {/* Быстрый поиск: плитки направлений — «Тело и практики», «Детям»…; внутри направления — его темы. */}
+      {/* Быстрый поиск: плитки направлений — «Здоровье», «Семья»…; внутри направления — его темы. */}
       {(topics.length > 1 || items?.some((e) => e.popular)) && (
         <div className="quick" role="group" aria-label="Темы">
           {items?.some((e) => e.popular) && (

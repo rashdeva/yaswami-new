@@ -33,17 +33,23 @@ export interface TopicItem extends TopicGuide {
 /**
  * Направление (CONTEXT.md): крупный раздел над темами — с него человек начинает искать, внутри видит темы.
  * Список меняется редко и живёт здесь, в коде; к какому направлению относится тема — поле `direction` темы в базе,
- * его правят команда и хранитель тем (ADR-0010). В Luma такого нет.
+ * его правят команда и хранитель тем (ADR-0010).
+ *
+ * Образец — категории витрины Luma (Discover): slug и название берём оттуда — Wellness, Fitness, Arts & Culture,
+ * Games, Family, Food & Drink, Tech. В публичном API Luma категорий нет, так что это имена с их сайта.
+ * `social`, `learning` и `travel` — наши: в Luma такого нет.
  */
 export const DIRECTIONS = [
-  { slug: 'body', name: 'Тело и практики', emoji: '🧘' },
-  { slug: 'sport', name: 'Спорт и движение', emoji: '🏃' },
-  { slug: 'creative', name: 'Творчество', emoji: '🎨' }, // делают сами: рисуют, лепят, поют, играют
-  { slug: 'shows', name: 'Концерты и кино', emoji: '🎬' }, // смотрят и слушают: концерт, клуб, вечеринка, кино
-  { slug: 'social', name: 'Игры и общение', emoji: '🎲' },
-  { slug: 'growth', name: 'Развитие', emoji: '📚' },
-  { slug: 'travel', name: 'Путешествия', emoji: '🧭' },
-  { slug: 'kids', name: 'Детям', emoji: '👶' },
+  { slug: 'arts', name: 'Искусство и культура', emoji: '🎨' }, // и делают сами (рисуют, лепят), и смотрят (концерт, кино)
+  { slug: 'fitness', name: 'Фитнес', emoji: '🏃' }, // спорт и танцы
+  { slug: 'games', name: 'Игры', emoji: '🎲' },
+  { slug: 'wellness', name: 'Здоровье', emoji: '🧘' }, // тело и духовные практики: йога, баня, медитация, ретриты
+  { slug: 'social', name: 'Встречи и общение', emoji: '☕' }, // в Luma такого нет
+  { slug: 'learning', name: 'Обучение', emoji: '🎓' }, // в Luma такого нет
+  { slug: 'family', name: 'Семья', emoji: '👶' },
+  { slug: 'travel', name: 'Туры и походы', emoji: '🧭' }, // в Luma такого нет
+  { slug: 'food', name: 'Еда и напитки', emoji: '🍜' },
+  { slug: 'tech', name: 'Технологии', emoji: '💻' },
 ] as const;
 export type DirectionSlug = (typeof DIRECTIONS)[number]['slug'];
 export type Direction = (typeof DIRECTIONS)[number];
@@ -51,13 +57,21 @@ export const DIRECTION_SLUGS = DIRECTIONS.map((d) => d.slug) as [DirectionSlug, 
 export const directionBySlug = (slug: string | null | undefined): Direction | undefined => DIRECTIONS.find((d) => d.slug === slug);
 
 /**
- * Темы, разложенные по направлениям, в порядке DIRECTIONS; внутри — в порядке тем. Тема без направления —
- * отдельной строкой в конце (`direction: null`), чтобы её не потерять. Пустые направления не возвращаются.
+ * Направления, чья плитка стоит на витрине, даже когда событий в них нет: внутри — «событий ещё нет» и просьба
+ * предложить канал. Так мы зовём сюда события, которых сборщик пока не находит.
  */
-export function topicsByDirection<T extends { direction: DirectionSlug | null }>(topics: T[]): { direction: Direction | null; topics: T[] }[] {
+export const DIRECTIONS_SHOWN_EMPTY: ReadonlySet<DirectionSlug> = new Set(['food', 'tech']);
+
+/**
+ * Темы, разложенные по направлениям, в порядке DIRECTIONS; внутри — в порядке тем. Тема без направления —
+ * отдельной строкой в конце (`direction: null`), чтобы её не потерять. Пустые направления не возвращаются;
+ * с `withShownEmpty` — возвращаются те, что в DIRECTIONS_SHOWN_EMPTY.
+ */
+export function topicsByDirection<T extends { direction: DirectionSlug | null }>(topics: T[], withShownEmpty = false): { direction: Direction | null; topics: T[] }[] {
   const groups = DIRECTIONS.map((d) => ({ direction: d as Direction | null, topics: topics.filter((t) => t.direction === d.slug) }));
   const loose = topics.filter((t) => !directionBySlug(t.direction));
-  return [...groups, ...loose.map((t) => ({ direction: null, topics: [t] }))].filter((g) => g.topics.length);
+  return [...groups, ...loose.map((t) => ({ direction: null, topics: [t] }))]
+    .filter((g) => g.topics.length || (withShownEmpty && g.direction && DIRECTIONS_SHOWN_EMPTY.has(g.direction.slug)));
 }
 
 export const TOPIC_GUIDES: Record<string, TopicGuide> = {
