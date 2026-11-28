@@ -154,10 +154,11 @@ test('сборщик: организаторы, их услуги и фото', 
   await sql`update practices set category = 'lessons' where title = 'Скрипка'`;
   await sql`update hosts set profiled_at = now() where telegram_id = 502`; // Вера нужна только здесь: профили ниже проверяются на Анне и Борисе
 
-  assert.deepEqual((await store.stalePhotos(7, 5)).map((h: any) => h.channel), ['anna_channel']);
-  await store.savePhotos(host!.id, ['telegram:anna_channel/1', 'telegram:anna_channel/2'], [{ source: 'telegram:anna_channel/1', data: Buffer.from([1]) }, { source: 'telegram:anna_channel/2', data: Buffer.from([2]) }]);
-  await store.savePhotos(host!.id, ['telegram:anna_channel/2'], []);
-  assert.deepEqual([...await store.photoSources(host!.id)], ['telegram:anna_channel/2']);
+  const stale = await store.stalePhotos(7, 5);
+  assert.deepEqual(stale.map((h: any) => [h.channel, h.photos]), [['anna_channel', []]], 'вместе с уже сохранёнными фото: их не перезаливаем');
+  const photos = [{ source: 'telegram:anna_channel/2', url: 'https://media.test/hosts/telegram/anna_channel/2.jpg' }];
+  await store.savePhotos(host!.id, photos);
+  assert.deepEqual((await sql`select photos from hosts where id = ${host!.id}`)[0]!.photos, photos, 'фото — в бакете, в базе адреса');
   await store.photosChecked(host!.id);
   assert.equal((await store.stalePhotos(7, 5)).length, 0);
 
