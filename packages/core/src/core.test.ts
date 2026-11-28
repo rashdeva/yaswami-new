@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Event, Guest, GuestWithName, TicketType } from './index.ts';
-import { collectedBadges, Event as EventSchema, nearbyCityIds, nearestCityId, popularIds, PUBLIC_STATE_MAX_BYTES, isPublicFeedback, shownAverage, rsvp, ticketTypeRemovalError, toPublicState, SourceAddInput, submittedChannel } from './index.ts';
+import { collectedBadges, Event as EventSchema, nearbyCityIds, nearestCityId, popularIds, PUBLIC_STATE_MAX_BYTES, botIntentParam, botIntentUrl, parseBotIntent, parseStart, isPublicFeedback, shownAverage, rsvp, ticketTypeRemovalError, toPublicState, SourceAddInput, submittedChannel } from './index.ts';
 
 const now = new Date('2026-11-11T12:00:00Z');
 const event: Event = {
@@ -251,4 +251,16 @@ test('репутация: средняя — от трёх оценок; тек�
   // Отзыв ссылкой на сообщение виден после того, как команда сверила ссылку.
   assert.ok(!isPublicFeedback({ rating: 5, comment: 'Супер', source_url: 'https://t.me/chat/1', verified_at: null }));
   assert.ok(isPublicFeedback({ rating: 5, comment: 'Супер', source_url: 'https://t.me/chat/1', verified_at: new Date() }));
+});
+
+test('намерение в ссылке на бота: добавление и отзыв о мастере — туда и обратно, с хвостами прихода', () => {
+  const host_id = '7c2eb2aa-84ab-47e0-902a-1cda17980dae';
+  assert.equal(botIntentUrl('yaswamibot', { type: 'add', kind: 'service' }), 'https://t.me/yaswamibot?start=add_service');
+  assert.equal(botIntentParam({ type: 'feedback', host_id }), 'fb_7c2eb2aa84ab47e0902a1cda17980dae');
+  for (const intent of [{ type: 'add', kind: 'event' }, { type: 'add', kind: 'product' }, { type: 'feedback', host_id }] as const)
+    assert.deepEqual(parseBotIntent(botIntentParam(intent)), intent);
+  // Метка источника и «кто позвал» намерению не мешают: их снимает parseStart.
+  assert.deepEqual(parseBotIntent(parseStart('add_event-r15-sinsta').param), { type: 'add', kind: 'event' });
+  assert.deepEqual(parseBotIntent(parseStart(`fb_${host_id.replaceAll('-', '')}-sqr`).param), { type: 'feedback', host_id });
+  for (const other of [undefined, '', 'e_0123456789', 'add_car', 'fb_123', 'c_danang-7-0']) assert.equal(parseBotIntent(other), null, String(other));
 });

@@ -1,7 +1,7 @@
 // Отзывы на услуги мастера (Practice без Session; в Luma такого нет). Всё идёт через бота — форм у нас нет.
 // У услуги нет даты, и запись на неё — только намерение (practice_signups), поэтому через сутки после записи бот
 // спрашивает: «вы были?». Оценка — «был», кнопка «Не дошёл» — «не был»: так мы узнаём, сколько записей дошло до визита.
-// Тот, кто у нас не записывался, приходит к боту по ссылке мастера (`t.me/<бот>?start=fb_<мастер>`, `via: invite`).
+// Тот, кто у нас не записывался, приходит к боту по ссылке мастера с намерением «отзыв» (BotIntent в core, `via: invite`).
 // После оценки человек пишет отзыв боту, пересылает сообщение с отзывом или присылает на него ссылку — ссылку сверяет
 // команда. Отзывы на события — в feedback.ts.
 import { and, desc, eq, gt, isNotNull, isNull, ne, sql } from 'drizzle-orm';
@@ -83,26 +83,23 @@ async function askAbout(db: Db, userId: number, chatId: number, practice: Pick<P
 }
 
 /**
- * `/start fb_<id мастера>` — ссылка мастера «оставьте отзыв обо мне» (hostFeedbackUrl). Одна услуга — сразу вопрос
- * с оценками, несколько — сначала выбор услуги кнопками. false — параметр не про отзыв.
+ * Человек открыл бота с намерением «отзыв о мастере» (BotIntent `feedback`, ссылку даёт сам мастер — hostFeedbackUrl).
+ * Одна услуга — сразу вопрос с оценками, несколько — сначала выбор услуги кнопками.
  */
-export async function startHostFeedback(db: Db, actor: User, chatId: number, param: string): Promise<boolean> {
-  const m = /^fb_([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})/i.exec(param);
-  if (!m) return false;
+export async function startHostFeedback(db: Db, actor: User, chatId: number, hostId: string): Promise<void> {
   const say = (text: string, reply_markup?: object) => bot.send('sendMessage', { chat_id: chatId, text, ...(reply_markup ? { reply_markup } : {}) });
-  const host = await getHost(db, m.slice(1).join('-').toLowerCase()).catch(() => null);
-  if (!host?.practices.length) return void (await say('Не нашёл услуг этого мастера — возможно, ссылка устарела.')), true;
+  const host = await getHost(db, hostId).catch(() => null);
+  if (!host?.practices.length) return void (await say('Не нашёл услуг этого мастера — возможно, ссылка устарела.'));
   const [owner] = await db.select({ user_id: hosts.user_id }).from(hosts).where(eq(hosts.id, host.id));
-  if (owner?.user_id === actor.id) return void (await say('Это ссылка для ваших клиентов: отправьте её им — по ней они оставят отзыв о вас.')), true;
+  if (owner?.user_id === actor.id) return void (await say('Это ссылка для ваших клиентов: отправьте её им — по ней они оставят отзыв о вас.'));
   if (host.practices.length === 1) {
     const refused = await askAbout(db, actor.id, chatId, host.practices[0]!, host);
     if (refused) await say(refused);
-    return true;
+    return;
   }
   await say(`О какой услуге отзыв? Мастер: ${host.name}`, {
     inline_keyboard: host.practices.slice(0, PRACTICES_ASKED).map((p) => [{ text: p.title.slice(0, 60), callback_data: `pfa:${p.id}` }]),
   });
-  return true;
 }
 
 type Callback = { callback_query?: { id: string; from: { id: number }; data?: string } } | null;

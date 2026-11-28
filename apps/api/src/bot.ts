@@ -1,7 +1,7 @@
 // Сообщение боту. /start — приветствие с картинкой; всё остальное, в том числе анонсы и пересланные публикации,
 // ведёт роль поддержки (support.ts): она отвечает, ищет события и создаёт их инструментами MCP.
-import type { User } from '@yaswami/core';
-import { collectedWhen } from '@yaswami/core';
+import type { AddKind, User } from '@yaswami/core';
+import { collectedWhen, parseBotIntent, parseStart } from '@yaswami/core';
 import type { Db } from './db/client.ts';
 import { isBannedTelegram, setBotBlocked, touchUser, upsertUser } from './auth.ts';
 import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
@@ -25,6 +25,12 @@ export const REPLIES = {
     '🗓 Подскажу, куда сходить сегодня или в выходные\n✍️ Запишу к организатору в пару нажатий\n🎉 Проводите события сами? Помогу завести событие и собрать гостей',
     'Просто напишите, что ищете, а всю афишу можно открыть в приложении.',
   ].join('\n\n'),
+  /** Ответ на намерение «добавить» (кнопка «Написать боту» на экране «Добавить»): что рассказать о событии, товаре или услуге. */
+  add: {
+    event: 'Расскажите о событии своими словами: что будет, когда, где и сколько стоит. Можно голосовым или переслать свой пост — я разберу, покажу, что понял, и добавлю.',
+    product: 'Расскажите о товаре, который делаете сами: что это, сколько стоит и за сколько (штука, 100 г, набор). Можно голосовым или переслать свой пост — я разберу, покажу, что понял, и добавлю.',
+    service: 'Расскажите об услуге: что делаете, сколько это длится и сколько стоит. Можно голосовым или переслать свой пост — я разберу, покажу, что понял, и добавлю.',
+  } satisfies Record<AddKind, string>,
   photo: 'Картинки и файлы я пока не разбираю. Напишите словами или голосовым, что ищете 🙂',
   too_often: 'Слишком много сообщений подряд. Подождите минуту и напишите ещё раз.',
   unavailable: 'Сообщение получили, ответим здесь чуть позже.',
@@ -216,9 +222,12 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   if (m.replyTo && said && await saveFeedbackComment(db, actor.id, m.replyTo, said)) {
     return void (await bot.send('sendMessage', { chat_id: m.chatId, text: 'Спасибо! Отзыв сохранён, организатор его увидит.' }));
   }
-  // Ссылка мастера «оставьте отзыв обо мне»: t.me/<бот>?start=fb_<мастер> — бот спрашивает оценку.
-  const started = /^\/start\s+(\S+)/.exec(m.text)?.[1];
-  if (started && await startHostFeedback(db, actor, m.chatId, started)) return;
+  // Человек открыл бота с намерением (BotIntent в core: кнопка «Добавить», ссылка мастера «оставьте отзыв»):
+  // вместо приветствия бот сразу спрашивает нужное. Вопрос остаётся в переписке — по нему роль поддержки понимает,
+  // что следующее сообщение — событие, товар или услуга, которые человек добавляет, а не поиск.
+  const intent = parseBotIntent(parseStart(/^\/start\s+(\S+)/.exec(m.text)?.[1]).param);
+  if (intent?.type === 'feedback') return startHostFeedback(db, actor, m.chatId, intent.host_id);
+  if (intent?.type === 'add') return void (await bot.send('sendMessage', { chat_id: m.chatId, text: REPLIES.add[intent.kind] }));
   // Отзыв об услуге после оценки: написан, переслан или прислан ссылкой — а не анонс и не вопрос.
   const feedback = m.text.startsWith('/') ? null : await takePracticeFeedbackText(db, actor, { text: said, replyTo: m.replyTo, forwarded: m.origin });
   if (feedback) {

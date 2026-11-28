@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
-import type { AppConfig, Event, HostFeedbackSummary } from '@yaswami/core';
-import { collectedDay, collectedDayKey, collectedPath, TEMPLATES } from '@yaswami/core';
+import type { AppConfig, BotIntent, Event, HostFeedbackSummary } from '@yaswami/core';
+import { botIntentUrl, collectedDay, collectedDayKey, collectedPath, TEMPLATES } from '@yaswami/core';
 
 /** «пт, 20 ноября, 19:00» — во времени самого события, а не устройства. */
 export function when(startAt: string, timezone: string): string {
@@ -34,8 +34,12 @@ export function setLinkConfig(config: AppConfig) {
   link.app = config.app_name;
 }
 
-/** Чат с ботом: в нём человек добавляет событие, товар или услугу — бот разбирает сообщение сам. null — имя бота неизвестно. */
-export const botChatLink = (): string | null => (link.bot ? `https://t.me/${link.bot}` : null);
+/**
+ * Чат с ботом. С намерением (BotIntent в core) бот сразу спрашивает нужное: что человек добавляет или о ком отзыв.
+ * null — имя бота неизвестно.
+ */
+export const botChatLink = (intent?: BotIntent): string | null =>
+  link.bot ? (intent ? botIntentUrl(link.bot, intent) : `https://t.me/${link.bot}`) : null;
 
 /** Ссылка, по которой событие открывается у гостя. `ref` — id того, кто делится: так видно, кто кого позвал. */
 export function eventLink(id: string, ref?: number): string {

@@ -2076,6 +2076,24 @@ test('отзывы на услуги: вопрос через сутки пос�
   assert.deepEqual([asked!.practice_id, asked!.via, asked!.rating], [stone!.id, 'invite', null]);
 });
 
+test('намерение в ссылке на бота: «добавить» — бот вместо приветствия спрашивает о событии, товаре или услуге', async () => {
+  const to = (id: number) => sent.filter(([m, b]) => b.chat_id === id && (m === 'sendMessage' || m === 'sendPhoto')).map(([m, b]) => [m, b.text ?? b.caption]);
+  // Метка источника в хвосте (`-s…`) намерению не мешает.
+  for (const [param, about] of [['add_event', 'о событии'], ['add_product-sinsta', 'о товаре'], ['add_service', 'об услуге']] as const) {
+    sent.length = 0;
+    await handleUpdate(db, botMessage(9150, `/start ${param}`));
+    const [first, ...rest] = to(9150);
+    assert.deepEqual([first![0], rest.length], ['sendMessage', 0], param);
+    assert.match(first![1], new RegExp(`^Расскажите ${about}`), param);
+  }
+  // Незнакомый параметр и голый /start — обычное приветствие.
+  for (const text of ['/start add_car', '/start']) {
+    sent.length = 0;
+    await handleUpdate(db, botMessage(9150, text));
+    assert.deepEqual(to(9150), [['sendPhoto', REPLIES.welcome]], text);
+  }
+});
+
 test('охотник: старое сообщение из чата — черновик в личку, а не ответ в чат', async () => {
   await db.execute(sql`truncate conversations, tg_accounts cascade`);
   settings.adminIds = [70];
