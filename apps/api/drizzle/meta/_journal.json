@@ -547,6 +547,13 @@
       "when": 1795874330519,
       "tag": "20261128135850_feedback_audio",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1795874599333,
+      "tag": "20261128140319_events_platform_visibility",
+      "breakpoints": true
     }
   ]
 }

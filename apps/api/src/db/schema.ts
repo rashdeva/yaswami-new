@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigint, boolean, check, customType, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Address, AdminAction, AdminEntity, City, Notification, CollectedEvent, CollectedMedia, Conversation, Event, Feature, FeedbackVia, Guest, Guide, Host, HostSearch, HostSearchMatch, JoinedVia, HostSearchStatus, HostStatus, SourceCandidate, SourceSearchStatus, Message, DirectionSlug, Practice, PracticeFormat, PracticeStatus, ServiceCategory, Product, ProductStatus, Share, Shelf, ShelfAuthor, ShelfRule, ShelfStatus, TgAccount, TicketType, TopicOrigin, User, CollectedStatus } from '@yaswami/core';
-import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_STATUSES, IDENTITY_PROVIDERS, JOINED_VIA, PRODUCT_CATEGORY_SLUGS, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
+import { APPROVAL_STATUSES, CITY_LAUNCH_STATUSES, DEFAULT_CITY_ID, EVENT_KINDS, EVENT_PLATFORMS, EVENT_STATUSES, EVENT_VISIBILITIES, SHOWCASE_STATUSES,IDENTITY_PROVIDERS, JOINED_VIA, PRODUCT_CATEGORY_SLUGS, PRODUCT_STATUSES, SHARE_KINDS, SOURCE_APPROVAL_STATUSES, SOURCE_KINDS, SOURCE_SEARCH_STATUSES } from '@yaswami/core';
 
 const oneOf = (column: string, values: readonly string[]) =>
   sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
@@ -119,6 +119,11 @@ export const events = pgTable(
     takeaway: text(),
     guide: jsonb().$type<Guide>(),
     status: text({ enum: EVENT_STATUSES }).notNull().default('draft'),
+    // ADR-0014: событие одно, а собранное из анонса — `external`. Пока сюда пишут только события организаторов.
+    platform: text({ enum: EVENT_PLATFORMS }).notNull().default('yaswami'),
+    // До видимости событие открывалось только по ссылке — поэтому у прежних строк `private`.
+    visibility: text({ enum: EVENT_VISIBILITIES }).notNull().default('private'),
+    showcase_status: text({ enum: SHOWCASE_STATUSES }),
     widget_id: text(),
     rev: integer().notNull().default(0),
     created_at: at('created_at').notNull().defaultNow(),
@@ -127,6 +132,9 @@ export const events = pgTable(
     index('events_user_idx').on(t.user_id),
     check('events_kind_check', oneOf('kind', EVENT_KINDS)),
     check('events_status_check', oneOf('status', EVENT_STATUSES)),
+    check('events_platform_check', oneOf('platform', EVENT_PLATFORMS)),
+    check('events_visibility_check', oneOf('visibility', EVENT_VISIBILITIES)),
+    check('events_showcase_status_check', oneOf('showcase_status', SHOWCASE_STATUSES)),
     check('events_max_capacity_check', sql`${t.max_capacity} > 0`),
   ],
 );

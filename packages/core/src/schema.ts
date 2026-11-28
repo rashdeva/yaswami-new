@@ -6,6 +6,19 @@ import * as z from 'zod';
 
 export const EVENT_KINDS = ['f', 'b', 'w', 'c', 's', 'o'] as const;
 export const EVENT_STATUSES = ['draft', 'published', 'cancelled'] as const;
+/**
+ * Где записываются на событие: у нас или у организатора по контакту из анонса (ADR-0014). В Luma — `luma` и `external`:
+ * внешнее событие лежит в том же списке, что и своё.
+ */
+export const EVENT_PLATFORMS = ['yaswami', 'external'] as const;
+/** Кому показывается событие — как `visibility` в Luma; `members-only` у нас нет. */
+export const EVENT_VISIBILITIES = ['public', 'private'] as const;
+/**
+ * Решение команды об афише города (ADR-0014): pending — ждёт, approved — одобрено и ждёт проверки обложки,
+ * published — в афише, rejected — отклонено или снято. В Luma так событие попадает в чужой календарь
+ * (`calendars/events/add` с `submission_mode: pending`, затем approve или reject); `published` — наше.
+ */
+export const SHOWCASE_STATUSES = ['pending', 'approved', 'published', 'rejected'] as const;
 // Luma: approved | pending_approval | invited | declined | waitlist. «maybe» — наше: ответ «Думаю».
 export const APPROVAL_STATUSES = ['approved', 'maybe', 'declined', 'waitlist'] as const;
 export const SHARE_KINDS = ['widget', 'inline_message'] as const;
@@ -128,6 +141,9 @@ export const Event = z.object({
   takeaway: z.string().trim().max(ABOUT_MAX).nullable(), // обещание самого организатора
   guide: Guide.nullable(),
   status: z.enum(EVENT_STATUSES),
+  platform: z.enum(EVENT_PLATFORMS),
+  visibility: z.enum(EVENT_VISIBILITIES),
+  showcase_status: z.enum(SHOWCASE_STATUSES).nullable(), // null — в афишу не просилось
   widget_id: z.string().nullable(),
   rev: count,
   created_at: z.date(),
