@@ -32,6 +32,11 @@ export const users = pgTable('users', {
   city_id: text().references((): AnyPgColumn => cities.id),
   // Уведомления, которые человек выключил в профиле; новое уведомление приходит, пока его не выключат.
   muted_notifications: jsonb().$type<Notification[]>().notNull().default([]),
+  // Заблокировал бота: Telegram отказал в доставке (User.bot_blocked_at). Ставит журнал отправок (inbox.ts, logSent) и
+  // my_chat_member (bot.ts), снимает его следующее сообщение боту.
+  bot_blocked_at: at('bot_blocked_at'),
+  // Бан командой (User.banned_at): admin_users_update с is_banned.
+  banned_at: at('banned_at'),
 });
 
 

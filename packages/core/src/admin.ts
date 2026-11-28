@@ -222,6 +222,7 @@ export const UserUpdateInput = z
     lang: text(10).min(2),
     timezone: timeZone,
     features: z.array(Feature).transform((f) => [...new Set(f)]).describe('Features enabled for this person, the whole list: event_create lets them create events'),
+    is_banned: z.boolean().describe('Ban the person (true) or lift the ban (false). A banned person is ignored by the bot, gets no messages from it, and the API refuses them'),
   })
   .partial();
 export type UserUpdateInput = z.infer<typeof UserUpdateInput>;

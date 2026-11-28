@@ -1,7 +1,7 @@
 // Способы войти: initData мини-приложения Telegram и токен доступа — в заголовке (REST и MCP вне Telegram)
 // или в cookie сайта (её ставит вход через Telegram в web-login.ts).
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { IdentityProvider as Provider, JoinedVia, User } from '@yaswami/core';
 import { dropHostPitch } from './inbox.ts';
 import type { Db } from './db/client.ts';
@@ -120,6 +120,28 @@ export async function telegramIdsOf(db: Db, userIds: number[]): Promise<Map<numb
   const rows = await db.select({ user_id: userIdentities.user_id, subject: userIdentities.subject }).from(userIdentities)
     .where(and(eq(userIdentities.provider, 'telegram'), inArray(userIdentities.user_id, userIds)));
   return new Map(rows.map((r) => [r.user_id, Number(r.subject)]));
+}
+
+/**
+ * Куда боту писать человеку: его Telegram id, если бот ему пишет. null — без Telegram, заблокировал бота
+ * (`bot_blocked_at`) или забанен командой (`banned_at`). Через неё идут уведомления: писать тому, кто закрыл бота, —
+ * впустую тратить лимиты Telegram.
+ */
+export async function botChatIdOf(db: Db, userId: number): Promise<number | null> {
+  const [user] = await db.select({ blocked: users.bot_blocked_at, banned: users.banned_at }).from(users).where(eq(users.id, userId));
+  if (!user || user.blocked || user.banned) return null;
+  return telegramIdOf(db, userId);
+}
+
+/**
+ * Отметка «заблокировал бота» по Telegram id: `true` — Telegram отказал в доставке или прислал «kicked», `false` —
+ * человек снова пишет боту. Снимаем и ставим только при смене: время отметки — когда заблокировал впервые.
+ */
+export async function setBotBlocked(db: Db, telegramId: number, blocked: boolean): Promise<void> {
+  const userId = await userIdByTelegram(db, telegramId);
+  if (userId === null) return;
+  await db.update(users).set({ bot_blocked_at: blocked ? new Date() : null })
+    .where(and(eq(users.id, userId), blocked ? isNull(users.bot_blocked_at) : isNotNull(users.bot_blocked_at)));
 }
 
 /** Обратное: Telegram id → пользователь, у кого он есть. */

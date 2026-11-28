@@ -8,7 +8,7 @@ import type {
 } from '@yaswami/core';
 import { AGENTS, collectedPath, collectedWhen, LEAD_REPLY_HOURS, messageWithMedia } from '@yaswami/core';
 // Цикл с auth.ts (dropHostPitch) безопасен: обе стороны берут только функции и зовут их после загрузки.
-import { telegramIdOf, userIdByTelegram, usersByTelegram } from './auth.ts';
+import { setBotBlocked, telegramIdOf, userIdByTelegram, usersByTelegram } from './auth.ts';
 import type { Ctx } from './audit.ts';
 import { audited } from './audit.ts';
 import type { Db } from './db/client.ts';
@@ -335,7 +335,16 @@ export const logSent = (db: Db) => async (method: string, body: { chat_id: numbe
   const [user] = userId === null ? [] : await db.select().from(users).where(eq(users.id, userId));
   const text = typeof body.text === 'string' ? body.text : typeof body.caption === 'string' ? body.caption : NO_TEXT;
   await record(db, { id: body.chat_id, name: user?.first_name, username: user?.username }, { direction: 'out', author, text, status: result.ok ? 'sent' : 'failed' });
+  // Telegram не доставил, потому что человек закрыл бота: отмечаем, и уведомления ему больше не уходят (botChatIdOf).
+  if (isBotBlocked(result)) await setBotBlocked(db, body.chat_id, true);
 };
+
+/**
+ * Отказ Telegram «человек недоступен навсегда»: заблокировал бота или удалил аккаунт. Другие 403 — например, «бот не может
+ * начать разговор» с тем, кто его не открывал, — не блокировка: откроет бота — дойдёт.
+ */
+export const isBotBlocked = (result: BotResult) =>
+  result.error_code === 403 && /blocked by the user|user is deactivated/i.test(result.description ?? '');
 
 const ALERT_EVERY_MS = 10 * 60_000;
 const alerted = windowCounter<string>(ALERT_EVERY_MS);

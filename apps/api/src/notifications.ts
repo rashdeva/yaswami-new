@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import type { CollectedEventItem, Event, Notification, User } from '@yaswami/core';
 import { ADDRESS_MAX, collectedPath, collectedWhen, instagramOf, NAME_MAX, TOPIC_GUIDES } from '@yaswami/core';
-import { telegramIdOf } from './auth.ts';
+import { botChatIdOf } from './auth.ts';
 import type { Db } from './db/client.ts';
 import { users } from './db/schema.ts';
 import { settings } from './settings.ts';
@@ -154,7 +154,7 @@ export function toWidget(card: Card) {
 }
 
 /**
- * Отправляет уведомление пользователю в Telegram. Без Telegram (вошёл через Apple или Google) или если он выключил
+ * Отправляет уведомление пользователю в Telegram. Без Telegram (вошёл через Apple или Google), заблокировал бота, забанен или выключил
  * это уведомление в профиле (`muted_notifications`) — молча ничего.
  * Никогда не бросает: недоставленное уведомление не должно ломать действие, которое его вызвало.
  */
@@ -162,7 +162,7 @@ export async function notify<K extends Moment & Notification>(db: Db, userId: nu
   try {
     const [user] = await db.select({ muted: users.muted_notifications }).from(users).where(eq(users.id, userId));
     if (user?.muted.includes(moment)) return;
-    const chatId = await telegramIdOf(db, userId); // users.id — не Telegram id (ADR-0008)
+    const chatId = await botChatIdOf(db, userId); // users.id — не Telegram id (ADR-0008); заблокировал бота или забанен — null
     if (chatId !== null) await sendCard(chatId, moment, payload);
   } catch (e) {
     console.error(`notify ${moment} → user ${userId}:`, e);

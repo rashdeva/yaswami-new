@@ -1,6 +1,6 @@
 // Новое событие Ясвами от имени организатора: его лимит бесплатных событий действует.
 import { zodResolver } from '@hookform/resolvers/zod';
-import type { AdminEventCreateInput, User } from '@yaswami/core';
+import type { AdminEventCreateInput, User, Wire } from '@yaswami/core';
 import { AdminEventCreateInput as Schema, DEFAULT_CITY_ID } from '@yaswami/core';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -27,7 +27,7 @@ const defaults = (): Omit<AdminEventCreateInput, 'user_id'> => ({
 
 export function EventNewScreen({ onCreated }: { onCreated: (id: string) => void }) {
   const create = useCreateEvent();
-  const [host, setHost] = useState<User | null>(null);
+  const [host, setHost] = useState<Wire<User> | null>(null);
   const form = useForm({
     resolver: zodResolver(Schema),
     defaultValues: defaults() as AdminEventCreateInput, // организатора выбирают отдельно
