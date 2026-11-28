@@ -98,6 +98,7 @@ export async function digestFeedback(db: Db, now = new Date()): Promise<void> {
   for (const [eventId, rows] of byEvent) {
     if (rows.some((r) => now.getTime() - r.feedback.updated_at.getTime() < settings.feedbackSettleMs)) continue;
     const [event] = await db.select().from(events).where(eq(events.id, eventId));
+    if (!event?.user_id) continue; // отзывы собираем только о событиях с организатором
     const [total] = await db
       .select({ count: sql<number>`count(*)::int`, average: sql<number>`avg(${eventFeedback.rating})::float` })
       .from(eventFeedback)
@@ -105,7 +106,7 @@ export async function digestFeedback(db: Db, now = new Date()): Promise<void> {
     // Сначала отметка, потом отправка: сбой Telegram не должен приводить к повторным сводкам каждые пять минут.
     await db.update(eventFeedback).set({ host_notified_at: now })
       .where(and(eq(eventFeedback.event_id, eventId), isNull(eventFeedback.host_notified_at), isNotNull(eventFeedback.rating)));
-    await notify(db, event!.user_id, 'feedback_received', {
+    await notify(db, event.user_id, 'feedback_received', {
       event: event!, count: total!.count, average: total!.average,
       fresh: rows.map((r) => ({ first_name: r.first_name, rating: r.feedback.rating!, comment: r.feedback.comment })),
     });

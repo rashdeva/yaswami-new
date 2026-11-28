@@ -2,7 +2,22 @@
 // запросы. Типы их не проверяют, поэтому каждый запрос прогоняет на настоящей базе apps/api/src/collector-store.test.ts:
 // переименовал колонку — упадёт тест, а не сборщик в проде. Новый запрос добавляй и туда.
 import postgres from 'postgres';
-import { productTitleKey } from '@yaswami/core';
+import { collectedSlug, externalEventColumns, extractedOf, productTitleKey } from '@yaswami/core';
+
+/**
+ * Событие из анонса живёт строкой `events` с `platform = 'external'` (ADR-0014): колонки названы как в Luma
+ * (name, start_at…). Сборщик и ИИ говорят формой анонса (title, starts_at со сдвигом города) — перевод туда и обратно
+ * делают externalEventColumns и extractedOf из ядра, те же, что в API.
+ */
+const EVENT_COLUMNS = `e.name, e.description, e.start_at, e.end_at, e.timezone, e.time_tbd, e.place, e.geo_address_json, e.display_price, e.tags, e.url,
+  e.telegram_username, e.whatsapp_phone, e.instagram_username, e.topic, e.what_happens, e.for_whom, e.beginner_friendly, e.takeaway`;
+/** Строка события → то, что ждёт сборщик: поля анонса в `event`, остальное как есть. */
+const withEvent = ({ name, description, start_at, end_at, timezone, time_tbd, place, geo_address_json, display_price, tags, url, telegram_username,
+  whatsapp_phone, instagram_username, topic, what_happens, for_whom, beginner_friendly, takeaway, ...rest }) => ({
+  ...rest, timezone,
+  event: extractedOf({ name, description, start_at, end_at, timezone, time_tbd, place, geo_address_json, display_price, tags, url, telegram_username,
+    whatsapp_phone, instagram_username, topic, what_happens, for_whom, beginner_friendly, takeaway }),
+});
 
 /**
  * Организатор уже входил в сервис — привязать профиль к его пользователю. Пользователя ищем по способу входа telegram:
@@ -14,6 +29,11 @@ const linkUser = (tx, telegramId) => tx`
 
 export function createStore(url) {
   const sql = postgres(url, { onnotice: () => {} });
+  /** Колонки события из формы анонса — для insert и update; jsonb отдаём как json, а не строкой. */
+  const columns = (event) => {
+    const c = externalEventColumns(event);
+    return { ...c, tags: sql.json(c.tags), what_happens: sql.json(c.what_happens), geo_address_json: c.geo_address_json && sql.json(c.geo_address_json) };
+  };
   return {
     /**
      * Источники из CHANNELS (LEAD_CHATS — с `kind` leads): добавляем те, которых ещё нет, в первый город.
@@ -110,13 +130,13 @@ export function createStore(url) {
      */
     topicCandidates: ({ minEvents, minHosts, splitEvents, splitHosts }) => sql`
       with recent as (
-        select event, created_at, event->>'topic' as topic, coalesce(telegram_username, channel) as host
-        from collected_events where event ? 'topic' and created_at > now() - interval '90 days'
+        select name, tags, created_at, topic, coalesce(telegram_username, channel) as host
+        from events where showcase_status is not null and topic is not null and created_at > now() - interval '90 days'
       ), totals as (select topic, count(*)::int as n from recent group by 1)
       select lower(t) as tag, nullif(r.topic, 'другое') as inside, max(totals.n) as inside_events_count,
         count(*)::int as events_count, count(distinct r.host)::int as hosts_count,
-        (array_agg(r.event->>'title' order by r.created_at desc))[1:5] as examples
-      from recent r join totals using (topic), jsonb_array_elements_text(r.event->'tags') t
+        (array_agg(r.name order by r.created_at desc))[1:5] as examples
+      from recent r join totals using (topic), jsonb_array_elements_text(r.tags) t
       where lower(t) not in (select name from topics union all select jsonb_array_elements_text(tags) from topics)
       group by 1, r.topic
       having case when r.topic = 'другое'
@@ -136,8 +156,8 @@ export function createStore(url) {
         on conflict do nothing returning name`;
       if (!added.length) return false;
       const move = (topic, withTags) => tx`
-        update collected_events set event = jsonb_set(event, '{topic}', to_jsonb(${name}::text)), updated_at = now()
-        where event->>'topic' = ${topic} and exists (select 1 from jsonb_array_elements_text(event->'tags') t where lower(t) in ${tx(withTags)})`;
+        update events set topic = ${name}, updated_at = now()
+        where showcase_status is not null and topic = ${topic} and exists (select 1 from jsonb_array_elements_text(tags) t where lower(t) in ${tx(withTags)})`;
       if (tags.length) await move('другое', tags);
       if (from && tag) {
         await move(from, [tag]);
@@ -242,40 +262,42 @@ export function createStore(url) {
      * Предстоящие события — с ними склеиваются повторные анонсы. `loaded_at` — версия строки (updated_at текстом, без
      * потери микросекунд): по ней upsert узнаёт, что строку успели поменять, пока шёл проход.
      */
-    upcoming: () => sql`
-      select external_id, city_id, event, status, updated_at::text as loaded_at,
-        exists(select 1 from photos p where p.collected_external_id = e.external_id) as has_cover
-      from collected_events e where coalesce(ends_at, starts_at) >= now()`,
+    upcoming: async () => (await sql`
+      select e.external_id, e.city_id, e.showcase_status as status, e.updated_at::text as loaded_at, ${sql.unsafe(EVENT_COLUMNS)},
+        exists(select 1 from photos p where p.event_id = e.id) as has_cover
+      from events e where e.external_id is not null and coalesce(e.end_at, e.start_at) >= now()`).map(withEvent),
     /**
      * Доверенные источники: за 90 дней команда одобрила из них не меньше `min` событий и ни одного не отклонила.
      * Их новые события сборщик пишет сразу одобренными. Одно отклонение — и источник снова идёт через модерацию.
      */
     trustedChannels: async (min) => (await sql`
-      select channel from collected_events where created_at > now() - interval '90 days'
+      select channel from events where external_id is not null and created_at > now() - interval '90 days'
       group by channel
-      having count(*) filter (where status in ('approved', 'published')) >= ${min} and count(*) filter (where status = 'rejected') = 0`)
+      having count(*) filter (where showcase_status in ('approved', 'published')) >= ${min} and count(*) filter (where showcase_status = 'rejected') = 0`)
       .map((r) => r.channel),
     /**
      * Новое событие или дополнение уже известного. Публикация и решение модерации остаются от первого анонса.
      * `loaded_at` — версия строки из upcoming(), с которой склеивали: если команда за это время поправила событие или
      * решила его судьбу (updated_at сдвинулся), дополнение не пишем — склейка шла по устаревшим данным.
+     * Событие, которое организатор подтвердил как своё (`user_id`), анонс больше не меняет: теперь его ведёт он (ADR-0014).
      * Возвращает новую версию строки или null, если пропустили. Параметр — текстом (`::text`): с типом timestamptz
      * postgres.js провёл бы его через Date и потерял микросекунды, и версии никогда бы не совпали.
      */
-    upsert: async ({ external_id, channel, city_id, announcement, event, signup_url, status = 'pending', loaded_at = null }) => {
+    upsert: async ({ external_id, channel, city_id, announcement, event, status = 'pending', loaded_at = null }) => {
       const [row] = await sql`
-        insert into collected_events ${sql({
-          external_id, channel, city_id, signup_url, status,
-          announcement: sql.json(announcement),
-          event: sql.json(event),
-          starts_at: event.starts_at,
-          ends_at: event.ends_at,
-          telegram_username: event.telegram_username?.replace(/^@/, '').toLowerCase() ?? null,
+        insert into events ${sql({
+          id: collectedSlug(external_id), external_id, channel, city_id, kind: 'o', status: 'published', platform: 'external', visibility: 'public',
+          showcase_status: status, announcement: sql.json(announcement), ...columns(event),
+          timezone: sql`(select timezone from cities where id = ${city_id})`,
         })}
         on conflict (external_id) do update set
-          event = excluded.event, starts_at = excluded.starts_at, ends_at = excluded.ends_at,
-          telegram_username = excluded.telegram_username, signup_url = excluded.signup_url, updated_at = now()
-        ${loaded_at ? sql`where collected_events.updated_at = ${loaded_at}::text::timestamptz` : sql``}
+          name = excluded.name, description = excluded.description, start_at = excluded.start_at, end_at = excluded.end_at,
+          time_tbd = excluded.time_tbd, place = excluded.place, geo_address_json = excluded.geo_address_json,
+          display_price = excluded.display_price, tags = excluded.tags, url = excluded.url,
+          telegram_username = excluded.telegram_username, whatsapp_phone = excluded.whatsapp_phone, instagram_username = excluded.instagram_username,
+          topic = excluded.topic, what_happens = excluded.what_happens, for_whom = excluded.for_whom,
+          beginner_friendly = excluded.beginner_friendly, takeaway = excluded.takeaway, updated_at = now()
+        where events.user_id is null ${loaded_at ? sql`and events.updated_at = ${loaded_at}::text::timestamptz` : sql``}
         returning updated_at::text as loaded_at`;
       return row?.loaded_at ?? null;
     },
@@ -284,9 +306,9 @@ export function createStore(url) {
      * каналу организатора место в источниках, а контакт в непроверенном анонсе мог подставить кто угодно.
      */
     unprofiled: () => sql`
-      select telegram_username as username, min(city_id) as city_id from collected_events
-      where telegram_username ~ '^\\w{4,32}$' and coalesce(ends_at, starts_at) >= now()
-        and status in ('approved', 'published')
+      select telegram_username as username, min(city_id) as city_id from events
+      where telegram_username ~ '^\\w{4,32}$' and coalesce(end_at, start_at) >= now()
+        and showcase_status in ('approved', 'published')
         and telegram_username not in (select username from hosts)
       group by telegram_username`,
     /** Организаторы, которых команда добавила по username в админке: заготовки без telegram_id, ждут проверки. */
@@ -378,35 +400,38 @@ export function createStore(url) {
     savePhotos: (hostId, photos) => sql`update hosts set photos = ${sql.json(photos)} where id = ${hostId}`,
     photosChecked: (hostId) => sql`update hosts set photos_checked_at = now() where id = ${hostId}`,
     /** Предстоящие события без полей «что это мне даст»: собраны до их появления. */
-    withoutTopic: () => sql`
-      select external_id, announcement, event, c.name as city, c.timezone from collected_events e join cities c on c.id = e.city_id
-      where coalesce(ends_at, starts_at) >= now() and not (event ? 'topic')`,
+    withoutTopic: async () => (await sql`
+      select e.external_id, e.announcement, c.name as city, ${sql.unsafe(EVENT_COLUMNS)} from events e join cities c on c.id = e.city_id
+      where e.external_id is not null and e.user_id is null and coalesce(e.end_at, e.start_at) >= now() and e.topic is null`).map(withEvent),
+    /** Заново записать поля анонса. Событие, которое организатор подтвердил как своё, не трогаем. */
     setEvent: (external_id, event) => sql`
-      update collected_events set event = ${sql.json(event)}, updated_at = now() where external_id = ${external_id}`,
+      update events set ${sql(columns(event))}, updated_at = now() where external_id = ${external_id} and user_id is null`,
     /** Предстоящие события из Telegram, чью публикацию ещё не разбирали с фото и видео (refresh.mjs); Instagram заливает медиа сразу. */
-    withoutMedia: () => sql`
-      select external_id, announcement, event, c.name as city, c.timezone from collected_events e join cities c on c.id = e.city_id
-      where coalesce(ends_at, starts_at) >= now() and status <> 'rejected' and not (announcement ? 'media') and external_id like 'telegram:%'
-      order by starts_at`,
-    refreshed: (external_id, event, media) => sql`
-      update collected_events set event = ${sql.json(event)}, announcement = announcement || ${sql.json({ media })}, updated_at = now()
-      where external_id = ${external_id}`,
+    withoutMedia: async () => (await sql`
+      select e.external_id, e.announcement, c.name as city, ${sql.unsafe(EVENT_COLUMNS)} from events e join cities c on c.id = e.city_id
+      where coalesce(e.end_at, e.start_at) >= now() and e.showcase_status <> 'rejected' and not (e.announcement ? 'media') and e.external_id like 'telegram:%'
+      order by e.start_at`).map(withEvent),
+    /** Медиа публикации — всегда; поля анонса — пока событие не подтвердил организатор. */
+    refreshed: (external_id, event, media) => sql.begin(async (tx) => {
+      await tx`update events set announcement = announcement || ${tx.json({ media })}, updated_at = now() where external_id = ${external_id}`;
+      await tx`update events set ${tx(columns(event))} where external_id = ${external_id} and user_id is null`;
+    }),
     /** Отклик на публикацию-источник — всем событиям из неё (`prefix` — telegram:<канал>/<публикация># или instagram:<код>#). */
     setStats: (prefix, { views, reactions }) => sql`
-      update collected_events set views = ${views}, reactions = ${reactions} where starts_with(external_id, ${prefix})`,
+      update events set views = ${views}, reactions = ${reactions} where starts_with(external_id, ${prefix})`,
     /** Предстоящие события из Instagram без обложки, но с фото в бакете (собраны до обложек из Instagram): [{ external_id, url }]. */
     instagramWithoutCover: () => sql`
-      select external_id, m->>'url' as url from collected_events e, jsonb_array_elements(e.announcement->'media') with ordinality as a(m, n)
-      where external_id like 'instagram:%' and coalesce(ends_at, starts_at) >= now() and m->>'type' = 'photo'
-        and not exists (select 1 from photos p where p.collected_external_id = e.external_id)
+      select external_id, m->>'url' as url from events e, jsonb_array_elements(e.announcement->'media') with ordinality as a(m, n)
+      where external_id like 'instagram:%' and coalesce(end_at, start_at) >= now() and m->>'type' = 'photo'
+        and not exists (select 1 from photos p where p.event_id = e.id)
         and n = (select min(n2) from jsonb_array_elements(e.announcement->'media') with ordinality as b(m2, n2) where m2->>'type' = 'photo')`,
     /**
      * Фото анонса как обложка события: `{ url }` — файл уже в бакете (ADR-0011), `{ data }` — байты в базу (бакета нет).
      * Обложка уже есть (нарисовал иллюстратор) — не трогаем.
      */
     saveCover: (external_id, source, { data = null, url = null }) => sql`
-      insert into photos (collected_external_id, source, data, url) values (${external_id}, ${source}, ${data}, ${url})
-      on conflict (collected_external_id) do nothing`,
+      insert into photos (event_id, source, data, url) select id, ${source}, ${data}, ${url} from events where external_id = ${external_id}
+      on conflict (event_id) do nothing`,
     /** Аккаунты Telegram, с которых мы пишем людям (sender.mjs), вместе с сессией и шагом входа. */
     accounts: () => sql`select id, label, phone, status, session, login from tg_accounts order by created_at`,
     accountUpdate: (id, fields) => sql`update tg_accounts set ${sql({ ...fields, ...('login' in fields ? { login: fields.login && sql.json(fields.login) } : {}) })} where id = ${id}`,

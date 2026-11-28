@@ -61,7 +61,7 @@
 | Список | `{ entries, has_more, next_cursor }`, вход `pagination_cursor`, `pagination_limit` | как `calendars/contacts/list` |
 | Действия админа | префикс `admin_` у инструмента, `/admin/` в пути | `admin_events_list` ↔ `GET /admin/events` |
 | Чьё событие и кому оно видно (ADR-0014) | поля события `platform` (`yaswami`, `external` — у Luma `luma`, `external`) и `visibility` (`public`, `private`), как в Luma; решение команды об афише — `showcase_status` (в Luma это заявка события в календарь: `calendars/events/add`, `approve`, `reject`) | `{ "platform": "yaswami", "visibility": "private", "showcase_status": null }` |
-| Собранное событие (в Luma такого нет; переезжает в `events`, ADR-0014) | `collected_events_*`, `/collected-events` | `collected_events_signup` |
+| Афиша города: события, которые видит гость, — внешние и публичные события организаторов (ADR-0014; в Luma такого нет) | `collected_events_*`, `/collected-events`; карточка — в форме анонса (`title`, `starts_at` со сдвигом города); id — id события | `collected_events_signup` |
 | Правка одной услуги — Practice (в Luma такого нет) | `admin_practices_update`, `/admin/practices/:id`; запись на неё — по `practice_id` | `PATCH /admin/practices/<id>` `{ "status": "published" }` |
 | Правка своих настроек: Подписка на темы, город и выключенные уведомления (в Luma такого нет; там `suppress_notifications` — флаг одной операции) | `users_update_self`, `PATCH /me`, поля `subscribed_topics`, `city_id` и `muted_notifications`, меняется только переданное — в пару к `users_get_self` | `PATCH /me` `{ "city_id": "danang" }` |
 | Город — City (в Luma такого нет: там город — поле адреса) | `cities_list`, `/cities`; для команды `admin_cities_*`, `/admin/cities`; в выдачах каталога — вход `city_id`, без него — первый город; выдача включает соседние города (`nearbyCities` в `services.ts`), у каждой записи свой `city_id`; координаты — `latitude`, `longitude`, как в `coordinate` Luma | `GET /collected-events?city_id=danang` |
@@ -133,7 +133,7 @@
 
 ### Сборщик пишет в те же таблицы
 
-Сборщик (`apps/collector/src/store.mjs`) пишет в `collected_events`, `hosts`, `practices`, `products`, `sources`, `photos`, `tg_accounts`, `messages`, `topics`, `subscriptions`, `host_searches`, `host_search_matches`, `source_searches`, `tg_peers` и `collector_cursors` сырым SQL: это `.mjs`, типы его не проверяют. Поэтому, меняя таблицу, которую он трогает:
+Сборщик (`apps/collector/src/store.mjs`) пишет в `events` (события из анонсов, `platform = 'external'`), `hosts`, `practices`, `products`, `sources`, `photos`, `tg_accounts`, `messages`, `topics`, `subscriptions`, `host_searches`, `host_search_matches`, `source_searches`, `tg_peers` и `collector_cursors` сырым SQL: это `.mjs`, типы его не проверяют. Поэтому, меняя таблицу, которую он трогает:
 
 - поправь запрос в `store.mjs` в том же PR — старый сборщик и новая схема выкладываются одним образом;
 - каждый запрос хранилища вызван в `apps/api/src/collector-store.test.ts` на настоящей базе; новый запрос добавь и туда. Этот тест — единственное, что ловит переименованную колонку до прода;

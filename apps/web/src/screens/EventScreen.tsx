@@ -10,7 +10,7 @@ import { GuestRow } from '../components/GuestRow.tsx';
 import { ShareButton } from '../components/ShareButton.tsx';
 
 const ANSWERS: [RsvpStatus, string][] = [['approved', 'Пойду'], ['maybe', 'Думаю'], ['declined', 'Не пойду']];
-const GUEST_LABEL = { approved: 'пойдёт', maybe: 'думает', declined: 'не пойдёт', waitlist: 'в листе ожидания' } as const;
+const GUEST_LABEL = { approved: 'пойдёт', maybe: 'думает', declined: 'не пойдёт', waitlist: 'в листе ожидания', pending_approval: 'записался' } as const;
 
 interface Props {
   id: string;

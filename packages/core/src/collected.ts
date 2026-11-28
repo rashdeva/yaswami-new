@@ -1,5 +1,6 @@
 // Показ собранных событий: одинаково на сервере (страницы для поисковиков) и на фронте.
 import type { CollectedEvent, CollectedEventItem } from './api.ts';
+import type { Event } from './schema.ts';
 
 // Время события записано в самой строке ISO вместе со сдвигом города. Берём «настенные» цифры как есть,
 // чтобы показ не зависел ни от часового пояса устройства, ни от того, знает ли браузер этот сдвиг.
@@ -139,3 +140,53 @@ export const collectedSlug = (externalId: string): string => externalId.startsWi
 
 /** Ключ обложки собранного события в бакете (ADR-0011). Хэш содержимого — у каждой новой картинки свой файл. */
 export const collectedCoverKey = (externalId: string, hash: string): string => `covers/collected/${collectedSlug(externalId)}-${hash}.jpg`;
+
+// --- Событие из анонса ↔ строка события (ADR-0014). ИИ и сборщик говорят формой CollectedEvent (title, starts_at
+// строкой со сдвигом города, place…), в базе это колонки события с именами как в Luma. Перевод — здесь, один на API и сборщик.
+
+/** Момент времени строкой ISO со сдвигом пояса: «2026-12-05T17:00:00+07:00». Так время события уходит на фронт. */
+export function isoInZone(at: Date, timeZone: string): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(at).map((p) => [p.type, p.value]));
+  const wall = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+  const minutes = Math.round((Date.parse(wall + 'Z') - at.getTime()) / 60_000);
+  const abs = Math.abs(minutes);
+  return `${wall}${minutes < 0 ? '-' : '+'}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+}
+
+type ExternalColumns = Pick<Event,
+  'name' | 'description' | 'start_at' | 'end_at' | 'time_tbd' | 'place' | 'geo_address_json' | 'display_price' | 'tags' | 'url'
+  | 'telegram_username' | 'whatsapp_phone' | 'instagram_username' | 'topic' | 'what_happens' | 'for_whom' | 'beginner_friendly' | 'takeaway'>;
+
+/** Контакт в колонке — без @ и в нижнем регистре: по нему вошедшему организатору предлагают подтвердить событие. */
+const contact = (username: string | null | undefined) => username?.trim().replace(/^@/, '').toLowerCase() || null;
+
+/** Колонки события из того, что извлёк ИИ. Время без часов в анонсе (00:00 в строке) — `time_tbd`. */
+export function externalEventColumns(e: CollectedEvent): ExternalColumns {
+  return {
+    name: e.title, description: e.description || null,
+    start_at: new Date(e.starts_at), end_at: e.ends_at ? new Date(e.ends_at) : null, time_tbd: e.starts_at.slice(11, 19) === '00:00:00',
+    place: e.place || null, geo_address_json: e.address ? { address: e.address } : null,
+    display_price: e.price || null, tags: e.tags ?? [], url: e.url || null,
+    telegram_username: contact(e.telegram_username), whatsapp_phone: e.whatsapp_phone || null, instagram_username: contact(e.instagram_username),
+    topic: e.topic ?? null, what_happens: e.what_happens ?? [], for_whom: e.for_whom ?? null,
+    beginner_friendly: e.beginner_friendly ?? null, takeaway: e.takeaway ?? null,
+  };
+}
+
+/** Обратно: событие в форме анонса — её читают карточки витрины, сборщик (склейка повторов) и задания иллюстратору. */
+export function extractedOf(row: ExternalColumns & Pick<Event, 'timezone'>): CollectedEvent {
+  return {
+    title: row.name, description: row.description ?? '',
+    starts_at: isoInZone(row.start_at, row.timezone), ends_at: row.end_at ? isoInZone(row.end_at, row.timezone) : null,
+    place: row.place, address: row.geo_address_json?.address ?? null, price: row.display_price, tags: row.tags,
+    telegram_username: row.telegram_username, whatsapp_phone: row.whatsapp_phone, instagram_username: row.instagram_username, url: row.url,
+    ...(row.topic ? { topic: row.topic } : {}), what_happens: row.what_happens, for_whom: row.for_whom,
+    beginner_friendly: row.beginner_friendly, takeaway: row.takeaway,
+  };
+}
+
+/** Несут ли два события из анонсов одно и то же: сравниваем то, что ляжет в колонки, а не запись ИИ буква в букву. */
+export const sameExtracted = (a: CollectedEvent, b: CollectedEvent): boolean =>
+  JSON.stringify(externalEventColumns(a)) === JSON.stringify(externalEventColumns(b));

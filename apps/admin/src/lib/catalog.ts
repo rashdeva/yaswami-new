@@ -62,7 +62,7 @@ export const EVENT_STATUS_LABELS = { draft: 'Черновик', published: 'Оп
 /** Возможности, которые команда включает человеку лично. */
 export const FEATURE_LABELS: Record<Feature, string> = { event_create: 'Создавать события (организатор)' };
 
-export const APPROVAL_LABELS: Record<Guest['approval_status'], string> = { approved: 'Пойдёт', maybe: 'Думает', declined: 'Не пойдёт', waitlist: 'Лист ожидания' };
+export const APPROVAL_LABELS: Record<Guest['approval_status'], string> = { approved: 'Пойдёт', maybe: 'Думает', declined: 'Не пойдёт', waitlist: 'Лист ожидания', pending_approval: 'Записался, ждёт организатора' };
 
 /**
  * Контакт для записи, который виден по `signup_url`: сервер отдаёт только эту ссылку, а сами поля

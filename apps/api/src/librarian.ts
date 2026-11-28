@@ -6,8 +6,8 @@ import type { CollectedUpdateInput, TopicUpdateInput } from '@yaswami/core';
 import { LIBRARIAN_DAILY_CHANGES, cityNow } from '@yaswami/core';
 import type { Ctx } from './audit.ts';
 import type { Db } from './db/client.ts';
-import { adminActions, collectedEvents } from './db/schema.ts';
-import { AppError, collectedExternalId, listCities } from './services.ts';
+import { adminActions, events } from './db/schema.ts';
+import { AppError, listCities } from './services.ts';
 import { settings } from './settings.ts';
 import { librarian } from './support.ts';
 
@@ -39,15 +39,15 @@ export const LIBRARIAN_CHANNEL_REJECTIONS = 5;
  * все события одного канала ему нельзя — сверх лимита отказ, решение за командой.
  */
 async function assertChannelRejections(db: Db, slug: string): Promise<void> {
-  const [target] = await db.select({ channel: collectedEvents.channel }).from(collectedEvents).where(eq(collectedEvents.external_id, collectedExternalId(slug)));
-  if (!target) return;
+  const [target] = await db.select({ channel: events.channel }).from(events).where(eq(events.id, slug));
+  if (!target?.channel) return;
   const done = await db.select({ id: adminActions.entity_id }).from(adminActions).where(and(
     sql`${adminActions.input}->>'scope' = 'librarian'`, sql`${adminActions.input}->>'status' = 'rejected'`,
     eq(adminActions.entity, 'collected_event'), gt(adminActions.created_at, sql`now() - interval '1 day'`),
   ));
   if (!done.length) return;
-  const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(collectedEvents)
-    .where(and(eq(collectedEvents.channel, target.channel), inArray(collectedEvents.external_id, done.map((d) => collectedExternalId(d.id)))));
+  const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(events)
+    .where(and(eq(events.channel, target.channel), inArray(events.id, done.map((d) => d.id))));
   if (n >= LIBRARIAN_CHANNEL_REJECTIONS) throw new AppError('too_many_rejections', 409);
 }
 

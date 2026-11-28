@@ -3,7 +3,6 @@
 import { createHash } from 'node:crypto';
 import { and, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import sharp from 'sharp';
-import { collectedCoverKey } from '@yaswami/core';
 import { bucket, type Bucket } from './bucket.ts';
 import type { Db, Tx } from './db/client.ts';
 import { photos } from './db/schema.ts';
@@ -26,12 +25,15 @@ export async function getPhoto(db: Db, id: string): Promise<{ data: Buffer | nul
   return row ?? null;
 }
 
-type CoverOwner = { collected_external_id: string } | { event_id: string };
+type CoverOwner = { event_id: string };
 
-/** Ключ обложки в бакете: covers/<collected|event>/<id>-<хэш>.jpg. Хэш содержимого — новый файл на каждую новую картинку. */
+/**
+ * Ключ обложки в бакете: covers/event/<id>-<хэш>.jpg. Хэш содержимого — новый файл на каждую новую картинку.
+ * Фото анонса сборщик кладёт под covers/collected/… (collectedCoverKey) — это другой файл той же обложки.
+ */
 function coverKey(owner: CoverOwner, data: Buffer): string {
   const hash = createHash('sha256').update(data).digest('hex').slice(0, 16);
-  return 'event_id' in owner ? `covers/event/${owner.event_id}-${hash}.jpg` : collectedCoverKey(owner.collected_external_id, hash);
+  return `covers/event/${owner.event_id}-${hash}.jpg`;
 }
 
 /**
@@ -41,10 +43,8 @@ function coverKey(owner: CoverOwner, data: Buffer): string {
 export async function saveCover(tx: Db | Tx, owner: CoverOwner, source: string, data: Buffer): Promise<void> {
   const b = bucket();
   const place = b ? { url: await b.put(coverKey(owner, data), data, 'image/jpeg') } : { data };
-  const where = 'event_id' in owner ? eq(photos.event_id, owner.event_id) : eq(photos.collected_external_id, owner.collected_external_id);
-  const ref = 'event_id' in owner ? { event_id: owner.event_id } : { collected_external_id: owner.collected_external_id };
-  await tx.delete(photos).where(where);
-  await tx.insert(photos).values({ ...ref, source, ...place });
+  await tx.delete(photos).where(eq(photos.event_id, owner.event_id));
+  await tx.insert(photos).values({ event_id: owner.event_id, source, ...place });
 }
 
 /**
@@ -53,15 +53,14 @@ export async function saveCover(tx: Db | Tx, owner: CoverOwner, source: string, 
  */
 export async function moveCoversToBucket(db: Db, b: Bucket): Promise<{ count: number; bytes: number }> {
   const rows = await db.select({ id: photos.id }).from(photos)
-    .where(and(isNotNull(photos.data), isNull(photos.url), or(isNotNull(photos.collected_external_id), isNotNull(photos.event_id))));
+    .where(and(isNotNull(photos.data), isNull(photos.url), isNotNull(photos.event_id)));
   const total = { count: 0, bytes: 0 };
   for (const { id } of rows) {
     const [row] = await db.select().from(photos).where(and(eq(photos.id, id), isNotNull(photos.data)));
     if (!row?.data) continue;
     // Старые необработанные PNG сжимаем по пути: в бакете все обложки — JPEG.
     const data = row.data[0] === 0x89 ? await optimizeImage(row.data) : row.data;
-    const owner: CoverOwner = row.event_id ? { event_id: row.event_id } : { collected_external_id: row.collected_external_id! };
-    const url = await b.put(coverKey(owner, data), data, 'image/jpeg');
+    const url = await b.put(coverKey({ event_id: row.event_id! }, data), data, 'image/jpeg');
     await db.update(photos).set({ url, data: null }).where(eq(photos.id, id));
     total.count++; total.bytes += row.data.length;
   }

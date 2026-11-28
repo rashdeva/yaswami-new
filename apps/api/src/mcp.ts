@@ -128,12 +128,12 @@ function buildServer(db: Db, actor: User, scope: TokenScope | null, team: boolea
 
   tool('events_create', {
     title: 'Create event', asUser: true, shape: EventCreateInput.shape,
-    description: `Create an event hosted by the user. Field names follow the Luma API (name, start_at, timezone, max_capacity). A default free ticket type is created with it. ${KINDS} Errors: feature_off — creating events is not enabled for this user (the team enables it per person); events_limit — the free limit is used up.`,
+    description: `Create an event hosted by the user. Field names follow the Luma API (name, start_at, timezone, max_capacity). A default free ticket type is created with it. visibility: private (default) — only people with the link see it; public — it goes to the city showcase and search after the team approves it (event.showcase_status: pending → published; an organizer the team already approved goes straight in). Ask the organizer which one they want before creating. ${KINDS} Errors: feature_off — creating events is not enabled for this user (the team enables it per person); events_limit — the free limit is used up.`,
   }, (a, me, db) => s.createEvent(db, me, a));
 
   tool('events_update', {
     title: 'Update event', asUser: true, shape: { event_id, ...EventUpdateInput.shape },
-    description: 'Change fields of an event the user hosts. Only passed fields change. Set status to "cancelled" to cancel.',
+    description: 'Change fields of an event the user hosts. Only passed fields change. Set status to "cancelled" to cancel. `visibility`: public puts the event into the city showcase (after the team approves it — see `event.showcase_status`), private takes it off: the link keeps working and the team\'s decision is kept.',
   }, ({ event_id: id, ...input }, me, db) => s.updateEvent(db, me, id, input));
 
   tool('events_rsvp', {

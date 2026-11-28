@@ -15,7 +15,7 @@ const selectSources = (db: Db) => db
   .select({
     channel: sources.channel, kind: sources.kind, enabled: sources.enabled, disabled_reason: sources.disabled_reason, empty_parses: sources.empty_parses, city_id: sources.city_id, created_at: sources.created_at, host_id: hosts.id, host_name: hosts.name, host_username: hosts.username,
     approval_status: sources.approval_status, submitter_id: users.id, submitter_name: users.first_name, submitter_username: users.username,
-    events_count: sql<number>`(select count(*) from collected_events e where lower(e.channel) = lower(${sources.channel}))::int`,
+    events_count: sql<number>`(select count(*) from events e where lower(e.channel) = lower(${sources.channel}))::int`,
   })
   .from(sources).leftJoin(hosts, eq(hosts.id, sources.host_id)).leftJoin(users, eq(users.id, sources.submitted_by));
 type SourceRow = Awaited<ReturnType<typeof selectSources>>[number];

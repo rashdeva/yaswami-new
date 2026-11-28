@@ -6,20 +6,17 @@ import type { Ctx } from '../audit.ts';
 import { audited } from '../audit.ts';
 import { assertLibrarianMayEditEvent } from '../librarian.ts';
 import type { Db } from '../db/client.ts';
-import { collectedEvents, collectedEventSignups, hosts, practices, practiceSignups, products, users } from '../db/schema.ts';
+import { events, guests, hosts, practices, practiceSignups, products, users } from '../db/schema.ts';
 import * as s from '../services.ts';
 
-/** Собранное событие любого статуса с профилем организатора и теми, кто нажал «Записаться». */
+/** Событие афиши любого статуса с профилем организатора и теми, кто нажал «Записаться» (гости `pending_approval`). */
 export async function getCollectedEventSignups(db: Db, slug: string): Promise<AdminCollectedEventView> {
-  const external_id = s.collectedExternalId(slug);
   const item = await s.getCollectedEvent(db, slug, true);
-  const [row] = await db.select({ status: collectedEvents.status, city_id: collectedEvents.city_id, channel: collectedEvents.channel, announcement: collectedEvents.announcement, event: collectedEvents.event, views: collectedEvents.views, reactions: collectedEvents.reactions })
-    .from(collectedEvents).where(eq(collectedEvents.external_id, external_id));
-  const signups = await db.select({ id: users.id, first_name: users.first_name, username: users.username, at: collectedEventSignups.created_at })
-    .from(collectedEventSignups).innerJoin(users, eq(users.id, collectedEventSignups.user_id))
-    .where(eq(collectedEventSignups.external_id, external_id));
-  const { telegram_username, whatsapp_phone, instagram_username = null, url } = row!.event;
-  return { ...item, status: row!.status, city_id: row!.city_id, channel: row!.channel, source_text: row!.announcement.text ?? null, views: row!.views, reactions: row!.reactions, telegram_username, whatsapp_phone, instagram_username, url, signups };
+  const [row] = await db.select().from(events).where(eq(events.id, item.id));
+  const signups = await db.select({ id: users.id, first_name: users.first_name, username: users.username, at: guests.registered_at })
+    .from(guests).innerJoin(users, eq(users.id, guests.user_id))
+    .where(and(eq(guests.event_id, item.id), eq(guests.approval_status, 'pending_approval')));
+  return { ...item, ...s.toAdminItem(row!), cover_url: item.cover_url, signups };
 }
 
 /** Правка и решение модератора. Хранителю тем (ADR-0010) — только тема и снятие с публикации. */

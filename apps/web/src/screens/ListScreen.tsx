@@ -9,7 +9,7 @@ import type { EventListData } from '../api.ts';
 import { dayLabel, kindIcon, wallParts } from '../format.ts';
 import { EventRow } from '../components/EventRow.tsx';
 
-const MY_STATUS = { approved: 'вы идёте', maybe: 'вы думаете', declined: 'вы не идёте', waitlist: 'вы в листе ожидания' } as const;
+const MY_STATUS = { approved: 'вы идёте', maybe: 'вы думаете', declined: 'вы не идёте', waitlist: 'вы в листе ожидания', pending_approval: 'вы записались' } as const;
 
 function note({ event, is_host, my_approval_status }: EventListData): string {
   if (event.status === 'cancelled') return 'отменено';

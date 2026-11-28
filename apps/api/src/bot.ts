@@ -71,7 +71,7 @@ const asked = windowCounter<number>(60_000);
 /** Для тестов: обнулить счётчики. */
 export const resetBotLimits = () => { inbound.clear(); mediaToday.clear(); asked.clear(); };
 
-const RSVP_WORDS = { approved: 'идёт', maybe: 'думает', declined: 'не идёт', waitlist: 'в листе ожидания' } as const;
+const RSVP_WORDS = { approved: 'идёт', maybe: 'думает', declined: 'не идёт', waitlist: 'в листе ожидания', pending_approval: 'записался, ждёт подтверждения организатора' } as const;
 
 /**
  * Что сервис знает о собеседнике — первым сообщением в переписке для роли поддержки. Только его собственные

@@ -20,7 +20,8 @@ export const EVENT_VISIBILITIES = ['public', 'private'] as const;
  */
 export const SHOWCASE_STATUSES = ['pending', 'approved', 'published', 'rejected'] as const;
 // Luma: approved | pending_approval | invited | declined | waitlist. «maybe» — наше: ответ «Думаю».
-export const APPROVAL_STATUSES = ['approved', 'maybe', 'declined', 'waitlist'] as const;
+// pending_approval — человек нажал «Записаться» на внешнее событие: место подтверждает сам организатор (ADR-0014).
+export const APPROVAL_STATUSES = ['approved', 'maybe', 'declined', 'waitlist', 'pending_approval'] as const;
 export const SHARE_KINDS = ['widget', 'inline_message'] as const;
 
 export const NAME_MAX = 60;
@@ -119,9 +120,18 @@ export const Guide = z.object({
 });
 export type Guide = z.infer<typeof Guide>;
 
+/** Фото или видео из публикации-источника; лежит в нашем бакете (ADR-0006). В Luma такого нет. */
+export const CollectedMedia = z.object({
+  type: z.enum(['photo', 'video']),
+  url: z.string(),
+  width: z.number().nullable().optional(), // в пикселях; по ним страница решает, годится ли ролик в обложку. У файлов до размеров — нет
+  height: z.number().nullable().optional(),
+});
+export type CollectedMedia = z.infer<typeof CollectedMedia>;
+
 export const Event = z.object({
-  id: z.string().min(1), // короткий slug
-  user_id: User.shape.id, // организатор
+  id: z.string().min(1), // короткий slug; у события из анонса — <канал>-<публикация>-<номер> (collectedSlug)
+  user_id: User.shape.id.nullable(), // организатор; null — внешнее событие, которое никто не подтвердил как своё
   kind: z.enum(EVENT_KINDS),
   name: z.string().trim().min(1).max(NAME_MAX),
   description: z.string().trim().max(DESCRIPTION_MAX).nullable(), // что взять, как добраться, дресс-код
@@ -147,6 +157,26 @@ export const Event = z.object({
   widget_id: z.string().nullable(),
   rev: count,
   created_at: z.date(),
+  // Ниже — то, что сборщик знает о событии из анонса (ADR-0014); у события, созданного организатором, пусто.
+  place: z.string().nullable(), // название площадки; адрес — в geo_address_json. В Luma такого нет
+  time_tbd: z.boolean(), // время в анонсе не указано: start_at — полночь того дня по часам города. В Luma такого нет
+  display_price: z.string().nullable(), // цена словами, как у события в Luma
+  tags: z.array(z.string()),
+  url: z.string().nullable(), // регистрация у организатора — как `url` внешнего события в Luma
+  telegram_username: z.string().nullable(), // контакт для записи, без @; в Luma такого нет
+  whatsapp_phone: z.string().nullable(),
+  instagram_username: z.string().nullable(),
+  external_id: z.string().nullable(), // telegram:<канал>/<публикация>#<номер>: по нему сборщик узнаёт своё событие
+  channel: z.string().nullable(), // источник (Source)
+  announcement: z.object({ url: z.string(), text: z.string().optional(), media: z.array(CollectedMedia).optional() }).nullable(),
+  views: z.number().int().nullable(), // отклик на публикацию-источник; наружу — только пометкой «Популярное»
+  reactions: z.number().int().nullable(),
+  cover_checked_at: z.date().nullable(), // обложку посмотрел иллюстратор
+  video_url: z.string().nullable(), // ролик-история 9:16
+  video_at: z.date().nullable(),
+  video_tries: count,
+  published_at: z.date().nullable(), // когда впервые вышло в афишу
+  updated_at: z.date(),
 });
 export type Event = z.infer<typeof Event>;
 

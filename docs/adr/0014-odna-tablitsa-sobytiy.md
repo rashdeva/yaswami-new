@@ -29,10 +29,10 @@ status: accepted
 
 | Было в `collected_events` | Станет в `events` |
 |---|---|
-| `external_id` | `external_id`, уникальный; `id` строки — прежний адрес (`collectedSlug`), ссылки `/e/…` не меняются |
+| `external_id` | `external_id`, уникальный; `id` строки — прежний адрес (`collectedSlug`), ссылки `/e/…` не меняются. У пары, подтверждённой до переноса, остаётся id события организатора, а старый адрес анонса находится по `external_id` |
 | `event.title`, `description`, `starts_at`, `ends_at` | `name`, `description`, `start_at`, `end_at`; `timezone` — города |
 | время в анонсе не указано (00:00 в строке) | `time_tbd: true` — в Luma такого нет |
-| `event.place`, `address` | `geo_address_json: { address, place }` |
+| `event.place`, `address` | `place` (название площадки — в Luma такого нет) и `geo_address_json: { address }` |
 | `event.price` | `display_price` — как у события в Luma |
 | `event.tags` | `tags` |
 | `event.url` | `url` — как у внешнего события в Luma |
@@ -62,7 +62,9 @@ status: accepted
 
 - **База.** Колонки из таблиц выше в `events`; `collected_events` и `collected_event_signups` удаляются; в `photos` и `visits` остаётся одна ссылка на событие; в `guests` появляется `pending_approval`.
 - **Сборщик** пишет в `events` (`store.mjs` и `collector-store.test.ts` в том же PR).
-- **API и MCP.** `collected_events_*` сводятся к `events_*`; исключения — в `docs/agents/api.md`. Модерация остаётся у команды, инструменты переезжают в `admin_events_*`.
+- **API и MCP.** Операции афиши (`collected_events_*`, `admin_collected_events_*`) читают и пишут `events`; карточка афиши остаётся в форме анонса (`title`, `starts_at`…), перевод в колонки и обратно — `externalEventColumns` и `extractedOf` в `packages/core`. Сведение этих операций к `events_*` — отдельный шаг.
+- **Что видит гость.** Событие организатора отдаётся не организатору без контактов для записи, текста анонса и отклика на публикацию — как на витрине.
+- **Журнал.** Действия над собранными событиями, записанные до переноса, не отменяются: их снимки сделаны со строк старой таблицы.
 - **Фронты и роли Hermes.** Одна страница события вместо двух, одна карточка в списках; подсказки ролей называют новые инструменты.
 - **Заходы до подтверждения.** Сейчас заход на собранное событие в контакты организатора не попадает, пока он не вошёл. При подтверждении их надо собрать из `visits`.
 

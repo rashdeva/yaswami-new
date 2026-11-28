@@ -1,18 +1,18 @@
 // Переписка (docs/agents-inbox.md): запись всего, что люди пишут боту и что бот или мы отвечаем, и операции админки.
 import { createCipheriv, randomBytes } from 'node:crypto';
-import { and, asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
 import type {
   AccountCreateInput, AccountMessageInput, AccountTypingInput, AccountUpdateInput, AdminOverview, AgentKey, Conversation, ConversationUpdateInput, DraftSendInput, InboxConversation, InboxFeed, InboxSendInput,
   LeadInput, Message, MessageMedia, MessageMeta,
   TgAccount, User,
 } from '@yaswami/core';
-import { AGENTS, collectedPath, collectedWhen, LEAD_REPLY_HOURS, messageWithMedia } from '@yaswami/core';
+import { AGENTS, collectedPath, collectedWhen, isoInZone, LEAD_REPLY_HOURS, messageWithMedia } from '@yaswami/core';
 // Цикл с auth.ts (dropHostPitch) безопасен: обе стороны берут только функции и зовут их после загрузки.
 import { setBotBlocked, telegramIdOf, userIdByTelegram, usersByTelegram } from './auth.ts';
 import type { Ctx } from './audit.ts';
 import { audited } from './audit.ts';
 import type { Db } from './db/client.ts';
-import { cities, collectedEvents, collectedEventSignups, conversations, hosts, messages, sources, tgAccounts, users } from './db/schema.ts';
+import { cities, conversations, events, guests, hosts, messages, sources, tgAccounts, users } from './db/schema.ts';
 import { windowCounter } from './limits.ts';
 import { live, USER_TYPING_MS, writing } from './live.ts';
 import { transcribeMedia } from './media.ts';
@@ -133,12 +133,12 @@ async function contactedRecently(db: Db, peerId: number): Promise<boolean> {
 /** Что сервис знает об организаторе: его события в каталоге и сколько человек нажали на них «Записаться». */
 async function hostFacts(db: Db, username: string): Promise<string> {
   const rows = await db
-    .select({ external_id: collectedEvents.external_id, event: collectedEvents.event, claimed: collectedEvents.claimed_event_id, signups: count(collectedEventSignups.user_id) })
-    .from(collectedEvents)
-    .leftJoin(collectedEventSignups, eq(collectedEventSignups.external_id, collectedEvents.external_id))
-    .where(and(eq(collectedEvents.telegram_username, username), gt(collectedEvents.starts_at, new Date())))
-    .groupBy(collectedEvents.external_id)
-    .orderBy(asc(collectedEvents.starts_at))
+    .select({ id: events.id, name: events.name, start_at: events.start_at, timezone: events.timezone, claimed: events.user_id, signups: count(guests.user_id) })
+    .from(events)
+    .leftJoin(guests, and(eq(guests.event_id, events.id), eq(guests.approval_status, 'pending_approval')))
+    .where(and(eq(events.telegram_username, username), isNotNull(events.showcase_status), gt(events.start_at, new Date())))
+    .groupBy(events.id)
+    .orderBy(asc(events.start_at))
     .limit(10);
   const app = bot.username ? `https://t.me/${bot.username}/${bot.appName}` : settings.publicUrl;
   const [profile] = await db.select({ user_id: hosts.user_id, city: cities.name }).from(hosts).innerJoin(cities, eq(cities.id, hosts.city_id)).where(eq(hosts.username, username));
@@ -147,7 +147,7 @@ async function hostFacts(db: Db, username: string): Promise<string> {
     // Цель роли — чтобы организатор вошёл в сервис. Вошёл — продавать больше нечего, только отвечать.
     ...(profile?.user_id ? ['Организатор уже вошёл в «Я с вами». Ничего не предлагай и не уговаривай: только отвечай на его вопросы.'] : []),
     'Данные сервиса об организаторе. События собраны из его открытых анонсов; «записались» — столько человек нажали «Записаться» в «Я с вами» (это интерес, места подтверждает он сам).',
-    ...rows.map((r) => `- «${r.event.title}», ${collectedWhen(r.event.starts_at)} — записались: ${r.signups}${r.claimed ? ', событие уже подтверждено им' : ''}. Страница: ${settings.publicUrl}${collectedPath(collectedSlug(r.external_id))}`),
+    ...rows.map((r) => `- «${r.name}», ${collectedWhen(isoInZone(r.start_at, r.timezone))} — записались: ${r.signups}${r.claimed ? ', событие уже подтверждено им' : ''}. Страница: ${settings.publicUrl}${collectedPath(r.id)}`),
     `Как подтвердить событие: открыть приложение ${app}, там появится вопрос «Это ваше событие?» — нажать «Это моё». После этого гости отвечают «Пойду» в один тап, а организатор видит список, кто придёт, и может отправить приглашение в любой чат. Это бесплатно.`,
   ].join('\n');
 }
@@ -157,10 +157,10 @@ async function hostFacts(db: Db, username: string): Promise<string> {
  * черновиком в «Ждут вас»; отправляет человек, в личку с нашего аккаунта. Цель — чтобы организатор вошёл в сервис:
  * вошедшему, подтвердившему это событие и тому, кому писали на днях, не пишем.
  */
-export async function recordHostLead(db: Db, externalId: string): Promise<void> {
+export async function recordHostLead(db: Db, eventId: string): Promise<void> {
   if (!settings.hostUrl) return;
-  const [event] = await db.select().from(collectedEvents).where(eq(collectedEvents.external_id, externalId));
-  if (!event?.telegram_username || event.claimed_event_id) return;
+  const [event] = await db.select().from(events).where(eq(events.id, eventId));
+  if (!event?.telegram_username || event.user_id) return;
   // Профиль организатора собирает сборщик: без него не знаем, кому писать.
   const [profile] = await db.select().from(hosts).where(eq(hosts.username, event.telegram_username));
   // Пока роль пишет черновик, новые записи к тому же организатору её второй раз не зовут: каждый вызов модели платный.
@@ -170,7 +170,7 @@ export async function recordHostLead(db: Db, externalId: string): Promise<void> 
   pitching.add(peer);
   const reply = await host.ask([
     { role: 'system', content: await hostFacts(db, profile.username) },
-    { role: 'user', content: `Напиши первое сообщение организатору ${profile.name} (@${profile.username}). Повод: на его событие «${event.event.title}» через «Я с вами» записались люди.` },
+    { role: 'user', content: `Напиши первое сообщение организатору ${profile.name} (@${profile.username}). Повод: на его событие «${event.name}» через «Я с вами» записались люди.` },
   ]).finally(() => pitching.delete(peer));
   if (!reply?.text) return;
 
@@ -178,7 +178,7 @@ export async function recordHostLead(db: Db, externalId: string): Promise<void> 
   const account = await activeAccount(db);
   const conversation = await record(
     db, { id: peer, name: profile.name, username: profile.username, account_id: account?.id ?? null },
-    { direction: 'out', author: 'agent:host', text: reply.text, status: 'draft', meta: { reason: `На «${event.event.title}» через нас записались` } }, reason,
+    { direction: 'out', author: 'agent:host', text: reply.text, status: 'draft', meta: { reason: `На «${event.name}» через нас записались` } }, reason,
   );
   await alertAdmins(conversation, reason);
 }
@@ -450,13 +450,13 @@ export async function adminOverview(db: Db): Promise<AdminOverview> {
   const profiles = await db.select().from(hosts).orderBy(asc(hosts.name)).limit(300);
   const activity = new Map((await db
     .select({
-      username: collectedEvents.telegram_username,
-      events: sql<number>`count(distinct ${collectedEvents.external_id})::int`,
-      signups: sql<number>`count(${collectedEventSignups.user_id})::int`,
+      username: events.telegram_username,
+      events: sql<number>`count(distinct ${events.id})::int`,
+      signups: sql<number>`count(${guests.user_id})::int`,
     })
-    .from(collectedEvents)
-    .leftJoin(collectedEventSignups, eq(collectedEventSignups.external_id, collectedEvents.external_id))
-    .where(gt(collectedEvents.starts_at, new Date())).groupBy(collectedEvents.telegram_username)).map((r) => [r.username, r]));
+    .from(events)
+    .leftJoin(guests, and(eq(guests.event_id, events.id), eq(guests.approval_status, 'pending_approval')))
+    .where(and(isNotNull(events.showcase_status), gt(events.start_at, new Date()))).groupBy(events.telegram_username)).map((r) => [r.username, r]));
   const ids = profiles.map((h) => h.telegram_id).filter((id) => id != null);
   const dialogs = ids.length
     ? await withStages(db, await db.select().from(conversations).where(and(eq(conversations.channel, 'account'), inArray(conversations.peer_id, ids))))
