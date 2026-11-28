@@ -248,4 +248,7 @@ test('репутация: средняя — от трёх оценок; тек�
   assert.ok(!isPublicFeedback({ rating: 3, comment: 'Так себе' }));
   assert.ok(!isPublicFeedback({ rating: 5, comment: null }));
   assert.ok(!isPublicFeedback({ rating: null, comment: 'Не был' }));
+  // Отзыв ссылкой на сообщение виден после того, как команда сверила ссылку.
+  assert.ok(!isPublicFeedback({ rating: 5, comment: 'Супер', source_url: 'https://t.me/chat/1', verified_at: null }));
+  assert.ok(isPublicFeedback({ rating: 5, comment: 'Супер', source_url: 'https://t.me/chat/1', verified_at: new Date() }));
 });

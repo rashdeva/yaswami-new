@@ -589,8 +589,5 @@ h2.today { color: var(--btn); }
 .review p { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .review small { color: var(--hint); font-size: 12px; }
 .review-cta { margin: 0 16px; }
-.chips.wrap { flex-wrap: wrap; padding: 0 0 12px; }
-.stars { display: flex; justify-content: center; gap: 6px; margin: 4px 0 14px; }
-.stars button { border: 0; background: none; padding: 4px; font-size: 36px; line-height: 1; color: var(--line); cursor: pointer; }
-.stars button[data-on='true'] { color: var(--btn); }
+.review a { color: var(--btn); text-decoration: none; }
 .suggest form { margin-top: 14px; text-align: left; }

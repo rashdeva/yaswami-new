@@ -176,13 +176,11 @@ const oldHostsRoute = createRoute({ getParentRoute: () => app, path: '/hosts', b
 function HostPage() {
   const { id } = hostRoute.useParams();
   const navigate = useNavigate();
-  const { city, me, authed, canLogin } = useSession();
+  const { city, me } = useSession();
   const { onBack } = useShell();
-  // `?feedback=1` — ссылка мастера «оставьте отзыв»: форма открывается сразу, а гостю сначала предлагаем войти и вернуться сюда же.
-  const here = location.pathname + location.search;
   return (
     <HostScreen key={id} id={id} city={city} onBack={onBack}
-      feedback={{ own: me?.host_id === id, authed, onLogin: canLogin ? () => startLogin(here) : null, openForm: new URLSearchParams(location.search).has('feedback') }}
+      own={me?.host_id === id}
       onOpenEvent={(event) => void navigate({ to: '/e/$id', params: { id: event.id } })}
       onOpenProduct={(product) => void navigate({ to: '/products/$id', params: { id: product.id } })} />
   );

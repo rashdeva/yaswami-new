@@ -19,12 +19,12 @@ interface Props {
   onOpenEvent: (event: CollectedEventItem) => void;
   onOpenProduct: (product: ProductItem) => void;
   onBack: (() => void) | null;
-  /** Отзывы: чья страница, вошёл ли человек, как войти и открыть ли форму сразу (ссылка мастера «оставьте отзыв»). */
-  feedback: { own: boolean; authed: boolean; onLogin: (() => void) | null; openForm: boolean };
+  /** Человек смотрит собственную страницу: вместо «Оставить отзыв» — ссылка для клиентов и бонус за отзыв. */
+  own: boolean;
 }
 
 /** Страница организатора или мастера: кто это, что ведёт, что продаёт, ближайшие события и как ему написать. */
-export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack, feedback }: Props) {
+export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack, own }: Props) {
   useTopics(); // иконки и цвета тем — из базы: перерисоваться, когда пришли
   const { host, loaded, failed } = useHost(id);
   const sheet = usePracticeSheet();
@@ -90,7 +90,7 @@ export function HostScreen({ id, city, onOpenEvent, onOpenProduct, onBack, feedb
       )}
       {loaded && !host.events.length && !host.products.length && host.upcoming_count === 0 && <p className="note">Ближайших событий нет — напишите, чтобы узнать расписание.</p>}
 
-      {loaded && <HostFeedback host={host} {...feedback} />}
+      {loaded && <HostFeedback host={host} own={own} />}
 
       {host.photos.length > 0 && (
         <div className="shots" style={{ margin: '16px 16px 0' }}>

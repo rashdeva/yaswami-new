@@ -255,6 +255,7 @@ export interface HostListItem extends Omit<CollectedHost, 'photos'> {
   upcoming_count: number; // предстоящих опубликованных событий
   feedback: HostFeedbackSummary; // репутация: оценки его событий и услуг вместе (feedback.ts); в Luma такого нет
   feedback_bonus: string | null; // что мастер обещает гостю за отзыв, его словами; null — ничего
+  feedback_url: string; // где оставить отзыв о мастере: бот с вопросом об этом мастере (форм у нас нет)
 }
 
 /** Страница организатора: то же, что в каталоге, плюс фото сообщества, предстоящие события и товары. */

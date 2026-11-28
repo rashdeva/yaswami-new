@@ -16,7 +16,7 @@ import type { Db, Tx } from './db/client.ts';
 import { apiTokens, cities, collectedEvents, collectedEventSignups, contacts, eventFeedback, events, guests, hosts, photos, practiceFeedback, practices, practiceSignups, products, sources, subscriptions, ticketTypes, userActivity, userIdentities, users, visits } from './db/schema.ts';
 import { optimizeImage, photoUrl, saveCover, storedPhotoUrl } from './photos.ts';
 import { illustrator } from './support.ts';
-import { eventFeedbackView, hostFeedbackEntries, hostFeedbackSummaries, NO_FEEDBACK } from './feedback.ts';
+import { eventFeedbackView, hostFeedbackEntries, hostFeedbackSummaries, hostFeedbackUrl, NO_FEEDBACK } from './feedback.ts';
 import { recordHostLead } from './inbox.ts';
 import { guestRegistered } from './rsvp-notices.ts';
 import { settings } from './settings.ts';
@@ -532,7 +532,7 @@ function toHostListItem(h: HostRecord, all: Practice[], eventTopics: (string | u
   return {
     ...hostCard(h), id: h.id, username: h.username, contact_url: `https://t.me/${h.username}`, url: `${settings.publicUrl}/hosts/${h.id}`,
     topics: Object.keys(TOPIC_GUIDES).filter((t) => mentioned.has(t)), practices, upcoming_count: eventTopics.length,
-    feedback, feedback_bonus: h.feedback_bonus,
+    feedback, feedback_bonus: h.feedback_bonus, feedback_url: hostFeedbackUrl(h.id),
   };
 }
 

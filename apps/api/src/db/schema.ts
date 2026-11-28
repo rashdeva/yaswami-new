@@ -638,7 +638,7 @@ export const eventFeedback = pgTable(
 );
 
 // Отзыв на услугу мастера (practice-feedback.ts; в Luma такого нет). Строка появляется, когда бот спросил «были?»
-// через сутки после записи (`via: signup`) или когда человек сам оставил отзыв по ссылке мастера (`via: invite`).
+// через сутки после записи (`via: signup`) или когда человек пришёл к боту по ссылке мастера (`via: invite`).
 // `host_id` повторяет practices.host_id: по нему отзывы входят в снимок организатора в журнале и считается репутация.
 export const practiceFeedback = pgTable(
   'practice_feedback',
@@ -650,6 +650,9 @@ export const practiceFeedback = pgTable(
     attended: boolean(), // был ли у мастера: null — ответа нет, false — не дошёл; оценка есть только у того, кто был
     rating: integer(), // 1–5
     comment: text(),
+    // Сообщение, где человек написал отзыв: прислал ссылкой (сверяет команда, до того verified_at null) или переслал из канала.
+    source_url: text(),
+    verified_at: at('verified_at'),
     prompt_message_id: integer(), // сообщение бота «пара слов…»: ответ на него становится текстом отзыва
     host_notified_at: at('host_notified_at'), // отзыв уже ушёл мастеру в сводке; новая оценка или текст сбрасывают отметку
     requested_at: at('requested_at').notNull().defaultNow(),

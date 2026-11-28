@@ -1,5 +1,5 @@
 {
-  "id": "1c3a7353-b864-4ed1-9196-01c267523279",
+  "id": "7438ad33-b9ab-4d2b-b86b-55d6f988b3af",
   "prevId": "53e9a45f-b824-4e41-9a3a-614a6f91ef2f",
   "version": "7",
   "dialect": "postgresql",
@@ -1973,6 +1973,18 @@
         "comment": {
           "name": "comment",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_url": {
+          "name": "source_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

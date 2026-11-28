@@ -6,6 +6,8 @@ CREATE TABLE "practice_feedback" (
 	"attended" boolean,
 	"rating" integer,
 	"comment" text,
+	"source_url" text,
+	"verified_at" timestamp with time zone,
 	"prompt_message_id" integer,
 	"host_notified_at" timestamp with time zone,
 	"requested_at" timestamp with time zone DEFAULT now() NOT NULL,
