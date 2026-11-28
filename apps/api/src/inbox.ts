@@ -330,13 +330,15 @@ export async function setAttention(db: Db, id: string, attention: string | null)
 export const logSent = (db: Db) => async (method: string, body: { chat_id: number; text?: unknown; caption?: unknown }, result: BotResult, author: string) => {
   // Виджет не прошёл — следом то же уходит обычным сообщением (notifications.ts); неудачную попытку не пишем.
   // Оповещение нам самим (alertTeam) — не переписка с человеком.
-  if ((method === 'sendWidget' && !result.ok) || author === 'alert') return;
+  if (author === 'alert') return;
+  // Telegram не доставил, потому что человек закрыл бота: отмечаем, и уведомления ему больше не уходят (botChatIdOf).
+  // До выхода ниже: уведомление идёт виджетом, и на 403 запасного сообщения не будет.
+  if (isBotBlocked(result)) await setBotBlocked(db, body.chat_id, true);
+  if (method === 'sendWidget' && !result.ok) return;
   const userId = await userIdByTelegram(db, body.chat_id); // chat_id — Telegram id собеседника, не users.id
   const [user] = userId === null ? [] : await db.select().from(users).where(eq(users.id, userId));
   const text = typeof body.text === 'string' ? body.text : typeof body.caption === 'string' ? body.caption : NO_TEXT;
   await record(db, { id: body.chat_id, name: user?.first_name, username: user?.username }, { direction: 'out', author, text, status: result.ok ? 'sent' : 'failed' });
-  // Telegram не доставил, потому что человек закрыл бота: отмечаем, и уведомления ему больше не уходят (botChatIdOf).
-  if (isBotBlocked(result)) await setBotBlocked(db, body.chat_id, true);
 };
 
 /**

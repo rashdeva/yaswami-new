@@ -3,7 +3,7 @@
 import type { User } from '@yaswami/core';
 import { collectedWhen } from '@yaswami/core';
 import type { Db } from './db/client.ts';
-import { setBotBlocked, touchUser, upsertUser } from './auth.ts';
+import { isBannedTelegram, setBotBlocked, touchUser, upsertUser } from './auth.ts';
 import { handleFeedbackCallback, saveFeedbackComment } from './feedback.ts';
 import { alertAdmins, recordIncoming, setAttention, supportHistory } from './inbox.ts';
 import { writing } from './live.ts';
@@ -151,10 +151,11 @@ async function withDraft<T>(chatId: number, draftId: number, run: (show: (text: 
 /**
  * Сообщение на китайском — спам: нашей аудитории китайский не родной, а такие сообщения приходят пачками. Иероглифы
  * в тексте без единой кириллической буквы или китайский язык Telegram у отправителя при тексте без кириллицы.
- * Русский текст с иероглифом (название чая, цитата) спамом не считается.
+ * Русский текст с иероглифом (название чая, цитата) и японский (с каной) спамом не считаются.
  */
 export function isChineseSpam(text: string, languageCode?: string): boolean {
-  if (/\p{Script=Cyrillic}/u.test(text)) return false;
+  // Кана — японский: иероглифы в нём тоже есть, но это не китайский спам.
+  if (/[\p{Script=Cyrillic}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text)) return false;
   return /\p{Script=Han}/u.test(text) || /^zh\b/i.test(languageCode ?? '');
 }
 
@@ -172,6 +173,11 @@ async function handleChatMember(db: Db, update: unknown): Promise<boolean> {
 /** Обрабатывает одно обновление вебхука. */
 export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   if (await handleChatMember(db, update)) return;
+  // Забаненного командой бот не слушает совсем: ни сообщений, ни кнопок, ни «подождите» от лимита — не отвечает, не зовёт
+  // ИИ и нас, в переписку не пишет.
+  const from = (update as { message?: { from?: { id: number } }; callback_query?: { from?: { id: number } } } | null);
+  const senderId = from?.message?.from?.id ?? from?.callback_query?.from?.id;
+  if (senderId !== undefined && await isBannedTelegram(db, senderId)) return;
   if (await handleFeedbackCallback(db, update)) return; // оценка события кнопкой под карточкой
   const m = parseIncoming(update);
   if (!m) return;
@@ -185,8 +191,6 @@ export async function handleUpdate(db: Db, update: unknown): Promise<void> {
   // Любое сообщение боту, в том числе /start, заводит пользователя: вместе с ним сохраняется его аватар.
   // Новый человек пришёл через бота; хвост `/start <параметр>` — ссылка t.me/<бот>?start=…, с которой он пришёл.
   const actor = await upsertUser(db, m.from, { joined_via: 'bot', start_param: /^\/start\s+(\S+)/.exec(m.text)?.[1] ?? null });
-  // Забаненного командой бот не слушает: не отвечает, не зовёт ИИ и нас, в переписку не пишет.
-  if (actor.banned_at) return;
   await touchUser(db, actor.id);
   // Пишет — значит, бот снова открыт: уведомления ему опять уходят.
   if (actor.bot_blocked_at) await setBotBlocked(db, m.chatId, false);

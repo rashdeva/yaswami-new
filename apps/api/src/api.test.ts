@@ -3598,10 +3598,10 @@ test('блокировка бота и бан: отметка по 403 и my_cha
   };
   assert.equal(await digest(), 1);
 
-  // Telegram не доставил: человек заблокировал бота — отметка, и уведомления больше не уходят.
+  // Telegram не доставил уведомление (оно идёт виджетом): человек заблокировал бота — отметка, и уведомления больше не уходят.
   const ok = bot.call;
   bot.call = async () => ({ ok: false, error_code: 403, description: 'Forbidden: bot was blocked by the user' });
-  await bot.send('sendMessage', { chat_id: tg, text: 'Вы тут?' });
+  await notify(db, id, 'topic_digest', { items: [] });
   bot.call = ok;
   const blockedAt = (await user()).bot_blocked_at;
   assert.ok(blockedAt);
@@ -3621,6 +3621,13 @@ test('блокировка бота и бан: отметка по 403 и my_cha
   assert.ok((await user()).bot_blocked_at);
   await handleUpdate(db, member('member'));
   assert.equal((await user()).bot_blocked_at, null);
+  // Отметку ставит Telegram, а не команда: она не мешает отменить правку и не сбрасывается отменой.
+  assert.equal((await call(admin, 'PATCH', `/admin/users/${id}`, { first_name: 'Анна' })).status, 200);
+  const rename = (await lastAction())!;
+  await handleUpdate(db, member('kicked'));
+  assert.equal((await call(admin, 'POST', `/admin/actions/${rename.id}/undo`)).status, 201);
+  assert.deepEqual([(await user()).first_name, !!(await user()).bot_blocked_at], ['Аня', true]);
+  await handleUpdate(db, member('member'));
 
   // Бан командой: бот молчит и не пишет в переписку, уведомлений нет, API отказывает; диалог скрыт.
   assert.equal((await call(tma(71, 'Аня'), 'PATCH', `/admin/users/${id}`, { is_banned: true })).status, 403, 'не админ');
@@ -3629,9 +3636,14 @@ test('блокировка бота и бан: отметка по 403 и my_cha
   assert.ok(((await banned.json()) as { banned_at: string | null }).banned_at);
   const [conversation] = await db.select().from(conversations).where(eq(conversations.peer_id, tg));
   assert.ok(conversation!.hidden_at);
+  // Админа забанить нельзя: API его больше не пустил бы, и снять бан он не смог бы.
+  const adminBan = await call(admin, 'PATCH', `/admin/users/${await uid(70)}`, { is_banned: true });
+  assert.deepEqual([adminBan.status, await adminBan.json()], [409, { error: 'cannot_ban_admin' }]);
   const before = (await db.select().from(messages).where(eq(messages.conversation_id, conversation!.id))).length;
   sent.length = 0;
   await handleUpdate(db, botMessage(tg, 'Привет, есть йога?'));
+  // Кнопка оценки отзыва тоже молчит.
+  await handleUpdate(db, { update_id: 3, callback_query: { id: 'q1', from: { id: tg }, data: 'fb:any-event:5' } });
   assert.deepEqual(sent, []);
   assert.equal((await db.select().from(messages).where(eq(messages.conversation_id, conversation!.id))).length, before);
   assert.equal(await digest(), 0);
@@ -3639,6 +3651,7 @@ test('блокировка бота и бан: отметка по 403 и my_cha
   assert.deepEqual([me.status, await me.json()], [403, { error: 'banned' }]);
   // Снять бан — всё возвращается; бан отменяется и из журнала.
   assert.equal((await call(admin, 'PATCH', `/admin/users/${id}`, { is_banned: false })).status, 200);
+  assert.equal((await db.select().from(conversations).where(eq(conversations.id, conversation!.id)))[0]!.hidden_at, null, 'диалог вернулся');
   assert.equal((await call(tma(tg, 'Аня'), 'GET', '/me')).status, 200);
   assert.equal(await digest(), 1);
   const mcp = await mcpCall(admin, 'admin_users_update', { user_id: id, is_banned: true });
@@ -3657,5 +3670,8 @@ test('китайский спам боту: молча, без пользова�
   assert.equal((await db.select().from(conversations).where(eq(conversations.peer_id, 9602))).length, 0);
   await handleUpdate(db, botMessage(9604, 'Где купить чай 普洱?'));
   assert.ok(await userIdByTelegram(db, 9604));
+  // Японский — с каной — тоже не спам.
+  await handleUpdate(db, botMessage(9605, 'ヨガのイベントはありますか'));
+  assert.ok(await userIdByTelegram(db, 9605));
   assert.ok(sent.length > 0);
 });

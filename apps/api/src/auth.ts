@@ -133,6 +133,14 @@ export async function botChatIdOf(db: Db, userId: number): Promise<number | null
   return telegramIdOf(db, userId);
 }
 
+/** Забанен ли командой человек с этим Telegram id. Нет такого пользователя — не забанен. */
+export async function isBannedTelegram(db: Db, telegramId: number): Promise<boolean> {
+  const userId = await userIdByTelegram(db, telegramId);
+  if (userId === null) return false;
+  const [user] = await db.select({ banned: users.banned_at }).from(users).where(eq(users.id, userId));
+  return !!user?.banned;
+}
+
 /**
  * Отметка «заблокировал бота» по Telegram id: `true` — Telegram отказал в доставке или прислал «kicked», `false` —
  * человек снова пишет боту. Снимаем и ставим только при смене: время отметки — когда заблокировал впервые.
